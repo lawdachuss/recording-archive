@@ -9,6 +9,8 @@ import VideoDetail from "@/pages/VideoDetail";
 import PerformersList from "@/pages/PerformersList";
 import PerformerProfile from "@/pages/PerformerProfile";
 import TagsPage from "@/pages/TagsPage";
+import Bookmarks from "@/pages/Bookmarks";
+import History from "@/pages/History";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -22,6 +24,8 @@ function Router() {
       <Route path="/performers" component={PerformersList} />
       <Route path="/performers/:username" component={PerformerProfile} />
       <Route path="/tags" component={TagsPage} />
+      <Route path="/bookmarks" component={Bookmarks} />
+      <Route path="/history" component={History} />
       <Route component={NotFound} />
     </Switch>
   );

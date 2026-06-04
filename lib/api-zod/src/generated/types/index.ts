@@ -6,14 +6,24 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './comment';
+export * from './commentLikeResult';
+export * from './createCommentInput';
+export * from './createReplyInput';
 export * from './errorResponse';
+export * from './getReactionsParams';
 export * from './healthStatus';
+export * from './listCommentsParams';
+export * from './listCommentsSort';
 export * from './listRecordingsParams';
 export * from './listRecordingsSort';
 export * from './listRelatedRecordingsParams';
 export * from './performer';
 export * from './performerProfile';
+export * from './reactionCount';
+export * from './reactionInput';
 export * from './recording';
 export * from './recordingListResponse';
+export * from './sessionInput';
 export * from './siteStats';
 export * from './tagCount';

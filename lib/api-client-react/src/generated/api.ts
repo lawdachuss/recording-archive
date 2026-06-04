@@ -6,30 +6,43 @@
  * OpenAPI spec version: 0.1.0
  */
 import {
+  useMutation,
   useQuery
 } from '@tanstack/react-query';
 import type {
+  MutationFunction,
   QueryFunction,
   QueryKey,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult
 } from '@tanstack/react-query';
 
 import type {
+  Comment,
+  CommentLikeResult,
+  CreateCommentInput,
+  CreateReplyInput,
   ErrorResponse,
+  GetReactionsParams,
   HealthStatus,
+  ListCommentsParams,
   ListRecordingsParams,
   ListRelatedRecordingsParams,
   Performer,
   PerformerProfile,
+  ReactionCount,
+  ReactionInput,
   Recording,
   RecordingListResponse,
+  SessionInput,
   SiteStats,
   TagCount
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
-import type { ErrorType } from '../custom-fetch';
+import type { ErrorType , BodyType } from '../custom-fetch';
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
@@ -669,4 +682,458 @@ export function useGetStats<TData = Awaited<ReturnType<typeof getStats>>, TError
 
 
 
+
+export const getGetReactionsUrl = (params: GetReactionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/reactions?${stringifiedParams}` : `/api/reactions`
+}
+
+/**
+ * @summary Get like/dislike counts for a recording
+ */
+export const getReactions = async (params: GetReactionsParams, options?: RequestInit): Promise<ReactionCount> => {
+
+  return customFetch<ReactionCount>(getGetReactionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetReactionsQueryKey = (params?: GetReactionsParams,) => {
+    return [
+    `/api/reactions`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetReactionsQueryOptions = <TData = Awaited<ReturnType<typeof getReactions>>, TError = ErrorType<unknown>>(params: GetReactionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReactions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetReactionsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getReactions>>> = ({ signal }) => getReactions(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getReactions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetReactionsQueryResult = NonNullable<Awaited<ReturnType<typeof getReactions>>>
+export type GetReactionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get like/dislike counts for a recording
+ */
+
+export function useGetReactions<TData = Awaited<ReturnType<typeof getReactions>>, TError = ErrorType<unknown>>(
+ params: GetReactionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReactions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetReactionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getToggleReactionUrl = () => {
+
+
+
+
+  return `/api/reactions`
+}
+
+/**
+ * @summary Toggle a like or dislike on a recording
+ */
+export const toggleReaction = async (reactionInput: ReactionInput, options?: RequestInit): Promise<ReactionCount> => {
+
+  return customFetch<ReactionCount>(getToggleReactionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      reactionInput,)
+  }
+);}
+
+
+
+
+export const getToggleReactionMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof toggleReaction>>, TError,{data: BodyType<ReactionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof toggleReaction>>, TError,{data: BodyType<ReactionInput>}, TContext> => {
+
+const mutationKey = ['toggleReaction'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof toggleReaction>>, {data: BodyType<ReactionInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  toggleReaction(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ToggleReactionMutationResult = NonNullable<Awaited<ReturnType<typeof toggleReaction>>>
+    export type ToggleReactionMutationBody = BodyType<ReactionInput>
+    export type ToggleReactionMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Toggle a like or dislike on a recording
+ */
+export const useToggleReaction = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof toggleReaction>>, TError,{data: BodyType<ReactionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof toggleReaction>>,
+        TError,
+        {data: BodyType<ReactionInput>},
+        TContext
+      > => {
+      return useMutation(getToggleReactionMutationOptions(options));
+    }
+
+export const getListCommentsUrl = (params: ListCommentsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/comments?${stringifiedParams}` : `/api/comments`
+}
+
+/**
+ * @summary List threaded comments for a recording
+ */
+export const listComments = async (params: ListCommentsParams, options?: RequestInit): Promise<Comment[]> => {
+
+  return customFetch<Comment[]>(getListCommentsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCommentsQueryKey = (params?: ListCommentsParams,) => {
+    return [
+    `/api/comments`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListCommentsQueryOptions = <TData = Awaited<ReturnType<typeof listComments>>, TError = ErrorType<unknown>>(params: ListCommentsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listComments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCommentsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listComments>>> = ({ signal }) => listComments(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listComments>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCommentsQueryResult = NonNullable<Awaited<ReturnType<typeof listComments>>>
+export type ListCommentsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List threaded comments for a recording
+ */
+
+export function useListComments<TData = Awaited<ReturnType<typeof listComments>>, TError = ErrorType<unknown>>(
+ params: ListCommentsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listComments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCommentsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getCreateCommentUrl = () => {
+
+
+
+
+  return `/api/comments`
+}
+
+/**
+ * @summary Post a comment on a recording
+ */
+export const createComment = async (createCommentInput: CreateCommentInput, options?: RequestInit): Promise<Comment> => {
+
+  return customFetch<Comment>(getCreateCommentUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createCommentInput,)
+  }
+);}
+
+
+
+
+export const getCreateCommentMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createComment>>, TError,{data: BodyType<CreateCommentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createComment>>, TError,{data: BodyType<CreateCommentInput>}, TContext> => {
+
+const mutationKey = ['createComment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createComment>>, {data: BodyType<CreateCommentInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createComment(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCommentMutationResult = NonNullable<Awaited<ReturnType<typeof createComment>>>
+    export type CreateCommentMutationBody = BodyType<CreateCommentInput>
+    export type CreateCommentMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Post a comment on a recording
+ */
+export const useCreateComment = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createComment>>, TError,{data: BodyType<CreateCommentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createComment>>,
+        TError,
+        {data: BodyType<CreateCommentInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCommentMutationOptions(options));
+    }
+
+export const getCreateReplyUrl = (commentId: number,) => {
+
+
+
+
+  return `/api/comments/${commentId}/replies`
+}
+
+/**
+ * @summary Reply to a comment
+ */
+export const createReply = async (commentId: number,
+    createReplyInput: CreateReplyInput, options?: RequestInit): Promise<Comment> => {
+
+  return customFetch<Comment>(getCreateReplyUrl(commentId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createReplyInput,)
+  }
+);}
+
+
+
+
+export const getCreateReplyMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createReply>>, TError,{commentId: number;data: BodyType<CreateReplyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createReply>>, TError,{commentId: number;data: BodyType<CreateReplyInput>}, TContext> => {
+
+const mutationKey = ['createReply'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createReply>>, {commentId: number;data: BodyType<CreateReplyInput>}> = (props) => {
+          const {commentId,data} = props ?? {};
+
+          return  createReply(commentId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateReplyMutationResult = NonNullable<Awaited<ReturnType<typeof createReply>>>
+    export type CreateReplyMutationBody = BodyType<CreateReplyInput>
+    export type CreateReplyMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Reply to a comment
+ */
+export const useCreateReply = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createReply>>, TError,{commentId: number;data: BodyType<CreateReplyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createReply>>,
+        TError,
+        {commentId: number;data: BodyType<CreateReplyInput>},
+        TContext
+      > => {
+      return useMutation(getCreateReplyMutationOptions(options));
+    }
+
+export const getToggleCommentLikeUrl = (commentId: number,) => {
+
+
+
+
+  return `/api/comments/${commentId}/like`
+}
+
+/**
+ * @summary Toggle like on a comment
+ */
+export const toggleCommentLike = async (commentId: number,
+    sessionInput: SessionInput, options?: RequestInit): Promise<CommentLikeResult> => {
+
+  return customFetch<CommentLikeResult>(getToggleCommentLikeUrl(commentId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      sessionInput,)
+  }
+);}
+
+
+
+
+export const getToggleCommentLikeMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof toggleCommentLike>>, TError,{commentId: number;data: BodyType<SessionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof toggleCommentLike>>, TError,{commentId: number;data: BodyType<SessionInput>}, TContext> => {
+
+const mutationKey = ['toggleCommentLike'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof toggleCommentLike>>, {commentId: number;data: BodyType<SessionInput>}> = (props) => {
+          const {commentId,data} = props ?? {};
+
+          return  toggleCommentLike(commentId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ToggleCommentLikeMutationResult = NonNullable<Awaited<ReturnType<typeof toggleCommentLike>>>
+    export type ToggleCommentLikeMutationBody = BodyType<SessionInput>
+    export type ToggleCommentLikeMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Toggle like on a comment
+ */
+export const useToggleCommentLike = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof toggleCommentLike>>, TError,{commentId: number;data: BodyType<SessionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof toggleCommentLike>>,
+        TError,
+        {commentId: number;data: BodyType<SessionInput>},
+        TContext
+      > => {
+      return useMutation(getToggleCommentLikeMutationOptions(options));
+    }
 

@@ -16,6 +16,10 @@ tags:
     description: Performer profiles
   - name: tags
     description: Tag browsing
+  - name: reactions
+    description: Like/dislike reactions
+  - name: comments
+    description: Threaded comments
 
 paths:
   /healthz:
@@ -184,6 +188,135 @@ paths:
               schema:
                 $ref: "#/components/schemas/SiteStats"
 
+  /reactions:
+    get:
+      operationId: getReactions
+      tags: [reactions]
+      summary: Get like/dislike counts for a recording
+      parameters:
+        - name: recording_id
+          in: query
+          required: true
+          schema: { type: string }
+        - name: session_id
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Reaction counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReactionCount"
+    post:
+      operationId: toggleReaction
+      tags: [reactions]
+      summary: Toggle a like or dislike on a recording
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReactionInput"
+      responses:
+        "200":
+          description: Updated reaction counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReactionCount"
+
+  /comments:
+    get:
+      operationId: listComments
+      tags: [comments]
+      summary: List threaded comments for a recording
+      parameters:
+        - name: recording_id
+          in: query
+          required: true
+          schema: { type: string }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [top, new, old] }
+        - name: session_id
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Threaded comment list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Comment"
+    post:
+      operationId: createComment
+      tags: [comments]
+      summary: Post a comment on a recording
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCommentInput"
+      responses:
+        "201":
+          description: Created comment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comment"
+
+  /comments/{commentId}/replies:
+    post:
+      operationId: createReply
+      tags: [comments]
+      summary: Reply to a comment
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReplyInput"
+      responses:
+        "201":
+          description: Created reply
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comment"
+
+  /comments/{commentId}/like:
+    post:
+      operationId: toggleCommentLike
+      tags: [comments]
+      summary: Toggle like on a comment
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionInput"
+      responses:
+        "200":
+          description: Updated like status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommentLikeResult"
+
 components:
   schemas:
     HealthStatus:
@@ -312,3 +445,92 @@ components:
       properties:
         error:
           type: string
+
+    ReactionCount:
+      type: object
+      required: [likes, dislikes]
+      properties:
+        likes:
+          type: integer
+        dislikes:
+          type: integer
+        user_reaction:
+          type: ["string", "null"]
+
+    ReactionInput:
+      type: object
+      required: [recording_id, type, session_id]
+      properties:
+        recording_id:
+          type: string
+        type:
+          type: string
+        session_id:
+          type: string
+
+    Comment:
+      type: object
+      required: [id, recording_id, author, content, created_at, likes]
+      properties:
+        id:
+          type: integer
+        recording_id:
+          type: string
+        parent_id:
+          type: ["integer", "null"]
+        author:
+          type: string
+        content:
+          type: string
+        deleted:
+          type: boolean
+        likes:
+          type: integer
+        user_liked:
+          type: boolean
+        created_at:
+          type: string
+        replies:
+          type: array
+          items:
+            $ref: "#/components/schemas/Comment"
+
+    CreateCommentInput:
+      type: object
+      required: [recording_id, author, content, session_id]
+      properties:
+        recording_id:
+          type: string
+        author:
+          type: string
+        content:
+          type: string
+        session_id:
+          type: string
+
+    CreateReplyInput:
+      type: object
+      required: [author, content, session_id]
+      properties:
+        author:
+          type: string
+        content:
+          type: string
+        session_id:
+          type: string
+
+    SessionInput:
+      type: object
+      required: [session_id]
+      properties:
+        session_id:
+          type: string
+
+    CommentLikeResult:
+      type: object
+      required: [likes, liked]
+      properties:
+        likes:
+          type: integer
+        liked:
+          type: boolean

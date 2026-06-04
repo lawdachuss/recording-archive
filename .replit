@@ -1,4 +1,4 @@
-modules = ["nodejs-24"]
+modules = ["nodejs-24", "postgresql-16"]
 
 [deployment]
 router = "application"
@@ -37,3 +37,6 @@ VITE_SUPABASE_URL = "https://alcwxntejivcqlurudts.supabase.co"
 VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFsY3d4bnRlaml2Y3FsdXJ1ZHRzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAxNTM2MjcsImV4cCI6MjA5NTcyOTYyN30.-KKSShxhDYY8kHTZVt8rQVPYiZ-Y2jsS5nHVjq7bGz4"
 SUPABASE_URL = "https://alcwxntejivcqlurudts.supabase.co"
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFsY3d4bnRlaml2Y3FsdXJ1ZHRzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAxNTM2MjcsImV4cCI6MjA5NTcyOTYyN30.-KKSShxhDYY8kHTZVt8rQVPYiZ-Y2jsS5nHVjq7bGz4"
+
+[nix]
+channel = "stable-25_05"
