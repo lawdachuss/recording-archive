@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from "react";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetRecording,
@@ -7,17 +7,23 @@ import {
   useGetReactions,
   useToggleReaction,
   getGetRecordingQueryKey,
+  getListRelatedRecordingsQueryKey,
+  getGetReactionsQueryKey,
 } from "@workspace/api-client-react";
 import { Layout } from "@/components/Layout";
 import { CommentSection } from "@/components/CommentSection";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatBytes, formatRelativeTime } from "@/lib/formatters";
 import { getSessionId } from "@/lib/session";
-import { isBookmarked, toggleBookmark, addToHistory } from "@/lib/bookmarks";
+import {
+  isBookmarked, toggleBookmark,
+  isInWatchLater, toggleWatchLater,
+  addToHistory,
+} from "@/lib/bookmarks";
 import {
   Eye, HardDrive, MonitorPlay, AlertCircle, ArrowLeft, Maximize2, Minimize2,
   Calendar, User, Tag, Clapperboard, ThumbsUp, ThumbsDown, Bookmark, Share2,
-  Check, Server, Film, Download, Clock,
+  Check, Server, Film, Download, Clock, Play, Code2, ListVideo, Shuffle,
 } from "lucide-react";
 
 function useFullscreen(ref: React.RefObject<HTMLElement | null>) {
@@ -27,12 +33,10 @@ function useFullscreen(ref: React.RefObject<HTMLElement | null>) {
     if (!el) return;
     if (el.requestFullscreen) el.requestFullscreen();
     else if ((el as any).webkitRequestFullscreen) (el as any).webkitRequestFullscreen();
-    setIsFullscreen(true);
   }, [ref]);
   const exit = useCallback(() => {
     if (document.exitFullscreen) document.exitFullscreen();
     else if ((document as any).webkitExitFullscreen) (document as any).webkitExitFullscreen();
-    setIsFullscreen(false);
   }, []);
   useEffect(() => {
     const handler = () => setIsFullscreen(!!document.fullscreenElement);
@@ -46,33 +50,34 @@ function deriveServers(embedUrl?: string | null, previewUrl?: string | null) {
   const servers: { label: string; src: string; type: "iframe" | "img" }[] = [];
   if (embedUrl) {
     servers.push({ label: "Server 1", src: embedUrl, type: "iframe" });
-    const streamtapeMatch = embedUrl.match(/streamtape\.com\/e\/([^/]+)/);
-    if (streamtapeMatch) {
-      servers.push({
-        label: "Server 2",
-        src: `https://streamtape.com/v/${streamtapeMatch[1]}/`,
-        type: "iframe",
-      });
+    const stMatch = embedUrl.match(/streamtape\.com\/e\/([^/]+)/);
+    if (stMatch) {
+      servers.push({ label: "Server 2", src: `https://streamtape.com/v/${stMatch[1]}/`, type: "iframe" });
     }
     const doodMatch = embedUrl.match(/dood(?:stream)?\.(?:com|to|watch|la|pm|wf|re|cx|sh)\/e\/([^/]+)/);
     if (doodMatch) {
-      servers.push({ label: "Server 2 (Mirror)", src: embedUrl.replace("/e/", "/d/"), type: "iframe" });
+      servers.push({ label: "Mirror", src: embedUrl.replace("/e/", "/d/"), type: "iframe" });
     }
   }
   if (previewUrl) {
-    servers.push({ label: "Preview GIF", src: previewUrl, type: "img" });
+    servers.push({ label: "Preview", src: previewUrl, type: "img" });
   }
   return servers;
 }
 
 export default function VideoDetail() {
   const { id } = useParams<{ id: string }>();
+  const [, setLocation] = useLocation();
   const sessionId = getSessionId();
   const playerRef = useRef<HTMLDivElement>(null);
   const { isFullscreen, enter: enterFS, exit: exitFS } = useFullscreen(playerRef);
+
   const [activeServer, setActiveServer] = useState(0);
+  const [videoStarted, setVideoStarted] = useState(false);
   const [bookmarked, setBookmarked] = useState(false);
+  const [watchLater, setWatchLater] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [embedCopied, setEmbedCopied] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: video, isLoading, isError } = useGetRecording(id || "", {
@@ -81,18 +86,23 @@ export default function VideoDetail() {
 
   const { data: related, isLoading: relatedLoading } = useListRelatedRecordings(
     { id: id || "", limit: 12 },
-    { query: { enabled: !!id } },
+    { query: { enabled: !!id, queryKey: getListRelatedRecordingsQueryKey({ id: id || "", limit: 12 }) } },
   );
 
   const { data: reactions, refetch: refetchReactions } = useGetReactions(
     { recording_id: id || "", session_id: sessionId },
-    { query: { enabled: !!id } },
+    { query: { enabled: !!id, queryKey: getGetReactionsQueryKey({ recording_id: id || "", session_id: sessionId }) } },
   );
 
   const toggleReaction = useToggleReaction();
 
   useEffect(() => {
-    if (id) setBookmarked(isBookmarked(id));
+    setVideoStarted(false);
+    setActiveServer(0);
+    if (id) {
+      setBookmarked(isBookmarked(id));
+      setWatchLater(isInWatchLater(id));
+    }
   }, [id]);
 
   useEffect(() => {
@@ -110,6 +120,17 @@ export default function VideoDetail() {
     }
   }, [video]);
 
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === "f" || e.key === "F") {
+        isFullscreen ? exitFS() : enterFS();
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [isFullscreen, enterFS, exitFS]);
+
   const servers = deriveServers(video?.embed_url, video?.preview_url);
   const currentServer = servers[activeServer] ?? servers[0];
 
@@ -117,13 +138,20 @@ export default function VideoDetail() {
     if (!id) return;
     toggleReaction.mutate(
       { data: { recording_id: id, type, session_id: sessionId } },
-      { onSuccess: () => refetchReactions() },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({
+            queryKey: getGetReactionsQueryKey({ recording_id: id, session_id: sessionId }),
+          });
+          refetchReactions();
+        },
+      },
     );
   };
 
   const handleBookmark = () => {
     if (!video) return;
-    const isNowBookmarked = toggleBookmark({
+    const savedRec = {
       id: video.id,
       username: video.username,
       filename: video.filename,
@@ -132,16 +160,43 @@ export default function VideoDetail() {
       resolution: video.resolution,
       timestamp: video.timestamp,
       saved_at: new Date().toISOString(),
-    });
-    setBookmarked(isNowBookmarked);
+    };
+    setBookmarked(toggleBookmark(savedRec));
+  };
+
+  const handleWatchLater = () => {
+    if (!video) return;
+    const savedRec = {
+      id: video.id,
+      username: video.username,
+      filename: video.filename,
+      room_title: video.room_title,
+      thumbnail_url: video.thumbnail_url,
+      resolution: video.resolution,
+      timestamp: video.timestamp,
+      saved_at: new Date().toISOString(),
+    };
+    setWatchLater(toggleWatchLater(savedRec));
   };
 
   const handleShare = () => {
     navigator.clipboard.writeText(window.location.href).then(() => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setCopied(false), 2500);
     });
   };
+
+  const handleCopyEmbed = () => {
+    if (!currentServer?.src) return;
+    const code = `<iframe src="${currentServer.src}" width="960" height="540" frameborder="0" allowfullscreen allow="autoplay; fullscreen"></iframe>`;
+    navigator.clipboard.writeText(code).then(() => {
+      setEmbedCopied(true);
+      setTimeout(() => setEmbedCopied(false), 2500);
+    });
+  };
+
+  const totalReactions = (reactions?.likes ?? 0) + (reactions?.dislikes ?? 0);
+  const likePercent = totalReactions > 0 ? Math.round(((reactions?.likes ?? 0) / totalReactions) * 100) : null;
 
   if (isError) {
     return (
@@ -163,17 +218,26 @@ export default function VideoDetail() {
   return (
     <Layout>
       <div className="container mx-auto px-4 sm:px-6 py-8 max-w-7xl">
-        <Link
-          href="/browse"
-          className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors mb-6 group"
-        >
-          <ArrowLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" />
-          Browse
-        </Link>
+        <div className="flex items-center justify-between mb-6">
+          <Link
+            href="/browse"
+            className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors group"
+          >
+            <ArrowLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" />
+            Browse
+          </Link>
+          <button
+            onClick={() => setLocation("/random")}
+            className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Shuffle className="w-3 h-3" />
+            Random
+          </button>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-8">
-          {/* ─── Main column ──────────────────────────────────────────── */}
-          <div className="space-y-6 min-w-0">
+          {/* ─── Main column ──────────────────────────────────── */}
+          <div className="space-y-5 min-w-0">
             {/* Server selector */}
             {!isLoading && servers.length > 1 && (
               <div className="flex items-center gap-2">
@@ -182,7 +246,7 @@ export default function VideoDetail() {
                   {servers.map((s, i) => (
                     <button
                       key={i}
-                      onClick={() => setActiveServer(i)}
+                      onClick={() => { setActiveServer(i); setVideoStarted(false); }}
                       className={`px-3 py-1 text-[11px] font-medium rounded-[2px] border transition-all ${
                         activeServer === i
                           ? "bg-primary text-white border-primary"
@@ -196,7 +260,7 @@ export default function VideoDetail() {
               </div>
             )}
 
-            {/* Player */}
+            {/* Player — click-to-play */}
             {isLoading ? (
               <Skeleton className="w-full aspect-video" />
             ) : video ? (
@@ -204,9 +268,39 @@ export default function VideoDetail() {
                 ref={playerRef}
                 className="relative group aspect-video w-full bg-black overflow-hidden rounded-sm"
               >
-                {currentServer?.type === "iframe" ? (
+                {currentServer?.type === "iframe" && !videoStarted ? (
+                  /* Poster / click-to-play */
+                  <button
+                    className="absolute inset-0 w-full h-full cursor-pointer focus:outline-none"
+                    onClick={() => setVideoStarted(true)}
+                    aria-label="Play video"
+                  >
+                    {video.thumbnail_url ? (
+                      <img
+                        src={video.thumbnail_url}
+                        alt={video.username}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-black flex items-center justify-center">
+                        <Clapperboard className="w-12 h-12 text-white/10" />
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center gap-3">
+                      <div className="w-16 h-16 rounded-full bg-primary/90 hover:bg-primary flex items-center justify-center shadow-lg shadow-primary/30 transition-all hover:scale-105">
+                        <Play className="w-7 h-7 text-white fill-white ml-1" />
+                      </div>
+                      <span className="text-white/80 text-xs font-medium">Click to play</span>
+                    </div>
+                    {video.resolution && (
+                      <div className="absolute top-3 right-3 text-[10px] font-bold text-white/80 bg-black/60 px-2 py-0.5 rounded-[2px]">
+                        {video.resolution}
+                      </div>
+                    )}
+                  </button>
+                ) : currentServer?.type === "iframe" ? (
                   <iframe
-                    key={currentServer.src}
+                    key={`${currentServer.src}-${activeServer}`}
                     src={currentServer.src}
                     className="w-full h-full border-0"
                     allowFullScreen
@@ -231,13 +325,16 @@ export default function VideoDetail() {
                   </div>
                 )}
 
-                <button
-                  onClick={isFullscreen ? exitFS : enterFS}
-                  className="absolute bottom-3 right-3 z-10 w-8 h-8 flex items-center justify-center bg-black/60 hover:bg-black/80 text-white/70 hover:text-white rounded transition-all opacity-0 group-hover:opacity-100"
-                  aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-                >
-                  {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-                </button>
+                {videoStarted && (
+                  <button
+                    onClick={isFullscreen ? exitFS : enterFS}
+                    className="absolute bottom-3 right-3 z-10 w-8 h-8 flex items-center justify-center bg-black/60 hover:bg-black/80 text-white/70 hover:text-white rounded transition-all opacity-0 group-hover:opacity-100"
+                    aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+                    title="Fullscreen (F)"
+                  >
+                    {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                  </button>
+                )}
               </div>
             ) : null}
 
@@ -299,7 +396,7 @@ export default function VideoDetail() {
                   )}
                 </div>
 
-                {/* Action bar: like · dislike · bookmark · share · download */}
+                {/* Action bar */}
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => handleReaction("like")}
@@ -310,9 +407,7 @@ export default function VideoDetail() {
                     }`}
                   >
                     <ThumbsUp className="w-3.5 h-3.5" />
-                    {reactions?.likes != null && reactions.likes > 0 && (
-                      <span>{reactions.likes.toLocaleString()}</span>
-                    )}
+                    {reactions?.likes != null && reactions.likes > 0 && <span>{reactions.likes.toLocaleString()}</span>}
                     Like
                   </button>
 
@@ -325,9 +420,7 @@ export default function VideoDetail() {
                     }`}
                   >
                     <ThumbsDown className="w-3.5 h-3.5" />
-                    {reactions?.dislikes != null && reactions.dislikes > 0 && (
-                      <span>{reactions.dislikes.toLocaleString()}</span>
-                    )}
+                    {reactions?.dislikes != null && reactions.dislikes > 0 && <span>{reactions.dislikes.toLocaleString()}</span>}
                     Dislike
                   </button>
 
@@ -344,21 +437,40 @@ export default function VideoDetail() {
                   </button>
 
                   <button
+                    onClick={handleWatchLater}
+                    className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border transition-all ${
+                      watchLater
+                        ? "bg-blue-500/10 border-blue-500/40 text-blue-400"
+                        : "border-border/50 text-muted-foreground hover:border-border hover:text-foreground"
+                    }`}
+                  >
+                    <ListVideo className="w-3.5 h-3.5" />
+                    {watchLater ? "Queued" : "Watch Later"}
+                  </button>
+
+                  <button
                     onClick={handleShare}
                     className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border border-border/50 text-muted-foreground hover:border-border hover:text-foreground transition-all"
                   >
                     {copied ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-green-500" />
-                        Copied!
-                      </>
+                      <><Check className="w-3.5 h-3.5 text-green-500" /> Copied!</>
                     ) : (
-                      <>
-                        <Share2 className="w-3.5 h-3.5" />
-                        Share
-                      </>
+                      <><Share2 className="w-3.5 h-3.5" /> Share</>
                     )}
                   </button>
+
+                  {currentServer?.src && currentServer.type === "iframe" && (
+                    <button
+                      onClick={handleCopyEmbed}
+                      className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border border-border/50 text-muted-foreground hover:border-border hover:text-foreground transition-all"
+                    >
+                      {embedCopied ? (
+                        <><Check className="w-3.5 h-3.5 text-green-500" /> Copied!</>
+                      ) : (
+                        <><Code2 className="w-3.5 h-3.5" /> Embed</>
+                      )}
+                    </button>
+                  )}
 
                   {video.embed_url && (
                     <a
@@ -368,7 +480,7 @@ export default function VideoDetail() {
                       className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border border-border/50 text-muted-foreground hover:border-border hover:text-foreground transition-all"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      Open source
+                      Source
                     </a>
                   )}
 
@@ -380,6 +492,22 @@ export default function VideoDetail() {
                     History
                   </Link>
                 </div>
+
+                {/* Like ratio bar */}
+                {likePercent !== null && totalReactions > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground/50">
+                      <span>{likePercent}% liked</span>
+                      <span>{totalReactions.toLocaleString()} ratings</span>
+                    </div>
+                    <div className="h-1 bg-secondary rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full transition-all duration-500"
+                        style={{ width: `${likePercent}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {/* Tags */}
                 {video.tags && video.tags.length > 0 && (
@@ -400,7 +528,6 @@ export default function VideoDetail() {
                   </div>
                 )}
 
-                {/* Browse by gender */}
                 {video.gender && (
                   <div className="text-xs text-muted-foreground/60 pt-1">
                     <Link
@@ -420,11 +547,20 @@ export default function VideoDetail() {
             ) : null}
           </div>
 
-          {/* ─── Sidebar — Related ────────────────────────────────────── */}
+          {/* ─── Sidebar — Related ─────────────────────────── */}
           <div className="space-y-4">
-            <p className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground font-semibold">
-              More from {video?.username ?? "this performer"}
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground font-semibold">
+                More from {video?.username ?? "this performer"}
+              </p>
+              <button
+                onClick={() => setLocation("/random")}
+                className="text-[10px] text-muted-foreground/50 hover:text-primary transition-colors flex items-center gap-1"
+              >
+                <Shuffle className="w-3 h-3" />
+                Random
+              </button>
+            </div>
 
             {relatedLoading ? (
               <div className="space-y-4">
@@ -434,7 +570,6 @@ export default function VideoDetail() {
                     <div className="flex-1 space-y-1.5 pt-0.5">
                       <Skeleton className="h-3 w-full" />
                       <Skeleton className="h-3 w-2/3" />
-                      <Skeleton className="h-3 w-1/2" />
                     </div>
                   </div>
                 ))}
@@ -445,11 +580,11 @@ export default function VideoDetail() {
                   .filter((r) => r.id !== id)
                   .map((rec) => (
                     <Link key={rec.id} href={`/video/${rec.id}`} className="group flex gap-3 outline-none">
-                      <div className="w-28 aspect-video shrink-0 overflow-hidden bg-secondary rounded-[2px]">
+                      <div className="w-28 aspect-video shrink-0 overflow-hidden bg-secondary rounded-[2px] relative">
                         {rec.thumbnail_url ? (
                           <img
                             src={rec.thumbnail_url}
-                            alt={rec.filename}
+                            alt={rec.username}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                             loading="lazy"
                           />
@@ -458,11 +593,14 @@ export default function VideoDetail() {
                             <Clapperboard className="w-4 h-4 text-muted-foreground/20" />
                           </div>
                         )}
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20">
+                          <Play className="w-4 h-4 text-white fill-white" />
+                        </div>
                       </div>
                       <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
-                        <h4 className="text-[11px] font-medium line-clamp-2 leading-snug text-foreground/80 group-hover:text-foreground transition-colors">
-                          {rec.room_title || rec.filename}
-                        </h4>
+                        <p className="text-[11px] font-semibold text-primary/80 group-hover:text-primary transition-colors truncate">
+                          {rec.username}
+                        </p>
                         <p className="text-[10px] text-muted-foreground/50">
                           {formatRelativeTime(rec.timestamp)}
                         </p>
