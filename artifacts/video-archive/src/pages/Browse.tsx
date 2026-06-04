@@ -108,7 +108,7 @@ export default function Browse() {
           <div className="flex flex-col sm:flex-row sm:items-center gap-4">
             <div>
               <h1 className="text-xl font-bold tracking-tight">Browse</h1>
-              {data && (
+              {data && data.total != null && (
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {data.total.toLocaleString()} recordings
                 </p>
