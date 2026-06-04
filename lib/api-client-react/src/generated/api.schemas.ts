@@ -88,6 +88,55 @@ export interface ErrorResponse {
   error: string;
 }
 
+export interface ReactionCount {
+  likes: number;
+  dislikes: number;
+  /** @nullable */
+  user_reaction?: string | null;
+}
+
+export interface ReactionInput {
+  recording_id: string;
+  type: string;
+  session_id: string;
+}
+
+export interface Comment {
+  id: number;
+  recording_id: string;
+  /** @nullable */
+  parent_id?: number | null;
+  author: string;
+  content: string;
+  deleted?: boolean;
+  likes: number;
+  user_liked?: boolean;
+  created_at: string;
+  replies?: Comment[];
+}
+
+export interface CreateCommentInput {
+  recording_id: string;
+  author: string;
+  content: string;
+  session_id: string;
+}
+
+export interface CreateReplyInput {
+  author: string;
+  content: string;
+  session_id: string;
+}
+
+export interface SessionInput {
+  session_id: string;
+}
+
+export interface CommentLikeResult {
+  likes: number;
+  liked: boolean;
+}
+
 export type ListRecordingsParams = {
 page?: number;
 limit?: number;
@@ -116,4 +165,24 @@ export type ListRelatedRecordingsParams = {
 id: string;
 limit?: number;
 };
+
+export type GetReactionsParams = {
+recording_id: string;
+session_id?: string;
+};
+
+export type ListCommentsParams = {
+recording_id: string;
+sort?: ListCommentsSort;
+session_id?: string;
+};
+
+export type ListCommentsSort = typeof ListCommentsSort[keyof typeof ListCommentsSort];
+
+
+export const ListCommentsSort = {
+  top: 'top',
+  new: 'new',
+  old: 'old',
+} as const;
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Search, X, Menu, Sun, Moon, Film } from "lucide-react";
+import { Search, X, Menu, Sun, Moon, Film, Bookmark, History } from "lucide-react";
 
 function useDarkMode() {
   const [dark, setDark] = useState(() => {
@@ -103,6 +103,11 @@ export function Navbar() {
     { href: "/tags", label: "Tags" },
   ];
 
+  const iconLinks = [
+    { href: "/bookmarks", label: "Bookmarks", Icon: Bookmark },
+    { href: "/history", label: "History", Icon: History },
+  ];
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/90 backdrop-blur-xl">
       <div className="container mx-auto px-4 sm:px-6 h-14 flex items-center gap-4">
@@ -132,7 +137,7 @@ export function Navbar() {
 
         <div className="flex-1" />
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           {searchOpen ? (
             <form onSubmit={handleSearch} className="flex items-center gap-2">
               <input
@@ -163,6 +168,21 @@ export function Navbar() {
             </button>
           )}
 
+          {/* Icon nav — desktop only */}
+          {!searchOpen && iconLinks.map(({ href, label, Icon }) => (
+            <Link key={href} href={href} title={label}>
+              <span
+                className={`hidden sm:flex items-center justify-center w-8 h-8 rounded transition-colors ${
+                  isActive(href)
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+              </span>
+            </Link>
+          ))}
+
           <button
             onClick={() => setDark((d) => !d)}
             className="hidden sm:flex items-center justify-center w-8 h-8 text-muted-foreground hover:text-foreground transition-colors rounded"
@@ -184,7 +204,7 @@ export function Navbar() {
 
       {mobileOpen && (
         <div className="md:hidden border-t border-border/50 bg-background/98 backdrop-blur-xl px-4 py-4 space-y-1">
-          {navLinks.map(({ href, label }) => (
+          {[...navLinks, ...iconLinks.map(({ href, label }) => ({ href, label }))].map(({ href, label }) => (
             <Link key={href} href={href}>
               <span
                 className={`block px-3 py-2.5 text-sm rounded transition-colors ${
@@ -238,18 +258,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
               className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground/50"
               aria-label="Footer navigation"
             >
-              <Link href="/browse" className="hover:text-muted-foreground transition-colors">
-                Browse
-              </Link>
-              <Link href="/performers" className="hover:text-muted-foreground transition-colors">
-                Performers
-              </Link>
-              <Link href="/tags" className="hover:text-muted-foreground transition-colors">
-                Tags
-              </Link>
+              <Link href="/browse" className="hover:text-muted-foreground transition-colors">Browse</Link>
+              <Link href="/performers" className="hover:text-muted-foreground transition-colors">Performers</Link>
+              <Link href="/tags" className="hover:text-muted-foreground transition-colors">Tags</Link>
+              <Link href="/bookmarks" className="hover:text-muted-foreground transition-colors">Bookmarks</Link>
+              <Link href="/history" className="hover:text-muted-foreground transition-colors">History</Link>
               <span className="hidden sm:block w-px h-3 bg-border/40 self-center" />
-              <span className="hover:text-muted-foreground transition-colors cursor-default">Terms</span>
-              <span className="hover:text-muted-foreground transition-colors cursor-default">Privacy</span>
+              <span className="cursor-default">Terms</span>
+              <span className="cursor-default">Privacy</span>
             </nav>
           </div>
           <div className="mt-8 pt-5 border-t border-border/30 text-[11px] text-muted-foreground/30">

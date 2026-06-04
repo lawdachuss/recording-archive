@@ -195,3 +195,100 @@ export const GetStatsResponse = zod.object({
 })
 
 
+/**
+ * @summary Get like/dislike counts for a recording
+ */
+export const GetReactionsQueryParams = zod.object({
+  "recording_id": zod.coerce.string(),
+  "session_id": zod.coerce.string().optional()
+})
+
+export const GetReactionsResponse = zod.object({
+  "likes": zod.number(),
+  "dislikes": zod.number(),
+  "user_reaction": zod.string().nullish()
+})
+
+
+/**
+ * @summary Toggle a like or dislike on a recording
+ */
+export const ToggleReactionBody = zod.object({
+  "recording_id": zod.string(),
+  "type": zod.string(),
+  "session_id": zod.string()
+})
+
+export const ToggleReactionResponse = zod.object({
+  "likes": zod.number(),
+  "dislikes": zod.number(),
+  "user_reaction": zod.string().nullish()
+})
+
+
+/**
+ * @summary List threaded comments for a recording
+ */
+export const ListCommentsQueryParams = zod.object({
+  "recording_id": zod.coerce.string(),
+  "sort": zod.enum(['top', 'new', 'old']).optional(),
+  "session_id": zod.coerce.string().optional()
+})
+
+export const ListCommentsResponseItem = zod.object({
+  "id": zod.number(),
+  "recording_id": zod.string(),
+  "parent_id": zod.number().nullish(),
+  "author": zod.string(),
+  "content": zod.string(),
+  "deleted": zod.boolean().optional(),
+  "likes": zod.number(),
+  "user_liked": zod.boolean().optional(),
+  "created_at": zod.string(),
+  "replies": zod.array(zod.unknown()).optional()
+})
+export const ListCommentsResponse = zod.array(ListCommentsResponseItem)
+
+
+/**
+ * @summary Post a comment on a recording
+ */
+export const CreateCommentBody = zod.object({
+  "recording_id": zod.string(),
+  "author": zod.string(),
+  "content": zod.string(),
+  "session_id": zod.string()
+})
+
+
+/**
+ * @summary Reply to a comment
+ */
+export const CreateReplyParams = zod.object({
+  "commentId": zod.coerce.number()
+})
+
+export const CreateReplyBody = zod.object({
+  "author": zod.string(),
+  "content": zod.string(),
+  "session_id": zod.string()
+})
+
+
+/**
+ * @summary Toggle like on a comment
+ */
+export const ToggleCommentLikeParams = zod.object({
+  "commentId": zod.coerce.number()
+})
+
+export const ToggleCommentLikeBody = zod.object({
+  "session_id": zod.string()
+})
+
+export const ToggleCommentLikeResponse = zod.object({
+  "likes": zod.number(),
+  "liked": zod.boolean()
+})
+
+
