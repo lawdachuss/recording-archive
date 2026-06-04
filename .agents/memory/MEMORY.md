@@ -1,0 +1,3 @@
+- [Tailwind v4 dark mode](tailwind-v4-dark.md) — @apply dark in CSS fails; use JS classList.add("dark") instead
+- [Orval naming collisions](orval-naming.md) — path params + query params on same operation generate conflicting *Params types; move to query-only routes to avoid
+- [API client barrel imports](api-client-imports.md) — deep imports like @workspace/api-client-react/src/generated/api.schemas break Vite; always import from barrel

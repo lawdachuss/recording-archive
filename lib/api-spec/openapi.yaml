@@ -3,20 +3,26 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Video archive API backed by Supabase
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: recordings
+    description: Video recordings
+  - name: performers
+    description: Performer profiles
+  - name: tags
+    description: Tag browsing
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +30,160 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /recordings:
+    get:
+      operationId: listRecordings
+      tags: [recordings]
+      summary: List recordings with optional filtering
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 24 }
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: tags
+          in: query
+          schema: { type: string }
+          description: Comma-separated list of tags to filter by
+        - name: gender
+          in: query
+          schema: { type: string }
+        - name: username
+          in: query
+          schema: { type: string }
+        - name: resolution
+          in: query
+          schema: { type: string }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [newest, oldest, largest] }
+      responses:
+        "200":
+          description: Paginated recordings list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingListResponse"
+
+  /recordings/{id}:
+    get:
+      operationId: getRecording
+      tags: [recordings]
+      summary: Get a single recording by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Recording detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Recording"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /recordings/related:
+    get:
+      operationId: listRelatedRecordings
+      tags: [recordings]
+      summary: Get recordings related to a given recording (same performer or shared tags)
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 8 }
+      responses:
+        "200":
+          description: List of related recordings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Recording"
+
+  /performers:
+    get:
+      operationId: listPerformers
+      tags: [performers]
+      summary: List all performers with their recording counts
+      responses:
+        "200":
+          description: Performer list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Performer"
+
+  /performers/{username}:
+    get:
+      operationId: getPerformer
+      tags: [performers]
+      summary: Get performer profile with recent recordings
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Performer profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PerformerProfile"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /tags:
+    get:
+      operationId: listTags
+      tags: [tags]
+      summary: List all tags with occurrence counts
+      responses:
+        "200":
+          description: Tag list with counts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TagCount"
+
+  /stats:
+    get:
+      operationId: getStats
+      tags: [recordings]
+      summary: Get site-wide stats (total recordings, performers, tags, storage)
+      responses:
+        "200":
+          description: Site stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteStats"
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +191,124 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    Recording:
+      type: object
+      required: [id, username, filename, timestamp, created_at]
+      properties:
+        id:
+          type: string
+        channel_id:
+          type: ["string", "null"]
+        username:
+          type: string
+        filename:
+          type: string
+        timestamp:
+          type: string
+        room_title:
+          type: ["string", "null"]
+        tags:
+          type: array
+          items: { type: string }
+        viewers:
+          type: ["integer", "null"]
+        resolution:
+          type: ["string", "null"]
+        framerate:
+          type: ["integer", "null"]
+        filesize:
+          type: ["integer", "null"]
+        gender:
+          type: ["string", "null"]
+        thumbnail_url:
+          type: ["string", "null"]
+        sprite_url:
+          type: ["string", "null"]
+        embed_url:
+          type: ["string", "null"]
+        preview_url:
+          type: ["string", "null"]
+        instance_id:
+          type: ["string", "null"]
+        created_at:
+          type: string
+        updated_at:
+          type: ["string", "null"]
+
+    RecordingListResponse:
+      type: object
+      required: [data, total, page, limit]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Recording"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    Performer:
+      type: object
+      required: [username, recording_count]
+      properties:
+        username:
+          type: string
+        recording_count:
+          type: integer
+        latest_thumbnail:
+          type: ["string", "null"]
+        gender:
+          type: ["string", "null"]
+        latest_timestamp:
+          type: ["string", "null"]
+
+    PerformerProfile:
+      type: object
+      required: [username, recordings]
+      properties:
+        username:
+          type: string
+        recording_count:
+          type: integer
+        gender:
+          type: ["string", "null"]
+        recordings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Recording"
+
+    TagCount:
+      type: object
+      required: [tag, count]
+      properties:
+        tag:
+          type: string
+        count:
+          type: integer
+
+    SiteStats:
+      type: object
+      required: [total_recordings, total_performers, total_tags, total_size_bytes]
+      properties:
+        total_recordings:
+          type: integer
+        total_performers:
+          type: integer
+        total_tags:
+          type: integer
+        total_size_bytes:
+          type: integer
+        newest_recording:
+          type: ["string", "null"]
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
