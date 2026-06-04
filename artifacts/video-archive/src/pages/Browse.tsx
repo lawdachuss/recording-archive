@@ -1,190 +1,223 @@
 import { useState, useEffect } from "react";
 import { useSearch, useLocation } from "wouter";
-import { useListRecordings } from "@workspace/api-client-react";
+import { useListRecordings, ListRecordingsSort } from "@workspace/api-client-react";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
-import { Button } from "@/components/ui/button";
-import { Search, Filter, Loader2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ListRecordingsSort } from "@workspace/api-client-react";
+import { Search, X, ChevronDown, Loader2 } from "lucide-react";
+
+const SORT_LABELS: Record<ListRecordingsSort, string> = {
+  newest: "Newest",
+  oldest: "Oldest",
+  largest: "Largest",
+};
+
+const GENDER_OPTIONS = [
+  { value: "", label: "Any gender" },
+  { value: "female", label: "Female" },
+  { value: "couple", label: "Couple" },
+];
+
+const RESOLUTION_OPTIONS = [
+  { value: "", label: "Any resolution" },
+  { value: "1080p", label: "1080p" },
+  { value: "720p", label: "720p" },
+  { value: "540p", label: "540p" },
+  { value: "360p", label: "360p" },
+];
 
 export default function Browse() {
   const searchString = useSearch();
   const searchParams = new URLSearchParams(searchString);
-  const [location, setLocation] = useLocation();
+  const [, setLocation] = useLocation();
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState(searchParams.get("search") || "");
   const [tags, setTags] = useState(searchParams.get("tags") || "");
   const [gender, setGender] = useState(searchParams.get("gender") || "");
   const [resolution, setResolution] = useState(searchParams.get("resolution") || "");
-  const [sort, setSort] = useState<ListRecordingsSort>((searchParams.get("sort") as ListRecordingsSort) || ListRecordingsSort.newest);
+  const [sort, setSort] = useState<ListRecordingsSort>(
+    (searchParams.get("sort") as ListRecordingsSort) || ListRecordingsSort.newest
+  );
   const [allRecordings, setAllRecordings] = useState<any[]>([]);
-
-  const limit = 24;
 
   const { data, isLoading, isFetching } = useListRecordings({
     page,
-    limit,
+    limit: 24,
     search: search || undefined,
     tags: tags || undefined,
     gender: gender || undefined,
     resolution: resolution || undefined,
-    sort: sort
+    sort,
   });
 
-  // Reset page and allRecordings when filters change
   useEffect(() => {
     setPage(1);
     setAllRecordings([]);
   }, [searchString]);
 
   useEffect(() => {
-    if (data?.data && page === 1) {
-      setAllRecordings(data.data);
-    } else if (data?.data && page > 1) {
-      setAllRecordings(prev => {
-        // filter out duplicates
-        const newItems = data.data.filter(rec => !prev.some(p => p.id === rec.id));
-        return [...prev, ...newItems];
-      });
+    if (data?.data) {
+      if (page === 1) {
+        setAllRecordings(data.data);
+      } else {
+        setAllRecordings((prev) => {
+          const newItems = data.data.filter((r) => !prev.some((p) => p.id === r.id));
+          return [...prev, ...newItems];
+        });
+      }
     }
   }, [data]);
 
-  const updateFilters = (key: string, value: string) => {
+  const updateFilter = (key: string, value: string) => {
     const params = new URLSearchParams(searchString);
-    if (value) {
-      params.set(key, value);
-    } else {
-      params.delete(key);
-    }
-    // Delete page param to reset
+    value ? params.set(key, value) : params.delete(key);
     params.delete("page");
     setLocation(`/browse?${params.toString()}`);
   };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    updateFilters("search", search);
+    updateFilter("search", search);
   };
 
+  const hasFilters = !!(search || tags || gender || resolution || sort !== ListRecordingsSort.newest);
   const hasMore = data ? data.total > allRecordings.length : false;
 
   return (
     <Layout>
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">Browse Archive</h1>
-          
-          <form onSubmit={handleSearch} className="w-full md:w-auto flex-1 max-w-md relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search by title or performer..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full h-10 bg-secondary/50 border border-border/50 focus:border-primary/50 focus:bg-secondary/80 rounded-lg pl-10 pr-4 text-sm outline-none transition-all"
-            />
-          </form>
-        </div>
-
-        {/* Filters */}
-        <div className="bg-card border border-border/50 rounded-xl p-4 mb-8 flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2 text-muted-foreground mr-2">
-            <Filter className="w-4 h-4" />
-            <span className="text-sm font-medium">Filters</span>
+      <div className="container mx-auto px-4 sm:px-6 py-10">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-8 border-b border-border/50 pb-8">
+          <div>
+            <h1 className="text-xl font-bold tracking-tight">Browse</h1>
+            {data && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {data.total.toLocaleString()} recordings
+              </p>
+            )}
           </div>
 
-          <Select value={sort} onValueChange={(val: any) => updateFilters("sort", val)}>
-            <SelectTrigger className="w-[140px] h-9">
-              <SelectValue placeholder="Sort by" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="newest">Newest First</SelectItem>
-              <SelectItem value="oldest">Oldest First</SelectItem>
-              <SelectItem value="largest">Largest Files</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="sm:ml-auto flex flex-wrap items-center gap-2">
+            {/* Search */}
+            <form onSubmit={handleSearch} className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-8 w-48 bg-secondary/50 border border-border/60 hover:border-border focus:border-primary/60 rounded pl-8 pr-3 text-xs outline-none transition-colors"
+              />
+            </form>
 
-          <Select value={gender} onValueChange={(val) => updateFilters("gender", val === "all" ? "" : val)}>
-            <SelectTrigger className="w-[130px] h-9">
-              <SelectValue placeholder="Gender" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Genders</SelectItem>
-              <SelectItem value="female">Female</SelectItem>
-              <SelectItem value="couple">Couple</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select value={resolution} onValueChange={(val) => updateFilters("resolution", val === "all" ? "" : val)}>
-            <SelectTrigger className="w-[130px] h-9">
-              <SelectValue placeholder="Resolution" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Any Res</SelectItem>
-              <SelectItem value="1080p">1080p</SelectItem>
-              <SelectItem value="720p">720p</SelectItem>
-              <SelectItem value="540p">540p</SelectItem>
-              <SelectItem value="360p">360p</SelectItem>
-            </SelectContent>
-          </Select>
-
-          {tags && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 text-primary rounded-md text-sm border border-primary/20">
-              <span className="font-semibold">Tag:</span> {tags}
-              <button 
-                onClick={() => updateFilters("tags", "")}
-                className="ml-2 hover:text-white"
+            {/* Sort */}
+            <div className="relative">
+              <select
+                value={sort}
+                onChange={(e) => updateFilter("sort", e.target.value)}
+                className="h-8 appearance-none bg-secondary/50 border border-border/60 hover:border-border rounded pl-3 pr-7 text-xs text-foreground outline-none transition-colors cursor-pointer"
               >
-                &times;
-              </button>
+                {Object.entries(SORT_LABELS).map(([val, label]) => (
+                  <option key={val} value={val}>{label}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
             </div>
-          )}
+
+            {/* Gender */}
+            <div className="relative">
+              <select
+                value={gender}
+                onChange={(e) => updateFilter("gender", e.target.value)}
+                className="h-8 appearance-none bg-secondary/50 border border-border/60 hover:border-border rounded pl-3 pr-7 text-xs text-foreground outline-none transition-colors cursor-pointer"
+              >
+                {GENDER_OPTIONS.map(({ value, label }) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+            </div>
+
+            {/* Resolution */}
+            <div className="relative">
+              <select
+                value={resolution}
+                onChange={(e) => updateFilter("resolution", e.target.value)}
+                className="h-8 appearance-none bg-secondary/50 border border-border/60 hover:border-border rounded pl-3 pr-7 text-xs text-foreground outline-none transition-colors cursor-pointer"
+              >
+                {RESOLUTION_OPTIONS.map(({ value, label }) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+            </div>
+
+            {hasFilters && (
+              <button
+                onClick={() => setLocation("/browse")}
+                className="h-8 flex items-center gap-1.5 px-3 text-xs text-muted-foreground hover:text-foreground border border-border/60 hover:border-border rounded transition-colors"
+              >
+                <X className="w-3 h-3" /> Clear
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Active tag filter pill */}
+        {tags && (
+          <div className="flex items-center gap-2 mb-6">
+            <span className="text-xs text-muted-foreground">Tag:</span>
+            <span className="inline-flex items-center gap-1.5 text-xs text-primary border border-primary/30 bg-primary/5 px-2.5 py-1 rounded-sm">
+              {tags}
+              <button onClick={() => updateFilter("tags", "")} className="hover:text-white transition-colors">
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          </div>
+        )}
 
         {/* Grid */}
         {isLoading && page === 1 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 gap-y-10">
-            {[...Array(15)].map((_, i) => (
-              <div key={i} className="space-y-3">
-                <Skeleton className="w-full aspect-video rounded-xl" />
-                <Skeleton className="h-4 w-3/4" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8">
+            {[...Array(20)].map((_, i) => (
+              <div key={i} className="space-y-2.5">
+                <Skeleton className="w-full aspect-video" />
+                <Skeleton className="h-3 w-3/4" />
                 <Skeleton className="h-3 w-1/2" />
               </div>
             ))}
           </div>
         ) : allRecordings.length > 0 ? (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 gap-y-10">
-              {allRecordings.map(rec => (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8">
+              {allRecordings.map((rec) => (
                 <VideoCard key={rec.id} recording={rec} />
               ))}
             </div>
 
             {hasMore && (
               <div className="mt-12 flex justify-center">
-                <Button 
-                  size="lg" 
-                  variant="outline"
-                  className="w-full max-w-sm rounded-full border-border/50 hover:bg-secondary"
-                  onClick={() => setPage(p => p + 1)}
+                <button
+                  className="h-10 px-8 border border-border/60 hover:border-border text-sm text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 flex items-center gap-2"
+                  onClick={() => setPage((p) => p + 1)}
                   disabled={isFetching}
                 >
-                  {isFetching ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                  {isFetching ? "Loading..." : "Load More"}
-                </Button>
+                  {isFetching && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  {isFetching ? "Loading..." : "Load more"}
+                </button>
               </div>
             )}
           </>
         ) : (
-          <div className="text-center py-32 border border-border/30 rounded-2xl bg-card/50">
-            <h3 className="text-xl font-semibold mb-2">No recordings found</h3>
-            <p className="text-muted-foreground mb-6">Try adjusting your filters or search query.</p>
-            <Button onClick={() => setLocation('/browse')} variant="outline">
-              Clear Filters
-            </Button>
+          <div className="py-32 text-center border border-border/40">
+            <p className="text-muted-foreground text-sm mb-4">No recordings match your filters.</p>
+            <button
+              onClick={() => setLocation("/browse")}
+              className="text-xs text-muted-foreground hover:text-foreground underline transition-colors"
+            >
+              Clear all filters
+            </button>
           </div>
         )}
       </div>

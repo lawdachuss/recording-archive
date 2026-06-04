@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Search, Film, Users, Hash, PlaySquare } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Search, X } from "lucide-react";
 
 export function AgeGate() {
   const [isOpen, setIsOpen] = useState(false);
@@ -18,32 +17,32 @@ export function AgeGate() {
   if (!mounted || !isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/95 backdrop-blur-md">
-      <div className="w-full max-w-md p-8 border border-border/50 bg-card/80 backdrop-blur-xl rounded-2xl shadow-2xl text-center space-y-6 animate-in fade-in zoom-in duration-500">
-        <div className="mx-auto w-16 h-16 bg-primary/10 text-primary rounded-full flex items-center justify-center mb-4">
-          <span className="text-3xl font-bold">18+</span>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/98 backdrop-blur-sm">
+      <div className="w-full max-w-sm px-8 py-12 text-center">
+        <div className="mb-8">
+          <div className="text-xs uppercase tracking-[0.3em] text-muted-foreground mb-6">Age Verification Required</div>
+          <div className="text-6xl font-black tracking-tighter text-foreground mb-2">18+</div>
+          <div className="w-8 h-px bg-primary mx-auto mb-6" />
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            This site contains adult material. By entering, you confirm you are 18 years of age or older.
+          </p>
         </div>
-        <h2 className="text-2xl font-bold tracking-tight">Age Verification</h2>
-        <p className="text-muted-foreground leading-relaxed">
-          This website contains adult material. You must be 18 years of age or older to enter.
-        </p>
-        <div className="flex gap-4 pt-4">
-          <Button 
-            variant="outline" 
-            className="flex-1 border-muted hover:bg-muted/50"
-            onClick={() => window.location.href = "https://google.com"}
-          >
-            I am under 18
-          </Button>
-          <Button 
-            className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
+        <div className="space-y-3">
+          <button
+            className="w-full h-12 bg-primary text-white text-sm font-semibold tracking-wide hover:bg-primary/90 transition-colors"
             onClick={() => {
               localStorage.setItem("age-gate-passed", "true");
               setIsOpen(false);
             }}
           >
-            Enter
-          </Button>
+            I am 18 or older — Enter
+          </button>
+          <button
+            className="w-full h-12 border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+            onClick={() => (window.location.href = "https://google.com")}
+          >
+            Exit
+          </button>
         </div>
       </div>
     </div>
@@ -53,81 +52,101 @@ export function AgeGate() {
 export function Navbar() {
   const [location, setLocation] = useLocation();
   const [search, setSearch] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (search.trim()) {
       setLocation(`/browse?search=${encodeURIComponent(search.trim())}`);
+      setSearchOpen(false);
     } else {
-      setLocation('/browse');
+      setLocation("/browse");
     }
   };
 
-  return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
-      <div className="container mx-auto px-4 h-16 flex items-center justify-between gap-6">
-        <div className="flex items-center gap-8">
-          <Link href="/" className="flex items-center gap-2 group">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-primary-foreground group-hover:scale-105 transition-transform duration-300">
-              <PlaySquare className="w-5 h-5" />
-            </div>
-            <span className="font-bold text-lg tracking-tight hidden sm:inline-block">
-              Archive<span className="text-primary">VR</span>
-            </span>
-          </Link>
-          
-          <nav className="hidden md:flex items-center gap-1">
-            <NavLink href="/" icon={<Film className="w-4 h-4" />}>Home</NavLink>
-            <NavLink href="/browse" icon={<Search className="w-4 h-4" />}>Browse</NavLink>
-            <NavLink href="/performers" icon={<Users className="w-4 h-4" />}>Performers</NavLink>
-            <NavLink href="/tags" icon={<Hash className="w-4 h-4" />}>Tags</NavLink>
-          </nav>
-        </div>
+  const isActive = (href: string) =>
+    href === "/" ? location === "/" : location.startsWith(href);
 
-        <form onSubmit={handleSearch} className="flex-1 max-w-sm relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search recordings..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full h-10 bg-secondary/50 border border-transparent focus:border-primary/50 focus:bg-secondary/80 rounded-full pl-10 pr-4 text-sm outline-none transition-all duration-300 placeholder:text-muted-foreground/70"
-          />
-        </form>
+  return (
+    <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/90 backdrop-blur-xl">
+      <div className="container mx-auto px-4 sm:px-6 h-14 flex items-center gap-6">
+        <Link href="/" className="shrink-0 flex items-center gap-1 group">
+          <span className="font-black text-base tracking-tighter text-foreground group-hover:text-primary transition-colors">
+            VAULT
+          </span>
+          <span className="w-1.5 h-1.5 rounded-full bg-primary mb-0.5" />
+        </Link>
+
+        <nav className="hidden md:flex items-center gap-1 text-sm">
+          {[
+            { href: "/browse", label: "Browse" },
+            { href: "/performers", label: "Performers" },
+            { href: "/tags", label: "Tags" },
+          ].map(({ href, label }) => (
+            <Link key={href} href={href}>
+              <span
+                className={`px-3 py-1.5 rounded transition-colors ${
+                  isActive(href)
+                    ? "text-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {label}
+              </span>
+            </Link>
+          ))}
+        </nav>
+
+        <div className="flex-1" />
+
+        <div className="flex items-center">
+          {searchOpen ? (
+            <form onSubmit={handleSearch} className="flex items-center gap-2">
+              <input
+                autoFocus
+                type="text"
+                placeholder="Search recordings..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-56 h-8 bg-secondary/60 border border-border/60 focus:border-primary/50 rounded px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/50"
+              />
+              <button
+                type="button"
+                onClick={() => setSearchOpen(false)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </form>
+          ) : (
+            <button
+              onClick={() => setSearchOpen(true)}
+              className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors text-sm"
+            >
+              <Search className="w-4 h-4" />
+              <span className="hidden sm:inline">Search</span>
+            </button>
+          )}
+        </div>
       </div>
     </header>
   );
 }
 
-function NavLink({ href, children, icon }: { href: string; children: React.ReactNode; icon: React.ReactNode }) {
-  const [location] = useLocation();
-  const isActive = location === href || (href !== '/' && location.startsWith(href));
-  
-  return (
-    <Link href={href}>
-      <span className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-        isActive 
-          ? "bg-secondary text-foreground" 
-          : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-      }`}>
-        {icon}
-        {children}
-      </span>
-    </Link>
-  );
-}
-
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col font-sans selection:bg-primary/30">
+    <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
       <AgeGate />
       <Navbar />
-      <main className="flex-1 flex flex-col relative z-0">
-        {children}
-      </main>
-      <footer className="py-8 border-t border-border/40 mt-12 bg-card/30">
-        <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
-          <p>ArchiveVR &copy; {new Date().getFullYear()}. Premium content archive.</p>
+      <main className="flex-1 flex flex-col">{children}</main>
+      <footer className="py-10 border-t border-border/40 mt-16">
+        <div className="container mx-auto px-4 sm:px-6 flex items-center justify-between">
+          <span className="font-black text-sm tracking-tighter text-foreground/40">
+            VAULT<span className="text-primary/40">.</span>
+          </span>
+          <p className="text-xs text-muted-foreground/50">
+            &copy; {new Date().getFullYear()} &mdash; Private Archive
+          </p>
         </div>
       </footer>
     </div>

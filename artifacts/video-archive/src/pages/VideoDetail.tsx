@@ -1,39 +1,31 @@
 import { useParams, Link } from "wouter";
 import { useGetRecording, useListRelatedRecordings, getGetRecordingQueryKey } from "@workspace/api-client-react";
 import { Layout } from "@/components/Layout";
-import { VideoCard } from "@/components/VideoCard";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { formatBytes, formatRelativeTime } from "@/lib/formatters";
-import { Eye, Clock, HardDrive, MonitorPlay, Calendar, Share2, AlertCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Eye, HardDrive, MonitorPlay, AlertCircle, ArrowLeft } from "lucide-react";
 
 export default function VideoDetail() {
   const { id } = useParams<{ id: string }>();
 
   const { data: video, isLoading, isError } = useGetRecording(id || "", {
-    query: {
-      enabled: !!id,
-      queryKey: getGetRecordingQueryKey(id || "")
-    }
+    query: { enabled: !!id, queryKey: getGetRecordingQueryKey(id || "") },
   });
 
-  const { data: related, isLoading: relatedLoading } = useListRelatedRecordings(
-    { id: id || "", limit: 10 },
+  const { data: related } = useListRelatedRecordings(
+    { id: id || "", limit: 8 },
     { query: { enabled: !!id } }
   );
 
   if (isError) {
     return (
       <Layout>
-        <div className="container mx-auto px-4 py-20 text-center">
-          <div className="inline-flex items-center justify-center p-4 bg-destructive/10 rounded-full text-destructive mb-4">
-            <AlertCircle className="w-8 h-8" />
-          </div>
-          <h1 className="text-2xl font-bold mb-2">Recording not found</h1>
-          <p className="text-muted-foreground mb-6">The video you're looking for doesn't exist or was removed.</p>
-          <Link href="/browse">
-            <Button variant="outline">Back to Browse</Button>
+        <div className="container mx-auto px-4 sm:px-6 py-20 text-center">
+          <AlertCircle className="w-8 h-8 text-muted-foreground mx-auto mb-4" />
+          <h1 className="text-xl font-bold mb-2">Recording not found</h1>
+          <p className="text-sm text-muted-foreground mb-6">This video doesn't exist or was removed.</p>
+          <Link href="/browse" className="text-sm text-primary hover:underline">
+            ← Back to Browse
           </Link>
         </div>
       </Layout>
@@ -42,112 +34,102 @@ export default function VideoDetail() {
 
   return (
     <Layout>
-      <div className="container mx-auto px-4 py-6 max-w-7xl">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-6">
+      <div className="container mx-auto px-4 sm:px-6 py-8 max-w-7xl">
+        {/* Breadcrumb */}
+        <Link
+          href="/browse"
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mb-6"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          Browse
+        </Link>
+
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-8">
+          {/* Main */}
+          <div className="space-y-5">
+            {/* Player */}
             {isLoading ? (
-              <Skeleton className="w-full aspect-video rounded-2xl" />
+              <Skeleton className="w-full aspect-video" />
             ) : video ? (
-              <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black ring-1 ring-border/50 shadow-2xl relative isolate group">
+              <div className="aspect-video w-full bg-black overflow-hidden">
                 {video.embed_url ? (
-                  <iframe 
-                    src={video.embed_url} 
-                    className="w-full h-full border-0 absolute inset-0"
-                    allowFullScreen 
+                  <iframe
+                    src={video.embed_url}
+                    className="w-full h-full border-0"
+                    allowFullScreen
                     allow="autoplay; fullscreen"
                   />
+                ) : video.thumbnail_url ? (
+                  <img
+                    src={video.thumbnail_url}
+                    alt={video.filename}
+                    className="w-full h-full object-contain"
+                  />
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center relative">
-                    {video.thumbnail_url && (
-                      <>
-                        <img src={video.thumbnail_url} alt={video.filename} className="absolute inset-0 w-full h-full object-cover blur-sm opacity-50 scale-105" />
-                        <img src={video.thumbnail_url} alt={video.filename} className="relative z-10 max-h-full object-contain drop-shadow-2xl" />
-                      </>
-                    )}
-                    <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <div className="bg-black/80 text-white px-6 py-4 rounded-xl backdrop-blur-md flex items-center gap-3">
-                        <AlertCircle className="w-6 h-6 text-yellow-500" />
-                        <span className="font-medium">Video player unavailable for this recording</span>
-                      </div>
-                    </div>
+                  <div className="w-full h-full flex items-center justify-center">
+                    <AlertCircle className="w-8 h-8 text-muted-foreground" />
                   </div>
                 )}
               </div>
             ) : null}
 
+            {/* Info */}
             {isLoading ? (
-              <div className="space-y-4">
-                <Skeleton className="h-8 w-3/4" />
-                <div className="flex gap-4">
-                  <Skeleton className="h-10 w-32 rounded-full" />
-                  <Skeleton className="h-10 w-32 rounded-full" />
-                </div>
+              <div className="space-y-3">
+                <Skeleton className="h-6 w-3/4" />
+                <Skeleton className="h-4 w-32" />
               </div>
             ) : video ? (
-              <div className="space-y-6">
-                <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-                  <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2">
-                      {video.room_title || video.filename}
-                    </h1>
-                    <div className="flex items-center gap-3 text-lg">
-                      <Link href={`/performers/${video.username}`} className="font-semibold text-primary hover:text-primary/80 transition-colors">
-                        {video.username}
-                      </Link>
-                    </div>
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" className="rounded-full bg-secondary/50">
-                      <Share2 className="w-4 h-4 mr-2" /> Share
-                    </Button>
-                  </div>
+              <div className="space-y-5">
+                <div>
+                  <h1 className="text-lg font-bold tracking-tight leading-snug mb-1.5">
+                    {video.room_title || video.filename}
+                  </h1>
+                  <Link
+                    href={`/performers/${video.username}`}
+                    className="text-sm text-primary hover:text-primary/80 font-medium transition-colors"
+                  >
+                    {video.username}
+                  </Link>
                 </div>
 
-                <div className="flex flex-wrap gap-x-6 gap-y-3 p-4 bg-card rounded-xl border border-border/50 text-sm text-muted-foreground">
+                {/* Metadata strip */}
+                <div className="flex flex-wrap gap-4 py-4 border-y border-border/50 text-xs text-muted-foreground">
                   {video.viewers !== null && (
-                    <div className="flex items-center gap-2">
-                      <Eye className="w-4 h-4" />
-                      <span><strong className="text-foreground">{video.viewers.toLocaleString()}</strong> viewers</span>
-                    </div>
-                  )}
-                  {video.timestamp && (
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4" />
-                      <span className="text-foreground font-medium">{formatRelativeTime(video.timestamp)}</span>
-                    </div>
+                    <span className="flex items-center gap-1.5">
+                      <Eye className="w-3.5 h-3.5" />
+                      <strong className="text-foreground">{video.viewers.toLocaleString()}</strong> viewers
+                    </span>
                   )}
                   {video.resolution && (
-                    <div className="flex items-center gap-2">
-                      <MonitorPlay className="w-4 h-4" />
-                      <span className="text-foreground font-medium">{video.resolution}</span>
-                    </div>
+                    <span className="flex items-center gap-1.5">
+                      <MonitorPlay className="w-3.5 h-3.5" />
+                      <strong className="text-foreground">{video.resolution}</strong>
+                    </span>
                   )}
                   {video.filesize && (
-                    <div className="flex items-center gap-2">
-                      <HardDrive className="w-4 h-4" />
-                      <span className="text-foreground font-medium">{formatBytes(video.filesize)}</span>
-                    </div>
+                    <span className="flex items-center gap-1.5">
+                      <HardDrive className="w-3.5 h-3.5" />
+                      <strong className="text-foreground">{formatBytes(video.filesize)}</strong>
+                    </span>
                   )}
-                  {video.created_at && (
-                    <div className="flex items-center gap-2" title={new Date(video.created_at).toLocaleString()}>
-                      <Calendar className="w-4 h-4" />
-                      <span>Archived {formatRelativeTime(video.created_at)}</span>
-                    </div>
+                  {video.timestamp && (
+                    <span className="text-muted-foreground/70">
+                      Recorded {formatRelativeTime(video.timestamp)}
+                    </span>
                   )}
                 </div>
 
+                {/* Tags */}
                 {video.tags && video.tags.length > 0 && (
-                  <div className="space-y-3 pt-2">
-                    <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Tags</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {video.tags.map(tag => (
+                  <div className="space-y-2.5">
+                    <p className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground font-semibold">Tags</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {video.tags.map((tag) => (
                         <Link key={tag} href={`/browse?tags=${encodeURIComponent(tag)}`}>
-                          <Badge variant="secondary" className="hover:bg-primary/20 hover:text-primary transition-colors cursor-pointer text-sm py-1 px-3">
+                          <span className="inline-block px-2.5 py-1 text-xs border border-border/60 text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors cursor-pointer">
                             {tag}
-                          </Badge>
+                          </span>
                         </Link>
                       ))}
                     </div>
@@ -158,55 +140,43 @@ export default function VideoDetail() {
           </div>
 
           {/* Sidebar */}
-          <div className="space-y-6">
-            <h3 className="text-xl font-bold tracking-tight">Related Recordings</h3>
-            
-            {relatedLoading ? (
+          <div className="space-y-4">
+            <p className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground font-semibold">
+              Related
+            </p>
+            {related && related.length > 0 ? (
               <div className="space-y-4">
-                {[...Array(5)].map((_, i) => (
-                  <div key={i} className="flex gap-3">
-                    <Skeleton className="w-40 aspect-video rounded-lg shrink-0" />
-                    <div className="space-y-2 flex-1 py-1">
-                      <Skeleton className="h-4 w-full" />
-                      <Skeleton className="h-3 w-2/3" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : related && related.length > 0 ? (
-              <div className="space-y-4">
-                {related.filter(r => r.id !== id).map(rec => (
-                  <Link key={rec.id} href={`/video/${rec.id}`} className="group flex gap-3 overflow-hidden outline-none">
-                    <div className="w-40 aspect-video rounded-lg shrink-0 overflow-hidden relative bg-muted">
-                      <img 
-                        src={rec.thumbnail_url || ''} 
-                        alt={rec.filename} 
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                        loading="lazy"
-                      />
-                      {rec.resolution && (
-                        <span className="absolute bottom-1 right-1 px-1 rounded bg-black/80 text-[9px] font-bold text-white uppercase">
-                          {rec.resolution}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0 py-1 flex flex-col justify-between">
-                      <h4 className="font-semibold text-sm line-clamp-2 leading-snug group-hover:text-primary transition-colors">
-                        {rec.room_title || rec.filename}
-                      </h4>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        <div className="font-medium text-foreground/80 mb-0.5">{rec.username}</div>
-                        <div>{formatRelativeTime(rec.timestamp)}</div>
+                {related
+                  .filter((r) => r.id !== id)
+                  .map((rec) => (
+                    <Link
+                      key={rec.id}
+                      href={`/video/${rec.id}`}
+                      className="group flex gap-3 outline-none"
+                    >
+                      <div className="w-28 aspect-video shrink-0 overflow-hidden bg-secondary">
+                        {rec.thumbnail_url && (
+                          <img
+                            src={rec.thumbnail_url}
+                            alt={rec.filename}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            loading="lazy"
+                          />
+                        )}
                       </div>
-                    </div>
-                  </Link>
-                ))}
+                      <div className="flex-1 min-w-0 flex flex-col justify-center">
+                        <h4 className="text-xs font-medium line-clamp-2 leading-snug group-hover:text-primary transition-colors">
+                          {rec.room_title || rec.filename}
+                        </h4>
+                        <p className="text-[11px] text-muted-foreground mt-1">{rec.username}</p>
+                      </div>
+                    </Link>
+                  ))}
               </div>
             ) : (
-              <p className="text-muted-foreground text-sm">No related recordings found.</p>
+              <p className="text-xs text-muted-foreground/60">No related recordings.</p>
             )}
           </div>
-
         </div>
       </div>
     </Layout>
