@@ -3,8 +3,7 @@ import { useGetPerformer, getGetPerformerQueryKey } from "@workspace/api-client-
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Film, Users, AlertCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { AlertCircle, ArrowLeft } from "lucide-react";
 
 export default function PerformerProfile() {
   const { username } = useParams<{ username: string }>();
@@ -12,21 +11,19 @@ export default function PerformerProfile() {
   const { data: profile, isLoading, isError } = useGetPerformer(username || "", {
     query: {
       enabled: !!username,
-      queryKey: getGetPerformerQueryKey(username || "")
-    }
+      queryKey: getGetPerformerQueryKey(username || ""),
+    },
   });
 
   if (isError) {
     return (
       <Layout>
-        <div className="container mx-auto px-4 py-20 text-center">
-          <div className="inline-flex items-center justify-center p-4 bg-destructive/10 rounded-full text-destructive mb-4">
-            <AlertCircle className="w-8 h-8" />
-          </div>
-          <h1 className="text-2xl font-bold mb-2">Performer not found</h1>
-          <p className="text-muted-foreground mb-6">We don't have any records for this performer.</p>
-          <Link href="/performers">
-            <Button variant="outline">Back to Directory</Button>
+        <div className="container mx-auto px-4 sm:px-6 py-20 text-center">
+          <AlertCircle className="w-8 h-8 text-muted-foreground mx-auto mb-4" />
+          <h1 className="text-xl font-bold mb-2">Performer not found</h1>
+          <p className="text-sm text-muted-foreground mb-6">No records for this performer.</p>
+          <Link href="/performers" className="text-sm text-primary hover:underline">
+            ← Directory
           </Link>
         </div>
       </Layout>
@@ -37,82 +34,89 @@ export default function PerformerProfile() {
 
   return (
     <Layout>
-      <div className="container mx-auto px-4 py-8">
-        {/* Profile Header */}
-        <div className="flex flex-col md:flex-row items-center md:items-end gap-6 mb-12 bg-card p-6 md:p-8 rounded-3xl border border-border/50 relative overflow-hidden">
-          {latestThumbnail && (
-             <div className="absolute inset-0 bg-cover bg-center blur-3xl opacity-10" style={{ backgroundImage: `url(${latestThumbnail})` }} />
-          )}
-          
+      {/* Hero band */}
+      <div className="relative border-b border-border/50 overflow-hidden">
+        {latestThumbnail && (
+          <div
+            className="absolute inset-0 bg-cover bg-center opacity-[0.07]"
+            style={{ backgroundImage: `url(${latestThumbnail})` }}
+          />
+        )}
+        <div className="relative container mx-auto px-4 sm:px-6 py-10 flex items-end gap-6">
+          {/* Avatar */}
           {isLoading ? (
-            <Skeleton className="w-32 h-32 rounded-full shrink-0" />
+            <Skeleton className="w-20 h-20 rounded-full shrink-0" />
           ) : (
-            <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-background bg-secondary shrink-0 relative z-10 shadow-2xl">
+            <div className="w-20 h-20 rounded-full overflow-hidden shrink-0 border-2 border-border bg-secondary">
               {latestThumbnail ? (
-                <img src={latestThumbnail} alt={profile.username} className="w-full h-full object-cover object-top" />
+                <img
+                  src={latestThumbnail}
+                  alt={profile?.username}
+                  className="w-full h-full object-cover object-top"
+                />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                  <Users className="w-12 h-12" />
+                <div className="w-full h-full flex items-center justify-center bg-secondary">
+                  <span className="text-xl font-black text-muted-foreground/30 uppercase">
+                    {username?.slice(0, 2)}
+                  </span>
                 </div>
               )}
             </div>
           )}
 
-          <div className="flex-1 text-center md:text-left relative z-10">
+          <div>
+            <Link
+              href="/performers"
+              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors mb-2"
+            >
+              <ArrowLeft className="w-3 h-3" /> Performers
+            </Link>
             {isLoading ? (
-              <div className="space-y-3 flex flex-col items-center md:items-start">
-                <Skeleton className="h-10 w-48" />
-                <Skeleton className="h-6 w-32" />
+              <div className="space-y-2">
+                <Skeleton className="h-7 w-40" />
+                <Skeleton className="h-4 w-24" />
               </div>
             ) : profile ? (
               <div>
-                <h1 className="text-4xl font-bold tracking-tight mb-2 text-foreground drop-shadow-sm">
-                  {profile.username}
-                </h1>
-                <div className="flex items-center justify-center md:justify-start gap-4 text-muted-foreground">
-                  <span className="flex items-center gap-1.5 bg-background/50 backdrop-blur px-3 py-1 rounded-full text-sm font-medium">
-                    <Film className="w-4 h-4" />
-                    {profile.recording_count || profile.recordings.length} Recordings
-                  </span>
+                <h1 className="text-2xl font-black tracking-tight">{profile.username}</h1>
+                <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                  <span>{profile.recording_count || profile.recordings.length} recordings</span>
                   {profile.gender && (
-                    <span className="capitalize bg-background/50 backdrop-blur px-3 py-1 rounded-full text-sm font-medium">
-                      {profile.gender}
-                    </span>
+                    <>
+                      <span className="w-px h-3 bg-border" />
+                      <span className="capitalize">{profile.gender}</span>
+                    </>
                   )}
                 </div>
               </div>
             ) : null}
           </div>
         </div>
+      </div>
 
-        {/* Recordings Grid */}
-        <div className="space-y-6">
-          <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            Collection
-          </h2>
-
-          {isLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 gap-y-10">
-              {[...Array(10)].map((_, i) => (
-                <div key={i} className="space-y-3">
-                  <Skeleton className="w-full aspect-video rounded-xl" />
-                  <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-3 w-1/2" />
-                </div>
-              ))}
-            </div>
-          ) : profile?.recordings && profile.recordings.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 gap-y-10">
-              {profile.recordings.map(rec => (
-                <VideoCard key={rec.id} recording={rec} />
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-20 border border-border/30 rounded-2xl bg-card/50 text-muted-foreground">
-              No recordings found for this performer.
-            </div>
-          )}
-        </div>
+      {/* Recordings */}
+      <div className="container mx-auto px-4 sm:px-6 py-10">
+        {isLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8">
+            {[...Array(10)].map((_, i) => (
+              <div key={i} className="space-y-2.5">
+                <Skeleton className="w-full aspect-video" />
+                <Skeleton className="h-3 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
+              </div>
+            ))}
+          </div>
+        ) : profile?.recordings && profile.recordings.length > 0 ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8">
+            {profile.recordings.map((rec) => (
+              <VideoCard key={rec.id} recording={rec} />
+            ))}
+          </div>
+        ) : (
+          <div className="py-20 text-center text-sm text-muted-foreground border border-border/40">
+            No recordings found.
+          </div>
+        )}
       </div>
     </Layout>
   );

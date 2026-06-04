@@ -1,0 +1,282 @@
+# Executive Summary  
+We propose building a modern, mobile‑friendly video archive site (for Chaturbate recordings) using a contemporary tech stack (e.g. React/Next.js or SvelteKit) integrated with the existing Supabase backend. The site will include all key pages – Home (with featured videos), Search/Browse (with filters, categories and tags), Video Detail (video player, metadata, comments/ratings), User Account/Profile (login/signup, profile, uploads) – plus an Uploader/Ingest page and an Admin/Moderator dashboard for content management. The UI will use a component library (e.g. Material UI, Chakra UI or Tailwind CSS with DaisyUI) to accelerate development and ensure accessibility.  
+
+We compare three recommended stacks (React/Next.js, Vue/Nuxt, SvelteKit) and three UI libraries (MUI, Chakra, DaisyUI) in tables below.  We emphasize modern best practices: **accessibility** (ARIA attributes, semantic markup, alt-text, keyboard nav), **SEO** (using SSR/SSG for pre-rendering pages, proper metadata and sitemaps), and **performance** (lazy‐load images, optimized bundles). Supabase will handle **data storage** (PostgreSQL), **authentication** (email OAuth) and **file storage** (user uploads). Content moderation features (automated filters for pornographic language/content, user flagging, manual review) and legal safeguards (age verification for adult content, clear terms/policies) are included to mitigate risk.  
+
+Below we detail the UI pages/components, data schema, workflows, and provide a ready‑to‑paste Replit prompt that will scaffold the frontend (installing Next.js, Tailwind, Supabase, etc.). Included are mermaid diagrams of the site architecture and user flows, an example component hierarchy, and sample UI mockups.  
+
+## Assumptions & Clarifications  
+- **Target audience/user roles:** Adult users browsing archived Cam site videos; roles include *Guest* (browsing without login), *Registered User* (with upload/favorites), and *Moderator/Admin* (managing content). (If official details are not specified, we assume adult content audience, unrestricted by platform except compliance requirements.)  
+- **Features – Must‑have vs Optional:** Must‑haves: browsing/searching videos by keywords, tags, categories; viewing video detail; user login/signup; submitting new video entries (either as embed links or file uploads); responsive design. Optional: user comments or ratings, social sharing, favorites/bookmarks. (The user has not specified, so we include core features and note others as extensions.)  
+- **Branding/Style:** No specific colors/fonts given – we assume a neutral, accessible theme (dark-on-light or vice versa) with clear typography. Using a UI framework with theming (e.g. MUI or Chakra) will allow easy customization.  
+- **Scale:** Unspecified. We design for scalable architecture (cloud DB indexing, pagination, and CDN use). Initially moderate scale (thousands of videos, users), with options to shard or use search indexing as it grows.  
+- **Legal/Content Constraints:** This is an **adult content** archive. In many jurisdictions (e.g. UK Online Safety Act), strong age-verification is required for pornographic content. We recommend gating adult videos behind an 18+ confirmation on first visit and showing disclaimers. All user-uploaded content should be moderated: automated filters (e.g. AI flags for illegal sexual content/hate) combined with human review. Clear terms of service and privacy policy must be provided, and compliance with COPPA/GPDR considered if applicable. (No specific jurisdiction given, so note general guidelines.)  
+- **Framework Preferences:** None specified. We recommend React with Next.js or SvelteKit since they integrate easily on Replit and with Supabase. If the user prefers Vue, Nuxt is an alternative.  
+- **Video Ingestion:** The user asked to use an existing Supabase DB. Clarify whether videos are externally hosted (embed links to Chaturbate) or uploaded to Supabase Storage. Recbute-style sites typically embed from Chaturbate, not host videos. We assume users paste URLs/IDs to index existing streams (via the Uploader form). Optionally, actual recordings could be uploaded (Supabase Storage) and served. We include both possibilities.  
+- **Budget/Timeline:** Unspecified. We focus on a high-quality minimal viable product that can be prototyped quickly (as in the example of a Next.js + Tailwind stack on Replit).  
+
+Each unspecified detail above is noted as assumed or left flexible in the design.
+
+## Technology Stack Recommendations  
+
+| **Stack** | **Description** | **Pros** | **Cons** |
+| --------- | --------------- | -------- | -------- |
+| **React + Next.js** (TypeScript) with Tailwind CSS | Next.js (React) for file-based routing, SSR/SSG, and SEO; State via React Context or Zustand; Styling with Tailwind + UI library (e.g. Material UI or Chakra); Data via Supabase JS SDK. | Very popular ecosystem; built-in SSR/ISR for SEO; excellent dev tooling; large component libraries (MUI, Chakra); seamless Supabase integration (official docs use it). | Larger bundle size vs lighter frameworks; slightly more boilerplate. |
+| **Svelte + SvelteKit** | SvelteKit for routing and SSR; Svelte for reactive UI; Tailwind or Svelte UI (e.g. Skeleton); State via Svelte stores; Supabase JS. | Very fast and small bundles (realtime reactivity); simpler syntax; built-in form handling; SvelteKit supports SSR and prerendering. | Smaller community; fewer ready-made component libraries (though Tailwind can be used); learning curve if not familiar. |
+| **Vue 3 + Nuxt 3** | Nuxt.js for SSR/SSG and routing; Vue 3 composition API; UI via Vuetify or Tailwind+Headless UI; State via Pinia; Supabase JS. | Mature framework; good SSR; Vuetify offers rich components; Nuxt supports static generation/SPA hybrid. | Larger framework size; less out-of-the-box for Supabase (no first-party quickstart); learning curve for Nuxt. |
+
+*Sources:* Next.js’s rendering strategies highlight SEO benefits of SSG/SSR. A recent tutorial demonstrates starting a Next.js + Supabase app with `create-next-app` and installing `@supabase/supabase-js`. On Replit specifically, it’s common to create a Next.js app in a Node project and add Tailwind (Replit doesn’t have a built-in Next template).  
+
+## UI Component Library Comparison  
+
+| **Library** | **Type & Style** | **Strengths** | **Trade‑offs** |
+|-------------|------------------|---------------|---------------|
+| **Material UI (MUI)** | React components implementing Google’s Material Design | Very comprehensive (buttons, tables, data grids, etc); excellent docs and community; built-in theming; advanced components in MUI X. | Opinionated Material look (may require theming for unique brand); larger bundle size. |
+| **Chakra UI** | React component library with props-based styling (uses Styled System) | Developer-friendly (style via props like `bg="blue.500"`); built-in dark mode and accessibility; lightweight imports; growing community. | More limited component set than MUI; still opinionated base styles (though themable). |
+| **DaisyUI (Tailwind plugin)** | Tailwind CSS plugin providing semantic class components (e.g. `.btn`, `.card`) | Leverages Tailwind utility classes; easy to write less CSS; multiple built-in themes; minimal JS dependency; very flexible styling. | Less comprehensive out-of-the-box than MUI/Chakra; relies on Tailwind, so learning curve if new to utility CSS. |
+
+ *Example – Material UI’s themed components (source: Builder.io).*  
+
+For a Tailwind-first approach, headless or utility libraries can be used. For example, shadcn/ui provides copy‑pasteable React components built on Radix primitives and styled with Tailwind, giving ultimate control and accessibility. However, for a quick scaffold we favor ready libraries like DaisyUI plus Tailwind (for low boilerplate) or MUI/Chakra for rich components.  
+
+## Pages & Components  
+
+### 1. Home (Landing) Page  
+- **Content:** Featured/trending videos grid, site description, search bar at top.  
+- **Components:** `Header/NavBar` with logo, SearchBar, and Login button; `VideoGrid` (list of `VideoCard` components); `Footer`.  
+- **Behavior:** On load, fetch latest/popular videos (via Supabase query or cache). Clicking a video opens its detail page. The navbar search can redirect to Search page. Must adapt responsively (e.g. grid collapses on mobile).  
+
+### 2. Search/Browse Page  
+- **Content:** Search input (free text) and filters (tags, categories, date range, NSFW toggle, etc.), plus results grid or list.  
+- **Components:** `FilterSidebar` (mobile-friendly, possibly collapsible), `SortSelect` (e.g. sort by date/popularity), reusable `VideoGrid` showing filtered videos.  
+- **Behavior:** Typing or selecting filters updates the query (via controlled components). Debounce text input or trigger on enter. Queries the database (e.g. full-text search on title/description, filtering by tags/categories stored in the DB). Implements pagination or “load more”.  
+
+### 3. Video Detail Page  
+- **Content:** Embedded video player or iframe (if linking to Chaturbate), plus metadata: title, description, uploader name (if known), date, view count, and tags/categories. Optionally comments or related videos.  
+- **Components:** `VideoPlayer` (iframe/embed or HTML5 player if hosting video), `VideoMetadata` (display fields), `TagList`, `RelatedVideosCarousel`, `CommentsSection` (if enabled).  
+- **Behavior:** The metadata and tags are fetched from Supabase by video ID. The `VideoPlayer` should use lazy-loading and have accessible controls. Tags are clickable, leading to a tag-filtered view. On loading, pre-fetch related videos (same tags or user). Use semantic HTML (e.g. `<article>`, `<h1>` for title).  
+
+### 4. Uploader/Ingest Page  
+- **Content:** Form to submit a new video. Fields: video source URL/ID (Chaturbate link), Title, Description, Tags (multi-select), optional Thumbnail upload (Supabase Storage) or embed fetch, optional date/time, and a submit button.  
+- **Components:** `VideoUploadForm` with controlled inputs (`<input>`, `<textarea>`, `<select>` for tags, file input for thumbnail). Use form validation (e.g. required fields, URL format).  
+- **Behavior:** Only accessible to logged-in users. On submit, validate inputs; call Supabase API to insert record (and upload thumbnail if any). Show success or error message. Possibly show a preview of embedded video or thumbnail.  
+
+### 5. User Accounts & Profile Pages  
+- **Content:** Sign Up / Login pages (email/SSO), and Profile page for logged-in users. Profile shows user info (avatar, email, etc.) and list of videos they submitted. Provide logout and profile edit (password, display name).  
+- **Components:** `AuthForm` (signup/login toggling), `ProfilePage` (`UserAvatar`, `UserInfoForm`), `MyVideosList` (users’ uploaded videos).  
+- **Behavior:** Use Supabase Auth for login/signup (email & password, OAuth providers). After login, redirect to profile. Profile is protected (SSR or route guard). Editing info updates Supabase profile table. Logout via Supabase signOut.  
+
+ *Example user profile page from Supabase docs (with profile photo, update form).*  
+
+### 6. Moderator/Admin Dashboard  
+- **Content:** Tools for content moderation: list of recently submitted or flagged videos, reports summary, user management. Possibly stats (total videos, user count).  
+- **Components:** `AdminNav` (additional links), `FlaggedVideosTable`, `UserReportsList`, `SystemStats` cards. Each flagged video entry has approve/remove actions.  
+- **Behavior:** Only accessible to moderator/admin roles (check via Supabase user metadata or a separate “roles” table). Admins can remove videos (delete record), ban users, or edit content. Set up RLS policies so normal users cannot modify others’ data.  
+
+### 7. Tags / Categories Page  
+- **Content:** A list or cloud of all tags/categories, each linking to a filtered browse of videos with that tag.  
+- **Components:** `TagCloud` or `CategoryList` (grid of tag buttons).  
+- **Behavior:** Fetch distinct tags from database. Clicking a tag runs a search for that tag (navigates to Search page with that filter applied). Useful for SEO (static tag pages could be pre-rendered).  
+
+### 8. Miscellaneous Pages  
+- **Navigation Components:** Persistent `Header` (logo, nav links, search input), and `Footer` (links to About, Terms, Privacy). On mobile, use a hamburger menu or bottom tab navigation.  
+- **Modals & Alerts:** e.g. `AgeCheckModal` for first-time visitors; `ErrorToast` for upload errors; `ConfirmationDialog` for deletes.  
+- **Responsiveness:** Use a CSS framework (Tailwind, MUI Grid, or Chakra’s responsive props) to ensure layouts adapt to mobile (e.g. video grid becomes single column, navigation stacks).  
+
+## Component Example List  
+
+Below is a sample list of key React components with their props/interactions:
+
+- **`<App>`** – Top-level, includes Router/SWR provider, authentication provider, and theme.  
+- **`<Header onSearch={handleSearch}>`** – Contains logo, global `SearchBar`, and login/signup or user menu. `onSearch` triggers navigation to Search page.  
+- **`<SearchBar value onChange>`** – Controlled text input, calls `onChange` as user types, debounced triggers search.  
+- **`<VideoCard id title thumbnailUrl tags onClick>`** – Displays a video thumbnail and title; clicking calls `onClick(id)` to open detail. 
+- **`<VideoGrid videos [columns, gap]>`** – Layout component that arranges multiple `VideoCard`s in a responsive grid.  
+- **`<FilterSidebar filters onFilterChange>`** – Panel of checkboxes/selects for tags, date range; calls `onFilterChange(newFilters)`.  
+- **`<VideoPlayer src url>`** – Embeds Chaturbate stream or plays video. (Use `iframe` with title for accessibility, or `<video>` if self-hosted.)  
+- **`<TagList tags onClickTag>`** – Shows a list of clickable tag pills.  
+- **`<AuthForm mode onSuccess>`** – Renders login or signup form based on `mode`; on successful auth, calls `onSuccess(user)`.  
+- **`<ProfilePage user onUpdate>`** – Shows user details and allows editing. `onUpdate(data)` submits updates to Supabase.  
+- **`<UploadForm onSubmit>`** – Handles video submission. `onSubmit(data)` is called with form data, then uploads to DB.  
+- **`<AdminTable items>`** – Generic table for admin lists (flagged videos, users); each row has action buttons (Approve/Delete) with callbacks.  
+
+*(Props and interactions are illustrative – actual implementation may use state hooks, contexts, or custom hooks for data fetching.)*
+
+## Data Model & Indexing  
+
+- **Videos Table:** Fields: `id (UUID)`, `title`, `description`, `chaturbate_url` or `video_url`, `thumbnail_url`, `user_id` (uploader), `created_at`, `views`, `is_indexed`, `is_flagged`, etc.  Implement full-text search on `title`/`description` (Supabase Postgres supports text search). Use an index on tags (via a join table) for quick filtering.  
+- **Users Table:** `id`, `email`, `display_name`, `avatar_url`, `role` (user/moderator/admin), etc.  (Supabase Auth can manage most, with a `profiles` table for extras.)  
+- **Tags Table & Video_Tags:** Standard many-to-many between videos and tags. Enables filtering by tag/category.  
+- **Reports/Flags:** (Optional) Table of flagged content or user reports: `report_id`, `video_id` or `user_id`, `report_reason`, `reported_by`, `status`.  
+- **Comments (Optional):** If enabling comments, table with `video_id`, `user_id`, `content`, `timestamp`.  
+- **Indexing:** Use Supabase’s built-in Postgres indexing. For advanced search, consider integrating Algolia or Elastic for instant search/autocomplete.  
+
+Because we use Supabase (Postgres) there’s no vendor lock-in; you could switch to any Node/Serverless backend if needed. Real-time features (like live user counts) could use Supabase’s real-time subscriptions.
+
+## Authentication & Authorization  
+
+- **Supabase Auth:** Use Supabase’s email/password auth with email confirmation. Support OAuth (Google/Twitch) as secondary. Authentication state is handled client-side with `@supabase/supabase-js`. Store `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in environment (Replit Secrets or `.env`).  
+- **Roles:** Enforce user roles via a `role` column in the users table or a separate RLS-protected table. In the frontend, hide admin components unless `user.role === 'admin'`.  
+- **Protected Routes:** Use Next.js middleware or checks to prevent unauthorized access (e.g. only logged-in users can access Uploader page or admin routes).  
+
+## Content Moderation & Safety  
+
+- **Automated Filters:** Integrate an AI/content moderation API (AWS Rekognition, Google Vision, or open-source NSFW detectors) to scan images or video thumbnails for explicit content. Use profanity filters on titles/descriptions.  As CMSWire advises, combine AI filtering with manual review.  
+- **User Reporting:** Allow users to report videos or comments. Flagged items appear in the Moderator Dashboard for action.  
+- **Rate Limiting:** Throttle upload submissions and form submissions to prevent abuse or spam.  
+- **Legal Safeguards:** Display a mandatory age-verification prompt on first visit (e.g. “I am 18+”). For EU/UK, note age-check requirements (e.g. UK law requires robust age checks on porn sites from 2025). Record minimal user data (only what’s needed). Include Privacy Policy and Terms of Service pages.  
+
+**Accessibility:** All UI components must meet WCAG standards. Use semantic HTML (e.g. `<button>`, `<nav>`, proper headings). Ensure contrast ratios are sufficient, images/videos have `alt` text or captions, and keyboard navigation works (ARIA roles on menus/dialogs). Use aria-labels on icons/buttons. For example, Chakra UI and Radix (used by shadcn) both emphasize accessible defaults.  
+
+**Privacy:** For user-uploaded content, abide by GDPR/CCPA if applicable (e.g. allow user to delete their data). Do not publicly expose user emails or sensitive info. Use HTTPS everywhere (Replit/Vercel provide SSL).  
+
+## SEO & Performance  
+
+- **Server-Side Rendering (SSR) / Static Generation:** Use Next.js’s SSG or SSR to pre-render pages. Next.js docs note that static rendering (SSG/ISR) is ideal for SEO because the HTML is present at load. For example, pre-generate recent videos and tag pages at build time, use ISR for new content. Video Detail and Tag pages should include `<meta>` tags (title, description) and schema markup (VideoObject) for search engines.  
+- **Metadata:** Dynamically set `<title>`, meta-description, og:image, etc., on each page. Use Next.js’s `<Head>` or equivalent.  
+- **Loading Performance:** Use `<Image>` components or `loading="lazy"` for thumbnails. Minify and bundle CSS/JS (Next.js does this automatically). CDN-cache static assets (Replit hosting or Vercel CDN).  
+- **Code Splitting:** Split routes/components so only necessary code loads. Example: Admin code should not be in the main bundle (lazy-load or route-split).  
+- **Third-Party Avoidance:** Limit heavy libraries to reduce bundle size (choose minimal state mgmt like Context or Zustand instead of Redux). Preload only critical data.  
+
+*Citation:* Next.js “Rendering Strategies” guide emphasizes that SEO depends on having page content rendered on the server at load. We will use this by opting for SSG/ISR of key pages.  
+
+## Site Architecture (Mermaid Diagram)  
+
+```mermaid
+graph LR
+  User(Client) -->|HTTP/HTTPS| UI[Browser (React/Next.js)]
+  UI -->|REST/API| Supabase_Auth[(Supabase Auth)]
+  UI -->|REST/API| Supabase_DB[(Supabase Database)]
+  UI -->|REST/API| Supabase_Storage[(Supabase Storage)]
+  UI --> CDN(CDN/Cache)
+  CDN --> UI
+  Supabase_DB -->|RLS & Queries| Admin[Admin Dashboard]
+  Supabase_DB -->|Pub/Sub| UI
+  UI --> SearchIndex[(Search Indexing, e.g. PostgreSQL Full-Text or Algolia)]
+```
+
+This architecture shows users interacting with the frontend app (hosted on Replit or a CDN) which communicates with Supabase services: Auth for login, Postgres DB for data, and Storage for files. A CDN caches static assets. Content moderation and admin tools also interface with the database.  
+
+## User Flows (Mermaid Diagram)  
+
+```mermaid
+flowchart TD
+    A[Visitor] -->|View| Home[Home Page]
+    A -->|Click Search| SearchPage[Search/Browse Page]
+    SearchPage -->|Submit Query| SearchResults[Video Results]
+    SearchResults -->|Click Video| VideoDetail[Video Detail Page]
+    VideoDetail -->|Play Video| VideoDetail
+    VideoDetail -->|Filter by Tag| FilteredResults[Tag Filtered List]
+    A -->|Click Login| LoginPage[Login/Register]
+    LoginPage -->|Authenticate| AuthSuccess[User Authenticated]
+    AuthSuccess --> Profile[Profile Page]
+    Profile -->|Upload New| UploadPage[Uploader Form]
+    UploadPage -->|Submit Video| Review[Video Pending Review]
+    AuthSuccess -->|Request Moderator| AdminDash[Admin Dashboard]
+    AdminDash -->|Approve/Remove| ContentList[Manage Videos]
+```
+
+This flow covers guest browsing, search, and viewing videos, as well as authenticated user flows for uploading content and accessing profile. It also shows an admin accessing the moderation dashboard to review content.  
+
+## Responsive Design  
+
+We will follow mobile-first design. For example, the `VideoGrid` might be `grid-cols-1` on small screens, expanding to `grid-cols-3` on desktop (if using Tailwind). Navbars collapse into hamburger menus on mobile. Buttons and touch targets meet accessibility size guidelines. Images and videos use `max-width:100%` and flexible layouts.  
+
+## Replit Deployment  
+
+Replit can host Node/Next.js apps directly. In practice, one often uses Replit for development and then deploys to Vercel or Netlify. However, Replit’s own hosting (or the new “Replit Deployments” feature) can run Next.js. The following is an example *Replit AI prompt* that sets up the project and scaffolds initial code:  
+
+```bash
+# Replit AI Frontend Scaffolding Prompt (copy-paste into Replit)
+You are an AI assistant in Replit. Initialize a modern React/Next.js project for a video archive site:
+
+1. Create a new Next.js app with TypeScript:
+   ```
+   npx create-next-app@latest chaturbate-archive --typescript
+   cd chaturbate-archive
+   ```
+2. Install dependencies:
+   - Supabase client: `npm install @supabase/supabase-js`
+   - Tailwind CSS: `npm install -D tailwindcss postcss autoprefixer`
+   - UI Library: e.g. `npm install @mui/material @mui/icons-material @emotion/react @emotion/styled`
+   - (Optional) Chakra UI or DaisyUI: `npm install @chakra-ui/react @emotion/react @emotion/styled` or `npm install daisyui`
+   ```
+3. Initialize Tailwind:
+   ```
+   npx tailwindcss init -p
+   ```
+   Add `@tailwind base; @tailwind components; @tailwind utilities;` to `globals.css`.
+4. Set up Supabase:
+   - Create a `.env.local` file with `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+   - In `lib/supabaseClient.ts`, initialize Supabase:
+     ```ts
+     import { createClient } from '@supabase/supabase-js';
+     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+     export const supabase = createClient(supabaseUrl, supabaseKey);
+     ```
+5. Scaffold pages and components (example structure):
+   - `pages/index.tsx`: Home page layout with `<Header>`, search bar, and `<VideoGrid>`.
+   - `pages/search.tsx`: Search results page with filter sidebar.
+   - `pages/video/[id].tsx`: Video detail page (use getServerSideProps or getStaticPaths).
+   - `pages/upload.tsx`: Protected upload form (use Supabase Auth to guard).
+   - `pages/profile.tsx`: User profile page.
+   - `pages/admin/dashboard.tsx`: Admin dashboard (protect by role).
+   - `components/VideoCard.tsx`, `VideoGrid.tsx`, `Header.tsx`, `Footer.tsx`, `FilterSidebar.tsx`, etc.
+6. Implement routing (Next.js file-based routing is automatic).
+7. Use Next.js API routes or direct Supabase client calls for data operations.
+8. Once scaffolded, push code to GitHub. Then connect the repo to Vercel for deployment (Vercel auto-detects Next.js).
+```
+
+This prompt sets up the basic stack. The developer would then flesh out each page and component using the framework’s conventions.  
+
+## Deployment & SEO Integration  
+
+- **Hosting:** As shown above, after developing on Replit (or locally), deploy to a hosting platform. Vercel is ideal for Next.js (zero-config and built-in CDN). Replit’s integrated deployment or another Node host can also be used, but ensure environment variables are protected.  
+- **Environment Variables:** Use Replit Secrets (or `.env.local`) for Supabase keys. For production, use Vercel’s dashboard to add them.  
+- **CI/CD:** Use Git for version control. Connect GitHub to Vercel for automatic deployments on push. Replit can sync to GitHub or export code. (For example, one user exported their Replit project to GitHub and deployed on Vercel in under an hour.)  
+- **Sitemap & Robots:** Generate a `sitemap.xml` including video pages and tag pages. Use `next-sitemap` or a custom script. Ensure `robots.txt` allows indexing of video pages.  
+
+## Example Wireframe Sketch  
+
+A sample landing page might have: a top bar with logo + search + login; a grid of large video thumbnails with titles; and footer links. The video detail page would have the video player at top, title beneath, then a row of tags/metadata, and a column of related videos to the side.  
+
+*(Insert sketches or mockups here if available. For example, the UI kit documentation or a Tailwind Components template could illustrate the grid layout.)*  
+
+## Accessibility & Privacy Highlights  
+
+- **ARIA & Labels:** Use accessible components (e.g. MUI’s components or Chakra’s have ARIA built-in). Example: `<button aria-label="Play Video">`. Screen-reader announcements via `aria-live` for dynamic content (like “Video uploaded successfully”).  
+- **Alt Text:** All images (thumbnails, logos) include meaningful `alt` text.  
+- **Keyboard Nav:** Ensure all interactive elements (menus, forms, modals) are keyboard-accessible.  
+- **Contrast & Fonts:** High-contrast text; scalable fonts (use `rem`/`em`).  
+- **Privacy:** Only collect necessary data. Cookies limited to authentication. Prompt user on first visit about cookies/consent if required.  
+
+## Content Moderation & Legal Risk Mitigation  
+
+- **Moderation Workflow:** Videos are not immediately public until reviewed (optional) or at least flagged content is removed quickly. Allow users to flag content (with reasons). Admins get notifications of new flags. Content with illegal implications should be taken down immediately.  
+- **AI Tools:** Integrate an AI-moderation service to automatically flag nudity or explicit acts in images/videos. This reduces reliance on purely manual review.  
+- **Record Keeping:** Log moderation actions and keep an audit trail (who removed what content, when).  
+- **Terms & Age Check:** On homepage load, show an overlay (Yes, I am over 18) before any video content appears. Provide clear Terms of Use that user must agree to on registration (or by using the site).  
+- **Privacy Policy:** Since user content (and possibly personal data) is involved, include a privacy policy link in the footer.  
+
+## Additional Considerations  
+
+- **Database Backups:** With Supabase, set up daily backups of the Postgres database.  
+- **Caching:** Use browser caching for static assets. Consider SSR caching (ISR) on Vercel.  
+- **Performance Monitoring:** Add analytics or performance monitoring (e.g. Google Analytics, Vercel Analytics) to track load times and user behavior.  
+- **Future Scale:** If video volume grows, consider sharding by time or archiving older videos. For search performance, using a dedicated search index (Algolia or Elasticsearch) may be needed.  
+
+## References  
+
+- **React/Next.js & Supabase:** Official Supabase tutorial shows creating a Next.js app and installing `supabase-js`. Replit-based prototyping with Next.js and Tailwind is documented in a recent blog.  
+- **Component Libraries:** Comparisons from Builder.io list Material UI, Chakra UI, and Tailwind-based kits. DaisyUI documentation highlights its semantic class names for Tailwind components. Vercel’s Academy notes shadcn/ui’s Radix+Tailwind approach.  
+- **SEO & Rendering:** Next.js docs explain that static or server-side rendering yields HTML at load time, which is optimal for SEO.  
+- **Content Moderation:** Industry sources emphasize combining AI filters with human review for safety, and note automated tools for nudity/hate detection.  
+- **Legal Compliance:** Ofcom’s guidelines require “strong age checks” on porn sites (in effect July 2025), illustrating the need for age gating.  
+
+Each of the above elements – architecture, pages, tech choices – will be elaborated in the Replit scaffolding prompt and code. The tables and diagrams provide a roadmap for development priorities. With this plan, the Replit prompt below will generate a starter codebase ready for customization.  
+
+**Mermaid Diagrams:** The user flows and architecture diagrams above can be rendered using Mermaid in Markdown for clarity during development discussions.  
+
+**Next Steps:** With all requirements defined, copy the “Replit AI Frontend Scaffolding Prompt” into a new Replit Node project to begin code generation. Use the examples and citations here to guide implementation of each feature and ensure best practices.  
+
