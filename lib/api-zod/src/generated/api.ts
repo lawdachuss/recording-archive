@@ -30,7 +30,7 @@ export const ListRecordingsQueryParams = zod.object({
   "gender": zod.coerce.string().optional(),
   "username": zod.coerce.string().optional(),
   "resolution": zod.coerce.string().optional(),
-  "sort": zod.enum(['newest', 'oldest', 'largest']).optional()
+  "sort": zod.enum(['newest', 'oldest', 'largest', 'popular']).optional()
 })
 
 export const ListRecordingsResponse = zod.object({

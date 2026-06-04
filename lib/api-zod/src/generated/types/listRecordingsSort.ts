@@ -13,4 +13,5 @@ export const ListRecordingsSort = {
   newest: 'newest',
   oldest: 'oldest',
   largest: 'largest',
+  popular: 'popular',
 } as const;
