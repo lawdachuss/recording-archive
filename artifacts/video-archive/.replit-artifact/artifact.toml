@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Video Archive"
+version = "1.0.0"
+id = "artifacts/video-archive"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18784
+
+[services.development]
+run = "pnpm --filter @workspace/video-archive run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/video-archive", "run", "build" ]
+publicDir = "artifacts/video-archive/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18784"
+BASE_PATH = "/"
