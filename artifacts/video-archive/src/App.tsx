@@ -11,9 +11,18 @@ import PerformerProfile from "@/pages/PerformerProfile";
 import TagsPage from "@/pages/TagsPage";
 import Bookmarks from "@/pages/Bookmarks";
 import History from "@/pages/History";
+import WatchLater from "@/pages/WatchLater";
+import RandomRedirect from "@/pages/RandomRedirect";
 import NotFound from "@/pages/not-found";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,
+      retry: 1,
+    },
+  },
+});
 
 function Router() {
   return (
@@ -26,6 +35,8 @@ function Router() {
       <Route path="/tags" component={TagsPage} />
       <Route path="/bookmarks" component={Bookmarks} />
       <Route path="/history" component={History} />
+      <Route path="/watch-later" component={WatchLater} />
+      <Route path="/random" component={RandomRedirect} />
       <Route component={NotFound} />
     </Switch>
   );

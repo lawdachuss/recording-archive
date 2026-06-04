@@ -109,7 +109,7 @@ function CommentNode({ comment, depth = 0, recordingId, sessionId, onLike, onRep
   const handleLike = () => {
     const newLiked = !localLiked;
     setLocalLiked(newLiked);
-    setLocalLikes((n) => n + (newLiked ? 1 : -1));
+    setLocalLikes((n: number) => n + (newLiked ? 1 : -1));
     onLike(comment.id, newLiked);
   };
 
@@ -123,13 +123,14 @@ function CommentNode({ comment, depth = 0, recordingId, sessionId, onLike, onRep
   };
 
   const hasReplies = (comment.replies?.length ?? 0) > 0;
+  const initials = (comment.author || "A").slice(0, 2).toUpperCase();
 
   return (
     <div className={`${depth > 0 ? "ml-4 pl-4 border-l border-border/30" : ""}`}>
       <div className="py-3 group">
         <div className="flex items-start gap-2.5">
-          <div className="w-6 h-6 rounded-full bg-secondary flex items-center justify-center shrink-0 mt-0.5 text-[10px] font-bold text-muted-foreground uppercase">
-            {(comment.author || "A")[0]}
+          <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5 text-[9px] font-bold text-primary/70 uppercase">
+            {initials}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
@@ -165,7 +166,9 @@ function CommentNode({ comment, depth = 0, recordingId, sessionId, onLike, onRep
                     className="flex items-center gap-1 text-[10px] text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors"
                   >
                     {collapsed ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
-                    {collapsed ? `${comment.replies?.length} repl${comment.replies?.length === 1 ? "y" : "ies"}` : "hide"}
+                    {collapsed
+                      ? `${comment.replies?.length} repl${comment.replies?.length === 1 ? "y" : "ies"}`
+                      : "hide"}
                   </button>
                 )}
               </div>
@@ -186,7 +189,7 @@ function CommentNode({ comment, depth = 0, recordingId, sessionId, onLike, onRep
 
       {!collapsed && hasReplies && (
         <div>
-          {comment.replies!.map((reply) => (
+          {comment.replies!.map((reply: Comment) => (
             <CommentNode
               key={reply.id}
               comment={reply}
@@ -214,7 +217,7 @@ export function CommentSection({ recordingId }: CommentSectionProps) {
 
   const { data: comments, isLoading } = useListComments(
     { recording_id: recordingId, sort, session_id: sessionId },
-    { query: { enabled: !!recordingId } },
+    { query: { enabled: !!recordingId, queryKey: getListCommentsQueryKey({ recording_id: recordingId, sort, session_id: sessionId }) } },
   );
 
   const createComment = useCreateComment();
@@ -240,7 +243,7 @@ export function CommentSection({ recordingId }: CommentSectionProps) {
     invalidate();
   };
 
-  const count = comments?.reduce((n, c) => n + 1 + (c.replies?.length ?? 0), 0) ?? 0;
+  const count = comments?.reduce((n: number, c: Comment) => n + 1 + (c.replies?.length ?? 0), 0) ?? 0;
 
   return (
     <div className="space-y-5">
@@ -284,7 +287,7 @@ export function CommentSection({ recordingId }: CommentSectionProps) {
             </div>
           ))
         ) : comments && comments.length > 0 ? (
-          comments.map((comment) => (
+          comments.map((comment: Comment) => (
             <CommentNode
               key={comment.id}
               comment={comment}

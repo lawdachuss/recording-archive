@@ -84,6 +84,32 @@ router.get("/recordings", async (req, res) => {
   });
 });
 
+router.get("/recordings/random", async (_req, res) => {
+  const { count, error: countError } = await supabase
+    .from("recordings")
+    .select("*", { count: "exact", head: true });
+
+  if (countError || !count) {
+    res.status(500).json({ error: "Failed to get recording count" });
+    return;
+  }
+
+  const randomOffset = Math.floor(Math.random() * count);
+
+  const { data, error } = await supabase
+    .from("recordings")
+    .select("id")
+    .range(randomOffset, randomOffset)
+    .single();
+
+  if (error || !data) {
+    res.status(500).json({ error: "Failed to get random recording" });
+    return;
+  }
+
+  res.json({ id: data.id });
+});
+
 router.get("/recordings/related", async (req, res) => {
   const parsed = ListRelatedRecordingsQueryParams.safeParse(req.query);
   if (!parsed.success) {

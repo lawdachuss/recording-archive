@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Search, X, Menu, Sun, Moon, Film, Bookmark, History } from "lucide-react";
+import { Search, X, Menu, Sun, Moon, Film, Bookmark, History, Clock, Shuffle } from "lucide-react";
+import { addRecentSearch, getRecentSearches } from "@/lib/bookmarks";
 
 function useDarkMode() {
   const [dark, setDark] = useState(() => {
@@ -82,16 +83,29 @@ export function Navbar() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dark, setDark] = useDarkMode();
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (searchOpen) setRecentSearches(getRecentSearches());
+  }, [searchOpen]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (search.trim()) {
-      setLocation(`/browse?search=${encodeURIComponent(search.trim())}`);
+    submitSearch(search);
+  };
+
+  const submitSearch = (q: string) => {
+    if (q.trim()) {
+      addRecentSearch(q.trim());
+      setLocation(`/browse?search=${encodeURIComponent(q.trim())}`);
     } else {
       setLocation("/browse");
     }
     setSearchOpen(false);
     setMobileOpen(false);
+    setShowSuggestions(false);
+    setSearch("");
   };
 
   const isActive = (href: string) =>
@@ -105,8 +119,13 @@ export function Navbar() {
 
   const iconLinks = [
     { href: "/bookmarks", label: "Bookmarks", Icon: Bookmark },
+    { href: "/watch-later", label: "Watch Later", Icon: Clock },
     { href: "/history", label: "History", Icon: History },
   ];
+
+  const filteredSuggestions = search.trim()
+    ? recentSearches.filter((s) => s.toLowerCase().includes(search.toLowerCase())).slice(0, 5)
+    : recentSearches.slice(0, 5);
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/90 backdrop-blur-xl">
@@ -139,24 +158,45 @@ export function Navbar() {
 
         <div className="flex items-center gap-1">
           {searchOpen ? (
-            <form onSubmit={handleSearch} className="flex items-center gap-2">
-              <input
-                autoFocus
-                type="text"
-                placeholder="Search recordings..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-48 sm:w-64 h-8 bg-secondary/60 border border-border/60 focus:border-primary/50 rounded px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/50"
-              />
-              <button
-                type="button"
-                onClick={() => setSearchOpen(false)}
-                className="text-muted-foreground hover:text-foreground transition-colors"
-                aria-label="Close search"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </form>
+            <div className="relative">
+              <form onSubmit={handleSearch} className="flex items-center gap-2">
+                <div className="relative">
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="Search recordings..."
+                    value={search}
+                    onChange={(e) => { setSearch(e.target.value); setShowSuggestions(true); }}
+                    onFocus={() => setShowSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                    className="w-48 sm:w-64 h-8 bg-secondary/60 border border-border/60 focus:border-primary/50 rounded px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/50"
+                  />
+                  {showSuggestions && filteredSuggestions.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-background border border-border/60 rounded shadow-lg z-50 overflow-hidden">
+                      {filteredSuggestions.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onMouseDown={() => submitSearch(s)}
+                          className="w-full text-left px-3 py-2 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors flex items-center gap-2"
+                        >
+                          <Search className="w-3 h-3 shrink-0" />
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setSearchOpen(false); setSearch(""); }}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Close search"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </form>
+            </div>
           ) : (
             <button
               onClick={() => setSearchOpen(true)}
@@ -168,7 +208,7 @@ export function Navbar() {
             </button>
           )}
 
-          {/* Icon nav — desktop only */}
+          {/* Icon nav — desktop */}
           {!searchOpen && iconLinks.map(({ href, label, Icon }) => (
             <Link key={href} href={href} title={label}>
               <span
@@ -182,6 +222,18 @@ export function Navbar() {
               </span>
             </Link>
           ))}
+
+          {/* Random button */}
+          {!searchOpen && (
+            <button
+              onClick={() => setLocation("/random")}
+              title="Random video"
+              className="hidden sm:flex items-center justify-center w-8 h-8 text-muted-foreground hover:text-foreground transition-colors rounded"
+              aria-label="Random video"
+            >
+              <Shuffle className="w-4 h-4" />
+            </button>
+          )}
 
           <button
             onClick={() => setDark((d) => !d)}
@@ -218,6 +270,13 @@ export function Navbar() {
               </span>
             </Link>
           ))}
+          <button
+            onClick={() => { setLocation("/random"); setMobileOpen(false); }}
+            className="w-full text-left block px-3 py-2.5 text-sm rounded text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors flex items-center gap-2"
+          >
+            <Shuffle className="w-3.5 h-3.5" />
+            Random
+          </button>
           <div className="pt-2 border-t border-border/40 flex items-center justify-between px-3 mt-2">
             <span className="text-xs text-muted-foreground">{dark ? "Dark" : "Light"} mode</span>
             <button
@@ -262,6 +321,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <Link href="/performers" className="hover:text-muted-foreground transition-colors">Performers</Link>
               <Link href="/tags" className="hover:text-muted-foreground transition-colors">Tags</Link>
               <Link href="/bookmarks" className="hover:text-muted-foreground transition-colors">Bookmarks</Link>
+              <Link href="/watch-later" className="hover:text-muted-foreground transition-colors">Watch Later</Link>
               <Link href="/history" className="hover:text-muted-foreground transition-colors">History</Link>
               <span className="hidden sm:block w-px h-3 bg-border/40 self-center" />
               <span className="cursor-default">Terms</span>

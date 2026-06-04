@@ -41,6 +41,11 @@ export default function Bookmarks() {
     setBookmarks(getBookmarks());
   };
 
+  const handleClearAll = () => {
+    bookmarks.forEach((b) => removeBookmark(b.id));
+    setBookmarks([]);
+  };
+
   return (
     <Layout>
       <div className="container mx-auto px-4 sm:px-6 py-8 max-w-7xl">
@@ -56,10 +61,7 @@ export default function Bookmarks() {
           </div>
           {bookmarks.length > 0 && (
             <button
-              onClick={() => {
-                bookmarks.forEach((b) => removeBookmark(b.id));
-                setBookmarks([]);
-              }}
+              onClick={handleClearAll}
               className="flex items-center gap-1.5 text-xs text-muted-foreground/50 hover:text-destructive transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -73,7 +75,7 @@ export default function Bookmarks() {
             <BookmarkX className="w-10 h-10 text-muted-foreground/20 mb-4" />
             <p className="text-sm font-medium text-muted-foreground/50 mb-1">No bookmarks yet</p>
             <p className="text-xs text-muted-foreground/30 mb-6">
-              Save recordings to watch later by clicking the bookmark icon.
+              Save recordings to watch later by clicking the bookmark icon on any video.
             </p>
             <Link href="/browse" className="text-xs text-primary hover:underline">
               Browse recordings →
@@ -82,16 +84,12 @@ export default function Bookmarks() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
             {bookmarks.map((rec) => (
-              <div key={rec.id} className="relative group/card">
-                <VideoCard recording={toRecording(rec)} />
-                <button
-                  onClick={() => handleRemove(rec.id)}
-                  className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center bg-black/70 hover:bg-destructive/90 text-white rounded-[2px] opacity-0 group-hover/card:opacity-100 transition-all"
-                  aria-label="Remove bookmark"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </div>
+              <VideoCard
+                key={rec.id}
+                recording={toRecording(rec)}
+                showRemove
+                onRemove={() => handleRemove(rec.id)}
+              />
             ))}
           </div>
         )}
