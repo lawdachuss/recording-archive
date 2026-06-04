@@ -1,21 +1,34 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { AlertCircle } from "lucide-react";
+import { Link } from "wouter";
+import { Layout } from "@/components/Layout";
+import { Film } from "lucide-react";
 
 export default function NotFound() {
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
-      <Card className="w-full max-w-md mx-4">
-        <CardContent className="pt-6">
-          <div className="flex mb-4 gap-2">
-            <AlertCircle className="h-8 w-8 text-red-500" />
-            <h1 className="text-2xl font-bold text-gray-900">404 Page Not Found</h1>
-          </div>
-
-          <p className="mt-4 text-sm text-gray-600">
-            Did you forget to add the page to the router?
-          </p>
-        </CardContent>
-      </Card>
-    </div>
+    <Layout>
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-32 text-center">
+        <Film className="w-10 h-10 text-muted-foreground/20 mb-6" />
+        <div className="text-[clamp(4rem,12vw,8rem)] font-black tracking-tighter text-foreground/[0.04] leading-none select-none mb-4">
+          404
+        </div>
+        <h1 className="text-lg font-bold tracking-tight mb-2">Page not found</h1>
+        <p className="text-sm text-muted-foreground mb-8 max-w-xs">
+          The page you're looking for doesn't exist or was removed.
+        </p>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/"
+            className="h-9 px-5 bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors rounded-sm inline-flex items-center"
+          >
+            Home
+          </Link>
+          <Link
+            href="/browse"
+            className="h-9 px-5 border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors rounded-sm inline-flex items-center"
+          >
+            Browse
+          </Link>
+        </div>
+      </div>
+    </Layout>
   );
 }

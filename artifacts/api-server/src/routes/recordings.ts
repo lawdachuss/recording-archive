@@ -62,6 +62,8 @@ router.get("/recordings", async (req, res) => {
     query = query.order("timestamp", { ascending: true });
   } else if (sort === "largest") {
     query = query.order("filesize", { ascending: false });
+  } else if (sort === "popular") {
+    query = query.order("viewers", { ascending: false, nullsFirst: false });
   } else {
     query = query.order("timestamp", { ascending: false });
   }

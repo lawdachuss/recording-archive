@@ -61,7 +61,7 @@ paths:
           schema: { type: string }
         - name: sort
           in: query
-          schema: { type: string, enum: [newest, oldest, largest] }
+          schema: { type: string, enum: [newest, oldest, largest, popular] }
       responses:
         "200":
           description: Paginated recordings list
