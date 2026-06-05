@@ -1,8 +1,11 @@
 import { useState, useEffect } from "react";
 import { Link } from "wouter";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
+import { useAuth } from "@/contexts/AuthContext";
 import { getHistory, clearHistory, type SavedRecording } from "@/lib/bookmarks";
+import { userApi, parseCloudItem } from "@/lib/user-api";
 import { History as HistoryIcon, Trash2, Clock } from "lucide-react";
 
 function toRecording(r: SavedRecording) {
@@ -30,11 +33,39 @@ function toRecording(r: SavedRecording) {
 }
 
 export default function History() {
-  const [history, setHistory] = useState<SavedRecording[]>([]);
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [localHistory, setLocalHistory] = useState<SavedRecording[]>(() =>
+    user ? [] : getHistory(),
+  );
+
+  const { data: cloudItems = [], isLoading } = useQuery({
+    queryKey: ["user", "history"],
+    queryFn: () => userApi.getHistory(),
+    enabled: !!user,
+  });
+
+  const clearCloud = useMutation({
+    mutationFn: () => userApi.clearHistory(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "history"] }),
+  });
 
   useEffect(() => {
-    setHistory(getHistory());
-  }, []);
+    if (!user) setLocalHistory(getHistory());
+  }, [user]);
+
+  const history: SavedRecording[] = user
+    ? cloudItems.map(parseCloudItem)
+    : localHistory;
+
+  const handleClear = () => {
+    if (user) {
+      clearCloud.mutate();
+    } else {
+      clearHistory();
+      setLocalHistory([]);
+    }
+  };
 
   return (
     <Layout>
@@ -47,11 +78,12 @@ export default function History() {
             </h1>
             <p className="text-xs text-muted-foreground mt-1">
               {history.length} recording{history.length !== 1 ? "s" : ""} watched
+              {user && <span className="text-primary/60 ml-1">· cloud synced</span>}
             </p>
           </div>
           {history.length > 0 && (
             <button
-              onClick={() => { clearHistory(); setHistory([]); }}
+              onClick={handleClear}
               className="flex items-center gap-1.5 text-xs text-muted-foreground/50 hover:text-destructive transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -60,7 +92,13 @@ export default function History() {
           )}
         </div>
 
-        {history.length === 0 ? (
+        {isLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+            {[...Array(10)].map((_, i) => (
+              <div key={i} className="aspect-video bg-secondary/30 animate-pulse rounded-sm" />
+            ))}
+          </div>
+        ) : history.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-32 text-center">
             <Clock className="w-10 h-10 text-muted-foreground/20 mb-4" />
             <p className="text-sm font-medium text-muted-foreground/50 mb-1">No watch history</p>

@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { useParams, Link, useLocation } from "wouter";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useGetRecording,
   useListRelatedRecordings,
@@ -23,6 +23,8 @@ import {
 import {
   getCollections, addToCollection, createCollection, type Collection,
 } from "@/lib/collections";
+import { useAuth } from "@/contexts/AuthContext";
+import { userApi, recordingToMeta, type CloudCollection } from "@/lib/user-api";
 import {
   Eye, HardDrive, MonitorPlay, AlertCircle, ArrowLeft, Maximize2, Minimize2,
   Calendar, User, Tag, Clapperboard, ThumbsUp, ThumbsDown, Bookmark, Share2,
@@ -102,6 +104,7 @@ export default function VideoDetail() {
   const sessionId = getSessionId();
   const playerRef = useRef<HTMLDivElement>(null);
   const { isFullscreen, enter: enterFS, exit: exitFS } = useFullscreen(playerRef);
+  const { user } = useAuth();
 
   const [activeServer, setActiveServer] = useState(0);
   const [videoStarted, setVideoStarted] = useState(false);
@@ -111,6 +114,7 @@ export default function VideoDetail() {
   const [embedCopied, setEmbedCopied] = useState(false);
   const [collectionOpen, setCollectionOpen] = useState(false);
   const [collections, setCollections] = useState<Collection[]>([]);
+  const [cloudCollections, setCloudCollections] = useState<CloudCollection[]>([]);
   const [newColName, setNewColName] = useState("");
   const [addedToCol, setAddedToCol] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -137,20 +141,33 @@ export default function VideoDetail() {
     setCollectionOpen(false);
     setAddedToCol(null);
     if (id) {
-      setBookmarked(isBookmarked(id));
-      setWatchLater(isInWatchLater(id));
+      if (!user) {
+        setBookmarked(isBookmarked(id));
+        setWatchLater(isInWatchLater(id));
+      } else {
+        userApi.getSaved().then((items) => {
+          setBookmarked(items.some((i) => i.recording_id === id));
+        }).catch(() => {});
+        userApi.getWatchLater().then((items) => {
+          setWatchLater(items.some((i) => i.recording_id === id));
+        }).catch(() => {});
+      }
     }
-  }, [id]);
+  }, [id, user]);
 
   useEffect(() => {
     if (collectionOpen) {
-      setCollections(getCollections());
+      if (user) {
+        userApi.getCollections().then(setCloudCollections).catch(() => {});
+      } else {
+        setCollections(getCollections());
+      }
     }
-  }, [collectionOpen]);
+  }, [collectionOpen, user]);
 
-  const handleAddToCollection = (colId: string) => {
-    if (!video) return;
-    addToCollection(colId, {
+  const getVideoMeta = () => {
+    if (!video) return null;
+    return {
       id: video.id,
       username: video.username,
       filename: video.filename,
@@ -159,7 +176,17 @@ export default function VideoDetail() {
       resolution: video.resolution,
       timestamp: video.timestamp,
       saved_at: new Date().toISOString(),
-    });
+    };
+  };
+
+  const handleAddToCollection = async (colId: string) => {
+    const meta = getVideoMeta();
+    if (!meta) return;
+    if (user) {
+      await userApi.addCollectionItem(colId, meta.id, recordingToMeta(meta));
+    } else {
+      addToCollection(colId, meta);
+    }
     setAddedToCol(colId);
     setTimeout(() => {
       setCollectionOpen(false);
@@ -167,10 +194,31 @@ export default function VideoDetail() {
     }, 1200);
   };
 
-  const handleCreateAndAdd = () => {
-    if (!newColName.trim() || !video) return;
-    const col = createCollection(newColName.trim());
-    addToCollection(col.id, {
+  const handleCreateAndAdd = async () => {
+    if (!newColName.trim()) return;
+    const meta = getVideoMeta();
+    if (!meta) return;
+    if (user) {
+      const col = await userApi.createCollection(newColName.trim());
+      await userApi.addCollectionItem(col.id, meta.id, recordingToMeta(meta));
+      setCloudCollections((prev) => [{ ...col, item_count: 1 }, ...prev]);
+      setAddedToCol(col.id);
+    } else {
+      const col = createCollection(newColName.trim());
+      addToCollection(col.id, meta);
+      setCollections((prev) => [col, ...prev]);
+      setAddedToCol(col.id);
+    }
+    setNewColName("");
+    setTimeout(() => {
+      setCollectionOpen(false);
+      setAddedToCol(null);
+    }, 1200);
+  };
+
+  useEffect(() => {
+    if (!video) return;
+    const meta = {
       id: video.id,
       username: video.username,
       filename: video.filename,
@@ -179,30 +227,13 @@ export default function VideoDetail() {
       resolution: video.resolution,
       timestamp: video.timestamp,
       saved_at: new Date().toISOString(),
-    });
-    setNewColName("");
-    setAddedToCol(col.id);
-    setCollections((prev) => [col, ...prev]);
-    setTimeout(() => {
-      setCollectionOpen(false);
-      setAddedToCol(null);
-    }, 1200);
-  };
-
-  useEffect(() => {
-    if (video) {
-      addToHistory({
-        id: video.id,
-        username: video.username,
-        filename: video.filename,
-        room_title: video.room_title,
-        thumbnail_url: video.thumbnail_url,
-        resolution: video.resolution,
-        timestamp: video.timestamp,
-        saved_at: new Date().toISOString(),
-      });
+    };
+    if (user) {
+      userApi.addHistory(video.id, recordingToMeta(meta)).catch(() => {});
+    } else {
+      addToHistory(meta);
     }
-  }, [video]);
+  }, [video, user]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -233,7 +264,7 @@ export default function VideoDetail() {
     );
   };
 
-  const handleBookmark = () => {
+  const handleBookmark = async () => {
     if (!video) return;
     const savedRec = {
       id: video.id,
@@ -245,10 +276,20 @@ export default function VideoDetail() {
       timestamp: video.timestamp,
       saved_at: new Date().toISOString(),
     };
-    setBookmarked(toggleBookmark(savedRec));
+    if (user) {
+      if (bookmarked) {
+        await userApi.removeSaved(video.id).catch(() => {});
+        setBookmarked(false);
+      } else {
+        await userApi.addSaved(video.id, recordingToMeta(savedRec)).catch(() => {});
+        setBookmarked(true);
+      }
+    } else {
+      setBookmarked(toggleBookmark(savedRec));
+    }
   };
 
-  const handleWatchLater = () => {
+  const handleWatchLater = async () => {
     if (!video) return;
     const savedRec = {
       id: video.id,
@@ -260,7 +301,17 @@ export default function VideoDetail() {
       timestamp: video.timestamp,
       saved_at: new Date().toISOString(),
     };
-    setWatchLater(toggleWatchLater(savedRec));
+    if (user) {
+      if (watchLater) {
+        await userApi.removeWatchLater(video.id).catch(() => {});
+        setWatchLater(false);
+      } else {
+        await userApi.addWatchLater(video.id, recordingToMeta(savedRec)).catch(() => {});
+        setWatchLater(true);
+      }
+    } else {
+      setWatchLater(toggleWatchLater(savedRec));
+    }
   };
 
   const handleShare = () => {
@@ -602,30 +653,49 @@ export default function VideoDetail() {
                             </button>
                           </div>
                         </div>
-                        {collections.length === 0 ? (
+                        {(user ? cloudCollections : collections).length === 0 ? (
                           <div className="px-3 py-4 text-center">
                             <p className="text-[11px] text-muted-foreground">No collections yet.</p>
                             <p className="text-[11px] text-muted-foreground/60">Create one above.</p>
                           </div>
                         ) : (
                           <div className="max-h-48 overflow-y-auto">
-                            {collections.map((col) => (
-                              <button
-                                key={col.id}
-                                onClick={() => handleAddToCollection(col.id)}
-                                className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-secondary transition-colors"
-                              >
-                                {addedToCol === col.id ? (
-                                  <Check className="w-3 h-3 text-green-500 shrink-0" />
-                                ) : (
-                                  <ListVideo className="w-3 h-3 text-muted-foreground/50 shrink-0" />
-                                )}
-                                <span className="truncate">{col.name}</span>
-                                <span className="ml-auto text-[10px] text-muted-foreground/40 shrink-0">
-                                  {col.items.length}
-                                </span>
-                              </button>
-                            ))}
+                            {user
+                              ? cloudCollections.map((col) => (
+                                  <button
+                                    key={col.id}
+                                    onClick={() => handleAddToCollection(col.id)}
+                                    className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-secondary transition-colors"
+                                  >
+                                    {addedToCol === col.id ? (
+                                      <Check className="w-3 h-3 text-green-500 shrink-0" />
+                                    ) : (
+                                      <ListVideo className="w-3 h-3 text-muted-foreground/50 shrink-0" />
+                                    )}
+                                    <span className="truncate">{col.name}</span>
+                                    <span className="ml-auto text-[10px] text-muted-foreground/40 shrink-0">
+                                      {col.item_count ?? 0}
+                                    </span>
+                                  </button>
+                                ))
+                              : collections.map((col) => (
+                                  <button
+                                    key={col.id}
+                                    onClick={() => handleAddToCollection(col.id)}
+                                    className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-secondary transition-colors"
+                                  >
+                                    {addedToCol === col.id ? (
+                                      <Check className="w-3 h-3 text-green-500 shrink-0" />
+                                    ) : (
+                                      <ListVideo className="w-3 h-3 text-muted-foreground/50 shrink-0" />
+                                    )}
+                                    <span className="truncate">{col.name}</span>
+                                    <span className="ml-auto text-[10px] text-muted-foreground/40 shrink-0">
+                                      {col.items.length}
+                                    </span>
+                                  </button>
+                                ))
+                            }
                           </div>
                         )}
                       </div>
