@@ -6,6 +6,7 @@ import tagsRouter from "./tags";
 import statsRouter from "./stats";
 import reactionsRouter from "./reactions";
 import commentsRouter from "./comments";
+import requestsRouter from "./requests";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(tagsRouter);
 router.use(statsRouter);
 router.use(reactionsRouter);
 router.use(commentsRouter);
+router.use(requestsRouter);
 
 export default router;

@@ -293,6 +293,44 @@ paths:
               schema:
                 $ref: "#/components/schemas/Comment"
 
+  /requests:
+    post:
+      operationId: createRequest
+      tags: [recordings]
+      summary: Submit a recording request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRequestInput"
+      responses:
+        "201":
+          description: Request submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordingRequest"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      operationId: listRequests
+      tags: [recordings]
+      summary: List all submitted recording requests
+      responses:
+        "200":
+          description: Request list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecordingRequest"
+
   /comments/{commentId}/like:
     post:
       operationId: toggleCommentLike
@@ -534,3 +572,35 @@ components:
           type: integer
         liked:
           type: boolean
+
+    CreateRequestInput:
+      type: object
+      properties:
+        performer_username:
+          type: string
+        stream_link:
+          type: string
+        notes:
+          type: string
+        priority:
+          type: string
+          enum: [low, normal, high]
+
+    RecordingRequest:
+      type: object
+      required: [status, created_at]
+      properties:
+        id:
+          type: ["integer", "null"]
+        performer_username:
+          type: ["string", "null"]
+        stream_link:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        priority:
+          type: ["string", "null"]
+        status:
+          type: string
+        created_at:
+          type: string
