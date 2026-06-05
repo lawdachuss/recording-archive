@@ -50,22 +50,50 @@ function useFullscreen(ref: React.RefObject<HTMLElement | null>) {
   return { isFullscreen, enter, exit };
 }
 
+function detectHostLabel(url: string): string {
+  try {
+    const { hostname } = new URL(url);
+    if (hostname.includes("streamtape")) return "Streamtape";
+    if (hostname.includes("voe")) return "VOE";
+    if (hostname.includes("mixdrop")) return "Mixdrop";
+    if (hostname.includes("dood")) return "DoodStream";
+    if (hostname.includes("filemoon")) return "Filemoon";
+    if (hostname.includes("upstream")) return "Upstream";
+    if (hostname.includes("vidoza")) return "Vidoza";
+    if (hostname.includes("mp4upload")) return "MP4Upload";
+    return hostname.replace(/^www\./, "");
+  } catch {
+    return "Server";
+  }
+}
+
+function isEmbedUrl(url: string): boolean {
+  try {
+    const { pathname } = new URL(url);
+    return pathname.includes("/e/") || pathname.includes("/embed/") || pathname.includes("/player/");
+  } catch {
+    return false;
+  }
+}
+
 function deriveServers(embedUrl?: string | null, previewUrl?: string | null) {
   const servers: { label: string; src: string; type: "iframe" | "img" }[] = [];
-  if (embedUrl) {
-    servers.push({ label: "Server 1", src: embedUrl, type: "iframe" });
-    const stMatch = embedUrl.match(/streamtape\.com\/e\/([^/]+)/);
-    if (stMatch) {
-      servers.push({ label: "Server 2", src: `https://streamtape.com/v/${stMatch[1]}/`, type: "iframe" });
-    }
-    const doodMatch = embedUrl.match(/dood(?:stream)?\.(?:com|to|watch|la|pm|wf|re|cx|sh)\/e\/([^/]+)/);
-    if (doodMatch) {
-      servers.push({ label: "Mirror", src: embedUrl.replace("/e/", "/d/"), type: "iframe" });
-    }
+
+  if (embedUrl && isEmbedUrl(embedUrl)) {
+    servers.push({ label: detectHostLabel(embedUrl), src: embedUrl, type: "iframe" });
+  } else if (embedUrl) {
+    servers.push({ label: detectHostLabel(embedUrl), src: embedUrl, type: "iframe" });
   }
+
   if (previewUrl) {
-    servers.push({ label: "Preview", src: previewUrl, type: "img" });
+    const isImage = /\.(gif|jpg|jpeg|png|webp)(\?.*)?$/i.test(previewUrl);
+    if (isImage) {
+      servers.push({ label: "Preview", src: previewUrl, type: "img" });
+    } else if (isEmbedUrl(previewUrl)) {
+      servers.push({ label: detectHostLabel(previewUrl), src: previewUrl, type: "iframe" });
+    }
   }
+
   return servers;
 }
 
