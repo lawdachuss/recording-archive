@@ -75,6 +75,8 @@ VITE_SUPABASE_URL = "https://alcwxntejivcqlurudts.supabase.co"
 VITE_SUPABASE_ANON_KEY = "***REMOVED***"
 SUPABASE_URL = "https://alcwxntejivcqlurudts.supabase.co"
 SUPABASE_ANON_KEY = "***REMOVED***"
+SUPABASE_SERVICE_KEY = "***REMOVED***"
+GITHUB_ACCESS_TOKEN = "***REMOVED***"
 
 [nix]
 channel = "stable-25_05"

@@ -62,13 +62,13 @@ export default function Charts() {
         </div>
 
         {/* Stats strip */}
-        {stats && (
+        {stats && stats.total_recordings != null && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
             {[
-              { label: "Recordings", value: stats.total_recordings.toLocaleString(), Icon: Film },
-              { label: "Performers", value: stats.total_performers.toLocaleString(), Icon: Users },
-              { label: "Tags", value: stats.total_tags.toLocaleString(), Icon: TrendingUp },
-              { label: "Total Size", value: formatBytes(stats.total_size_bytes), Icon: HardDrive },
+              { label: "Recordings", value: (stats.total_recordings ?? 0).toLocaleString(), Icon: Film },
+              { label: "Performers", value: (stats.total_performers ?? 0).toLocaleString(), Icon: Users },
+              { label: "Tags", value: (stats.total_tags ?? 0).toLocaleString(), Icon: TrendingUp },
+              { label: "Total Size", value: formatBytes(stats.total_size_bytes ?? 0), Icon: HardDrive },
             ].map(({ label, value, Icon }) => (
               <div key={label} className="border border-border/50 rounded-sm px-4 py-3 flex items-center gap-3">
                 <Icon className="w-4 h-4 text-primary/60 shrink-0" />

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Search, X, Menu, Sun, Moon, Film, Bookmark, History, Clock, Shuffle, TrendingUp, ListVideo, Send } from "lucide-react";
+import { Search, X, Menu, Sun, Moon, Film, Bookmark, History, Clock, Shuffle, ListVideo, Shield } from "lucide-react";
 import { addRecentSearch, getRecentSearches } from "@/lib/bookmarks";
 
 function useDarkMode() {
@@ -124,6 +124,7 @@ export function Navbar() {
     { href: "/collections", label: "Collections", Icon: ListVideo },
     { href: "/watch-later", label: "Watch Later", Icon: Clock },
     { href: "/history", label: "History", Icon: History },
+    { href: "/admin", label: "Admin", Icon: Shield },
   ];
 
   const filteredSuggestions = search.trim()
@@ -326,6 +327,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <Link href="/charts" className="hover:text-muted-foreground transition-colors">Charts</Link>
               <Link href="/collections" className="hover:text-muted-foreground transition-colors">Collections</Link>
               <Link href="/request" className="hover:text-muted-foreground transition-colors">Request</Link>
+              <Link href="/admin" className="hover:text-muted-foreground transition-colors">Admin</Link>
               <Link href="/bookmarks" className="hover:text-muted-foreground transition-colors">Bookmarks</Link>
               <Link href="/watch-later" className="hover:text-muted-foreground transition-colors">Watch Later</Link>
               <Link href="/history" className="hover:text-muted-foreground transition-colors">History</Link>
