@@ -276,6 +276,32 @@ export const CreateReplyBody = zod.object({
 
 
 /**
+ * @summary Submit a recording request
+ */
+export const CreateRequestBody = zod.object({
+  "performer_username": zod.string().optional(),
+  "stream_link": zod.string().optional(),
+  "notes": zod.string().optional(),
+  "priority": zod.enum(['low', 'normal', 'high']).optional()
+})
+
+
+/**
+ * @summary List all submitted recording requests
+ */
+export const ListRequestsResponseItem = zod.object({
+  "id": zod.number().nullish(),
+  "performer_username": zod.string().nullish(),
+  "stream_link": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "priority": zod.string().nullish(),
+  "status": zod.string(),
+  "created_at": zod.string()
+})
+export const ListRequestsResponse = zod.array(ListRequestsResponseItem)
+
+
+/**
  * @summary Toggle like on a comment
  */
 export const ToggleCommentLikeParams = zod.object({

@@ -137,6 +137,37 @@ export interface CommentLikeResult {
   liked: boolean;
 }
 
+export type CreateRequestInputPriority = typeof CreateRequestInputPriority[keyof typeof CreateRequestInputPriority];
+
+
+export const CreateRequestInputPriority = {
+  low: 'low',
+  normal: 'normal',
+  high: 'high',
+} as const;
+
+export interface CreateRequestInput {
+  performer_username?: string;
+  stream_link?: string;
+  notes?: string;
+  priority?: CreateRequestInputPriority;
+}
+
+export interface RecordingRequest {
+  /** @nullable */
+  id?: number | null;
+  /** @nullable */
+  performer_username?: string | null;
+  /** @nullable */
+  stream_link?: string | null;
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  priority?: string | null;
+  status: string;
+  created_at: string;
+}
+
 export type ListRecordingsParams = {
 page?: number;
 limit?: number;

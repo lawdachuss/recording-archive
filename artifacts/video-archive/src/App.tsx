@@ -13,6 +13,10 @@ import Bookmarks from "@/pages/Bookmarks";
 import History from "@/pages/History";
 import WatchLater from "@/pages/WatchLater";
 import RandomRedirect from "@/pages/RandomRedirect";
+import Charts from "@/pages/Charts";
+import Collections from "@/pages/Collections";
+import CollectionDetail from "@/pages/CollectionDetail";
+import RequestPage from "@/pages/RequestPage";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -37,6 +41,10 @@ function Router() {
       <Route path="/history" component={History} />
       <Route path="/watch-later" component={WatchLater} />
       <Route path="/random" component={RandomRedirect} />
+      <Route path="/charts" component={Charts} />
+      <Route path="/collections" component={Collections} />
+      <Route path="/collections/:id" component={CollectionDetail} />
+      <Route path="/request" component={RequestPage} />
       <Route component={NotFound} />
     </Switch>
   );

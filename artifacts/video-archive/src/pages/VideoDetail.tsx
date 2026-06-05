@@ -21,9 +21,13 @@ import {
   addToHistory,
 } from "@/lib/bookmarks";
 import {
+  getCollections, addToCollection, createCollection, type Collection,
+} from "@/lib/collections";
+import {
   Eye, HardDrive, MonitorPlay, AlertCircle, ArrowLeft, Maximize2, Minimize2,
   Calendar, User, Tag, Clapperboard, ThumbsUp, ThumbsDown, Bookmark, Share2,
   Check, Server, Film, Download, Clock, Play, Code2, ListVideo, Shuffle,
+  FolderPlus, Plus, ChevronDown,
 } from "lucide-react";
 
 function useFullscreen(ref: React.RefObject<HTMLElement | null>) {
@@ -78,6 +82,10 @@ export default function VideoDetail() {
   const [watchLater, setWatchLater] = useState(false);
   const [copied, setCopied] = useState(false);
   const [embedCopied, setEmbedCopied] = useState(false);
+  const [collectionOpen, setCollectionOpen] = useState(false);
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [newColName, setNewColName] = useState("");
+  const [addedToCol, setAddedToCol] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: video, isLoading, isError } = useGetRecording(id || "", {
@@ -99,11 +107,60 @@ export default function VideoDetail() {
   useEffect(() => {
     setVideoStarted(false);
     setActiveServer(0);
+    setCollectionOpen(false);
+    setAddedToCol(null);
     if (id) {
       setBookmarked(isBookmarked(id));
       setWatchLater(isInWatchLater(id));
     }
   }, [id]);
+
+  useEffect(() => {
+    if (collectionOpen) {
+      setCollections(getCollections());
+    }
+  }, [collectionOpen]);
+
+  const handleAddToCollection = (colId: string) => {
+    if (!video) return;
+    addToCollection(colId, {
+      id: video.id,
+      username: video.username,
+      filename: video.filename,
+      room_title: video.room_title,
+      thumbnail_url: video.thumbnail_url,
+      resolution: video.resolution,
+      timestamp: video.timestamp,
+      saved_at: new Date().toISOString(),
+    });
+    setAddedToCol(colId);
+    setTimeout(() => {
+      setCollectionOpen(false);
+      setAddedToCol(null);
+    }, 1200);
+  };
+
+  const handleCreateAndAdd = () => {
+    if (!newColName.trim() || !video) return;
+    const col = createCollection(newColName.trim());
+    addToCollection(col.id, {
+      id: video.id,
+      username: video.username,
+      filename: video.filename,
+      room_title: video.room_title,
+      thumbnail_url: video.thumbnail_url,
+      resolution: video.resolution,
+      timestamp: video.timestamp,
+      saved_at: new Date().toISOString(),
+    });
+    setNewColName("");
+    setAddedToCol(col.id);
+    setCollections((prev) => [col, ...prev]);
+    setTimeout(() => {
+      setCollectionOpen(false);
+      setAddedToCol(null);
+    }, 1200);
+  };
 
   useEffect(() => {
     if (video) {
@@ -483,6 +540,70 @@ export default function VideoDetail() {
                       Source
                     </a>
                   )}
+
+                  {/* Add to Collection dropdown */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setCollectionOpen((v) => !v)}
+                      className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border border-border/50 text-muted-foreground hover:border-border hover:text-foreground transition-all"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5" />
+                      Collection
+                      <ChevronDown className={`w-3 h-3 transition-transform ${collectionOpen ? "rotate-180" : ""}`} />
+                    </button>
+                    {collectionOpen && (
+                      <div className="absolute left-0 top-full mt-1 z-50 w-56 bg-background border border-border/60 rounded shadow-xl overflow-hidden">
+                        <div className="p-2 border-b border-border/40">
+                          <div className="flex gap-1">
+                            <input
+                              autoFocus
+                              type="text"
+                              placeholder="New collection…"
+                              value={newColName}
+                              onChange={(e) => setNewColName(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === "Enter") handleCreateAndAdd(); }}
+                              maxLength={60}
+                              className="flex-1 h-7 bg-secondary/60 border border-border/40 focus:border-primary/50 rounded-[2px] px-2 text-xs outline-none"
+                            />
+                            <button
+                              onClick={handleCreateAndAdd}
+                              disabled={!newColName.trim()}
+                              className="w-7 h-7 flex items-center justify-center bg-primary text-white rounded-[2px] disabled:opacity-40 transition-opacity"
+                              title="Create and add"
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                        {collections.length === 0 ? (
+                          <div className="px-3 py-4 text-center">
+                            <p className="text-[11px] text-muted-foreground">No collections yet.</p>
+                            <p className="text-[11px] text-muted-foreground/60">Create one above.</p>
+                          </div>
+                        ) : (
+                          <div className="max-h-48 overflow-y-auto">
+                            {collections.map((col) => (
+                              <button
+                                key={col.id}
+                                onClick={() => handleAddToCollection(col.id)}
+                                className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-secondary transition-colors"
+                              >
+                                {addedToCol === col.id ? (
+                                  <Check className="w-3 h-3 text-green-500 shrink-0" />
+                                ) : (
+                                  <ListVideo className="w-3 h-3 text-muted-foreground/50 shrink-0" />
+                                )}
+                                <span className="truncate">{col.name}</span>
+                                <span className="ml-auto text-[10px] text-muted-foreground/40 shrink-0">
+                                  {col.items.length}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   <Link
                     href="/history"

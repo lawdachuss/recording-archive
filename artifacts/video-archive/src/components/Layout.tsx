@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Search, X, Menu, Sun, Moon, Film, Bookmark, History, Clock, Shuffle } from "lucide-react";
+import { Search, X, Menu, Sun, Moon, Film, Bookmark, History, Clock, Shuffle, TrendingUp, ListVideo, Send } from "lucide-react";
 import { addRecentSearch, getRecentSearches } from "@/lib/bookmarks";
 
 function useDarkMode() {
@@ -115,10 +115,13 @@ export function Navbar() {
     { href: "/browse", label: "Browse" },
     { href: "/performers", label: "Performers" },
     { href: "/tags", label: "Tags" },
+    { href: "/charts", label: "Charts" },
+    { href: "/request", label: "Request" },
   ];
 
   const iconLinks = [
     { href: "/bookmarks", label: "Bookmarks", Icon: Bookmark },
+    { href: "/collections", label: "Collections", Icon: ListVideo },
     { href: "/watch-later", label: "Watch Later", Icon: Clock },
     { href: "/history", label: "History", Icon: History },
   ];
@@ -320,6 +323,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <Link href="/browse" className="hover:text-muted-foreground transition-colors">Browse</Link>
               <Link href="/performers" className="hover:text-muted-foreground transition-colors">Performers</Link>
               <Link href="/tags" className="hover:text-muted-foreground transition-colors">Tags</Link>
+              <Link href="/charts" className="hover:text-muted-foreground transition-colors">Charts</Link>
+              <Link href="/collections" className="hover:text-muted-foreground transition-colors">Collections</Link>
+              <Link href="/request" className="hover:text-muted-foreground transition-colors">Request</Link>
               <Link href="/bookmarks" className="hover:text-muted-foreground transition-colors">Bookmarks</Link>
               <Link href="/watch-later" className="hover:text-muted-foreground transition-colors">Watch Later</Link>
               <Link href="/history" className="hover:text-muted-foreground transition-colors">History</Link>
