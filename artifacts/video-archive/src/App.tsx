@@ -17,6 +17,7 @@ import Charts from "@/pages/Charts";
 import Collections from "@/pages/Collections";
 import CollectionDetail from "@/pages/CollectionDetail";
 import RequestPage from "@/pages/RequestPage";
+import AdminPage from "@/pages/AdminPage";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -45,6 +46,7 @@ function Router() {
       <Route path="/collections" component={Collections} />
       <Route path="/collections/:id" component={CollectionDetail} />
       <Route path="/request" component={RequestPage} />
+      <Route path="/admin" component={AdminPage} />
       <Route component={NotFound} />
     </Switch>
   );

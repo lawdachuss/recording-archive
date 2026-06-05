@@ -62,4 +62,29 @@ router.post("/requests", async (req, res) => {
   }
 });
 
+router.patch("/requests/:id/status", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { status } = req.body as { status?: string };
+
+  const valid = ["pending", "approved", "rejected", "done"];
+  if (!status || !valid.includes(status)) {
+    res.status(400).json({ error: "status must be one of: pending, approved, rejected, done" });
+    return;
+  }
+
+  try {
+    const result = await db.execute(sql`
+      UPDATE requests SET status = ${status} WHERE id = ${id}
+      RETURNING id, performer_username, stream_link, notes, priority, status, created_at
+    `);
+    if (!result.rows.length) {
+      res.status(404).json({ error: "Request not found" });
+      return;
+    }
+    res.json(result.rows[0]);
+  } catch {
+    res.status(500).json({ error: "Failed to update status" });
+  }
+});
+
 export default router;
