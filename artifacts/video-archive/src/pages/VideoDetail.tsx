@@ -86,11 +86,10 @@ function deriveServers(embedUrl?: string | null, previewUrl?: string | null) {
   }
 
   if (previewUrl) {
-    const isImage = /\.(gif|jpg|jpeg|png|webp)(\?.*)?$/i.test(previewUrl);
-    if (isImage) {
-      servers.push({ label: "Preview", src: previewUrl, type: "img" });
-    } else if (isEmbedUrl(previewUrl)) {
+    if (isEmbedUrl(previewUrl)) {
       servers.push({ label: detectHostLabel(previewUrl), src: previewUrl, type: "iframe" });
+    } else {
+      servers.push({ label: "Preview", src: previewUrl, type: "img" });
     }
   }
 

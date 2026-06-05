@@ -6,6 +6,7 @@ export const commentsTable = pgTable("comments", {
   parent_id: integer("parent_id"),
   author: text("author").notNull(),
   content: text("content").notNull(),
+  session_id: text("session_id"),
   deleted: boolean("deleted").default(false).notNull(),
   created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
