@@ -1,8 +1,13 @@
 import { useState, useEffect } from "react";
 import { Link } from "wouter";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
-import { getWatchLater, removeFromWatchLater, clearWatchLater, type SavedRecording } from "@/lib/bookmarks";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  getWatchLater, removeFromWatchLater, clearWatchLater, type SavedRecording,
+} from "@/lib/bookmarks";
+import { userApi, parseCloudItem } from "@/lib/user-api";
 import { Clock, Trash2, ListX } from "lucide-react";
 
 function toRecording(r: SavedRecording) {
@@ -30,20 +35,52 @@ function toRecording(r: SavedRecording) {
 }
 
 export default function WatchLater() {
-  const [queue, setQueue] = useState<SavedRecording[]>([]);
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [localQueue, setLocalQueue] = useState<SavedRecording[]>(() =>
+    user ? [] : getWatchLater(),
+  );
+
+  const { data: cloudItems = [], isLoading } = useQuery({
+    queryKey: ["user", "watch-later"],
+    queryFn: () => userApi.getWatchLater(),
+    enabled: !!user,
+  });
+
+  const removeCloud = useMutation({
+    mutationFn: (id: string) => userApi.removeWatchLater(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "watch-later"] }),
+  });
+
+  const clearCloud = useMutation({
+    mutationFn: () => userApi.clearWatchLater(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "watch-later"] }),
+  });
 
   useEffect(() => {
-    setQueue(getWatchLater());
-  }, []);
+    if (!user) setLocalQueue(getWatchLater());
+  }, [user]);
+
+  const queue: SavedRecording[] = user
+    ? cloudItems.map(parseCloudItem)
+    : localQueue;
 
   const handleRemove = (id: string) => {
-    removeFromWatchLater(id);
-    setQueue(getWatchLater());
+    if (user) {
+      removeCloud.mutate(id);
+    } else {
+      removeFromWatchLater(id);
+      setLocalQueue(getWatchLater());
+    }
   };
 
   const handleClearAll = () => {
-    clearWatchLater();
-    setQueue([]);
+    if (user) {
+      clearCloud.mutate();
+    } else {
+      clearWatchLater();
+      setLocalQueue([]);
+    }
   };
 
   return (
@@ -57,6 +94,7 @@ export default function WatchLater() {
             </h1>
             <p className="text-xs text-muted-foreground mt-1">
               {queue.length} recording{queue.length !== 1 ? "s" : ""} queued
+              {user && <span className="text-primary/60 ml-1">· cloud synced</span>}
             </p>
           </div>
           {queue.length > 0 && (
@@ -70,7 +108,13 @@ export default function WatchLater() {
           )}
         </div>
 
-        {queue.length === 0 ? (
+        {isLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+            {[...Array(10)].map((_, i) => (
+              <div key={i} className="aspect-video bg-secondary/30 animate-pulse rounded-sm" />
+            ))}
+          </div>
+        ) : queue.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-32 text-center">
             <ListX className="w-10 h-10 text-muted-foreground/20 mb-4" />
             <p className="text-sm font-medium text-muted-foreground/50 mb-1">Queue is empty</p>
@@ -85,7 +129,6 @@ export default function WatchLater() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
             {queue.map((rec, index) => (
               <div key={rec.id} className="relative group/card">
-                {/* Queue number */}
                 <div className="absolute top-2 left-2 z-10 w-5 h-5 rounded-[2px] bg-primary/90 text-white text-[10px] font-bold flex items-center justify-center">
                   {index + 1}
                 </div>

@@ -1,8 +1,11 @@
 import { useState, useEffect } from "react";
 import { Link } from "wouter";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
+import { useAuth } from "@/contexts/AuthContext";
 import { getBookmarks, removeBookmark, type SavedRecording } from "@/lib/bookmarks";
+import { userApi, parseCloudItem } from "@/lib/user-api";
 import { Bookmark, Trash2, BookmarkX } from "lucide-react";
 
 function toRecording(r: SavedRecording) {
@@ -30,20 +33,47 @@ function toRecording(r: SavedRecording) {
 }
 
 export default function Bookmarks() {
-  const [bookmarks, setBookmarks] = useState<SavedRecording[]>([]);
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [localBookmarks, setLocalBookmarks] = useState<SavedRecording[]>(() =>
+    user ? [] : getBookmarks(),
+  );
+
+  const { data: cloudItems = [], isLoading } = useQuery({
+    queryKey: ["user", "saved"],
+    queryFn: () => userApi.getSaved(),
+    enabled: !!user,
+  });
+
+  const removeCloud = useMutation({
+    mutationFn: (id: string) => userApi.removeSaved(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "saved"] }),
+  });
 
   useEffect(() => {
-    setBookmarks(getBookmarks());
-  }, []);
+    if (!user) setLocalBookmarks(getBookmarks());
+  }, [user]);
+
+  const bookmarks: SavedRecording[] = user
+    ? cloudItems.map(parseCloudItem)
+    : localBookmarks;
 
   const handleRemove = (id: string) => {
-    removeBookmark(id);
-    setBookmarks(getBookmarks());
+    if (user) {
+      removeCloud.mutate(id);
+    } else {
+      removeBookmark(id);
+      setLocalBookmarks(getBookmarks());
+    }
   };
 
   const handleClearAll = () => {
-    bookmarks.forEach((b) => removeBookmark(b.id));
-    setBookmarks([]);
+    if (user) {
+      bookmarks.forEach((b) => removeCloud.mutate(b.id));
+    } else {
+      bookmarks.forEach((b) => removeBookmark(b.id));
+      setLocalBookmarks([]);
+    }
   };
 
   return (
@@ -57,6 +87,7 @@ export default function Bookmarks() {
             </h1>
             <p className="text-xs text-muted-foreground mt-1">
               {bookmarks.length} saved recording{bookmarks.length !== 1 ? "s" : ""}
+              {user && <span className="text-primary/60 ml-1">· cloud synced</span>}
             </p>
           </div>
           {bookmarks.length > 0 && (
@@ -70,7 +101,13 @@ export default function Bookmarks() {
           )}
         </div>
 
-        {bookmarks.length === 0 ? (
+        {isLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+            {[...Array(10)].map((_, i) => (
+              <div key={i} className="aspect-video bg-secondary/30 animate-pulse rounded-sm" />
+            ))}
+          </div>
+        ) : bookmarks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-32 text-center">
             <BookmarkX className="w-10 h-10 text-muted-foreground/20 mb-4" />
             <p className="text-sm font-medium text-muted-foreground/50 mb-1">No bookmarks yet</p>

@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "wouter";
 import { Layout } from "@/components/Layout";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Shield, RefreshCw, CheckCircle2, XCircle, Clock, AlertTriangle,
   User, Link2, FileText, ChevronDown, ChevronUp, Inbox,
-  ArrowLeft, Trash2, Filter,
+  ArrowLeft, Trash2, Filter, Lock,
 } from "lucide-react";
 import { formatRelativeTime } from "@/lib/formatters";
 
@@ -34,15 +35,18 @@ const PRIORITY_STYLES: Record<string, string> = {
 type StatusFilter = "all" | "pending" | "approved" | "rejected" | "done";
 
 export default function AdminPage() {
+  const { user, loading, role } = useAuth();
   const [requests, setRequests] = useState<AdminRequest[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [pageLoading, setPageLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [updating, setUpdating] = useState<number | null>(null);
 
+  const isAdmin = role === "admin" || role === "moderator";
+
   const loadRequests = useCallback(async () => {
-    setLoading(true);
+    setPageLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/requests");
@@ -52,13 +56,14 @@ export default function AdminPage() {
     } catch (e: any) {
       setError(e.message ?? "Failed to load requests");
     } finally {
-      setLoading(false);
+      setPageLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadRequests();
-  }, [loadRequests]);
+    if (!loading && isAdmin) loadRequests();
+    else if (!loading) setPageLoading(false);
+  }, [loading, isAdmin, loadRequests]);
 
   const updateStatus = async (id: number, status: string) => {
     setUpdating(id);
@@ -69,14 +74,9 @@ export default function AdminPage() {
         body: JSON.stringify({ status }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setRequests((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, status } : r)),
-      );
+      setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
     } catch {
-      // silently fail — data not persisted yet
-      setRequests((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, status } : r)),
-      );
+      setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
     } finally {
       setUpdating(null);
     }
@@ -85,6 +85,37 @@ export default function AdminPage() {
   const deleteRequest = async (id: number) => {
     setRequests((prev) => prev.filter((r) => r.id !== id));
   };
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="min-h-[60vh] flex items-center justify-center">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      </Layout>
+    );
+  }
+
+  if (!user || !isAdmin) {
+    return (
+      <Layout>
+        <div className="container mx-auto px-4 sm:px-6 py-24 text-center max-w-sm">
+          <Lock className="w-10 h-10 text-muted-foreground/20 mx-auto mb-6" />
+          <h1 className="text-xl font-bold mb-2">Admin access required</h1>
+          <p className="text-sm text-muted-foreground mb-6">
+            {!user
+              ? "Sign in with an admin account to access this page."
+              : "Your account doesn't have admin privileges."}
+          </p>
+          <Link href={user ? "/" : "/login"}>
+            <span className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-semibold bg-primary text-white hover:bg-primary/90 rounded-sm transition-colors">
+              {user ? "Go Home" : "Sign In"}
+            </span>
+          </Link>
+        </div>
+      </Layout>
+    );
+  }
 
   const filtered = requests.filter((r) =>
     statusFilter === "all" ? true : r.status === statusFilter,
@@ -109,7 +140,6 @@ export default function AdminPage() {
   return (
     <Layout>
       <div className="container mx-auto px-4 sm:px-6 py-10 max-w-4xl">
-        {/* Header */}
         <div className="flex items-start justify-between mb-8 gap-4">
           <div>
             <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold mb-3">
@@ -126,10 +156,10 @@ export default function AdminPage() {
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={loadRequests}
-              disabled={loading}
+              disabled={pageLoading}
               className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-medium border border-border/50 text-muted-foreground hover:text-foreground hover:border-border transition-all rounded-sm disabled:opacity-50"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${pageLoading ? "animate-spin" : ""}`} />
               Refresh
             </button>
             <Link href="/request">
@@ -140,7 +170,6 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Stats row */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-6">
           {filterTabs.map(({ id, label }) => (
             <button
@@ -160,7 +189,6 @@ export default function AdminPage() {
           ))}
         </div>
 
-        {/* Filter tabs */}
         <div className="flex gap-1 mb-4 items-center">
           <Filter className="w-3.5 h-3.5 text-muted-foreground/50 mr-1" />
           {filterTabs.map(({ id, label }) => (
@@ -183,7 +211,6 @@ export default function AdminPage() {
           ))}
         </div>
 
-        {/* Content */}
         {error && (
           <div className="flex items-center gap-2 p-4 bg-destructive/10 border border-destructive/30 rounded-sm text-sm text-destructive mb-4">
             <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -191,7 +218,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {loading && !requests.length ? (
+        {pageLoading && !requests.length ? (
           <div className="space-y-2">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="h-16 bg-secondary/30 border border-border/30 rounded-sm animate-pulse" />
@@ -201,9 +228,7 @@ export default function AdminPage() {
           <div className="py-24 text-center border border-dashed border-border/40 rounded-sm">
             <Inbox className="w-10 h-10 text-muted-foreground/20 mx-auto mb-4" />
             <p className="text-sm text-muted-foreground">
-              {statusFilter === "all"
-                ? "No requests submitted yet."
-                : `No ${statusFilter} requests.`}
+              {statusFilter === "all" ? "No requests submitted yet." : `No ${statusFilter} requests.`}
             </p>
           </div>
         ) : (
@@ -218,16 +243,10 @@ export default function AdminPage() {
                   key={req.id ?? req.created_at}
                   className="border border-border/40 hover:border-border/70 rounded-sm transition-all"
                 >
-                  {/* Row */}
                   <div className="flex items-center gap-3 px-4 py-3">
-                    {/* Status badge */}
-                    <span
-                      className={`shrink-0 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-[2px] border ${statusStyle.className}`}
-                    >
+                    <span className={`shrink-0 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-[2px] border ${statusStyle.className}`}>
                       {statusStyle.label}
                     </span>
-
-                    {/* Main info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         {req.performer_username && (
@@ -248,9 +267,7 @@ export default function AdminPage() {
                           </a>
                         )}
                         {req.priority && req.priority !== "normal" && (
-                          <span className={`text-[11px] ${priorityStyle}`}>
-                            [{req.priority}]
-                          </span>
+                          <span className={`text-[11px] ${priorityStyle}`}>[{req.priority}]</span>
                         )}
                       </div>
                       <div className="flex items-center gap-3 mt-0.5 text-[11px] text-muted-foreground/60">
@@ -264,8 +281,6 @@ export default function AdminPage() {
                         )}
                       </div>
                     </div>
-
-                    {/* Actions */}
                     <div className="flex items-center gap-1 shrink-0">
                       {req.status === "pending" && req.id != null && (
                         <>
@@ -308,17 +323,12 @@ export default function AdminPage() {
                           onClick={() => setExpandedId(isExpanded ? null : req.id)}
                           className="w-7 h-7 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors rounded"
                         >
-                          {isExpanded ? (
-                            <ChevronUp className="w-4 h-4" />
-                          ) : (
-                            <ChevronDown className="w-4 h-4" />
-                          )}
+                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                         </button>
                       )}
                     </div>
                   </div>
 
-                  {/* Expanded detail */}
                   {isExpanded && (
                     <div className="px-4 pb-4 border-t border-border/30 pt-3 space-y-2">
                       {req.stream_link && (

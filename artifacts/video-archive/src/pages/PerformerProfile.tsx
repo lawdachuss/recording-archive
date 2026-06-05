@@ -1,12 +1,18 @@
+import { useState } from "react";
 import { useParams, Link } from "wouter";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useGetPerformer, getGetPerformerQueryKey } from "@workspace/api-client-react";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, ArrowLeft } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { userApi, type PerformerFollow } from "@/lib/user-api";
+import { AlertCircle, ArrowLeft, Heart } from "lucide-react";
 
 export default function PerformerProfile() {
   const { username } = useParams<{ username: string }>();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   const { data: profile, isLoading, isError } = useGetPerformer(username || "", {
     query: {
@@ -14,6 +20,34 @@ export default function PerformerProfile() {
       queryKey: getGetPerformerQueryKey(username || ""),
     },
   });
+
+  const { data: follows = [] } = useQuery({
+    queryKey: ["user", "follows"],
+    queryFn: () => userApi.getFollows(),
+    enabled: !!user,
+  });
+
+  const isFollowing = follows.some(
+    (f: PerformerFollow) => f.performer_username === username,
+  );
+
+  const follow = useMutation({
+    mutationFn: () => userApi.addFollow(username!),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "follows"] }),
+  });
+
+  const unfollow = useMutation({
+    mutationFn: () => userApi.removeFollow(username!),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "follows"] }),
+  });
+
+  const handleToggleFollow = () => {
+    if (isFollowing) {
+      unfollow.mutate();
+    } else {
+      follow.mutate();
+    }
+  };
 
   if (isError) {
     return (
@@ -34,7 +68,6 @@ export default function PerformerProfile() {
 
   return (
     <Layout>
-      {/* Hero band */}
       <div className="relative border-b border-border/50 overflow-hidden">
         {latestThumbnail && (
           <div
@@ -42,59 +75,74 @@ export default function PerformerProfile() {
             style={{ backgroundImage: `url(${latestThumbnail})` }}
           />
         )}
-        <div className="relative container mx-auto px-4 sm:px-6 py-10 flex items-end gap-6">
-          {/* Avatar */}
-          {isLoading ? (
-            <Skeleton className="w-20 h-20 rounded-full shrink-0" />
-          ) : (
-            <div className="w-20 h-20 rounded-full overflow-hidden shrink-0 border-2 border-border bg-secondary">
-              {latestThumbnail ? (
-                <img
-                  src={latestThumbnail}
-                  alt={profile?.username}
-                  className="w-full h-full object-cover object-top"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-secondary">
-                  <span className="text-xl font-black text-muted-foreground/30 uppercase">
-                    {username?.slice(0, 2)}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-
-          <div>
-            <Link
-              href="/performers"
-              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors mb-2"
-            >
-              <ArrowLeft className="w-3 h-3" /> Performers
-            </Link>
+        <div className="relative container mx-auto px-4 sm:px-6 py-10 flex items-end justify-between gap-6">
+          <div className="flex items-end gap-6">
             {isLoading ? (
-              <div className="space-y-2">
-                <Skeleton className="h-7 w-40" />
-                <Skeleton className="h-4 w-24" />
+              <Skeleton className="w-20 h-20 rounded-full shrink-0" />
+            ) : (
+              <div className="w-20 h-20 rounded-full overflow-hidden shrink-0 border-2 border-border bg-secondary">
+                {latestThumbnail ? (
+                  <img
+                    src={latestThumbnail}
+                    alt={profile?.username}
+                    className="w-full h-full object-cover object-top"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-secondary">
+                    <span className="text-xl font-black text-muted-foreground/30 uppercase">
+                      {username?.slice(0, 2)}
+                    </span>
+                  </div>
+                )}
               </div>
-            ) : profile ? (
-              <div>
-                <h1 className="text-2xl font-black tracking-tight">{profile.username}</h1>
-                <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                  <span>{profile.recording_count || profile.recordings.length} recordings</span>
-                  {profile.gender && (
-                    <>
-                      <span className="w-px h-3 bg-border" />
-                      <span className="capitalize">{profile.gender}</span>
-                    </>
-                  )}
+            )}
+
+            <div>
+              <Link
+                href="/performers"
+                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors mb-2"
+              >
+                <ArrowLeft className="w-3 h-3" /> Performers
+              </Link>
+              {isLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-7 w-40" />
+                  <Skeleton className="h-4 w-24" />
                 </div>
-              </div>
-            ) : null}
+              ) : profile ? (
+                <div>
+                  <h1 className="text-2xl font-black tracking-tight">{profile.username}</h1>
+                  <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                    <span>{profile.recording_count || profile.recordings.length} recordings</span>
+                    {profile.gender && (
+                      <>
+                        <span className="w-px h-3 bg-border" />
+                        <span className="capitalize">{profile.gender}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
+
+          {user && profile && (
+            <button
+              onClick={handleToggleFollow}
+              disabled={follow.isPending || unfollow.isPending}
+              className={`inline-flex items-center gap-1.5 h-9 px-4 text-xs font-semibold rounded-sm border transition-all disabled:opacity-60 ${
+                isFollowing
+                  ? "bg-primary/10 border-primary/40 text-primary hover:bg-destructive/10 hover:border-destructive/40 hover:text-destructive"
+                  : "border-border/50 text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5"
+              }`}
+            >
+              <Heart className={`w-3.5 h-3.5 ${isFollowing ? "fill-primary" : ""}`} />
+              {isFollowing ? "Following" : "Follow"}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Recordings */}
       <div className="container mx-auto px-4 sm:px-6 py-10">
         {isLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8">

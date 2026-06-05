@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Search, X, Menu, Sun, Moon, Film, Bookmark, History, Clock, Shuffle, ListVideo, Shield } from "lucide-react";
+import { Search, X, Menu, Sun, Moon, Film, Shuffle } from "lucide-react";
 import { addRecentSearch, getRecentSearches } from "@/lib/bookmarks";
+import { UserMenu } from "@/components/UserMenu";
+import { NotificationBell } from "@/components/NotificationBell";
 
 function useDarkMode() {
   const [dark, setDark] = useState(() => {
@@ -119,14 +121,6 @@ export function Navbar() {
     { href: "/request", label: "Request" },
   ];
 
-  const iconLinks = [
-    { href: "/bookmarks", label: "Bookmarks", Icon: Bookmark },
-    { href: "/collections", label: "Collections", Icon: ListVideo },
-    { href: "/watch-later", label: "Watch Later", Icon: Clock },
-    { href: "/history", label: "History", Icon: History },
-    { href: "/admin", label: "Admin", Icon: Shield },
-  ];
-
   const filteredSuggestions = search.trim()
     ? recentSearches.filter((s) => s.toLowerCase().includes(search.toLowerCase())).slice(0, 5)
     : recentSearches.slice(0, 5);
@@ -212,22 +206,6 @@ export function Navbar() {
             </button>
           )}
 
-          {/* Icon nav — desktop */}
-          {!searchOpen && iconLinks.map(({ href, label, Icon }) => (
-            <Link key={href} href={href} title={label}>
-              <span
-                className={`hidden sm:flex items-center justify-center w-8 h-8 rounded transition-colors ${
-                  isActive(href)
-                    ? "text-primary"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-              </span>
-            </Link>
-          ))}
-
-          {/* Random button */}
           {!searchOpen && (
             <button
               onClick={() => setLocation("/random")}
@@ -247,6 +225,9 @@ export function Navbar() {
             {dark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
 
+          <NotificationBell />
+          <UserMenu />
+
           <button
             className="flex md:hidden items-center justify-center w-8 h-8 text-muted-foreground hover:text-foreground transition-colors"
             onClick={() => setMobileOpen((o) => !o)}
@@ -260,7 +241,29 @@ export function Navbar() {
 
       {mobileOpen && (
         <div className="md:hidden border-t border-border/50 bg-background/98 backdrop-blur-xl px-4 py-4 space-y-1">
-          {[...navLinks, ...iconLinks.map(({ href, label }) => ({ href, label }))].map(({ href, label }) => (
+          {navLinks.map(({ href, label }) => (
+            <Link key={href} href={href}>
+              <span
+                className={`block px-3 py-2.5 text-sm rounded transition-colors ${
+                  isActive(href)
+                    ? "text-foreground font-medium bg-secondary"
+                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                }`}
+                onClick={() => setMobileOpen(false)}
+              >
+                {label}
+              </span>
+            </Link>
+          ))}
+          {[
+            { href: "/bookmarks", label: "Bookmarks" },
+            { href: "/collections", label: "Collections" },
+            { href: "/watch-later", label: "Watch Later" },
+            { href: "/history", label: "History" },
+            { href: "/following", label: "Following" },
+            { href: "/notifications", label: "Notifications" },
+            { href: "/settings", label: "Settings" },
+          ].map(({ href, label }) => (
             <Link key={href} href={href}>
               <span
                 className={`block px-3 py-2.5 text-sm rounded transition-colors ${
@@ -327,7 +330,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <Link href="/charts" className="hover:text-muted-foreground transition-colors">Charts</Link>
               <Link href="/collections" className="hover:text-muted-foreground transition-colors">Collections</Link>
               <Link href="/request" className="hover:text-muted-foreground transition-colors">Request</Link>
-              <Link href="/admin" className="hover:text-muted-foreground transition-colors">Admin</Link>
               <Link href="/bookmarks" className="hover:text-muted-foreground transition-colors">Bookmarks</Link>
               <Link href="/watch-later" className="hover:text-muted-foreground transition-colors">Watch Later</Link>
               <Link href="/history" className="hover:text-muted-foreground transition-colors">History</Link>

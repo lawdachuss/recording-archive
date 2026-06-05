@@ -2,6 +2,7 @@ import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AuthProvider } from "@/contexts/AuthContext";
 
 import Home from "@/pages/Home";
 import Browse from "@/pages/Browse";
@@ -18,6 +19,13 @@ import Collections from "@/pages/Collections";
 import CollectionDetail from "@/pages/CollectionDetail";
 import RequestPage from "@/pages/RequestPage";
 import AdminPage from "@/pages/AdminPage";
+import Login from "@/pages/Login";
+import Signup from "@/pages/Signup";
+import ForgotPassword from "@/pages/ForgotPassword";
+import AuthCallback from "@/pages/AuthCallback";
+import Settings from "@/pages/Settings";
+import Following from "@/pages/Following";
+import Notifications from "@/pages/Notifications";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -47,6 +55,13 @@ function Router() {
       <Route path="/collections/:id" component={CollectionDetail} />
       <Route path="/request" component={RequestPage} />
       <Route path="/admin" component={AdminPage} />
+      <Route path="/login" component={Login} />
+      <Route path="/signup" component={Signup} />
+      <Route path="/forgot-password" component={ForgotPassword} />
+      <Route path="/auth/callback" component={AuthCallback} />
+      <Route path="/settings" component={Settings} />
+      <Route path="/following" component={Following} />
+      <Route path="/notifications" component={Notifications} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -55,12 +70,14 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
-        </WouterRouter>
-        <Toaster />
-      </TooltipProvider>
+      <AuthProvider>
+        <TooltipProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <Router />
+          </WouterRouter>
+          <Toaster />
+        </TooltipProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
