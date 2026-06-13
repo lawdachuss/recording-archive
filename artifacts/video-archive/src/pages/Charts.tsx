@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { useListRecordings, useListPerformers, useGetStats } from "@workspace/api-client-react";
+import { useListRecordings, useGetStats } from "@workspace/api-client-react";
+import { useListPerformers } from "@/lib/api";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
 import { Skeleton } from "@/components/ui/skeleton";
+import { OptimizedImage } from "@/components/ui/optimized-image";
 import { formatBytes } from "@/lib/formatters";
 import { TrendingUp, Users, HardDrive, Film, Trophy, Star, Flame } from "lucide-react";
 
@@ -22,18 +24,19 @@ function VideoSkeleton() {
 export default function Charts() {
   const [tab, setTab] = useState<ChartTab>("popular");
 
-  const { data: popularData, isLoading: popularLoading } = useListRecordings({
-    limit: 24,
-    sort: "popular",
-  });
+  const { data: popularData, isLoading: popularLoading } = useListRecordings(
+    { limit: 24, sort: "popular" },
+    { query: { staleTime: 0 } } as any,
+  );
 
-  const { data: largestData, isLoading: largestLoading } = useListRecordings({
-    limit: 24,
-    sort: "largest",
-  });
+  const { data: largestData, isLoading: largestLoading } = useListRecordings(
+    { limit: 24, sort: "largest" },
+    { query: { staleTime: 0 } } as any,
+  );
 
-  const { data: performers, isLoading: performersLoading } = useListPerformers();
-  const { data: stats } = useGetStats();
+  const { data: performersData, isLoading: performersLoading } = useListPerformers(undefined, { staleTime: 0 });
+  const performers = performersData?.performers ?? [];
+  const { data: stats } = useGetStats({ query: { staleTime: 0 } } as any);
 
   const tabs: { id: ChartTab; label: string; Icon: typeof TrendingUp }[] = [
     { id: "popular", label: "Most Popular", Icon: Flame },
@@ -110,9 +113,7 @@ export default function Charts() {
                     <Skeleton className="h-4 w-16 ml-auto" />
                   </div>
                 ))
-              : performers
-                  ?.slice(0, 50)
-                  .sort((a, b) => b.recording_count - a.recording_count)
+              : performers.slice(0, 50).sort((a, b) => b.recording_count - a.recording_count)
                   .map((p, i) => (
                     <Link key={p.username} href={`/performers/${p.username}`}>
                       <div className="flex items-center gap-4 p-3 border border-border/30 hover:border-primary/30 hover:bg-secondary/30 rounded-sm transition-all group cursor-pointer">
@@ -130,10 +131,16 @@ export default function Charts() {
                           {i + 1}
                         </div>
                         {p.latest_thumbnail ? (
-                          <img
+                          <OptimizedImage
                             src={p.latest_thumbnail}
                             alt={p.username}
                             className="w-10 h-10 object-cover rounded-sm shrink-0"
+                            containerClassName="w-10 h-10 rounded-sm shrink-0"
+                            fallback={
+                              <div className="w-10 h-10 bg-secondary rounded-sm shrink-0 flex items-center justify-center">
+                                <Users className="w-4 h-4 text-muted-foreground/30" />
+                              </div>
+                            }
                           />
                         ) : (
                           <div className="w-10 h-10 bg-secondary rounded-sm shrink-0 flex items-center justify-center">
@@ -196,7 +203,7 @@ export default function Charts() {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
               {loading
                 ? Array.from({ length: 18 }).map((_, i) => <VideoSkeleton key={i} />)
-                : recordings?.slice(3).map((rec) => <VideoCard key={rec.id} recording={rec} />)}
+                : recordings?.slice(3).map((rec, i) => <VideoCard key={rec.id} recording={rec} fetchPriority={i < 2 ? "high" : undefined} />)}
             </div>
           </>
         )}

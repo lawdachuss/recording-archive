@@ -25,6 +25,8 @@ export interface Recording {
   /** @nullable */
   filesize?: number | null;
   /** @nullable */
+  duration?: number | null;
+  /** @nullable */
   gender?: string | null;
   /** @nullable */
   thumbnail_url?: string | null;

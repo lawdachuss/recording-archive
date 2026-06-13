@@ -1,9 +1,9 @@
 import {
   useGetStats,
   useListRecordings,
-  useListPerformers,
   useListTags,
 } from "@workspace/api-client-react";
+import { useListPerformers } from "@/lib/api";
 import { Link, useLocation } from "wouter";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
@@ -30,17 +30,18 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<Tab>("recent");
 
-  const { data: stats } = useGetStats();
-  const { data: recentData, isLoading: recentLoading } = useListRecordings({
-    limit: 8,
-    sort: "newest",
-  });
-  const { data: popularData, isLoading: popularLoading } = useListRecordings({
-    limit: 8,
-    sort: "popular",
-  });
-  const { data: topPerformers } = useListPerformers();
-  const { data: tags } = useListTags();
+  const { data: stats } = useGetStats({ query: { staleTime: 0 } } as any);
+  const { data: recentData, isLoading: recentLoading } = useListRecordings(
+    { limit: 12, sort: "newest" },
+    { query: { staleTime: 0 } } as any,
+  );
+  const { data: popularData, isLoading: popularLoading } = useListRecordings(
+    { limit: 12, sort: "popular" },
+    { query: { staleTime: 0 } } as any,
+  );
+  const { data: topPerformersData } = useListPerformers(undefined, { staleTime: 0 });
+  const topPerformers = topPerformersData?.performers ?? [];
+  const { data: tags } = useListTags({ query: { staleTime: 0 } } as any);
 
   const recordings = tab === "recent" ? recentData?.data : popularData?.data;
   const loading = tab === "recent" ? recentLoading : popularLoading;
@@ -103,7 +104,7 @@ export default function Home() {
             <input
               type="text"
               placeholder="Search by performer, title, or tag…"
-              className="w-full h-12 bg-secondary/50 border border-border/60 hover:border-border focus:border-primary/60 rounded pl-11 pr-28 text-sm outline-none transition-colors placeholder:text-muted-foreground/40"
+              className="w-full h-12 bg-background/80 dark:bg-secondary/60 border border-border/60 hover:border-border focus:border-primary/60 rounded pl-11 pr-28 text-sm outline-none transition-colors placeholder:text-muted-foreground/40"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               aria-label="Search recordings"
@@ -157,15 +158,15 @@ export default function Home() {
           </div>
 
           {loading ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8">
-              {Array.from({ length: 8 }).map((_, i) => (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-8">
+              {Array.from({ length: 12 }).map((_, i) => (
                 <VideoSkeleton key={i} />
               ))}
             </div>
           ) : recordings && recordings.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8">
-              {recordings.map((rec) => (
-                <VideoCard key={rec.id} recording={rec} />
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-8">
+              {recordings.map((rec, i) => (
+                <VideoCard key={rec.id} recording={rec} fetchPriority={i < 2 ? "high" : undefined} />
               ))}
             </div>
           ) : (
@@ -176,13 +177,13 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Top Performers */}
-      {Array.isArray(topPerformers) && topPerformers.length > 0 && (
+      {/* Top Performers — Circular avatars */}
+      {topPerformers.length > 0 && (
         <section className="border-t border-border/50 px-4 sm:px-6 py-14 bg-secondary/20">
           <div className="container mx-auto">
             <div className="flex items-center justify-between mb-8">
               <h2 className="text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold">
-                Performers
+                Top Performers
               </h2>
               <Link
                 href="/performers"
@@ -191,9 +192,9 @@ export default function Home() {
                 Directory <ArrowRight className="w-3 h-3" />
               </Link>
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-              {topPerformers.slice(0, 6).map((perf) => (
-                <PerformerCard key={perf.username} performer={perf} />
+            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-y-6 gap-x-2 justify-items-center">
+              {topPerformers.slice(0, 20).map((perf, i) => (
+                <PerformerCard key={perf.username} performer={perf} variant="circle" fetchPriority={i < 4 ? "high" : undefined} />
               ))}
             </div>
           </div>
@@ -220,7 +221,7 @@ export default function Home() {
                 <Link
                   key={tag}
                   href={`/browse?tags=${encodeURIComponent(tag)}`}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs border border-border/60 text-muted-foreground hover:border-primary/50 hover:text-primary hover:bg-primary/5 transition-all rounded-sm"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs border border-border/60 text-muted-foreground hover:border-primary/50 hover:text-primary hover:bg-primary/5 transition-all rounded-sm dark:bg-background/40"
                 >
                   {tag}
                   <span className="text-[10px] opacity-40">{count}</span>

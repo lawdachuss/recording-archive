@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, Link } from "wouter";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
+import { OptimizedImage } from "@/components/ui/optimized-image";
 import {
   getCollection,
   removeFromCollection,
@@ -68,15 +69,23 @@ export default function CollectionDetail() {
 
         {/* Header */}
         <div className="flex items-start gap-4 mb-8">
-          <div className="w-16 h-16 rounded-sm bg-secondary shrink-0 overflow-hidden flex items-center justify-center">
+          <div className="w-16 h-16 rounded-sm bg-secondary shrink-0 overflow-hidden">
             {collection.items[0]?.thumbnail_url ? (
-              <img
+              <OptimizedImage
                 src={collection.items[0].thumbnail_url}
                 alt={collection.name}
                 className="w-full h-full object-cover"
+                containerClassName="w-16 h-16"
+                fallback={
+                  <div className="w-16 h-16 flex items-center justify-center bg-secondary">
+                    <Film className="w-6 h-6 text-muted-foreground/20" />
+                  </div>
+                }
               />
             ) : (
-              <Film className="w-6 h-6 text-muted-foreground/20" />
+              <div className="w-16 h-16 flex items-center justify-center bg-secondary">
+                <Film className="w-6 h-6 text-muted-foreground/20" />
+              </div>
             )}
           </div>
 

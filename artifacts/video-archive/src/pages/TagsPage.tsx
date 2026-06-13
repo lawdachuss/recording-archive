@@ -4,7 +4,7 @@ import { Link } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function TagsPage() {
-  const { data: tags, isLoading } = useListTags();
+  const { data: tags, isLoading } = useListTags({ query: { staleTime: 30_000 } } as any);
 
   const sorted = tags ? [...tags].sort((a, b) => b.count - a.count) : [];
   const maxCount = sorted[0]?.count ?? 1;

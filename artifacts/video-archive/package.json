@@ -75,6 +75,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "serverless-http": "^4.0.0",
     "@supabase/supabase-js": "^2.107.0"
   }
 }

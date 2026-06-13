@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { resolveApiPath } from "./api-base";
 import type { SavedRecording } from "./bookmarks";
 
 async function authHeaders(): Promise<Record<string, string>> {
@@ -18,7 +19,7 @@ async function apiFetch<T>(
     ...(await authHeaders()),
     ...(options.headers as Record<string, string> | undefined),
   };
-  const res = await fetch(path, { ...options, headers });
+  const res = await fetch(resolveApiPath(path), { ...options, headers });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   if (res.status === 204) return undefined as T;
   return res.json();

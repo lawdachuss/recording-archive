@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/Layout";
+import { OptimizedImage } from "@/components/ui/optimized-image";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   getCollections as getLocalCollections,
@@ -200,15 +201,23 @@ export default function Collections() {
                 key={col.id}
                 className="flex items-center gap-4 border border-border/40 hover:border-primary/30 rounded-sm transition-all group"
               >
-                <div className="w-20 h-14 shrink-0 bg-secondary rounded-l-sm overflow-hidden flex items-center justify-center">
+                <div className="w-20 h-14 shrink-0 bg-secondary rounded-l-sm overflow-hidden">
                   {col.thumbnail ? (
-                    <img
+                    <OptimizedImage
                       src={col.thumbnail}
                       alt={col.name}
                       className="w-full h-full object-cover"
+                      containerClassName="w-20 h-14"
+                      fallback={
+                        <div className="w-20 h-14 flex items-center justify-center bg-secondary">
+                          <Film className="w-5 h-5 text-muted-foreground/20" />
+                        </div>
+                      }
                     />
                   ) : (
-                    <Film className="w-5 h-5 text-muted-foreground/20" />
+                    <div className="w-20 h-14 flex items-center justify-center bg-secondary">
+                      <Film className="w-5 h-5 text-muted-foreground/20" />
+                    </div>
                   )}
                 </div>
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "wouter";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/contexts/AuthContext";
+import { resolveApiPath } from "@/lib/api-base";
 import {
   Shield, RefreshCw, CheckCircle2, XCircle, Clock, AlertTriangle,
   User, Link2, FileText, ChevronDown, ChevronUp, Inbox,
@@ -49,7 +50,7 @@ export default function AdminPage() {
     setPageLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/requests");
+      const res = await fetch(resolveApiPath("/api/requests"));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setRequests(Array.isArray(data) ? data : []);
@@ -68,7 +69,7 @@ export default function AdminPage() {
   const updateStatus = async (id: number, status: string) => {
     setUpdating(id);
     try {
-      const res = await fetch(`/api/requests/${id}/status`, {
+      const res = await fetch(resolveApiPath(`/api/requests/${id}/status`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),

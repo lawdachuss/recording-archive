@@ -17,16 +17,16 @@ function toRecording(r: SavedRecording) {
     filename: r.filename,
     room_title: r.room_title ?? null,
     thumbnail_url: r.thumbnail_url ?? null,
+    sprite_url: r.sprite_url ?? null,
+    preview_url: r.preview_url ?? null,
     resolution: r.resolution ?? null,
     timestamp: r.timestamp,
     created_at: r.saved_at,
     tags: [] as string[],
     viewers: null,
-    preview_url: null,
     framerate: null,
     filesize: null,
     gender: null,
-    sprite_url: null,
     embed_url: null,
     instance_id: null,
     channel_id: null,
@@ -109,7 +109,7 @@ export default function WatchLater() {
         </div>
 
         {isLoading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
             {[...Array(10)].map((_, i) => (
               <div key={i} className="aspect-video bg-secondary/30 animate-pulse rounded-sm" />
             ))}
@@ -126,7 +126,7 @@ export default function WatchLater() {
             </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
             {queue.map((rec, index) => (
               <div key={rec.id} className="relative group/card">
                 <div className="absolute top-2 left-2 z-10 w-5 h-5 rounded-[2px] bg-primary/90 text-white text-[10px] font-bold flex items-center justify-center">

@@ -20,6 +20,7 @@ export default function Notifications() {
     queryKey: ["user", "notifications"],
     queryFn: () => userApi.getNotifications(),
     enabled: !!user,
+    staleTime: 30_000,
   });
 
   const markAll = useMutation({

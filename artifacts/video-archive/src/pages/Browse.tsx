@@ -5,6 +5,7 @@ import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, X, ChevronDown, Loader2, SlidersHorizontal, Tag, Filter } from "lucide-react";
+import { AppPagination } from "@/components/ui/app-pagination";
 
 const SORT_LABELS: Record<ListRecordingsSort, string> = {
   newest: "Newest",
@@ -47,13 +48,13 @@ export default function Browse() {
   const [sort, setSort] = useState<ListRecordingsSort>(
     () =>
       (new URLSearchParams(searchString).get("sort") as ListRecordingsSort) ||
-      ListRecordingsSort.newest,
+      "newest",
   );
   const [allRecordings, setAllRecordings] = useState<any[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [tagSearch, setTagSearch] = useState("");
 
-  const { data: tagsData } = useListTags();
+  const { data: tagsData } = useListTags({ query: { staleTime: 0 } } as any);
   const popularTags = useMemo(() => tagsData ?? [], [tagsData]);
 
   const filteredPopularTags = useMemo(() => {
@@ -64,15 +65,18 @@ export default function Browse() {
 
   const tagsParam = selectedTags.join(",");
 
-  const { data, isLoading, isFetching } = useListRecordings({
-    page,
-    limit: 24,
-    search: search || undefined,
-    tags: tagsParam || undefined,
-    gender: gender || undefined,
-    resolution: resolution || undefined,
-    sort,
-  });
+  const { data, isLoading, isFetching } = useListRecordings(
+    {
+      page,
+      limit: 40,
+      search: search || undefined,
+      tags: tagsParam || undefined,
+      gender: gender || undefined,
+      resolution: resolution || undefined,
+      sort,
+    },
+    { query: { staleTime: 0 } } as any,
+  );
 
   useEffect(() => {
     const p = new URLSearchParams(searchString);
@@ -80,7 +84,7 @@ export default function Browse() {
     setSelectedTags(parseTagList(p.get("tags") || ""));
     setGender(p.get("gender") || "");
     setResolution(p.get("resolution") || "");
-    setSort((p.get("sort") as ListRecordingsSort) || ListRecordingsSort.newest);
+    setSort((p.get("sort") as ListRecordingsSort) || "newest");
     setPage(1);
     setAllRecordings([]);
   }, [searchString]);
@@ -118,7 +122,7 @@ export default function Browse() {
     if (next.tags.length) params.set("tags", next.tags.join(","));
     if (next.gender) params.set("gender", next.gender);
     if (next.resolution) params.set("resolution", next.resolution);
-    if (next.sort && next.sort !== ListRecordingsSort.newest) params.set("sort", next.sort);
+    if (next.sort && next.sort !== "newest") params.set("sort", next.sort);
     setLocation(`/browse${params.toString() ? "?" + params.toString() : ""}`);
   };
 
@@ -145,7 +149,7 @@ export default function Browse() {
     selectedTags.length ||
     gender ||
     resolution ||
-    sort !== ListRecordingsSort.newest
+    sort !== "newest"
   );
   const hasMore = data ? data.total > allRecordings.length : false;
   const activeFilterCount =
@@ -333,7 +337,7 @@ export default function Browse() {
                     <button
                       key={tag}
                       onClick={() => toggleTag(tag)}
-                      className="inline-flex items-center gap-1 h-6 px-2 text-[11px] border border-border/50 text-muted-foreground hover:border-primary/50 hover:text-primary rounded-sm transition-all"
+                      className="inline-flex items-center gap-1 h-6 px-2 text-[11px] border border-border/50 text-muted-foreground hover:border-primary/50 hover:text-primary rounded-sm transition-all dark:bg-background/40"
                     >
                       {tag}
                       <span className="text-[9px] text-muted-foreground/40">{count}</span>
@@ -389,8 +393,8 @@ export default function Browse() {
 
         {/* ── Grid ──────────────────────────────────────────── */}
         {isLoading && page === 1 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8">
-            {Array.from({ length: 20 }).map((_, i) => (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-4 gap-y-8">
+            {Array.from({ length: 40 }).map((_, i) => (
               <div key={i} className="space-y-2.5">
                 <Skeleton className="w-full aspect-video rounded-sm" />
                 <Skeleton className="h-3 w-3/4" />
@@ -400,22 +404,27 @@ export default function Browse() {
           </div>
         ) : allRecordings.length > 0 ? (
           <>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8">
-              {allRecordings.map((rec) => (
-                <VideoCard key={rec.id} recording={rec} />
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-4 gap-y-8">
+              {allRecordings.map((rec, i) => (
+                <VideoCard key={rec.id} recording={rec} fetchPriority={i < 2 ? "high" : undefined} />
               ))}
             </div>
 
-            {hasMore && (
-              <div className="mt-12 flex justify-center">
-                <button
-                  className="h-10 px-10 border border-border/60 hover:border-border text-sm text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 flex items-center gap-2 rounded-sm"
-                  onClick={() => setPage((p) => p + 1)}
-                  disabled={isFetching}
-                >
-                  {isFetching && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  {isFetching ? "Loading…" : "Load more"}
-                </button>
+            {data && data.total > 0 && (
+              <div className="mt-12 flex flex-col items-center gap-4">
+                <div className="text-xs text-muted-foreground">
+                  Page {page} of {Math.ceil(data.total / 40)} · {data.total.toLocaleString()} recordings
+                </div>
+                <div className="w-full max-w-4xl flex justify-center">
+                  <AppPagination
+                    itemsCount={data.total}
+                    itemsPerPage={40}
+                    currentPage={page}
+                    onPageChange={setPage}
+                    pageRangeDisplayed={5}
+                    marginPagesDisplayed={2}
+                  />
+                </div>
               </div>
             )}
           </>
