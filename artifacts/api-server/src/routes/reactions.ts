@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
+import { invalidateOnSuccess } from "../middleware/cache";
 
 const router = Router();
 
@@ -37,7 +38,7 @@ router.get("/reactions", async (req, res) => {
   res.json({ ...counts, user_reaction });
 });
 
-router.post("/reactions", async (req, res) => {
+router.post("/reactions", invalidateOnSuccess(["stats"]), async (req, res) => {
   const { recording_id, type, session_id } = req.body as {
     recording_id: string;
     type: string;

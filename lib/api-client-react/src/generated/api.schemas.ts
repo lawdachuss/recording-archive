@@ -28,6 +28,8 @@ export interface Recording {
   /** @nullable */
   filesize?: number | null;
   /** @nullable */
+  duration?: number | null;
+  /** @nullable */
   gender?: string | null;
   /** @nullable */
   thumbnail_url?: string | null;
@@ -42,6 +44,8 @@ export interface Recording {
   created_at: string;
   /** @nullable */
   updated_at?: string | null;
+  /** @nullable */
+  links?: Record<string, string> | null;
 }
 
 export interface RecordingListResponse {

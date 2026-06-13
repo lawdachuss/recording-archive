@@ -10,6 +10,7 @@ export type AuthTokenGetter = () => Promise<string | null> | string | null;
 
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
+const CUSTOM_FETCH_TIMEOUT_MS = 15_000;
 
 // ---------------------------------------------------------------------------
 // Module-level configuration
@@ -360,7 +361,16 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
+  // Apply a timeout so stuck requests don't freeze the UI indefinitely
+  let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+  if (!init.signal) {
+    const timeoutController = new AbortController();
+    timeoutTimer = setTimeout(() => timeoutController.abort(), CUSTOM_FETCH_TIMEOUT_MS);
+    init.signal = timeoutController.signal;
+  }
+
   const response = await fetch(input, { ...init, method, headers });
+  clearTimeout(timeoutTimer);
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);

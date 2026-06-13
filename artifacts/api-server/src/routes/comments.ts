@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
+import { invalidateOnSuccess } from "../middleware/cache";
 
 const router = Router();
 
@@ -76,7 +77,7 @@ router.get("/comments", async (req, res) => {
   res.json(tree);
 });
 
-router.post("/comments", async (req, res) => {
+router.post("/comments", invalidateOnSuccess(["stats"]), async (req, res) => {
   const { recording_id, author, content, session_id } = req.body as {
     recording_id: string;
     author: string;
@@ -102,8 +103,8 @@ router.post("/comments", async (req, res) => {
   res.status(201).json({ ...row, likes: 0, user_liked: false, replies: [] });
 });
 
-router.post("/comments/:commentId/replies", async (req, res) => {
-  const commentId = parseInt(req.params.commentId, 10);
+router.post("/comments/:commentId/replies", invalidateOnSuccess(["stats"]), async (req, res) => {
+  const commentId = parseInt(String(req.params.commentId), 10);
   const { author, content, session_id } = req.body as {
     author: string;
     content: string;
@@ -140,7 +141,7 @@ router.post("/comments/:commentId/replies", async (req, res) => {
 });
 
 router.post("/comments/:commentId/like", async (req, res) => {
-  const commentId = parseInt(req.params.commentId, 10);
+  const commentId = parseInt(String(req.params.commentId), 10);
   const { session_id } = req.body as { session_id: string };
 
   if (isNaN(commentId) || !session_id) {

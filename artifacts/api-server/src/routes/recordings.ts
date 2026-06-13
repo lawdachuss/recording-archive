@@ -5,10 +5,11 @@ import {
   ListRelatedRecordingsQueryParams,
 } from "@workspace/api-zod";
 import { supabase } from "../lib/supabase";
+import { cache } from "../middleware/cache";
 
 const router = Router();
 
-router.get("/recordings", async (req, res) => {
+router.get("/recordings", cache({ ttlSeconds: 60, tags: ["recordings"] }), async (req, res) => {
   const parsed = ListRecordingsQueryParams.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid query params" });
@@ -29,8 +30,9 @@ router.get("/recordings", async (req, res) => {
   const offset = (page - 1) * limit;
 
   let query = supabase
-    .from("recordings")
+    .from("recordings_with_links")
     .select("*", { count: "exact" })
+    .not("links", "is", "null")
     .range(offset, offset + limit - 1);
 
   if (search) {
@@ -76,9 +78,14 @@ router.get("/recordings", async (req, res) => {
     return;
   }
 
+  const filteredData = (data ?? []).filter(
+    (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0,
+  );
+  const excludedCount = (data ?? []).length - filteredData.length;
+
   res.json({
-    data: data ?? [],
-    total: count ?? 0,
+    data: filteredData,
+    total: (count ?? 0) - excludedCount,
     page,
     limit,
   });
@@ -86,8 +93,9 @@ router.get("/recordings", async (req, res) => {
 
 router.get("/recordings/random", async (_req, res) => {
   const { count, error: countError } = await supabase
-    .from("recordings")
-    .select("*", { count: "exact", head: true });
+    .from("recordings_with_links")
+    .select("*", { count: "exact", head: true })
+    .not("links", "is", "null");
 
   if (countError || !count) {
     res.status(500).json({ error: "Failed to get recording count" });
@@ -97,8 +105,9 @@ router.get("/recordings/random", async (_req, res) => {
   const randomOffset = Math.floor(Math.random() * count);
 
   const { data, error } = await supabase
-    .from("recordings")
+    .from("recordings_with_links")
     .select("id")
+    .not("links", "is", "null")
     .range(randomOffset, randomOffset)
     .single();
 
@@ -110,7 +119,7 @@ router.get("/recordings/random", async (_req, res) => {
   res.json({ id: data.id });
 });
 
-router.get("/recordings/related", async (req, res) => {
+router.get("/recordings/related", cache({ ttlSeconds: 300, tags: ["recordings"] }), async (req, res) => {
   const parsed = ListRelatedRecordingsQueryParams.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid query params" });
@@ -120,7 +129,7 @@ router.get("/recordings/related", async (req, res) => {
   const { id, limit = 8 } = parsed.data;
 
   const { data: recording, error: recError } = await supabase
-    .from("recordings")
+    .from("recordings_with_links")
     .select("username, tags")
     .eq("id", id)
     .single();
@@ -131,10 +140,11 @@ router.get("/recordings/related", async (req, res) => {
   }
 
   const { data, error } = await supabase
-    .from("recordings")
+    .from("recordings_with_links")
     .select("*")
     .neq("id", id)
     .eq("username", recording.username)
+    .not("links", "is", "null")
     .order("timestamp", { ascending: false })
     .limit(limit);
 
@@ -144,10 +154,14 @@ router.get("/recordings/related", async (req, res) => {
     return;
   }
 
-  res.json(data ?? []);
+  const filteredData = (data ?? []).filter(
+    (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0,
+  );
+
+  res.json(filteredData);
 });
 
-router.get("/recordings/:id", async (req, res) => {
+router.get("/recordings/:id", cache({ ttlSeconds: 300, tags: ["recordings"] }), async (req, res) => {
   const parsed = GetRecordingParams.safeParse(req.params);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid params" });
@@ -157,7 +171,7 @@ router.get("/recordings/:id", async (req, res) => {
   const { id } = parsed.data;
 
   const { data, error } = await supabase
-    .from("recordings")
+    .from("recordings_with_links")
     .select("*")
     .eq("id", id)
     .single();

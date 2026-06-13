@@ -1,12 +1,14 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase";
+import { cache } from "../middleware/cache";
 
 const router = Router();
 
-router.get("/stats", async (req, res) => {
+router.get("/stats", cache({ ttlSeconds: 300, tags: ["stats"] }), async (req, res) => {
   const { data, error } = await supabase
-    .from("recordings")
-    .select("username, tags, filesize, timestamp");
+    .from("recordings_with_links")
+    .select("username, tags, filesize, timestamp, links")
+    .not("links", "is", "null");
 
   if (error) {
     req.log.error({ err: error }, "Supabase error fetching stats");
@@ -14,7 +16,9 @@ router.get("/stats", async (req, res) => {
     return;
   }
 
-  const rows = data ?? [];
+  const rows = (data ?? []).filter(
+    (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0,
+  );
 
   const uniquePerformers = new Set(rows.map((r) => r.username)).size;
   const uniqueTags = new Set(rows.flatMap((r) => r.tags ?? [])).size;

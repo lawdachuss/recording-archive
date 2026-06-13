@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
+import { invalidateOnSuccess } from "../middleware/cache";
 
 const router = Router();
 
@@ -62,8 +63,8 @@ router.post("/requests", async (req, res) => {
   }
 });
 
-router.patch("/requests/:id/status", async (req, res) => {
-  const id = parseInt(req.params.id, 10);
+router.patch("/requests/:id/status", invalidateOnSuccess(["performers", "recordings", "stats", "tags"]), async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
   const { status } = req.body as { status?: string };
 
   const valid = ["pending", "approved", "rejected", "done"];

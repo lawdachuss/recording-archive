@@ -126,15 +126,29 @@ paths:
       operationId: listPerformers
       tags: [performers]
       summary: List all performers with their recording counts
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 24 }
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: gender
+          in: query
+          schema: { type: string }
+        - name: sort
+          in: query
+          schema: { type: string, enum: [count, name], default: count }
       responses:
         "200":
           description: Performer list
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Performer"
+                $ref: "#/components/schemas/PerformersListResponse"
 
   /performers/{username}:
     get:
@@ -391,6 +405,8 @@ components:
           type: ["integer", "null"]
         filesize:
           type: ["integer", "null"]
+        duration:
+          type: ["number", "null"]
         gender:
           type: ["string", "null"]
         thumbnail_url:
@@ -407,6 +423,11 @@ components:
           type: string
         updated_at:
           type: ["string", "null"]
+        links:
+          type: ["object", "null"]
+          description: JSON object mapping host names to embed URLs (e.g., {"Streamtape": "https://...", "Mixdrop": "https://..."})
+          additionalProperties:
+            type: string
 
     RecordingListResponse:
       type: object
@@ -437,6 +458,23 @@ components:
           type: ["string", "null"]
         latest_timestamp:
           type: ["string", "null"]
+
+    PerformersListResponse:
+      type: object
+      required: [performers, total, page, limit, totalPages]
+      properties:
+        performers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Performer"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+        totalPages:
+          type: integer
 
     PerformerProfile:
       type: object

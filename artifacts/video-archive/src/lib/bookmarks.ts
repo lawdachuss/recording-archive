@@ -8,6 +8,8 @@ export interface SavedRecording {
   filename: string;
   room_title?: string | null;
   thumbnail_url?: string | null;
+  sprite_url?: string | null;
+  preview_url?: string | null;
   resolution?: string | null;
   timestamp: string;
   saved_at: string;

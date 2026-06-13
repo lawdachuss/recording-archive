@@ -5,6 +5,7 @@ import { useGetPerformer, getGetPerformerQueryKey } from "@workspace/api-client-
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
 import { Skeleton } from "@/components/ui/skeleton";
+import { OptimizedImage } from "@/components/ui/optimized-image";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, type PerformerFollow } from "@/lib/user-api";
 import { AlertCircle, ArrowLeft, Heart } from "lucide-react";
@@ -64,7 +65,11 @@ export default function PerformerProfile() {
     );
   }
 
-  const latestThumbnail = profile?.recordings?.[0]?.thumbnail_url;
+  // Find the best available image across all recordings, trying thumbnail_url → sprite_url → preview_url
+  const latestThumbnail = profile?.recordings?.reduce<string | null>((found, rec) => {
+    if (found) return found;
+    return rec.thumbnail_url || rec.sprite_url || rec.preview_url || null;
+  }, null) ?? null;
 
   return (
     <Layout>
@@ -82,10 +87,18 @@ export default function PerformerProfile() {
             ) : (
               <div className="w-20 h-20 rounded-full overflow-hidden shrink-0 border-2 border-border bg-secondary">
                 {latestThumbnail ? (
-                  <img
+                  <OptimizedImage
                     src={latestThumbnail}
-                    alt={profile?.username}
+                    alt={profile?.username ?? ""}
                     className="w-full h-full object-cover object-top"
+                    containerClassName="w-full h-full"
+                    fallback={
+                      <div className="w-full h-full flex items-center justify-center bg-secondary">
+                        <span className="text-xl font-black text-muted-foreground/30 uppercase">
+                          {username?.slice(0, 2)}
+                        </span>
+                      </div>
+                    }
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-secondary">
@@ -145,7 +158,7 @@ export default function PerformerProfile() {
 
       <div className="container mx-auto px-4 sm:px-6 py-10">
         {isLoading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-4 gap-y-8">
             {[...Array(10)].map((_, i) => (
               <div key={i} className="space-y-2.5">
                 <Skeleton className="w-full aspect-video" />
@@ -155,9 +168,9 @@ export default function PerformerProfile() {
             ))}
           </div>
         ) : profile?.recordings && profile.recordings.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8">
-            {profile.recordings.map((rec) => (
-              <VideoCard key={rec.id} recording={rec} />
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-4 gap-y-8">
+            {profile.recordings.map((rec, i) => (
+              <VideoCard key={rec.id} recording={rec} fetchPriority={i < 2 ? "high" : undefined} />
             ))}
           </div>
         ) : (

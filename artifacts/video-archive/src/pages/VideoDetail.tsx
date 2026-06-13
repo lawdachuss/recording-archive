@@ -13,6 +13,7 @@ import {
 import { Layout } from "@/components/Layout";
 import { CommentSection } from "@/components/CommentSection";
 import { Skeleton } from "@/components/ui/skeleton";
+import { OptimizedImage } from "@/components/ui/optimized-image";
 import { formatBytes, formatRelativeTime } from "@/lib/formatters";
 import { getSessionId } from "@/lib/session";
 import {
@@ -29,7 +30,7 @@ import {
   Eye, HardDrive, MonitorPlay, AlertCircle, ArrowLeft, Maximize2, Minimize2,
   Calendar, User, Tag, Clapperboard, ThumbsUp, ThumbsDown, Bookmark, Share2,
   Check, Server, Film, Download, Clock, Play, Code2, ListVideo, Shuffle,
-  FolderPlus, Plus, ChevronDown,
+  FolderPlus, Plus, ChevronDown, ExternalLink,
 } from "lucide-react";
 
 function useFullscreen(ref: React.RefObject<HTMLElement | null>) {
@@ -78,16 +79,46 @@ function isEmbedUrl(url: string): boolean {
   }
 }
 
-function deriveServers(embedUrl?: string | null, previewUrl?: string | null) {
-  const servers: { label: string; src: string; type: "iframe" | "img" }[] = [];
+function deriveServers(
+  embedUrl?: string | null,
+  previewUrl?: string | null,
+  links?: Record<string, string> | null,
+) {
+  const servers: { label: string; src: string; type: "iframe" | "img" | "link" }[] = [];
+  const seen = new Set<string>();
+  const seenHosts = new Set<string>();
 
-  if (embedUrl && isEmbedUrl(embedUrl)) {
-    servers.push({ label: detectHostLabel(embedUrl), src: embedUrl, type: "iframe" });
-  } else if (embedUrl) {
-    servers.push({ label: detectHostLabel(embedUrl), src: embedUrl, type: "iframe" });
+  if (links) {
+    for (const [label, src] of Object.entries(links)) {
+      if (src) {
+        let url = src;
+        try {
+          const parsed = new URL(url);
+          if (parsed.hostname.includes("voe") && !parsed.pathname.startsWith("/e/")) {
+            url = parsed.origin + "/e" + parsed.pathname;
+          }
+        } catch {}
+        if (isEmbedUrl(url)) {
+          servers.push({ label, src: url, type: "iframe" });
+        } else {
+          servers.push({ label, src: url, type: "link" });
+        }
+        seen.add(url);
+        try { seenHosts.add(new URL(url).hostname); } catch {}
+      }
+    }
   }
 
-  if (previewUrl) {
+  if (embedUrl && !seen.has(embedUrl)) {
+    let hostDuplicate = false;
+    try { hostDuplicate = seenHosts.has(new URL(embedUrl).hostname); } catch {}
+    if (!hostDuplicate) {
+      servers.push({ label: detectHostLabel(embedUrl), src: embedUrl, type: "iframe" });
+      seen.add(embedUrl);
+    }
+  }
+
+  if (previewUrl && !seen.has(previewUrl)) {
     if (isEmbedUrl(previewUrl)) {
       servers.push({ label: detectHostLabel(previewUrl), src: previewUrl, type: "iframe" });
     } else {
@@ -173,6 +204,8 @@ export default function VideoDetail() {
       filename: video.filename,
       room_title: video.room_title,
       thumbnail_url: video.thumbnail_url,
+      sprite_url: video.sprite_url,
+      preview_url: video.preview_url,
       resolution: video.resolution,
       timestamp: video.timestamp,
       saved_at: new Date().toISOString(),
@@ -224,6 +257,8 @@ export default function VideoDetail() {
       filename: video.filename,
       room_title: video.room_title,
       thumbnail_url: video.thumbnail_url,
+      sprite_url: video.sprite_url,
+      preview_url: video.preview_url,
       resolution: video.resolution,
       timestamp: video.timestamp,
       saved_at: new Date().toISOString(),
@@ -236,6 +271,13 @@ export default function VideoDetail() {
   }, [video, user]);
 
   useEffect(() => {
+    if (!video?.thumbnail_url) return;
+    const img = new Image();
+    img.fetchPriority = "high";
+    img.src = video.thumbnail_url;
+  }, [video?.thumbnail_url]);
+
+  useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === "f" || e.key === "F") {
@@ -246,7 +288,7 @@ export default function VideoDetail() {
     return () => window.removeEventListener("keydown", handleKey);
   }, [isFullscreen, enterFS, exitFS]);
 
-  const servers = deriveServers(video?.embed_url, video?.preview_url);
+  const servers = deriveServers(video?.embed_url, video?.preview_url, video?.links);
   const currentServer = servers[activeServer] ?? servers[0];
 
   const handleReaction = (type: "like" | "dislike") => {
@@ -272,6 +314,8 @@ export default function VideoDetail() {
       filename: video.filename,
       room_title: video.room_title,
       thumbnail_url: video.thumbnail_url,
+      sprite_url: video.sprite_url,
+      preview_url: video.preview_url,
       resolution: video.resolution,
       timestamp: video.timestamp,
       saved_at: new Date().toISOString(),
@@ -297,6 +341,8 @@ export default function VideoDetail() {
       filename: video.filename,
       room_title: video.room_title,
       thumbnail_url: video.thumbnail_url,
+      sprite_url: video.sprite_url,
+      preview_url: video.preview_url,
       resolution: video.resolution,
       timestamp: video.timestamp,
       saved_at: new Date().toISOString(),
@@ -411,10 +457,18 @@ export default function VideoDetail() {
                     aria-label="Play video"
                   >
                     {video.thumbnail_url ? (
-                      <img
+                      <OptimizedImage
                         src={video.thumbnail_url}
                         alt={video.username}
                         className="w-full h-full object-cover"
+                        containerClassName="w-full h-full"
+                        fetchPriority="high"
+                        loading="eager"
+                        fallback={
+                          <div className="w-full h-full bg-black flex items-center justify-center">
+                            <Clapperboard className="w-12 h-12 text-white/10" />
+                          </div>
+                        }
                       />
                     ) : (
                       <div className="w-full h-full bg-black flex items-center justify-center">
@@ -433,6 +487,21 @@ export default function VideoDetail() {
                       </div>
                     )}
                   </button>
+                ) : currentServer?.type === "link" ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center gap-4 bg-black/80 p-8">
+                    <p className="text-muted-foreground text-sm text-center">
+                      Open this video on the host site:
+                    </p>
+                    <a
+                      href={currentServer.src}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      Open on {currentServer.label}
+                    </a>
+                  </div>
                 ) : currentServer?.type === "iframe" ? (
                   <iframe
                     key={`${currentServer.src}-${activeServer}`}
@@ -443,16 +512,28 @@ export default function VideoDetail() {
                     title={video.room_title || video.filename}
                   />
                 ) : currentServer?.type === "img" ? (
-                  <img
+                  <OptimizedImage
                     src={currentServer.src}
                     alt={video.filename}
                     className="w-full h-full object-contain"
+                    containerClassName="w-full h-full"
+                    fallback={
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Clapperboard className="w-12 h-12 text-muted-foreground/20" />
+                      </div>
+                    }
                   />
                 ) : video.thumbnail_url ? (
-                  <img
+                  <OptimizedImage
                     src={video.thumbnail_url}
                     alt={video.filename}
                     className="w-full h-full object-contain"
+                    containerClassName="w-full h-full"
+                    fallback={
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Clapperboard className="w-12 h-12 text-muted-foreground/20" />
+                      </div>
+                    }
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center">
@@ -630,7 +711,7 @@ export default function VideoDetail() {
                       <ChevronDown className={`w-3 h-3 transition-transform ${collectionOpen ? "rotate-180" : ""}`} />
                     </button>
                     {collectionOpen && (
-                      <div className="absolute left-0 top-full mt-1 z-50 w-56 bg-background border border-border/60 rounded shadow-xl overflow-hidden">
+                      <div className="absolute right-0 sm:left-0 sm:right-auto top-full mt-1 z-50 w-56 glass-dropdown rounded overflow-hidden">
                         <div className="p-2 border-b border-border/40">
                           <div className="flex gap-1">
                             <input
@@ -796,15 +877,21 @@ export default function VideoDetail() {
               <div className="space-y-3">
                 {related
                   .filter((r) => r.id !== id)
-                  .map((rec) => (
+                  .map((rec, i) => (
                     <Link key={rec.id} href={`/video/${rec.id}`} className="group flex gap-3 outline-none">
                       <div className="w-28 aspect-video shrink-0 overflow-hidden bg-secondary rounded-[2px] relative">
                         {rec.thumbnail_url ? (
-                          <img
+                          <OptimizedImage
                             src={rec.thumbnail_url}
                             alt={rec.username}
+                            fetchPriority={i < 2 ? "high" : undefined}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                            loading="lazy"
+                            containerClassName="w-full h-full"
+                            fallback={
+                              <div className="w-full h-full flex items-center justify-center">
+                                <Clapperboard className="w-4 h-4 text-muted-foreground/20" />
+                              </div>
+                            }
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">

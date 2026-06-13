@@ -1,5 +1,8 @@
+import "dotenv/config";
 import app from "./app";
 import { logger } from "./lib/logger";
+import { warmupCache } from "./lib/cache-warmup";
+import { runHealthCheck } from "./lib/health-check";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +25,14 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+    // Fire cache warmup in the background — never blocks the server
+    warmupCache(port).catch((err) => {
+      logger.error({ err }, "Cache warmup failed unexpectedly");
+    });
+
+    // Run startup health check — pings each major API endpoint
+    runHealthCheck(port).catch((err) => {
+      logger.error({ err }, "Health check failed unexpectedly");
+    });
 });
