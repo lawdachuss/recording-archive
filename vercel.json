@@ -1,8 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "vite build",
-  "outputDirectory": "dist",
+  "buildCommand": "cd artifacts/video-archive && pnpm exec vite build",
+  "outputDirectory": "artifacts/video-archive/dist",
   "framework": "vite",
+  "installCommand": "pnpm install",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },
     { "source": "/(.*)", "destination": "/index.html" }

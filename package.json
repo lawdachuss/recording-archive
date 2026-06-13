@@ -9,6 +9,9 @@
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
   "private": true,
+  "dependencies": {
+    "serverless-http": "^4.0.0"
+  },
   "devDependencies": {
     "@esbuild/win32-x64": "^0.27.3",
     "@rollup/rollup-win32-x64-msvc": "^4.61.1",
