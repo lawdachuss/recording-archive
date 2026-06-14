@@ -1,5 +1,5 @@
-import serverless from "serverless-http";
+// Vercel natively supports Express apps as default exports.
+// No serverless-http wrapper needed — Vercel passes HTTP requests directly.
 import app from "../../api-server/src/app";
 
-// Vercel requires a default export for ESM serverless functions
-export default serverless(app);
+export default app;
