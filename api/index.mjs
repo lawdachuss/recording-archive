@@ -47,367 +47,821 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// ../../node_modules/.pnpm/dotenv@17.4.2/node_modules/dotenv/lib/main.js
-var require_main = __commonJS({
-  "../../node_modules/.pnpm/dotenv@17.4.2/node_modules/dotenv/lib/main.js"(exports, module) {
-    var fs = __require("fs");
-    var path = __require("path");
-    var os = __require("os");
-    var crypto2 = __require("crypto");
-    var TIPS = [
-      "\u25C8 encrypted .env [www.dotenvx.com]",
-      "\u25C8 secrets for agents [www.dotenvx.com]",
-      "\u2301 auth for agents [www.vestauth.com]",
-      "\u2318 custom filepath { path: '/custom/path/.env' }",
-      "\u2318 enable debugging { debug: true }",
-      "\u2318 override existing { override: true }",
-      "\u2318 suppress logs { quiet: true }",
-      "\u2318 multiple files { path: ['.env.local', '.env'] }"
-    ];
-    function _getRandomTip() {
-      return TIPS[Math.floor(Math.random() * TIPS.length)];
-    }
-    function parseBoolean(value) {
-      if (typeof value === "string") {
-        return !["false", "0", "no", "off", ""].includes(value.toLowerCase());
-      }
-      return Boolean(value);
-    }
-    function supportsAnsi() {
-      return process.stdout.isTTY;
-    }
-    function dim(text2) {
-      return supportsAnsi() ? `\x1B[2m${text2}\x1B[0m` : text2;
-    }
-    var LINE = /(?:^|^)\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?\s*(?:#.*)?(?:$|$)/mg;
-    function parse3(src) {
-      const obj = {};
-      let lines = src.toString();
-      lines = lines.replace(/\r\n?/mg, "\n");
-      let match;
-      while ((match = LINE.exec(lines)) != null) {
-        const key = match[1];
-        let value = match[2] || "";
-        value = value.trim();
-        const maybeQuote = value[0];
-        value = value.replace(/^(['"`])([\s\S]*)\1$/mg, "$2");
-        if (maybeQuote === '"') {
-          value = value.replace(/\\n/g, "\n");
-          value = value.replace(/\\r/g, "\r");
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/finish.js
+var require_finish = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/finish.js"(exports, module) {
+    "use strict";
+    module.exports = async function finish(item, transform2, ...details) {
+      await new Promise((resolve, reject) => {
+        if (item.finished || item.complete) {
+          resolve();
+          return;
         }
-        obj[key] = value;
-      }
-      return obj;
-    }
-    function _parseVault(options) {
-      options = options || {};
-      const vaultPath = _vaultPath(options);
-      options.path = vaultPath;
-      const result = DotenvModule.configDotenv(options);
-      if (!result.parsed) {
-        const err = new Error(`MISSING_DATA: Cannot parse ${vaultPath} for an unknown reason`);
-        err.code = "MISSING_DATA";
-        throw err;
-      }
-      const keys = _dotenvKey(options).split(",");
-      const length = keys.length;
-      let decrypted;
-      for (let i = 0; i < length; i++) {
-        try {
-          const key = keys[i].trim();
-          const attrs = _instructions(result, key);
-          decrypted = DotenvModule.decrypt(attrs.ciphertext, attrs.key);
-          break;
-        } catch (error40) {
-          if (i + 1 >= length) {
-            throw error40;
+        let finished = false;
+        function done(err) {
+          if (finished) {
+            return;
+          }
+          finished = true;
+          item.removeListener("error", done);
+          item.removeListener("end", done);
+          item.removeListener("finish", done);
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
           }
         }
+        item.once("error", done);
+        item.once("end", done);
+        item.once("finish", done);
+      });
+      if (typeof transform2 === "function") {
+        await transform2(item, ...details);
+      } else if (typeof transform2 === "object" && transform2 !== null) {
+        Object.assign(item, transform2);
       }
-      return DotenvModule.parse(decrypted);
-    }
-    function _warn(message) {
-      console.error(`\u26A0 ${message}`);
-    }
-    function _debug(message) {
-      console.log(`\u2506 ${message}`);
-    }
-    function _log(message) {
-      console.log(`\u25C7 ${message}`);
-    }
-    function _dotenvKey(options) {
-      if (options && options.DOTENV_KEY && options.DOTENV_KEY.length > 0) {
-        return options.DOTENV_KEY;
-      }
-      if (process.env.DOTENV_KEY && process.env.DOTENV_KEY.length > 0) {
-        return process.env.DOTENV_KEY;
-      }
-      return "";
-    }
-    function _instructions(result, dotenvKey) {
-      let uri;
-      try {
-        uri = new URL(dotenvKey);
-      } catch (error40) {
-        if (error40.code === "ERR_INVALID_URL") {
-          const err = new Error("INVALID_DOTENV_KEY: Wrong format. Must be in valid uri format like dotenv://:key_1234@dotenvx.com/vault/.env.vault?environment=development");
-          err.code = "INVALID_DOTENV_KEY";
-          throw err;
-        }
-        throw error40;
-      }
-      const key = uri.password;
-      if (!key) {
-        const err = new Error("INVALID_DOTENV_KEY: Missing key part");
-        err.code = "INVALID_DOTENV_KEY";
-        throw err;
-      }
-      const environment = uri.searchParams.get("environment");
-      if (!environment) {
-        const err = new Error("INVALID_DOTENV_KEY: Missing environment part");
-        err.code = "INVALID_DOTENV_KEY";
-        throw err;
-      }
-      const environmentKey = `DOTENV_VAULT_${environment.toUpperCase()}`;
-      const ciphertext = result.parsed[environmentKey];
-      if (!ciphertext) {
-        const err = new Error(`NOT_FOUND_DOTENV_ENVIRONMENT: Cannot locate environment ${environmentKey} in your .env.vault file.`);
-        err.code = "NOT_FOUND_DOTENV_ENVIRONMENT";
-        throw err;
-      }
-      return { ciphertext, key };
-    }
-    function _vaultPath(options) {
-      let possibleVaultPath = null;
-      if (options && options.path && options.path.length > 0) {
-        if (Array.isArray(options.path)) {
-          for (const filepath of options.path) {
-            if (fs.existsSync(filepath)) {
-              possibleVaultPath = filepath.endsWith(".vault") ? filepath : `${filepath}.vault`;
-            }
-          }
-        } else {
-          possibleVaultPath = options.path.endsWith(".vault") ? options.path : `${options.path}.vault`;
-        }
-      } else {
-        possibleVaultPath = path.resolve(process.cwd(), ".env.vault");
-      }
-      if (fs.existsSync(possibleVaultPath)) {
-        return possibleVaultPath;
-      }
-      return null;
-    }
-    function _resolveHome(envPath) {
-      return envPath[0] === "~" ? path.join(os.homedir(), envPath.slice(1)) : envPath;
-    }
-    function _configVault(options) {
-      const debug = parseBoolean(process.env.DOTENV_CONFIG_DEBUG || options && options.debug);
-      const quiet = parseBoolean(process.env.DOTENV_CONFIG_QUIET || options && options.quiet);
-      if (debug || !quiet) {
-        _log("loading env from encrypted .env.vault");
-      }
-      const parsed = DotenvModule._parseVault(options);
-      let processEnv = process.env;
-      if (options && options.processEnv != null) {
-        processEnv = options.processEnv;
-      }
-      DotenvModule.populate(processEnv, parsed, options);
-      return { parsed };
-    }
-    function configDotenv(options) {
-      const dotenvPath = path.resolve(process.cwd(), ".env");
-      let encoding = "utf8";
-      let processEnv = process.env;
-      if (options && options.processEnv != null) {
-        processEnv = options.processEnv;
-      }
-      let debug = parseBoolean(processEnv.DOTENV_CONFIG_DEBUG || options && options.debug);
-      let quiet = parseBoolean(processEnv.DOTENV_CONFIG_QUIET || options && options.quiet);
-      if (options && options.encoding) {
-        encoding = options.encoding;
-      } else {
-        if (debug) {
-          _debug("no encoding is specified (UTF-8 is used by default)");
-        }
-      }
-      let optionPaths = [dotenvPath];
-      if (options && options.path) {
-        if (!Array.isArray(options.path)) {
-          optionPaths = [_resolveHome(options.path)];
-        } else {
-          optionPaths = [];
-          for (const filepath of options.path) {
-            optionPaths.push(_resolveHome(filepath));
-          }
-        }
-      }
-      let lastError;
-      const parsedAll = {};
-      for (const path2 of optionPaths) {
-        try {
-          const parsed = DotenvModule.parse(fs.readFileSync(path2, { encoding }));
-          DotenvModule.populate(parsedAll, parsed, options);
-        } catch (e) {
-          if (debug) {
-            _debug(`failed to load ${path2} ${e.message}`);
-          }
-          lastError = e;
-        }
-      }
-      const populated = DotenvModule.populate(processEnv, parsedAll, options);
-      debug = parseBoolean(processEnv.DOTENV_CONFIG_DEBUG || debug);
-      quiet = parseBoolean(processEnv.DOTENV_CONFIG_QUIET || quiet);
-      if (debug || !quiet) {
-        const keysCount = Object.keys(populated).length;
-        const shortPaths = [];
-        for (const filePath of optionPaths) {
-          try {
-            const relative = path.relative(process.cwd(), filePath);
-            shortPaths.push(relative);
-          } catch (e) {
-            if (debug) {
-              _debug(`failed to load ${filePath} ${e.message}`);
-            }
-            lastError = e;
-          }
-        }
-        _log(`injected env (${keysCount}) from ${shortPaths.join(",")} ${dim(`// tip: ${_getRandomTip()}`)}`);
-      }
-      if (lastError) {
-        return { parsed: parsedAll, error: lastError };
-      } else {
-        return { parsed: parsedAll };
-      }
-    }
-    function config2(options) {
-      if (_dotenvKey(options).length === 0) {
-        return DotenvModule.configDotenv(options);
-      }
-      const vaultPath = _vaultPath(options);
-      if (!vaultPath) {
-        _warn(`you set DOTENV_KEY but you are missing a .env.vault file at ${vaultPath}`);
-        return DotenvModule.configDotenv(options);
-      }
-      return DotenvModule._configVault(options);
-    }
-    function decrypt(encrypted, keyStr) {
-      const key = Buffer.from(keyStr.slice(-64), "hex");
-      let ciphertext = Buffer.from(encrypted, "base64");
-      const nonce = ciphertext.subarray(0, 12);
-      const authTag = ciphertext.subarray(-16);
-      ciphertext = ciphertext.subarray(12, -16);
-      try {
-        const aesgcm = crypto2.createDecipheriv("aes-256-gcm", key, nonce);
-        aesgcm.setAuthTag(authTag);
-        return `${aesgcm.update(ciphertext)}${aesgcm.final()}`;
-      } catch (error40) {
-        const isRange = error40 instanceof RangeError;
-        const invalidKeyLength = error40.message === "Invalid key length";
-        const decryptionFailed = error40.message === "Unsupported state or unable to authenticate data";
-        if (isRange || invalidKeyLength) {
-          const err = new Error("INVALID_DOTENV_KEY: It must be 64 characters long (or more)");
-          err.code = "INVALID_DOTENV_KEY";
-          throw err;
-        } else if (decryptionFailed) {
-          const err = new Error("DECRYPTION_FAILED: Please check your DOTENV_KEY");
-          err.code = "DECRYPTION_FAILED";
-          throw err;
-        } else {
-          throw error40;
-        }
-      }
-    }
-    function populate(processEnv, parsed, options = {}) {
-      const debug = Boolean(options && options.debug);
-      const override = Boolean(options && options.override);
-      const populated = {};
-      if (typeof parsed !== "object") {
-        const err = new Error("OBJECT_REQUIRED: Please check the processEnv argument being passed to populate");
-        err.code = "OBJECT_REQUIRED";
-        throw err;
-      }
-      for (const key of Object.keys(parsed)) {
-        if (Object.prototype.hasOwnProperty.call(processEnv, key)) {
-          if (override === true) {
-            processEnv[key] = parsed[key];
-            populated[key] = parsed[key];
-          }
-          if (debug) {
-            if (override === true) {
-              _debug(`"${key}" is already defined and WAS overwritten`);
-            } else {
-              _debug(`"${key}" is already defined and was NOT overwritten`);
-            }
-          }
-        } else {
-          processEnv[key] = parsed[key];
-          populated[key] = parsed[key];
-        }
-      }
-      return populated;
-    }
-    var DotenvModule = {
-      configDotenv,
-      _configVault,
-      _parseVault,
-      config: config2,
-      decrypt,
-      parse: parse3,
-      populate
+      return item;
     };
-    module.exports.configDotenv = DotenvModule.configDotenv;
-    module.exports._configVault = DotenvModule._configVault;
-    module.exports._parseVault = DotenvModule._parseVault;
-    module.exports.config = DotenvModule.config;
-    module.exports.decrypt = DotenvModule.decrypt;
-    module.exports.parse = DotenvModule.parse;
-    module.exports.populate = DotenvModule.populate;
-    module.exports = DotenvModule;
   }
 });
 
-// ../../node_modules/.pnpm/dotenv@17.4.2/node_modules/dotenv/lib/env-options.js
-var require_env_options = __commonJS({
-  "../../node_modules/.pnpm/dotenv@17.4.2/node_modules/dotenv/lib/env-options.js"(exports, module) {
-    var options = {};
-    if (process.env.DOTENV_CONFIG_ENCODING != null) {
-      options.encoding = process.env.DOTENV_CONFIG_ENCODING;
-    }
-    if (process.env.DOTENV_CONFIG_PATH != null) {
-      options.path = process.env.DOTENV_CONFIG_PATH;
-    }
-    if (process.env.DOTENV_CONFIG_QUIET != null) {
-      options.quiet = process.env.DOTENV_CONFIG_QUIET;
-    }
-    if (process.env.DOTENV_CONFIG_DEBUG != null) {
-      options.debug = process.env.DOTENV_CONFIG_DEBUG;
-    }
-    if (process.env.DOTENV_CONFIG_OVERRIDE != null) {
-      options.override = process.env.DOTENV_CONFIG_OVERRIDE;
-    }
-    if (process.env.DOTENV_CONFIG_DOTENV_KEY != null) {
-      options.DOTENV_KEY = process.env.DOTENV_CONFIG_DOTENV_KEY;
-    }
-    module.exports = options;
-  }
-});
-
-// ../../node_modules/.pnpm/dotenv@17.4.2/node_modules/dotenv/lib/cli-options.js
-var require_cli_options = __commonJS({
-  "../../node_modules/.pnpm/dotenv@17.4.2/node_modules/dotenv/lib/cli-options.js"(exports, module) {
-    var re = /^dotenv_config_(encoding|path|quiet|debug|override|DOTENV_KEY)=(.+)$/;
-    module.exports = function optionMatcher(args) {
-      const options = args.reduce(function(acc, cur) {
-        const matches = cur.match(re);
-        if (matches) {
-          acc[matches[1]] = matches[2];
-        }
-        return acc;
-      }, {});
-      if (!("quiet" in options)) {
-        options.quiet = "true";
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/response.js
+var require_response = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/response.js"(exports, module) {
+    "use strict";
+    var http = __require("http");
+    var headerEnd = "\r\n\r\n";
+    var BODY = /* @__PURE__ */ Symbol();
+    var HEADERS = /* @__PURE__ */ Symbol();
+    function getString(data) {
+      if (Buffer.isBuffer(data)) {
+        return data.toString("utf8");
+      } else if (typeof data === "string") {
+        return data;
+      } else {
+        throw new Error(`response.write() of unexpected type: ${typeof data}`);
       }
-      return options;
+    }
+    function addData(stream, data) {
+      if (Buffer.isBuffer(data) || typeof data === "string" || data instanceof Uint8Array) {
+        stream[BODY].push(Buffer.from(data));
+      } else {
+        throw new Error(`response.write() of unexpected type: ${typeof data}`);
+      }
+    }
+    module.exports = class ServerlessResponse extends http.ServerResponse {
+      static from(res) {
+        const response = new ServerlessResponse(res);
+        response.statusCode = res.statusCode;
+        response[HEADERS] = res.headers;
+        response[BODY] = [Buffer.from(res.body)];
+        response.end();
+        return response;
+      }
+      static body(res) {
+        return Buffer.concat(res[BODY]);
+      }
+      static headers(res) {
+        const headers = typeof res.getHeaders === "function" ? res.getHeaders() : res._headers;
+        return Object.assign(headers, res[HEADERS]);
+      }
+      get headers() {
+        return this[HEADERS];
+      }
+      setHeader(key, value) {
+        if (this._wroteHeader) {
+          this[HEADERS][key] = value;
+        } else {
+          super.setHeader(key, value);
+        }
+      }
+      writeHead(statusCode, reason, obj) {
+        const headers = typeof reason === "string" ? obj : reason;
+        for (const name in headers) {
+          this.setHeader(name, headers[name]);
+          if (!this._wroteHeader) {
+            break;
+          }
+        }
+        super.writeHead(statusCode, reason, obj);
+      }
+      constructor({ method }) {
+        super({ method });
+        this[BODY] = [];
+        this[HEADERS] = {};
+        this.useChunkedEncodingByDefault = false;
+        this.chunkedEncoding = false;
+        this._header = "";
+        this.assignSocket({
+          _writableState: {},
+          writable: true,
+          on: Function.prototype,
+          removeListener: Function.prototype,
+          destroy: Function.prototype,
+          cork: Function.prototype,
+          uncork: Function.prototype,
+          write: (data, encoding, cb) => {
+            if (typeof encoding === "function") {
+              cb = encoding;
+              encoding = null;
+            }
+            if (this._header === "" || this._wroteHeader) {
+              addData(this, data);
+            } else {
+              const string4 = getString(data);
+              const index = string4.indexOf(headerEnd);
+              if (index !== -1) {
+                const remainder = string4.slice(index + headerEnd.length);
+                if (remainder) {
+                  addData(this, remainder);
+                }
+                this._wroteHeader = true;
+              }
+            }
+            if (typeof cb === "function") {
+              cb();
+            }
+            return true;
+          }
+        });
+      }
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/framework/get-framework.js
+var require_get_framework = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/framework/get-framework.js"(exports, module) {
+    "use strict";
+    var http = __require("http");
+    var Response2 = require_response();
+    function common(cb) {
+      return (request) => {
+        const response = new Response2(request);
+        cb(request, response);
+        return response;
+      };
+    }
+    module.exports = function getFramework(app2) {
+      if (app2 instanceof http.Server) {
+        return (request) => {
+          const response = new Response2(request);
+          app2.emit("request", request, response);
+          return response;
+        };
+      }
+      if (typeof app2.callback === "function") {
+        return common(app2.callback());
+      }
+      if (typeof app2.handle === "function") {
+        return common((request, response) => {
+          app2.handle(request, response);
+        });
+      }
+      if (typeof app2.handler === "function") {
+        return common((request, response) => {
+          app2.handler(request, response);
+        });
+      }
+      if (typeof app2._onRequest === "function") {
+        return common((request, response) => {
+          app2._onRequest(request, response);
+        });
+      }
+      if (typeof app2 === "function") {
+        return common(app2);
+      }
+      if (app2.router && typeof app2.router.route == "function") {
+        return common((req, res) => {
+          const { url: url2, method, headers, body } = req;
+          app2.router.route({ url: url2, method, headers, body }, res);
+        });
+      }
+      if (app2._core && typeof app2._core._dispatch === "function") {
+        return common(app2._core._dispatch({
+          app: app2
+        }));
+      }
+      if (typeof app2.inject === "function") {
+        return async (request) => {
+          const { method, url: url2, headers, body } = request;
+          const res = await app2.inject({ method, url: url2, headers, payload: body });
+          return Response2.from(res);
+        };
+      }
+      if (typeof app2.main === "function") {
+        return common(app2.main);
+      }
+      throw new Error("Unsupported framework");
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/clean-up-event.js
+var require_clean_up_event = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/clean-up-event.js"(exports, module) {
+    "use strict";
+    function removeBasePath(path = "/", basePath) {
+      if (basePath) {
+        const basePathIndex = path.indexOf(basePath);
+        if (basePathIndex > -1) {
+          return path.substr(basePathIndex + basePath.length) || "/";
+        }
+      }
+      return path;
+    }
+    function isString(value) {
+      return typeof value === "string" || value instanceof String;
+    }
+    function specialDecodeURIComponent(value) {
+      if (!isString(value)) {
+        return value;
+      }
+      let decoded;
+      try {
+        decoded = decodeURIComponent(value.replace(/[+]/g, "%20"));
+      } catch (err) {
+        decoded = value.replace(/[+]/g, "%20");
+      }
+      return decoded;
+    }
+    function recursiveURLDecode(value) {
+      if (isString(value)) {
+        return specialDecodeURIComponent(value);
+      } else if (Array.isArray(value)) {
+        const decodedArray = [];
+        for (let index in value) {
+          decodedArray.push(recursiveURLDecode(value[index]));
+        }
+        return decodedArray;
+      } else if (value instanceof Object) {
+        const decodedObject = {};
+        for (let key of Object.keys(value)) {
+          decodedObject[specialDecodeURIComponent(key)] = recursiveURLDecode(value[key]);
+        }
+        return decodedObject;
+      }
+      return value;
+    }
+    module.exports = function cleanupEvent(evt, options) {
+      const event = evt || {};
+      event.requestContext = event.requestContext || {};
+      event.body = event.body || "";
+      event.headers = event.headers || {};
+      if ("elb" in event.requestContext) {
+        if (event.multiValueQueryStringParameters) {
+          event.multiValueQueryStringParameters = recursiveURLDecode(event.multiValueQueryStringParameters);
+        }
+        if (event.queryStringParameters) {
+          event.queryStringParameters = recursiveURLDecode(event.queryStringParameters);
+        }
+      }
+      if (event.version === "2.0") {
+        event.requestContext.authorizer = event.requestContext.authorizer || {};
+        event.requestContext.http.method = event.requestContext.http.method || "GET";
+        event.rawPath = removeBasePath(event.requestPath || event.rawPath, options.basePath);
+      } else {
+        event.requestContext.identity = event.requestContext.identity || {};
+        event.httpMethod = event.httpMethod || "GET";
+        event.path = removeBasePath(event.requestPath || event.path, options.basePath);
+      }
+      return event;
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/request.js
+var require_request = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/request.js"(exports, module) {
+    "use strict";
+    var http = __require("http");
+    var { PassThrough } = __require("stream");
+    module.exports = class ServerlessRequest extends http.IncomingMessage {
+      constructor({ method, url: url2, headers, body, remoteAddress }) {
+        const socket = new PassThrough();
+        socket.encrypted = true;
+        socket.remoteAddress = remoteAddress;
+        socket.address = () => ({ port: 443 });
+        super(socket);
+        if (typeof headers["content-length"] === "undefined") {
+          headers["content-length"] = Buffer.byteLength(body);
+        }
+        Object.assign(this, {
+          ip: remoteAddress,
+          complete: true,
+          httpVersion: "1.1",
+          httpVersionMajor: "1",
+          httpVersionMinor: "1",
+          method,
+          headers,
+          body,
+          url: url2
+        });
+        this._read = () => {
+          if (typeof body !== "undefined" && body !== null) {
+            this.push(body);
+          }
+          this.push(null);
+        };
+        if (!body || Buffer.byteLength(body) === 0) {
+          setImmediate(() => this.emit("end"));
+        }
+      }
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/create-request.js
+var require_create_request = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/create-request.js"(exports, module) {
+    "use strict";
+    var URL2 = __require("url");
+    var Request = require_request();
+    function requestMethod(event) {
+      if (event.version === "2.0") {
+        return event.requestContext.http.method;
+      }
+      return event.httpMethod;
+    }
+    function requestRemoteAddress(event) {
+      if (event.version === "2.0") {
+        return event.requestContext.http.sourceIp;
+      }
+      return event.requestContext.identity.sourceIp;
+    }
+    function requestHeaders(event) {
+      const initialHeader = event.version === "2.0" && Array.isArray(event.cookies) ? { cookie: event.cookies.join("; ") } : {};
+      if (event.multiValueHeaders) {
+        Object.keys(event.multiValueHeaders).reduce((headers, key) => {
+          headers[key.toLowerCase()] = event.multiValueHeaders[key].join(", ");
+          return headers;
+        }, initialHeader);
+      }
+      return Object.keys(event.headers).reduce((headers, key) => {
+        headers[key.toLowerCase()] = event.headers[key];
+        return headers;
+      }, initialHeader);
+    }
+    function requestBody(event) {
+      const type = typeof event.body;
+      if (Buffer.isBuffer(event.body)) {
+        return event.body;
+      } else if (type === "string") {
+        return Buffer.from(event.body, event.isBase64Encoded ? "base64" : "utf8");
+      } else if (type === "object") {
+        return Buffer.from(JSON.stringify(event.body));
+      }
+      throw new Error(`Unexpected event.body type: ${typeof event.body}`);
+    }
+    function requestUrl(event) {
+      if (event.version === "2.0") {
+        return URL2.format({
+          pathname: event.rawPath,
+          search: event.rawQueryString
+        });
+      }
+      const query = event.multiValueQueryStringParameters || {};
+      if (event.queryStringParameters) {
+        Object.keys(event.queryStringParameters).forEach((key) => {
+          if (Array.isArray(query[key])) {
+            if (!query[key].includes(event.queryStringParameters[key])) {
+              query[key].push(event.queryStringParameters[key]);
+            }
+          } else {
+            query[key] = [event.queryStringParameters[key]];
+          }
+        });
+      }
+      return URL2.format({
+        pathname: event.path,
+        query
+      });
+    }
+    module.exports = (event, context, options) => {
+      const method = requestMethod(event);
+      const remoteAddress = requestRemoteAddress(event);
+      const headers = requestHeaders(event);
+      const body = requestBody(event);
+      const url2 = requestUrl(event);
+      if (typeof options.requestId === "string" && options.requestId.length > 0) {
+        const header = options.requestId.toLowerCase();
+        const requestId = headers[header] || event.requestContext.requestId;
+        if (requestId) {
+          headers[header] = requestId;
+        }
+      }
+      const req = new Request({
+        method,
+        headers,
+        body,
+        remoteAddress,
+        url: url2
+      });
+      req.requestContext = event.requestContext;
+      req.apiGateway = {
+        event,
+        context
+      };
+      return req;
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/is-binary.js
+var require_is_binary = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/is-binary.js"(exports, module) {
+    "use strict";
+    var BINARY_ENCODINGS = ["gzip", "deflate", "br"];
+    var BINARY_CONTENT_TYPES = (process.env.BINARY_CONTENT_TYPES || "").split(",");
+    function isBinaryEncoding(headers) {
+      const contentEncoding = headers["content-encoding"];
+      if (typeof contentEncoding === "string") {
+        return contentEncoding.split(",").some(
+          (value) => BINARY_ENCODINGS.some((binaryEncoding) => value.indexOf(binaryEncoding) !== -1)
+        );
+      }
+    }
+    function isBinaryContent(headers, options) {
+      const contentTypes = [].concat(
+        options.binary ? options.binary : BINARY_CONTENT_TYPES
+      ).map(
+        (candidate) => new RegExp(`^${candidate.replace(/\*/g, ".*")}$`)
+      );
+      const contentType = (headers["content-type"] || "").split(";")[0];
+      return !!contentType && contentTypes.some((candidate) => candidate.test(contentType));
+    }
+    module.exports = function isBinary(headers, options) {
+      if (options.binary === false) {
+        return false;
+      }
+      if (options.binary === true) {
+        return true;
+      }
+      if (typeof options.binary === "function") {
+        return options.binary(headers);
+      }
+      return isBinaryEncoding(headers) || isBinaryContent(headers, options);
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/sanitize-headers.js
+var require_sanitize_headers = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/sanitize-headers.js"(exports, module) {
+    "use strict";
+    module.exports = function sanitizeHeaders(headers) {
+      return Object.keys(headers).reduce((memo, key) => {
+        const value = headers[key];
+        if (Array.isArray(value)) {
+          memo.multiValueHeaders[key] = value;
+          if (key.toLowerCase() !== "set-cookie") {
+            memo.headers[key] = value.join(", ");
+          }
+        } else {
+          memo.headers[key] = value == null ? "" : value.toString();
+        }
+        return memo;
+      }, {
+        headers: {},
+        multiValueHeaders: {}
+      });
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/get-event-type.js
+var require_get_event_type = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/get-event-type.js"(exports, module) {
+    var HTTP_API_V1 = "HTTP_API_V1";
+    var HTTP_API_V2 = "HTTP_API_V2";
+    var ALB = "ALB";
+    var LAMBDA_EVENT_TYPES = {
+      HTTP_API_V1,
+      HTTP_API_V2,
+      ALB
+    };
+    var getEventType = (event) => {
+      if (event.requestContext && event.requestContext.elb) {
+        return ALB;
+      } else if (event.version === "2.0") {
+        return HTTP_API_V2;
+      } else {
+        return HTTP_API_V1;
+      }
+    };
+    module.exports = {
+      getEventType,
+      LAMBDA_EVENT_TYPES
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/format-response.js
+var require_format_response = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/format-response.js"(exports, module) {
+    "use strict";
+    var isBinary = require_is_binary();
+    var Response2 = require_response();
+    var sanitizeHeaders = require_sanitize_headers();
+    var { getEventType, LAMBDA_EVENT_TYPES } = require_get_event_type();
+    var combineHeaders = (headers, multiValueHeaders) => {
+      return Object.entries(headers).reduce((memo, [key, value]) => {
+        if (multiValueHeaders[key]) {
+          memo[key].push(value);
+        } else {
+          memo[key] = [value];
+        }
+        return memo;
+      }, multiValueHeaders);
+    };
+    module.exports = (event, response, options) => {
+      const eventType = getEventType(event);
+      const { statusCode } = response;
+      const { headers, multiValueHeaders } = sanitizeHeaders(Response2.headers(response));
+      let cookies = [];
+      if (multiValueHeaders["set-cookie"]) {
+        cookies = multiValueHeaders["set-cookie"];
+      }
+      const isBase64Encoded = isBinary(headers, options);
+      const encoding = isBase64Encoded ? "base64" : "utf8";
+      let body = Response2.body(response).toString(encoding);
+      if (headers["transfer-encoding"] === "chunked" || response.chunkedEncoding) {
+        const raw = Response2.body(response).toString().split("\r\n");
+        const parsed = [];
+        for (let i = 0; i < raw.length; i += 2) {
+          const size = parseInt(raw[i], 16);
+          const value = raw[i + 1];
+          if (value) {
+            parsed.push(value.substring(0, size));
+          }
+        }
+        body = parsed.join("");
+      }
+      if (eventType === LAMBDA_EVENT_TYPES.ALB) {
+        const albResponse = { statusCode, isBase64Encoded, body };
+        if (event.multiValueHeaders) {
+          albResponse.multiValueHeaders = combineHeaders(headers, multiValueHeaders);
+        } else {
+          albResponse.headers = headers;
+        }
+        return albResponse;
+      }
+      if (eventType === LAMBDA_EVENT_TYPES.HTTP_API_V2) {
+        return { statusCode, isBase64Encoded, body, headers, cookies };
+      }
+      return { statusCode, isBase64Encoded, body, headers, multiValueHeaders };
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/index.js
+var require_aws = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/index.js"(exports, module) {
+    var cleanUpEvent = require_clean_up_event();
+    var createRequest = require_create_request();
+    var formatResponse = require_format_response();
+    module.exports = (options) => {
+      return (getResponse) => async (event_, context = {}) => {
+        const event = cleanUpEvent(event_, options);
+        const request = createRequest(event, context, options);
+        const response = await getResponse(request, event, context);
+        return formatResponse(event, response, options);
+      };
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/clean-up-request.js
+var require_clean_up_request = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/clean-up-request.js"(exports, module) {
+    "use strict";
+    function getUrl({ requestPath, url: url2 }) {
+      if (requestPath) {
+        return requestPath;
+      }
+      return typeof url2 === "string" ? url2 : "/";
+    }
+    function getRequestContext(request) {
+      const requestContext = {};
+      requestContext.identity = {};
+      const forwardedIp = request.headers["x-forwarded-for"];
+      const clientIp = request.headers["client-ip"];
+      const ip = forwardedIp ? forwardedIp : clientIp ? clientIp : "";
+      if (ip) {
+        requestContext.identity.sourceIp = ip.split(":")[0];
+      }
+      return requestContext;
+    }
+    module.exports = function cleanupRequest(req, options) {
+      const request = req || {};
+      request.requestContext = getRequestContext(req);
+      request.method = request.method || "GET";
+      request.url = getUrl(request);
+      request.body = request.body || "";
+      request.headers = request.headers || {};
+      if (options.basePath) {
+        const basePathIndex = request.url.indexOf(options.basePath);
+        if (basePathIndex > -1) {
+          request.url = request.url.substr(basePathIndex + options.basePath.length);
+        }
+      }
+      return request;
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/create-request.js
+var require_create_request2 = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/create-request.js"(exports, module) {
+    "use strict";
+    var url2 = __require("url");
+    var Request = require_request();
+    function requestHeaders(request) {
+      return Object.keys(request.headers).reduce((headers, key) => {
+        headers[key.toLowerCase()] = request.headers[key];
+        return headers;
+      }, {});
+    }
+    function requestBody(request) {
+      const type = typeof request.rawBody;
+      if (Buffer.isBuffer(request.rawBody)) {
+        return request.rawBody;
+      } else if (type === "string") {
+        return Buffer.from(request.rawBody, "utf8");
+      } else if (type === "object") {
+        return Buffer.from(JSON.stringify(request.rawBody));
+      }
+      throw new Error(`Unexpected request.body type: ${typeof request.rawBody}`);
+    }
+    module.exports = (request) => {
+      const method = request.method;
+      const query = request.query;
+      const headers = requestHeaders(request);
+      const body = requestBody(request);
+      const req = new Request({
+        method,
+        headers,
+        body,
+        url: url2.format({
+          pathname: request.url,
+          query
+        })
+      });
+      req.requestContext = request.requestContext;
+      return req;
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/is-binary.js
+var require_is_binary2 = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/is-binary.js"(exports, module) {
+    "use strict";
+    var BINARY_ENCODINGS = ["gzip", "deflate", "br"];
+    var BINARY_CONTENT_TYPES = (process.env.BINARY_CONTENT_TYPES || "").split(",");
+    function isBinaryEncoding(headers) {
+      const contentEncoding = headers["content-encoding"];
+      if (typeof contentEncoding === "string") {
+        return contentEncoding.split(",").some(
+          (value) => BINARY_ENCODINGS.some((binaryEncoding) => value.indexOf(binaryEncoding) !== -1)
+        );
+      }
+    }
+    function isBinaryContent(headers, options) {
+      const contentTypes = [].concat(
+        options.binary ? options.binary : BINARY_CONTENT_TYPES
+      ).map(
+        (candidate) => new RegExp(`^${candidate.replace(/\*/g, ".*")}$`)
+      );
+      const contentType = (headers["content-type"] || "").split(";")[0];
+      return !!contentType && contentTypes.some((candidate) => candidate.test(contentType));
+    }
+    module.exports = function isBinary(headers, options) {
+      if (options.binary === false) {
+        return false;
+      }
+      if (options.binary === true) {
+        return true;
+      }
+      if (typeof options.binary === "function") {
+        return options.binary(headers);
+      }
+      return isBinaryEncoding(headers) || isBinaryContent(headers, options);
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/set-cookie.json
+var require_set_cookie = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/set-cookie.json"(exports, module) {
+    module.exports = { variations: ["set-cookie", "Set-cookie", "sEt-cookie", "SEt-cookie", "seT-cookie", "SeT-cookie", "sET-cookie", "SET-cookie", "set-Cookie", "Set-Cookie", "sEt-Cookie", "SEt-Cookie", "seT-Cookie", "SeT-Cookie", "sET-Cookie", "SET-Cookie", "set-cOokie", "Set-cOokie", "sEt-cOokie", "SEt-cOokie", "seT-cOokie", "SeT-cOokie", "sET-cOokie", "SET-cOokie", "set-COokie", "Set-COokie", "sEt-COokie", "SEt-COokie", "seT-COokie", "SeT-COokie", "sET-COokie", "SET-COokie", "set-coOkie", "Set-coOkie", "sEt-coOkie", "SEt-coOkie", "seT-coOkie", "SeT-coOkie", "sET-coOkie", "SET-coOkie", "set-CoOkie", "Set-CoOkie", "sEt-CoOkie", "SEt-CoOkie", "seT-CoOkie", "SeT-CoOkie", "sET-CoOkie", "SET-CoOkie", "set-cOOkie", "Set-cOOkie", "sEt-cOOkie", "SEt-cOOkie", "seT-cOOkie", "SeT-cOOkie", "sET-cOOkie", "SET-cOOkie", "set-COOkie", "Set-COOkie", "sEt-COOkie", "SEt-COOkie", "seT-COOkie", "SeT-COOkie", "sET-COOkie", "SET-COOkie", "set-cooKie", "Set-cooKie", "sEt-cooKie", "SEt-cooKie", "seT-cooKie", "SeT-cooKie", "sET-cooKie", "SET-cooKie", "set-CooKie", "Set-CooKie", "sEt-CooKie", "SEt-CooKie", "seT-CooKie", "SeT-CooKie", "sET-CooKie", "SET-CooKie", "set-cOoKie", "Set-cOoKie", "sEt-cOoKie", "SEt-cOoKie", "seT-cOoKie", "SeT-cOoKie", "sET-cOoKie", "SET-cOoKie", "set-COoKie", "Set-COoKie", "sEt-COoKie", "SEt-COoKie", "seT-COoKie", "SeT-COoKie", "sET-COoKie", "SET-COoKie", "set-coOKie", "Set-coOKie", "sEt-coOKie", "SEt-coOKie", "seT-coOKie", "SeT-coOKie", "sET-coOKie", "SET-coOKie", "set-CoOKie", "Set-CoOKie", "sEt-CoOKie", "SEt-CoOKie", "seT-CoOKie", "SeT-CoOKie", "sET-CoOKie", "SET-CoOKie", "set-cOOKie", "Set-cOOKie", "sEt-cOOKie", "SEt-cOOKie", "seT-cOOKie", "SeT-cOOKie", "sET-cOOKie", "SET-cOOKie", "set-COOKie", "Set-COOKie", "sEt-COOKie", "SEt-COOKie", "seT-COOKie", "SeT-COOKie", "sET-COOKie", "SET-COOKie", "set-cookIe", "Set-cookIe", "sEt-cookIe", "SEt-cookIe", "seT-cookIe", "SeT-cookIe", "sET-cookIe", "SET-cookIe", "set-CookIe", "Set-CookIe", "sEt-CookIe", "SEt-CookIe", "seT-CookIe", "SeT-CookIe", "sET-CookIe", "SET-CookIe", "set-cOokIe", "Set-cOokIe", "sEt-cOokIe", "SEt-cOokIe", "seT-cOokIe", "SeT-cOokIe", "sET-cOokIe", "SET-cOokIe", "set-COokIe", "Set-COokIe", "sEt-COokIe", "SEt-COokIe", "seT-COokIe", "SeT-COokIe", "sET-COokIe", "SET-COokIe", "set-coOkIe", "Set-coOkIe", "sEt-coOkIe", "SEt-coOkIe", "seT-coOkIe", "SeT-coOkIe", "sET-coOkIe", "SET-coOkIe", "set-CoOkIe", "Set-CoOkIe", "sEt-CoOkIe", "SEt-CoOkIe", "seT-CoOkIe", "SeT-CoOkIe", "sET-CoOkIe", "SET-CoOkIe", "set-cOOkIe", "Set-cOOkIe", "sEt-cOOkIe", "SEt-cOOkIe", "seT-cOOkIe", "SeT-cOOkIe", "sET-cOOkIe", "SET-cOOkIe", "set-COOkIe", "Set-COOkIe", "sEt-COOkIe", "SEt-COOkIe", "seT-COOkIe", "SeT-COOkIe", "sET-COOkIe", "SET-COOkIe", "set-cooKIe", "Set-cooKIe", "sEt-cooKIe", "SEt-cooKIe", "seT-cooKIe", "SeT-cooKIe", "sET-cooKIe", "SET-cooKIe", "set-CooKIe", "Set-CooKIe", "sEt-CooKIe", "SEt-CooKIe", "seT-CooKIe", "SeT-CooKIe", "sET-CooKIe", "SET-CooKIe", "set-cOoKIe", "Set-cOoKIe", "sEt-cOoKIe", "SEt-cOoKIe", "seT-cOoKIe", "SeT-cOoKIe", "sET-cOoKIe", "SET-cOoKIe", "set-COoKIe", "Set-COoKIe", "sEt-COoKIe", "SEt-COoKIe", "seT-COoKIe", "SeT-COoKIe", "sET-COoKIe", "SET-COoKIe", "set-coOKIe", "Set-coOKIe", "sEt-coOKIe", "SEt-coOKIe", "seT-coOKIe", "SeT-coOKIe", "sET-coOKIe", "SET-coOKIe", "set-CoOKIe", "Set-CoOKIe", "sEt-CoOKIe", "SEt-CoOKIe", "seT-CoOKIe", "SeT-CoOKIe", "sET-CoOKIe", "SET-CoOKIe", "set-cOOKIe", "Set-cOOKIe", "sEt-cOOKIe", "SEt-cOOKIe", "seT-cOOKIe", "SeT-cOOKIe", "sET-cOOKIe", "SET-cOOKIe", "set-COOKIe", "Set-COOKIe", "sEt-COOKIe", "SEt-COOKIe", "seT-COOKIe", "SeT-COOKIe", "sET-COOKIe", "SET-COOKIe", "set-cookiE", "Set-cookiE", "sEt-cookiE", "SEt-cookiE", "seT-cookiE", "SeT-cookiE", "sET-cookiE", "SET-cookiE", "set-CookiE", "Set-CookiE", "sEt-CookiE", "SEt-CookiE", "seT-CookiE", "SeT-CookiE", "sET-CookiE", "SET-CookiE", "set-cOokiE", "Set-cOokiE", "sEt-cOokiE", "SEt-cOokiE", "seT-cOokiE", "SeT-cOokiE", "sET-cOokiE", "SET-cOokiE", "set-COokiE", "Set-COokiE", "sEt-COokiE", "SEt-COokiE", "seT-COokiE", "SeT-COokiE", "sET-COokiE", "SET-COokiE", "set-coOkiE", "Set-coOkiE", "sEt-coOkiE", "SEt-coOkiE", "seT-coOkiE", "SeT-coOkiE", "sET-coOkiE", "SET-coOkiE", "set-CoOkiE", "Set-CoOkiE", "sEt-CoOkiE", "SEt-CoOkiE", "seT-CoOkiE", "SeT-CoOkiE", "sET-CoOkiE", "SET-CoOkiE", "set-cOOkiE", "Set-cOOkiE", "sEt-cOOkiE", "SEt-cOOkiE", "seT-cOOkiE", "SeT-cOOkiE", "sET-cOOkiE", "SET-cOOkiE", "set-COOkiE", "Set-COOkiE", "sEt-COOkiE", "SEt-COOkiE", "seT-COOkiE", "SeT-COOkiE", "sET-COOkiE", "SET-COOkiE", "set-cooKiE", "Set-cooKiE", "sEt-cooKiE", "SEt-cooKiE", "seT-cooKiE", "SeT-cooKiE", "sET-cooKiE", "SET-cooKiE", "set-CooKiE", "Set-CooKiE", "sEt-CooKiE", "SEt-CooKiE", "seT-CooKiE", "SeT-CooKiE", "sET-CooKiE", "SET-CooKiE", "set-cOoKiE", "Set-cOoKiE", "sEt-cOoKiE", "SEt-cOoKiE", "seT-cOoKiE", "SeT-cOoKiE", "sET-cOoKiE", "SET-cOoKiE", "set-COoKiE", "Set-COoKiE", "sEt-COoKiE", "SEt-COoKiE", "seT-COoKiE", "SeT-COoKiE", "sET-COoKiE", "SET-COoKiE", "set-coOKiE", "Set-coOKiE", "sEt-coOKiE", "SEt-coOKiE", "seT-coOKiE", "SeT-coOKiE", "sET-coOKiE", "SET-coOKiE", "set-CoOKiE", "Set-CoOKiE", "sEt-CoOKiE", "SEt-CoOKiE", "seT-CoOKiE", "SeT-CoOKiE", "sET-CoOKiE", "SET-CoOKiE", "set-cOOKiE", "Set-cOOKiE", "sEt-cOOKiE", "SEt-cOOKiE", "seT-cOOKiE", "SeT-cOOKiE", "sET-cOOKiE", "SET-cOOKiE", "set-COOKiE", "Set-COOKiE", "sEt-COOKiE", "SEt-COOKiE", "seT-COOKiE", "SeT-COOKiE", "sET-COOKiE", "SET-COOKiE", "set-cookIE", "Set-cookIE", "sEt-cookIE", "SEt-cookIE", "seT-cookIE", "SeT-cookIE", "sET-cookIE", "SET-cookIE", "set-CookIE", "Set-CookIE", "sEt-CookIE", "SEt-CookIE", "seT-CookIE", "SeT-CookIE", "sET-CookIE", "SET-CookIE", "set-cOokIE", "Set-cOokIE", "sEt-cOokIE", "SEt-cOokIE", "seT-cOokIE", "SeT-cOokIE", "sET-cOokIE", "SET-cOokIE", "set-COokIE", "Set-COokIE", "sEt-COokIE", "SEt-COokIE", "seT-COokIE", "SeT-COokIE", "sET-COokIE", "SET-COokIE", "set-coOkIE", "Set-coOkIE", "sEt-coOkIE", "SEt-coOkIE", "seT-coOkIE", "SeT-coOkIE", "sET-coOkIE", "SET-coOkIE", "set-CoOkIE", "Set-CoOkIE", "sEt-CoOkIE", "SEt-CoOkIE", "seT-CoOkIE", "SeT-CoOkIE", "sET-CoOkIE", "SET-CoOkIE", "set-cOOkIE", "Set-cOOkIE", "sEt-cOOkIE", "SEt-cOOkIE", "seT-cOOkIE", "SeT-cOOkIE", "sET-cOOkIE", "SET-cOOkIE", "set-COOkIE", "Set-COOkIE", "sEt-COOkIE", "SEt-COOkIE", "seT-COOkIE", "SeT-COOkIE", "sET-COOkIE", "SET-COOkIE", "set-cooKIE", "Set-cooKIE", "sEt-cooKIE", "SEt-cooKIE", "seT-cooKIE", "SeT-cooKIE", "sET-cooKIE", "SET-cooKIE", "set-CooKIE", "Set-CooKIE", "sEt-CooKIE", "SEt-CooKIE", "seT-CooKIE", "SeT-CooKIE", "sET-CooKIE", "SET-CooKIE", "set-cOoKIE", "Set-cOoKIE", "sEt-cOoKIE", "SEt-cOoKIE", "seT-cOoKIE", "SeT-cOoKIE", "sET-cOoKIE", "SET-cOoKIE", "set-COoKIE", "Set-COoKIE", "sEt-COoKIE", "SEt-COoKIE", "seT-COoKIE", "SeT-COoKIE", "sET-COoKIE", "SET-COoKIE", "set-coOKIE", "Set-coOKIE", "sEt-coOKIE", "SEt-coOKIE", "seT-coOKIE", "SeT-coOKIE", "sET-coOKIE", "SET-coOKIE", "set-CoOKIE", "Set-CoOKIE", "sEt-CoOKIE", "SEt-CoOKIE", "seT-CoOKIE", "SeT-CoOKIE", "sET-CoOKIE", "SET-CoOKIE", "set-cOOKIE", "Set-cOOKIE", "sEt-cOOKIE", "SEt-cOOKIE", "seT-cOOKIE", "SeT-cOOKIE", "sET-cOOKIE", "SET-cOOKIE", "set-COOKIE", "Set-COOKIE", "sEt-COOKIE", "SEt-COOKIE", "seT-COOKIE", "SeT-COOKIE", "sET-COOKIE", "SET-COOKIE"] };
+  }
+});
+
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/sanitize-headers.js
+var require_sanitize_headers2 = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/sanitize-headers.js"(exports, module) {
+    "use strict";
+    var setCookieVariations = require_set_cookie().variations;
+    module.exports = function sanitizeHeaders(headers) {
+      return Object.keys(headers).reduce((memo, key) => {
+        const value = headers[key];
+        if (Array.isArray(value)) {
+          if (key.toLowerCase() === "set-cookie") {
+            value.forEach((cookie, i) => {
+              memo[setCookieVariations[i]] = cookie;
+            });
+          } else {
+            memo[key] = value.join(", ");
+          }
+        } else {
+          memo[key] = value == null ? "" : value.toString();
+        }
+        return memo;
+      }, {});
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/format-response.js
+var require_format_response2 = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/format-response.js"(exports, module) {
+    var isBinary = require_is_binary2();
+    var Response2 = require_response();
+    var sanitizeHeaders = require_sanitize_headers2();
+    module.exports = (response, options) => {
+      const { statusCode } = response;
+      const headers = sanitizeHeaders(Response2.headers(response));
+      if (headers["transfer-encoding"] === "chunked" || response.chunkedEncoding) {
+        throw new Error("chunked encoding not supported");
+      }
+      const isBase64Encoded = isBinary(headers, options);
+      const encoding = isBase64Encoded ? "base64" : "utf8";
+      const body = Response2.body(response).toString(encoding);
+      return { status: statusCode, headers, isBase64Encoded, body };
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/index.js
+var require_azure = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/index.js"(exports, module) {
+    var cleanupRequest = require_clean_up_request();
+    var createRequest = require_create_request2();
+    var formatResponse = require_format_response2();
+    module.exports = (options) => {
+      return (getResponse) => async (context, req) => {
+        const event = cleanupRequest(req, options);
+        const request = createRequest(event, options);
+        const response = await getResponse(request, context, event);
+        context.log(response);
+        return formatResponse(response, options);
+      };
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/get-provider.js
+var require_get_provider = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/get-provider.js"(exports, module) {
+    var aws = require_aws();
+    var azure = require_azure();
+    var providers = {
+      aws,
+      azure
+    };
+    module.exports = function getProvider(options) {
+      const { provider = "aws" } = options;
+      if (provider in providers) {
+        return providers[provider](options);
+      }
+      throw new Error(`Unsupported provider ${provider}`);
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/serverless-http.js
+var require_serverless_http = __commonJS({
+  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/serverless-http.js"(exports, module) {
+    "use strict";
+    var finish = require_finish();
+    var getFramework = require_get_framework();
+    var getProvider = require_get_provider();
+    var defaultOptions = {
+      requestId: "x-request-id"
+    };
+    module.exports = function(app2, opts) {
+      const options = Object.assign({}, defaultOptions, opts);
+      const framework = getFramework(app2);
+      const provider = getProvider(options);
+      return provider(async (request, ...context) => {
+        await finish(request, options.request, ...context);
+        const response = await framework(request);
+        await finish(response, options.response, ...context);
+        response.emit("close");
+        return response;
+      });
     };
   }
 });
@@ -20814,7 +21268,7 @@ var require_route = __commonJS({
         sync = 0;
       }
     };
-    Route.prototype.all = function all(handler) {
+    Route.prototype.all = function all(handler2) {
       const callbacks = flatten.call(slice.call(arguments), Infinity);
       if (callbacks.length === 0) {
         throw new TypeError("argument handler is required");
@@ -20832,7 +21286,7 @@ var require_route = __commonJS({
       return this;
     };
     methods.forEach(function(method) {
-      Route.prototype[method] = function(handler) {
+      Route.prototype[method] = function(handler2) {
         const callbacks = flatten.call(slice.call(arguments), Infinity);
         if (callbacks.length === 0) {
           throw new TypeError("argument handler is required");
@@ -21035,17 +21489,17 @@ var require_router = __commonJS({
         }
       }
     };
-    Router13.prototype.use = function use(handler) {
+    Router13.prototype.use = function use(handler2) {
       let offset = 0;
       let path = "/";
-      if (typeof handler !== "function") {
-        let arg = handler;
+      if (typeof handler2 !== "function") {
+        let arg = handler2;
         while (Array.isArray(arg) && arg.length !== 0) {
           arg = arg[0];
         }
         if (typeof arg !== "function") {
           offset = 1;
-          path = handler;
+          path = handler2;
         }
       }
       const callbacks = flatten.call(slice.call(arguments, offset), Infinity);
@@ -22261,7 +22715,7 @@ var require_range_parser = __commonJS({
 });
 
 // ../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/request.js
-var require_request = __commonJS({
+var require_request2 = __commonJS({
   "../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/request.js"(exports, module) {
     "use strict";
     var accepts = require_accepts();
@@ -23358,7 +23812,7 @@ var require_vary = __commonJS({
 });
 
 // ../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/response.js
-var require_response = __commonJS({
+var require_response2 = __commonJS({
   "../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/response.js"(exports, module) {
     "use strict";
     var contentDisposition = require_content_disposition();
@@ -23940,8 +24394,8 @@ var require_express = __commonJS({
     var mixin = require_merge_descriptors();
     var proto = require_application();
     var Router13 = require_router();
-    var req = require_request();
-    var res = require_response();
+    var req = require_request2();
+    var res = require_response2();
     exports = module.exports = createApplication;
     function createApplication() {
       var app2 = function(req2, res2, next) {
@@ -28355,17 +28809,7 @@ var require_multistream = __commonJS({
 // ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/pino.js
 var require_pino = __commonJS({
   "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/pino.js"(exports, module) {
-    function pinoBundlerAbsolutePath(p) {
-      try {
-        const path = __require("path");
-        const outputDir = "C:\\Users\\basud\\OneDrive\\Desktop\\frontend\\artifacts\\api-server\\dist";
-        return path.resolve(outputDir, p.replace(/^\.\//, ""));
-      } catch (e) {
-        const f = new Function("p", "return new URL(p, import.meta.url).pathname");
-        return f(p);
-      }
-    }
-    globalThis.__bundlerPathsOverrides = { ...globalThis.__bundlerPathsOverrides || {}, "thread-stream-worker": pinoBundlerAbsolutePath("./thread-stream-worker.mjs"), "pino-worker": pinoBundlerAbsolutePath("./pino-worker.mjs"), "pino/file": pinoBundlerAbsolutePath("./pino-file.mjs"), "pino-pretty": pinoBundlerAbsolutePath("./pino-pretty.mjs") };
+    "use strict";
     var os = __require("node:os");
     var stdSerializers = require_pino_std_serializers();
     var caller = require_caller();
@@ -29700,7 +30144,7 @@ var require_FunctionsClient = __commonJS({
 });
 
 // ../../node_modules/.pnpm/@supabase+functions-js@2.107.0/node_modules/@supabase/functions-js/dist/main/index.js
-var require_main2 = __commonJS({
+var require_main = __commonJS({
   "../../node_modules/.pnpm/@supabase+functions-js@2.107.0/node_modules/@supabase/functions-js/dist/main/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -33817,7 +34261,7 @@ Option 2: Install and provide the "ws" package:
 });
 
 // ../../node_modules/.pnpm/@supabase+realtime-js@2.107.0/node_modules/@supabase/realtime-js/dist/main/index.js
-var require_main3 = __commonJS({
+var require_main2 = __commonJS({
   "../../node_modules/.pnpm/@supabase+realtime-js@2.107.0/node_modules/@supabase/realtime-js/dist/main/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -41978,7 +42422,7 @@ var require_AuthClient = __commonJS({
 });
 
 // ../../node_modules/.pnpm/@supabase+auth-js@2.107.0/node_modules/@supabase/auth-js/dist/main/index.js
-var require_main4 = __commonJS({
+var require_main3 = __commonJS({
   "../../node_modules/.pnpm/@supabase+auth-js@2.107.0/node_modules/@supabase/auth-js/dist/main/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -51385,10 +51829,10 @@ var require_Redis = __commonJS({
        */
       connect(callback) {
         const promise2 = (0, tracing_1.traceConnect)(() => this._connect(), () => {
-          const { address, port: port2 } = this._getServerAddress();
+          const { address, port } = this._getServerAddress();
           return {
             serverAddress: address,
-            serverPort: port2,
+            serverPort: port,
             connectionEpoch: this.connectionEpoch
           };
         });
@@ -51826,24 +52270,24 @@ var require_Redis = __commonJS({
       }
       _buildCommandContext(command) {
         var _a, _b, _c;
-        const { address, port: port2 } = this._getServerAddress();
+        const { address, port } = this._getServerAddress();
         return {
           command: command.name,
           args: (0, tracing_1.sanitizeArgs)(command.name, command.args),
           database: (_c = (_b = (_a = this.condition) === null || _a === void 0 ? void 0 : _a.select) !== null && _b !== void 0 ? _b : this.options.db) !== null && _c !== void 0 ? _c : 0,
           serverAddress: address,
-          serverPort: port2
+          serverPort: port
         };
       }
       _buildBatchContext(batchSize) {
         var _a, _b, _c;
-        const { address, port: port2 } = this._getServerAddress();
+        const { address, port } = this._getServerAddress();
         return {
           batchMode: "MULTI",
           batchSize,
           database: (_c = (_b = (_a = this.condition) === null || _a === void 0 ? void 0 : _a.select) !== null && _b !== void 0 ? _b : this.options.db) !== null && _c !== void 0 ? _c : 0,
           serverAddress: address,
-          serverPort: port2
+          serverPort: port
         };
       }
       /**
@@ -55209,11 +55653,11 @@ var require_connection = __commonJS({
           }
         });
       }
-      connect(port2, host) {
+      connect(port, host) {
         const self2 = this;
         this._connecting = true;
         this.stream.setNoDelay(true);
-        this.stream.connect(port2, host);
+        this.stream.connect(port, host);
         this.stream.once("connect", function() {
           if (self2._keepAlive) {
             self2.stream.setKeepAlive(true, self2._keepAliveInitialDelayMillis);
@@ -57166,16 +57610,8 @@ var require_lib6 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/dotenv@17.4.2/node_modules/dotenv/config.js
-(function() {
-  require_main().config(
-    Object.assign(
-      {},
-      require_env_options(),
-      require_cli_options()(process.argv)
-    )
-  );
-})();
+// ../video-archive/api/index.ts
+var import_serverless_http = __toESM(require_serverless_http(), 1);
 
 // src/app.ts
 var import_express13 = __toESM(require_express2(), 1);
@@ -61318,7 +61754,7 @@ __export(dist_exports, {
   SupabaseClient: () => SupabaseClient,
   createClient: () => createClient
 });
-var import_functions_js = __toESM(require_main2(), 1);
+var import_functions_js = __toESM(require_main(), 1);
 
 // ../../node_modules/.pnpm/@supabase+postgrest-js@2.107.0/node_modules/@supabase/postgrest-js/dist/index.mjs
 var DEFAULT_MAX_RETRIES = 3;
@@ -66332,7 +66768,7 @@ var PostgrestClient = class PostgrestClient2 {
 };
 
 // ../../node_modules/.pnpm/@supabase+supabase-js@2.107.0/node_modules/@supabase/supabase-js/dist/index.mjs
-var import_realtime_js = __toESM(require_main3(), 1);
+var import_realtime_js = __toESM(require_main2(), 1);
 
 // ../../node_modules/.pnpm/iceberg-js@0.8.1/node_modules/iceberg-js/dist/index.mjs
 var IcebergError = class extends Error {
@@ -69560,9 +69996,9 @@ var StorageClient = class extends StorageBucketApi {
 };
 
 // ../../node_modules/.pnpm/@supabase+supabase-js@2.107.0/node_modules/@supabase/supabase-js/dist/index.mjs
-var import_auth_js = __toESM(require_main4(), 1);
+var import_auth_js = __toESM(require_main3(), 1);
+__reExport(dist_exports, __toESM(require_main2(), 1));
 __reExport(dist_exports, __toESM(require_main3(), 1));
-__reExport(dist_exports, __toESM(require_main4(), 1));
 var version2 = "2.107.0";
 var JS_ENV = "";
 var JS_RUNTIME_VERSION;
@@ -90147,221 +90583,11 @@ app.use(import_express13.default.urlencoded({ extended: true }));
 app.use("/api", routes_default);
 var app_default = app;
 
-// src/lib/cache-warmup.ts
-var WARMUP_ROUTES = [
-  // Tier 1 — homepage essentials (highest priority)
-  { path: "/api/stats", priority: 1 },
-  { path: "/api/tags", priority: 1 },
-  { path: "/api/performers", priority: 1 },
-  { path: "/api/recordings?limit=12&sort=newest", priority: 1 },
-  { path: "/api/recordings?limit=12&sort=popular", priority: 1 },
-  // Tier 2 — browse/discovery
-  { path: "/api/performers?sort=count&limit=24", priority: 2 },
-  { path: "/api/performers?sort=name&limit=24", priority: 2 }
-];
-async function waitForRedis(timeoutMs) {
-  if (isRedisConnected()) return true;
-  const pollInterval = 200;
-  const maxAttempts = Math.ceil(timeoutMs / pollInterval);
-  for (let i = 0; i < maxAttempts; i++) {
-    await new Promise((r) => setTimeout(r, pollInterval));
-    if (isRedisConnected()) return true;
-  }
-  return false;
-}
-async function warmupCache(port2) {
-  await waitForRedis(5e3);
-  const start = Date.now();
-  const baseUrl = `http://127.0.0.1:${port2}`;
-  const failedRoutes = [];
-  let succeeded = 0;
-  let total = 0;
-  logger.info({ routeCount: WARMUP_ROUTES.length }, "Cache warmup starting");
-  const sortedRoutes = [...WARMUP_ROUTES].sort((a, b) => a.priority - b.priority);
-  for (const { path } of sortedRoutes) {
-    const url2 = `${baseUrl}${path}`;
-    total++;
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 1e4);
-      const response = await fetch(url2, {
-        signal: controller.signal,
-        headers: { Accept: "application/json" }
-      });
-      clearTimeout(timeout);
-      if (response.ok) {
-        succeeded++;
-      } else {
-        failedRoutes.push({ path, status: response.status });
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      failedRoutes.push({ path, status: 0 });
-      logger.error({ err: message, path }, "Cache warmup request failed");
-    }
-  }
-  try {
-    const perfResponse = await fetch(`${baseUrl}/api/performers?limit=5&sort=count`, {
-      headers: { Accept: "application/json" }
-    });
-    if (perfResponse.ok) {
-      const data = await perfResponse.json();
-      const topPerformers = data.performers ?? [];
-      const perfPromises = topPerformers.map(async (p) => {
-        total++;
-        try {
-          const res = await fetch(`${baseUrl}/api/performers/${encodeURIComponent(p.username)}`, {
-            headers: { Accept: "application/json" }
-          });
-          if (res.ok) succeeded++;
-          else failedRoutes.push({ path: `/api/performers/${p.username}`, status: res.status });
-        } catch {
-          failedRoutes.push({ path: `/api/performers/${p.username}`, status: 0 });
-        }
-      });
-      await Promise.allSettled(perfPromises);
-    }
-  } catch {
-  }
-  const durationMs = Date.now() - start;
-  if (failedRoutes.length > 0) {
-    logger.warn(
-      {
-        succeeded,
-        failed: failedRoutes.length,
-        total,
-        durationMs,
-        failedRoutes: failedRoutes.slice(0, 5)
-      },
-      "Cache warmup completed with some failures \u2014 purging all cache entries"
-    );
-    purgeAllCache().catch(
-      (err) => logger.error({ err }, "Failed to purge cache after warmup failures")
-    );
-  } else {
-    logger.info({ succeeded, total, durationMs }, "Cache warmup completed successfully");
-  }
-  return { total, succeeded, failed: failedRoutes.length, durationMs, failedRoutes };
-}
-
-// src/lib/health-check.ts
-var ENDPOINTS = [
-  // Core API — must work for the app to function
-  { label: "Health", path: "/api/healthz" },
-  { label: "Stats", path: "/api/stats" },
-  { label: "Tags", path: "/api/tags" },
-  { label: "Performers", path: "/api/performers" },
-  { label: "Recordings (recent)", path: "/api/recordings?limit=1&sort=newest" },
-  // Search — lower criticality, but nice to verify
-  { label: "Search (empty)", path: "/api/search?q=" },
-  { label: "Search (valid)", path: "/api/search?q=test" }
-];
-async function runHealthCheck(port2) {
-  const start = Date.now();
-  const baseUrl = `http://127.0.0.1:${port2}`;
-  const results = [];
-  const checks = ENDPOINTS.map(async (endpoint) => {
-    const checkStart = Date.now();
-    const url2 = `${baseUrl}${endpoint.path}`;
-    const expectOk = endpoint.expectOk ?? ((s) => s >= 200 && s < 300);
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 1e4);
-      const response = await fetch(url2, {
-        signal: controller.signal,
-        headers: { Accept: "application/json" }
-      });
-      clearTimeout(timeout);
-      const ok2 = expectOk(response.status);
-      const durationMs2 = Date.now() - checkStart;
-      if (ok2) {
-        logger.info(
-          { label: endpoint.label, status: response.status, durationMs: durationMs2, path: endpoint.path },
-          `Health check \u2713 ${endpoint.label}`
-        );
-      } else {
-        let bodyText = "";
-        try {
-          bodyText = await response.text();
-        } catch {
-        }
-        logger.error(
-          {
-            label: endpoint.label,
-            status: response.status,
-            durationMs: durationMs2,
-            path: endpoint.path,
-            body: bodyText.slice(0, 500)
-          },
-          `Health check \u2717 ${endpoint.label}`
-        );
-      }
-      results.push({ label: endpoint.label, path: endpoint.path, ok: ok2, status: response.status, durationMs: durationMs2 });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      const durationMs2 = Date.now() - checkStart;
-      logger.error(
-        { label: endpoint.label, error: message, durationMs: durationMs2, path: endpoint.path },
-        `Health check \u2717 ${endpoint.label} \u2014 request failed`
-      );
-      results.push({
-        label: endpoint.label,
-        path: endpoint.path,
-        ok: false,
-        status: 0,
-        durationMs: durationMs2,
-        error: message
-      });
-    }
-  });
-  await Promise.allSettled(checks);
-  const durationMs = Date.now() - start;
-  const ok = results.filter((r) => r.ok).length;
-  const failed = results.filter((r) => !r.ok).length;
-  const okPercent = results.length > 0 ? Math.round(ok / results.length * 100) : 0;
-  if (failed === 0) {
-    logger.info(
-      { total: results.length, durationMs },
-      `Health check passed \u2014 all ${results.length} endpoints responded successfully`
-    );
-  } else if (ok === 0) {
-    logger.error(
-      { total: results.length, failed, durationMs },
-      `Health check failed \u2014 all ${results.length} endpoints returned errors`
-    );
-  } else {
-    logger.warn(
-      { ok, failed, total: results.length, okPercent, durationMs },
-      `Health check completed with ${failed} failure(s) \u2014 ${okPercent}% of endpoints healthy`
-    );
-  }
-  return { total: results.length, ok, failed, durationMs, endpoints: results };
-}
-
-// src/index.ts
-var rawPort = process.env["PORT"];
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided."
-  );
-}
-var port = Number(rawPort);
-if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
-app_default.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
-  }
-  logger.info({ port }, "Server listening");
-  warmupCache(port).catch((err2) => {
-    logger.error({ err: err2 }, "Cache warmup failed unexpectedly");
-  });
-  runHealthCheck(port).catch((err2) => {
-    logger.error({ err: err2 }, "Health check failed unexpectedly");
-  });
-});
+// ../video-archive/api/index.ts
+var handler = (0, import_serverless_http.default)(app_default);
+export {
+  handler
+};
 /*! Bundled license information:
 
 depd/index.js:
