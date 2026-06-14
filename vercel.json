@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "cd artifacts/video-archive && pnpm exec vite build",
+  "buildCommand": "pnpm --filter @workspace/api-server run vercel-build && cd artifacts/video-archive && pnpm exec vite build",
   "outputDirectory": "artifacts/video-archive/dist",
   "framework": "vite",
   "installCommand": "pnpm install",
