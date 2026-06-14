@@ -21268,7 +21268,7 @@ var require_route = __commonJS({
         sync = 0;
       }
     };
-    Route.prototype.all = function all(handler2) {
+    Route.prototype.all = function all(handler) {
       const callbacks = flatten.call(slice.call(arguments), Infinity);
       if (callbacks.length === 0) {
         throw new TypeError("argument handler is required");
@@ -21286,7 +21286,7 @@ var require_route = __commonJS({
       return this;
     };
     methods.forEach(function(method) {
-      Route.prototype[method] = function(handler2) {
+      Route.prototype[method] = function(handler) {
         const callbacks = flatten.call(slice.call(arguments), Infinity);
         if (callbacks.length === 0) {
           throw new TypeError("argument handler is required");
@@ -21489,17 +21489,17 @@ var require_router = __commonJS({
         }
       }
     };
-    Router13.prototype.use = function use(handler2) {
+    Router13.prototype.use = function use(handler) {
       let offset = 0;
       let path = "/";
-      if (typeof handler2 !== "function") {
-        let arg = handler2;
+      if (typeof handler !== "function") {
+        let arg = handler;
         while (Array.isArray(arg) && arg.length !== 0) {
           arg = arg[0];
         }
         if (typeof arg !== "function") {
           offset = 1;
-          path = handler2;
+          path = handler;
         }
       }
       const callbacks = flatten.call(slice.call(arguments, offset), Infinity);
@@ -90584,9 +90584,9 @@ app.use("/api", routes_default);
 var app_default = app;
 
 // ../video-archive/api/index.ts
-var handler = (0, import_serverless_http.default)(app_default);
+var index_default = (0, import_serverless_http.default)(app_default);
 export {
-  handler
+  index_default as default
 };
 /*! Bundled license information:
 
