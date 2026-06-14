@@ -28809,7 +28809,17 @@ var require_multistream = __commonJS({
 // ../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/pino.js
 var require_pino = __commonJS({
   "../../node_modules/.pnpm/pino@9.14.0/node_modules/pino/pino.js"(exports, module) {
-    "use strict";
+    function pinoBundlerAbsolutePath(p) {
+      try {
+        const path = __require("path");
+        const outputDir = "C:\\Users\\basud\\OneDrive\\Desktop\\frontend\\api";
+        return path.resolve(outputDir, p.replace(/^\.\//, ""));
+      } catch (e) {
+        const f = new Function("p", "return new URL(p, import.meta.url).pathname");
+        return f(p);
+      }
+    }
+    globalThis.__bundlerPathsOverrides = { ...globalThis.__bundlerPathsOverrides || {}, "thread-stream-worker": pinoBundlerAbsolutePath("./thread-stream-worker.js"), "pino-worker": pinoBundlerAbsolutePath("./pino-worker.js"), "pino/file": pinoBundlerAbsolutePath("./pino-file.js"), "pino-pretty": pinoBundlerAbsolutePath("./pino-pretty.js") };
     var os = __require("node:os");
     var stdSerializers = require_pino_std_serializers();
     var caller = require_caller();
@@ -90878,4 +90888,4 @@ object-assign/index.js:
   @license MIT
   *)
 */
-//# sourceMappingURL=index.mjs.map
+//# sourceMappingURL=index.js.map
