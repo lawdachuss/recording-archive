@@ -32,11 +32,11 @@ export default function Home() {
 
   const { data: stats } = useGetStats({ query: { staleTime: 0 } } as any);
   const { data: recentData, isLoading: recentLoading } = useListRecordings(
-    { limit: 12, sort: "newest" },
+    { limit: 24, sort: "newest" },
     { query: { staleTime: 0 } } as any,
   );
   const { data: popularData, isLoading: popularLoading } = useListRecordings(
-    { limit: 12, sort: "popular" },
+    { limit: 24, sort: "popular" },
     { query: { staleTime: 0 } } as any,
   );
   const { data: topPerformersData } = useListPerformers(undefined, { staleTime: 0 });
@@ -159,7 +159,7 @@ export default function Home() {
 
           {loading ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-8">
-              {Array.from({ length: 12 }).map((_, i) => (
+              {Array.from({ length: 24 }).map((_, i) => (
                 <VideoSkeleton key={i} />
               ))}
             </div>

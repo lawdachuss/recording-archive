@@ -9,6 +9,7 @@ interface OptimizedImageProps {
   fallback?: React.ReactNode;
   fetchPriority?: "high" | "low" | "auto";
   loading?: "eager" | "lazy";
+  noShimmer?: boolean;
 }
 
 export function OptimizedImage({
@@ -19,6 +20,7 @@ export function OptimizedImage({
   fallback,
   fetchPriority,
   loading = "lazy",
+  noShimmer = false,
 }: OptimizedImageProps) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
@@ -62,7 +64,7 @@ export function OptimizedImage({
           className,
         )}
       />
-      {!loaded && (
+      {!loaded && !noShimmer && (
         <div className="absolute inset-0 z-10 bg-secondary">
           <div className="absolute inset-0 -translate-x-full animate-[shimmer_0.6s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-white/15 to-transparent" />
         </div>
