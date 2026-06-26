@@ -1,11 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
 import { useSearch, useLocation } from "wouter";
+import { keepPreviousData } from "@tanstack/react-query";
 import { useListRecordings, useListTags, ListRecordingsSort } from "@workspace/api-client-react";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, X, ChevronDown, Loader2, SlidersHorizontal, Tag, Filter } from "lucide-react";
 import { AppPagination } from "@/components/ui/app-pagination";
+import { InfinitySpinner } from "@/components/ui/infinity-spinner";
 
 const SORT_LABELS: Record<ListRecordingsSort, string> = {
   newest: "Newest",
@@ -50,9 +52,9 @@ export default function Browse() {
       (new URLSearchParams(searchString).get("sort") as ListRecordingsSort) ||
       "newest",
   );
-  const [allRecordings, setAllRecordings] = useState<any[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [tagSearch, setTagSearch] = useState("");
+  const [pageLoading, setPageLoading] = useState(false);
 
   const { data: tagsData } = useListTags({ query: { staleTime: 0 } } as any);
   const popularTags = useMemo(() => tagsData ?? [], [tagsData]);
@@ -75,8 +77,21 @@ export default function Browse() {
       resolution: resolution || undefined,
       sort,
     },
-    { query: { staleTime: 0 } } as any,
+    { query: { staleTime: 0, placeholderData: keepPreviousData } } as any,
   );
+
+  const recordings = data?.data ?? [];
+
+  const handlePageChange = (newPage: number) => {
+    setPageLoading(true);
+    setPage(newPage);
+  };
+
+  useEffect(() => {
+    if (data && pageLoading) {
+      setPageLoading(false);
+    }
+  }, [data, pageLoading]);
 
   useEffect(() => {
     const p = new URLSearchParams(searchString);
@@ -86,21 +101,7 @@ export default function Browse() {
     setResolution(p.get("resolution") || "");
     setSort((p.get("sort") as ListRecordingsSort) || "newest");
     setPage(1);
-    setAllRecordings([]);
   }, [searchString]);
-
-  useEffect(() => {
-    if (data?.data) {
-      if (page === 1) {
-        setAllRecordings(data.data);
-      } else {
-        setAllRecordings((prev) => {
-          const newItems = data.data.filter((r: any) => !prev.some((p: any) => p.id === r.id));
-          return [...prev, ...newItems];
-        });
-      }
-    }
-  }, [data, page]);
 
   const pushFilters = (overrides: {
     search?: string;
@@ -151,7 +152,6 @@ export default function Browse() {
     resolution ||
     sort !== "newest"
   );
-  const hasMore = data ? data.total > allRecordings.length : false;
   const activeFilterCount =
     (selectedTags.length > 0 ? 1 : 0) + (gender ? 1 : 0) + (resolution ? 1 : 0);
 
@@ -402,12 +402,20 @@ export default function Browse() {
               </div>
             ))}
           </div>
-        ) : allRecordings.length > 0 ? (
+        ) : recordings.length > 0 ? (
           <>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-4 gap-y-8">
-              {allRecordings.map((rec, i) => (
-                <VideoCard key={rec.id} recording={rec} fetchPriority={i < 2 ? "high" : undefined} />
-              ))}
+            <div className="relative">
+              <div className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-4 gap-y-8 ${pageLoading ? "opacity-40" : ""}`}>
+                {recordings.map((rec, i) => (
+                  <VideoCard key={rec.id} recording={rec} fetchPriority={i < 2 ? "high" : undefined} />
+                ))}
+              </div>
+
+              {pageLoading && (
+                <div className="absolute inset-0 flex items-center justify-center z-10 bg-background/60">
+                  <InfinitySpinner className="size-12" />
+                </div>
+              )}
             </div>
 
             {data && data.total > 0 && (
@@ -420,7 +428,7 @@ export default function Browse() {
                     itemsCount={data.total}
                     itemsPerPage={40}
                     currentPage={page}
-                    onPageChange={setPage}
+                    onPageChange={handlePageChange}
                     pageRangeDisplayed={5}
                     marginPagesDisplayed={2}
                   />

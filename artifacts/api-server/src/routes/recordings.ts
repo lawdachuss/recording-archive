@@ -27,13 +27,14 @@ router.get("/recordings", cache({ ttlSeconds: 60, tags: ["recordings"] }), async
     sort,
   } = parsed.data;
 
-  const offset = (page - 1) * limit;
+  const fetchLimit = limit * 3;
+  const offset = (page - 1) * fetchLimit;
 
   let query = supabase
     .from("recordings_with_links")
     .select("*", { count: "exact" })
     .not("links", "is", "null")
-    .range(offset, offset + limit - 1);
+    .range(offset, offset + fetchLimit - 1);
 
   if (search) {
     query = query.or(
@@ -78,13 +79,13 @@ router.get("/recordings", cache({ ttlSeconds: 60, tags: ["recordings"] }), async
     return;
   }
 
-  const filteredData = (data ?? []).filter(
+  const allWithLinks = (data ?? []).filter(
     (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0,
   );
-  const excludedCount = (data ?? []).length - filteredData.length;
+  const excludedCount = (data ?? []).length - allWithLinks.length;
 
   res.json({
-    data: filteredData,
+    data: allWithLinks.slice(0, limit),
     total: (count ?? 0) - excludedCount,
     page,
     limit,
