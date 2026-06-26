@@ -1,9 +1,20 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "wouter";
 import { Recording } from "@workspace/api-client-react";
 import { formatBytes, formatRelativeTime, formatViewers, formatDuration } from "@/lib/formatters";
 import { Eye, Play, HardDrive, Film, Clock } from "lucide-react";
 import { OptimizedImage } from "@/components/ui/optimized-image";
+import { SpriteSlideshow } from "@/components/SpriteSlideshow";
+
+function isMp4(url: string | null | undefined): boolean {
+  if (!url) return false;
+  if (url.endsWith(".mp4")) return true;
+  // Pixeldrain /api/file/ URLs serve the original content type — previews are always mp4
+  if (/pixeldrain\.com\/api\/file\//i.test(url)) return true;
+  return false;
+}
+
+const HOVER_DELAY_MS = 150;
 
 interface VideoCardProps {
   recording: Recording;
@@ -14,9 +25,56 @@ interface VideoCardProps {
 
 export function VideoCard({ recording, showRemove, onRemove, fetchPriority }: VideoCardProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const [previewLoaded, setPreviewLoaded] = useState(false);
+  const [previewErrored, setPreviewErrored] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const hoverTimerRef = useRef<number | undefined>(undefined);
 
-  // Preload preview image (or sprite as fallback) when card nears viewport
+  const previewIsMp4 = isMp4(recording.preview_url);
+  const hasSprite = !!recording.sprite_url;
+  const hasPreview = !!recording.preview_url;
+
+  // On hover: show sprites immediately if available; preview fades in once loaded
+  // showSpriteOverlay: always show on hover if sprite exists (acts as loading state while preview loads)
+  // showPreviewOverlay: show on hover once preview has loaded (crossfades over sprites)
+  const showSpriteOverlay = isHovered && hasSprite;
+  const showPreviewOverlay = isHovered && hasPreview && previewLoaded && !previewErrored;
+
+  const handleMouseEnter = () => {
+    clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = window.setTimeout(() => {
+      setIsHovered(true);
+      // Reset preview state so it re-attempts loading each hover
+      setPreviewLoaded(false);
+      setPreviewErrored(false);
+    }, HOVER_DELAY_MS);
+  };
+
+  const handleMouseLeave = () => {
+    clearTimeout(hoverTimerRef.current);
+    setIsHovered(false);
+    setPreviewLoaded(false);
+    setPreviewErrored(false);
+  };
+
+  const handlePreviewImageLoad = useCallback(() => {
+    setPreviewLoaded(true);
+  }, []);
+
+  const handlePreviewError = useCallback(() => {
+    setPreviewErrored(true);
+  }, []);
+
+  const handleVideoCanPlay = useCallback(() => {
+    setPreviewLoaded(true);
+  }, []);
+
+  const handleVideoError = useCallback(() => {
+    setPreviewErrored(true);
+  }, []);
+
+  // Preload preview (image or video) when card nears viewport
   useEffect(() => {
     const hoverUrl = recording.preview_url || recording.sprite_url;
     if (!hoverUrl) return;
@@ -28,8 +86,18 @@ export function VideoCard({ recording, showRemove, onRemove, fetchPriority }: Vi
       ([entry]) => {
         if (entry.isIntersecting) {
           timer = window.setTimeout(() => {
-            const img = new Image();
-            img.src = hoverUrl;
+            if (previewIsMp4) {
+              const video = document.createElement("video");
+              video.preload = "auto";
+              video.src = hoverUrl;
+              video.load();
+            } else if (!recording.preview_url && recording.sprite_url) {
+              const img = new Image();
+              img.src = recording.sprite_url;
+            } else if (recording.preview_url) {
+              const img = new Image();
+              img.src = recording.preview_url;
+            }
           }, 300);
           observer.disconnect();
         }
@@ -42,22 +110,17 @@ export function VideoCard({ recording, showRemove, onRemove, fetchPriority }: Vi
       observer.disconnect();
       if (timer) clearTimeout(timer);
     };
-  }, [recording.preview_url, recording.sprite_url]);
+  }, [recording.preview_url, recording.sprite_url, previewIsMp4]);
 
-  // Use thumbnail if available, otherwise fall back to preview as a static image
-  const staticImage = recording.thumbnail_url || recording.preview_url;
+  // Cleanup hover timer on unmount
+  useEffect(() => {
+    return () => clearTimeout(hoverTimerRef.current);
+  }, []);
+
+  // Use thumbnail if available, otherwise fall back to preview (only if not mp4)
+  const staticImage = recording.thumbnail_url || (recording.preview_url && !previewIsMp4 ? recording.preview_url : null) || recording.sprite_url;
   const hasStaticImage = !!staticImage;
   const initials = recording.username?.slice(0, 2).toUpperCase() ?? "??";
-
-  const handlePreviewError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    // If preview fails and we have a different sprite URL, fall back to sprite
-    if (recording.sprite_url && e.currentTarget.src !== recording.sprite_url) {
-      e.currentTarget.src = recording.sprite_url;
-    }
-    // If sprite is the same or both fail, just leave thumbnail visible (no overlay needed)
-  };
-
-  const showPreview = isHovered && (recording.preview_url || recording.sprite_url);
 
   return (
     <Link
@@ -67,8 +130,8 @@ export function VideoCard({ recording, showRemove, onRemove, fetchPriority }: Vi
       <div
         ref={cardRef}
         className="flex flex-col gap-2"
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
       >
         {/* Thumbnail */}
         <div className="relative aspect-video overflow-hidden bg-secondary rounded-sm">
@@ -88,6 +151,7 @@ export function VideoCard({ recording, showRemove, onRemove, fetchPriority }: Vi
                   <Play className="w-6 h-6 text-muted-foreground/20" />
                 </div>
               }
+              noShimmer
             />
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-secondary/80 to-secondary">
@@ -100,13 +164,66 @@ export function VideoCard({ recording, showRemove, onRemove, fetchPriority }: Vi
             </div>
           )}
 
-          {/* Hover overlay: preview (or sprite fallback) — separate img, no shimmer */}
-          {showPreview && (
+          {/* Hover overlays — both rendered simultaneously for crossfade */}
+          {/* Sprite slideshow: always present on hover as instant visual feedback */}
+          {showSpriteOverlay && (
+            <div className={`absolute inset-0 w-full h-full transition-opacity duration-300 ${
+              showPreviewOverlay ? "opacity-0" : "opacity-100"
+            }`}>
+              <SpriteSlideshow
+                spriteUrl={recording.sprite_url!}
+                fps={8}
+                className="absolute inset-0 w-full h-full"
+              />
+            </div>
+          )}
+
+          {/* MP4 preview: fades in over sprites once ready to play */}
+          {showPreviewOverlay && previewIsMp4 && (
+            <video
+              ref={videoRef}
+              key={recording.id}
+              src={recording.preview_url!}
+              muted
+              autoPlay
+              playsInline
+              loop
+              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 opacity-100"
+              onCanPlay={handleVideoCanPlay}
+              onError={handleVideoError}
+            />
+          )}
+
+          {/* Image preview: fades in over sprites once loaded */}
+          {showPreviewOverlay && !previewIsMp4 && (
             <img
               key={recording.id}
-              src={recording.preview_url || recording.sprite_url!}
+              src={recording.preview_url!}
               alt=""
-              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
+              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 opacity-100"
+              onLoad={handlePreviewImageLoad}
+              onError={handlePreviewError}
+            />
+          )}
+
+          {/* Preload preview media invisibly so it's ready to show */}
+          {isHovered && hasPreview && !previewLoaded && !previewErrored && previewIsMp4 && (
+            <video
+              src={recording.preview_url!}
+              muted
+              playsInline
+              preload="auto"
+              className="absolute inset-0 w-0 h-0 opacity-0 pointer-events-none"
+              onCanPlay={handleVideoCanPlay}
+              onError={handleVideoError}
+            />
+          )}
+          {isHovered && hasPreview && !previewLoaded && !previewErrored && !previewIsMp4 && (
+            <img
+              src={recording.preview_url!}
+              alt=""
+              className="absolute inset-0 w-0 h-0 opacity-0 pointer-events-none"
+              onLoad={handlePreviewImageLoad}
               onError={handlePreviewError}
             />
           )}
