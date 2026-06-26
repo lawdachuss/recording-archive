@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "wouter";
 import { Recording } from "@workspace/api-client-react";
 import { formatBytes, formatRelativeTime, formatViewers, formatDuration } from "@/lib/formatters";
@@ -14,8 +14,6 @@ function isMp4(url: string | null | undefined): boolean {
   return false;
 }
 
-const HOVER_DELAY_MS = 150;
-
 interface VideoCardProps {
   recording: Recording;
   showRemove?: boolean;
@@ -25,54 +23,32 @@ interface VideoCardProps {
 
 export function VideoCard({ recording, showRemove, onRemove, fetchPriority }: VideoCardProps) {
   const [isHovered, setIsHovered] = useState(false);
-  const [previewLoaded, setPreviewLoaded] = useState(false);
-  const [previewErrored, setPreviewErrored] = useState(false);
+  const [previewFailed, setPreviewFailed] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const hoverTimerRef = useRef<number | undefined>(undefined);
 
   const previewIsMp4 = isMp4(recording.preview_url);
   const hasSprite = !!recording.sprite_url;
-  const hasPreview = !!recording.preview_url;
 
-  // On hover: show sprites immediately if available; preview fades in once loaded
-  // showSpriteOverlay: always show on hover if sprite exists (acts as loading state while preview loads)
-  // showPreviewOverlay: show on hover once preview has loaded (crossfades over sprites)
-  const showSpriteOverlay = isHovered && hasSprite;
-  const showPreviewOverlay = isHovered && hasPreview && previewLoaded && !previewErrored;
+  // Single source of truth for hover media.
+  // Prefer the mp4 preview (YouTube-style). Only fall back to sprites if there
+  // is no mp4, or if the mp4 failed to load. Once chosen it stays for the whole
+  // hover — no crossfade, no swapping back and forth.
+  const hoverMedia: "mp4" | "sprite" | "none" = !isHovered
+    ? "none"
+    : previewIsMp4 && !previewFailed
+      ? "mp4"
+      : hasSprite
+        ? "sprite"
+        : "none";
 
   const handleMouseEnter = () => {
-    clearTimeout(hoverTimerRef.current);
-    hoverTimerRef.current = window.setTimeout(() => {
-      setIsHovered(true);
-      // Reset preview state so it re-attempts loading each hover
-      setPreviewLoaded(false);
-      setPreviewErrored(false);
-    }, HOVER_DELAY_MS);
+    setPreviewFailed(false);
+    setIsHovered(true);
   };
 
   const handleMouseLeave = () => {
-    clearTimeout(hoverTimerRef.current);
     setIsHovered(false);
-    setPreviewLoaded(false);
-    setPreviewErrored(false);
   };
-
-  const handlePreviewImageLoad = useCallback(() => {
-    setPreviewLoaded(true);
-  }, []);
-
-  const handlePreviewError = useCallback(() => {
-    setPreviewErrored(true);
-  }, []);
-
-  const handleVideoCanPlay = useCallback(() => {
-    setPreviewLoaded(true);
-  }, []);
-
-  const handleVideoError = useCallback(() => {
-    setPreviewErrored(true);
-  }, []);
 
   // Preload preview (image or video) when card nears viewport
   useEffect(() => {
@@ -111,11 +87,6 @@ export function VideoCard({ recording, showRemove, onRemove, fetchPriority }: Vi
       if (timer) clearTimeout(timer);
     };
   }, [recording.preview_url, recording.sprite_url, previewIsMp4]);
-
-  // Cleanup hover timer on unmount
-  useEffect(() => {
-    return () => clearTimeout(hoverTimerRef.current);
-  }, []);
 
   // Use thumbnail if available, otherwise fall back to preview (only if not mp4)
   const staticImage = recording.thumbnail_url || (recording.preview_url && !previewIsMp4 ? recording.preview_url : null) || recording.sprite_url;
@@ -164,67 +135,25 @@ export function VideoCard({ recording, showRemove, onRemove, fetchPriority }: Vi
             </div>
           )}
 
-          {/* Hover overlays — both rendered simultaneously for crossfade */}
-          {/* Sprite slideshow: always present on hover as instant visual feedback */}
-          {showSpriteOverlay && (
-            <div className={`absolute inset-0 w-full h-full transition-opacity duration-300 ${
-              showPreviewOverlay ? "opacity-0" : "opacity-100"
-            }`}>
-              <SpriteSlideshow
-                spriteUrl={recording.sprite_url!}
-                fps={8}
-                className="absolute inset-0 w-full h-full"
-              />
-            </div>
-          )}
-
-          {/* MP4 preview: fades in over sprites once ready to play */}
-          {showPreviewOverlay && previewIsMp4 && (
+          {/* Hover media — ONE source for the whole hover, no crossfade/swap */}
+          {hoverMedia === "mp4" && (
             <video
-              ref={videoRef}
               key={recording.id}
               src={recording.preview_url!}
               muted
               autoPlay
               playsInline
               loop
-              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 opacity-100"
-              onCanPlay={handleVideoCanPlay}
-              onError={handleVideoError}
-            />
-          )}
-
-          {/* Image preview: fades in over sprites once loaded */}
-          {showPreviewOverlay && !previewIsMp4 && (
-            <img
-              key={recording.id}
-              src={recording.preview_url!}
-              alt=""
-              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 opacity-100"
-              onLoad={handlePreviewImageLoad}
-              onError={handlePreviewError}
-            />
-          )}
-
-          {/* Preload preview media invisibly so it's ready to show */}
-          {isHovered && hasPreview && !previewLoaded && !previewErrored && previewIsMp4 && (
-            <video
-              src={recording.preview_url!}
-              muted
-              playsInline
               preload="auto"
-              className="absolute inset-0 w-0 h-0 opacity-0 pointer-events-none"
-              onCanPlay={handleVideoCanPlay}
-              onError={handleVideoError}
+              className="absolute inset-0 w-full h-full object-cover"
+              onError={() => setPreviewFailed(true)}
             />
           )}
-          {isHovered && hasPreview && !previewLoaded && !previewErrored && !previewIsMp4 && (
-            <img
-              src={recording.preview_url!}
-              alt=""
-              className="absolute inset-0 w-0 h-0 opacity-0 pointer-events-none"
-              onLoad={handlePreviewImageLoad}
-              onError={handlePreviewError}
+          {hoverMedia === "sprite" && (
+            <SpriteSlideshow
+              spriteUrl={recording.sprite_url!}
+              fps={8}
+              className="absolute inset-0 w-full h-full"
             />
           )}
 
