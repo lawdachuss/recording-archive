@@ -6,133 +6,139 @@ import { cache } from "../middleware/cache";
 const router = Router();
 
 router.get("/performers", cache({ ttlSeconds: 300, tags: ["performers"] }), async (req, res) => {
-  const page = Math.max(1, parseInt(req.query.page as string) || 1);
-  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 24));
-  const search = (req.query.search as string) || "";
-  const gender = (req.query.gender as string) || "";
-  const sort = (req.query.sort as string) || "count";
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 24));
+    const search = (req.query.search as string) || "";
+    const gender = (req.query.gender as string) || "";
+    const sort = (req.query.sort as string) || "count";
 
-  // Fetch a large batch of recordings to find images for all performers
-  // Limit must be >= total recordings to ensure we see every performer
-  let query = supabase
-    .from("recordings_with_links")
-    .select("username, gender, thumbnail_url, sprite_url, preview_url, timestamp, links")
-    .not("links", "is", "null")
-    .order("timestamp", { ascending: false })
-    .limit(1000);
+    let query = supabase
+      .from("recordings_with_links")
+      .select("username, gender, thumbnail_url, sprite_url, preview_url, timestamp, links")
+      .not("links", "is", "null")
+      .order("timestamp", { ascending: false });
 
-  if (search) {
-    query = query.ilike("username", `%${search}%`);
-  }
-  if (gender) {
-    query = query.eq("gender", gender);
-  }
+    if (search) query = query.ilike("username", `%${search}%`);
+    if (gender) query = query.eq("gender", gender);
 
-  const { data, error } = await query;
+    // Fetch a generous window of raw rows to capture enough unique performers
+    // after grouping. Without a performer-specific table, we must over-fetch.
+    const FETCH_LIMIT = 50_000;
+    query = query.limit(FETCH_LIMIT);
 
-  if (error) {
-    req.log.error({ err: error }, "Supabase error listing performers");
-    res.status(500).json({ error: "Failed to fetch performers" });
-    return;
-  }
+    const { data, error } = await query;
 
-  // Filter out recordings with empty links, then build performer map
-  const validData = (data ?? []).filter(
-    (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0,
-  );
-
-  // Build performer map — collect all recordings and find the best image
-  const performerMap = new Map<
-    string,
-    {
-      username: string;
-      recording_count: number;
-      latest_thumbnail: string | null;
-      gender: string | null;
-      latest_timestamp: string | null;
+    if (error) {
+      req.log.error({ err: error }, "Supabase error listing performers");
+      res.status(500).json({ error: "Failed to fetch performers" });
+      return;
     }
-  >();
 
-  for (const row of validData) {
-    const existing = performerMap.get(row.username);
+    // Post-filter: only include recordings with non-empty links
+    const validRows = (data ?? []).filter(
+      (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0,
+    );
 
-    if (!existing) {
-      // Try each image field in priority order
-      const image = row.thumbnail_url || row.sprite_url || row.preview_url || null;
-      performerMap.set(row.username, {
-        username: row.username,
-        recording_count: 1,
-        latest_thumbnail: image,
-        gender: row.gender,
-        latest_timestamp: row.timestamp,
-      });
-    } else {
-      existing.recording_count += 1;
-      // Only update image if we still don't have one
-      if (!existing.latest_thumbnail) {
+    const performerMap = new Map<
+      string,
+      {
+        username: string;
+        recording_count: number;
+        latest_thumbnail: string | null;
+        sprite_url: string | null;
+        gender: string | null;
+        latest_timestamp: string | null;
+      }
+    >();
+
+    for (const row of validRows) {
+      const existing = performerMap.get(row.username);
+      if (!existing) {
         const image = row.thumbnail_url || row.sprite_url || row.preview_url || null;
-        if (image) {
-          existing.latest_thumbnail = image;
+        performerMap.set(row.username, {
+          username: row.username,
+          recording_count: 1,
+          latest_thumbnail: image,
+          sprite_url: row.sprite_url,
+          gender: row.gender,
+          latest_timestamp: row.timestamp,
+        });
+      } else {
+        existing.recording_count += 1;
+        if (!existing.latest_thumbnail) {
+          const image = row.thumbnail_url || row.sprite_url || row.preview_url || null;
+          if (image) {
+            existing.latest_thumbnail = image;
+            existing.sprite_url = row.sprite_url;
+          }
         }
       }
     }
+
+    let performers = Array.from(performerMap.values());
+    if (sort === "name") {
+      performers.sort((a, b) => a.username.localeCompare(b.username));
+    } else {
+      performers.sort((a, b) => b.recording_count - a.recording_count);
+    }
+
+    const totalPerformers = performers.length;
+    const totalPages = Math.ceil(totalPerformers / limit) || 1;
+    const start = (page - 1) * limit;
+    const pagedPerformers = performers.slice(start, start + limit);
+
+    res.json({ performers: pagedPerformers, total: totalPerformers, page, limit, totalPages });
+  } catch (err) {
+    req.log.error({ err }, "GET /performers unexpected error");
+    res.status(500).json({ error: "Failed to fetch performers" });
   }
-
-  let performers = Array.from(performerMap.values());
-
-  // Sort by recording count descending by default
-  if (sort === "name") {
-    performers.sort((a, b) => a.username.localeCompare(b.username));
-  } else {
-    performers.sort((a, b) => b.recording_count - a.recording_count);
-  }
-
-  // Now apply pagination at the performer level
-  const totalPerformers = performers.length;
-  const totalPages = Math.ceil(totalPerformers / limit) || 1;
-  const start = (page - 1) * limit;
-  const pagedPerformers = performers.slice(start, start + limit);
-
-  res.json({
-    performers: pagedPerformers,
-    total: totalPerformers,
-    page,
-    limit,
-    totalPages,
-  });
 });
 
 router.get("/performers/:username", cache({ ttlSeconds: 300, tags: ["performers"] }), async (req, res) => {
-  const parsed = GetPerformerParams.safeParse(req.params);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Invalid params" });
-    return;
+  try {
+    const parsed = GetPerformerParams.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid params" });
+      return;
+    }
+
+    const { username } = parsed.data;
+
+    const { data, error } = await supabase
+      .from("recordings_with_links")
+      .select("*")
+      .not("links", "is", "null")
+      .eq("username", username)
+      .order("timestamp", { ascending: false });
+
+    if (error) {
+      req.log.error({ err: error, username }, "Supabase error fetching performer");
+      res.status(500).json({ error: "Failed to fetch performer" });
+      return;
+    }
+
+    // Post-filter: only include recordings with non-empty links
+    const validRecordings = (data ?? []).filter(
+      (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0,
+    );
+
+    // Return 404 if no recordings with valid links exist for this performer
+    if (validRecordings.length === 0) {
+      res.status(404).json({ error: "Performer not found" });
+      return;
+    }
+
+    res.json({
+      username,
+      recording_count: validRecordings.length,
+      gender: validRecordings[0].gender ?? null,
+      recordings: validRecordings,
+    });
+  } catch (err) {
+    req.log.error({ err, username: req.params.username }, "GET /performers/:username unexpected error");
+    res.status(500).json({ error: "Failed to fetch performer" });
   }
-
-  const { username } = parsed.data;
-
-  const { data, error } = await supabase
-    .from("recordings_with_links")
-    .select("*")
-    .eq("username", username)
-    .not("links", "is", "null")
-    .order("timestamp", { ascending: false });
-
-  const filteredData = (data ?? []).filter(
-    (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0,
-  );
-
-  if (error || filteredData.length === 0) {
-    res.status(404).json({ error: "Performer not found" });
-    return;
-  }
-
-  res.json({
-    username,
-    recording_count: filteredData.length,
-    gender: filteredData[0].gender ?? null,
-    recordings: filteredData,
-  });
 });
 
 export default router;

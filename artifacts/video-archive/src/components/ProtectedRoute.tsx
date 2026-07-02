@@ -25,11 +25,13 @@ export function ProtectedRoute({ children, requiredRole }: Props) {
         setLocation("/");
       }
     }
-  }, [user, loading, role, requiredRole, setLocation]);
+  }, [user, loading, role, requiredRole]);
+  // Intentionally omitting setLocation — wouter's setLocation is stable
+  // and including it in deps triggers a re-render loop on every navigation
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     );

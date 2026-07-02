@@ -1,26 +1,54 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { db, sql } from "@workspace/db";
 import { invalidateOnSuccess } from "../middleware/cache";
 
-const router = Router();
+interface CommentRow {
+  id: string;
+  recording_id: string;
+  parent_id: string | null;
+  author: string;
+  content: string;
+  deleted: boolean | null;
+  created_at: string;
+  likes: string;
+}
 
-function buildCommentTree(rows: any[], likedSet?: Set<number>): any[] {
-  const map = new Map<number, any>();
-  const roots: any[] = [];
+interface CommentNode {
+  id: number;
+  recording_id: string;
+  parent_id: number | null;
+  author: string;
+  content: string;
+  deleted: boolean;
+  likes: number;
+  user_liked: boolean;
+  created_at: string;
+  replies: CommentNode[];
+}
+
+interface ParentRow {
+  id: string;
+  recording_id: string;
+  parent_id: string | null;
+}
+
+function buildCommentTree(rows: CommentRow[], likedSet?: Set<number>): CommentNode[] {
+  const map = new Map<number, CommentNode>();
+  const roots: CommentNode[] = [];
 
   for (const row of rows) {
-    map.set(Number(row.id), {
-      id: Number(row.id),
+    const id = Number(row.id);
+    map.set(id, {
+      id,
       recording_id: row.recording_id,
       parent_id: row.parent_id != null ? Number(row.parent_id) : null,
       author: row.deleted ? "[deleted]" : row.author,
       content: row.deleted ? "[comment removed]" : row.content,
       deleted: row.deleted ?? false,
       likes: Number(row.likes ?? 0),
-      user_liked: likedSet ? likedSet.has(Number(row.id)) : false,
+      user_liked: likedSet ? likedSet.has(id) : false,
       created_at: row.created_at,
-      replies: [] as any[],
+      replies: [],
     });
   }
 
@@ -37,6 +65,8 @@ function buildCommentTree(rows: any[], likedSet?: Set<number>): any[] {
   return roots;
 }
 
+const router = Router();
+
 router.get("/comments", async (req, res) => {
   const { recording_id, sort = "new", session_id } = req.query as Record<string, string>;
 
@@ -45,11 +75,28 @@ router.get("/comments", async (req, res) => {
     return;
   }
 
-  let orderClause: string;
-  if (sort === "top") orderClause = "likes_count DESC, c.created_at DESC";
-  else if (sort === "old") orderClause = "c.created_at ASC";
-  else orderClause = "c.created_at DESC";
+  // Count total comments for this recording
+  const countResult = await db.execute(sql`
+    SELECT COUNT(*) AS total FROM comments WHERE recording_id = ${recording_id}
+  `);
+  const countRow = countResult.rows[0] as { total: number } | undefined;
+  const total = Number(countRow?.total ?? 0);
 
+  // Default: return all comments (tree structure requires parent-reply grouping).
+  // Only paginate when both page and limit are explicitly passed.
+  const rawPage = req.query.page as string | undefined;
+  const rawLimit = req.query.limit as string | undefined;
+  const hasPagination = rawPage !== undefined && rawLimit !== undefined;
+  const page = hasPagination ? Math.max(1, parseInt(rawPage) || 1) : 1;
+  const limit = hasPagination ? Math.min(100, Math.max(1, parseInt(rawLimit) || 50)) : total || 50;
+  const totalPages = hasPagination ? Math.ceil(total / limit) || 1 : 1;
+
+  const offset = (page - 1) * limit;
+
+  // ORDER BY parent_id NULLS FIRST ensures root comments come before their
+  // replies, preserving tree structure for buildCommentTree. When paginated,
+  // this means some replies may be separated from their parent, but the
+  // tree builder handles orphans by promoting them to roots.
   const result = await db.execute(sql`
     SELECT
       c.id, c.recording_id, c.parent_id, c.author, c.content, c.deleted, c.created_at,
@@ -59,9 +106,10 @@ router.get("/comments", async (req, res) => {
     WHERE c.recording_id = ${recording_id}
     GROUP BY c.id
     ORDER BY c.parent_id NULLS FIRST, c.created_at DESC
+    LIMIT ${limit} OFFSET ${offset}
   `);
 
-  const rows = result.rows as any[];
+  const rows = result.rows as unknown as CommentRow[];
 
   let likedSet: Set<number> | undefined;
   if (session_id && rows.length > 0) {
@@ -70,11 +118,17 @@ router.get("/comments", async (req, res) => {
       SELECT comment_id FROM comment_likes
       WHERE comment_id = ANY(${commentIds}::int[]) AND session_id = ${session_id}
     `);
-    likedSet = new Set((liked.rows as any[]).map((r) => Number(r.comment_id)));
+    const likedRows = liked.rows as { comment_id: number }[];
+    likedSet = new Set(likedRows.map((r) => Number(r.comment_id)));
   }
 
   const tree = buildCommentTree(rows, likedSet);
-  res.json(tree);
+  if (hasPagination) {
+    res.json({ data: tree, total, page, limit, totalPages });
+  } else {
+    // Return flat array for backward compatibility with generated hook type
+    res.json(tree);
+  }
 });
 
 router.post("/comments", invalidateOnSuccess(["stats"]), async (req, res) => {
@@ -99,7 +153,7 @@ router.post("/comments", invalidateOnSuccess(["stats"]), async (req, res) => {
     RETURNING id, recording_id, parent_id, author, content, deleted, created_at
   `);
 
-  const row = result.rows[0] as any;
+  const row = result.rows[0] as Omit<CommentRow, "likes"> | undefined;
   res.status(201).json({ ...row, likes: 0, user_liked: false, replies: [] });
 });
 
@@ -119,7 +173,7 @@ router.post("/comments/:commentId/replies", invalidateOnSuccess(["stats"]), asyn
   const parentResult = await db.execute(sql`
     SELECT id, recording_id, parent_id FROM comments WHERE id = ${commentId}
   `);
-  const parent = parentResult.rows[0] as any;
+  const parent = parentResult.rows[0] as unknown as ParentRow | undefined;
 
   if (!parent) {
     res.status(404).json({ error: "Comment not found" });
@@ -136,7 +190,7 @@ router.post("/comments/:commentId/replies", invalidateOnSuccess(["stats"]), asyn
     RETURNING id, recording_id, parent_id, author, content, deleted, created_at
   `);
 
-  const row = result.rows[0] as any;
+  const row = result.rows[0] as Omit<CommentRow, "likes"> | undefined;
   res.status(201).json({ ...row, likes: 0, user_liked: false, replies: [] });
 });
 
@@ -170,9 +224,10 @@ router.post("/comments/:commentId/like", async (req, res) => {
   const countResult = await db.execute(sql`
     SELECT COUNT(*) AS likes FROM comment_likes WHERE comment_id = ${commentId}
   `);
+  const countRow = countResult.rows[0] as { likes: number } | undefined;
 
   res.json({
-    likes: Number((countResult.rows[0] as any)?.likes ?? 0),
+    likes: Number(countRow?.likes ?? 0),
     liked: existing.rows.length === 0,
   });
 });

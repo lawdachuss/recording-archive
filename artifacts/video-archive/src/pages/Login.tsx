@@ -26,7 +26,8 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center px-4">
+    <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden">
+      <div className="pattern-square fixed inset-0 pointer-events-none opacity-[0.15] dark:opacity-[0.30]" />
       <div className="w-full max-w-sm">
         <div className="text-center mb-10">
           <Link href="/" className="inline-flex items-center gap-1.5 group mb-8">
@@ -60,7 +61,7 @@ export default function Login() {
               required
               autoFocus
               placeholder="you@example.com"
-              className="w-full h-10 bg-secondary/40 border border-border/60 focus:border-primary/50 rounded-sm px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/40"
+              className="w-full h-10 bg-secondary border border-border/60 focus:border-primary/50 rounded-sm px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/40"
             />
           </div>
 
@@ -75,7 +76,7 @@ export default function Login() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 placeholder="••••••••"
-                className="w-full h-10 bg-secondary/40 border border-border/60 focus:border-primary/50 rounded-sm px-3 pr-10 text-sm outline-none transition-all placeholder:text-muted-foreground/40"
+                className="w-full h-10 bg-secondary border border-border/60 focus:border-primary/50 rounded-sm px-3 pr-10 text-sm outline-none transition-all placeholder:text-muted-foreground/40"
               />
               <button
                 type="button"
@@ -98,7 +99,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full h-10 bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-colors rounded-sm disabled:opacity-60"
+            className="w-full h-10 border border-primary/30 text-primary text-sm font-semibold hover:border-primary/60 transition-colors rounded-sm disabled:opacity-60"
           >
             {loading ? "Signing in…" : "Sign in"}
           </button>

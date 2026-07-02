@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, memo } from "react";
+import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListComments,
@@ -10,7 +11,8 @@ import {
 import type { Comment, ListCommentsSort } from "@workspace/api-client-react";
 import { getSessionId } from "@/lib/session";
 import { formatRelativeTime } from "@/lib/formatters";
-import { MessageSquare, ThumbsUp, Reply, ChevronDown, ChevronUp, Loader2, Send } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { MessageSquare, ThumbsUp, Reply, ChevronDown, ChevronUp, Loader2, Send, LogIn } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const SORT_OPTIONS: { value: ListCommentsSort; label: string }[] = [
@@ -26,12 +28,12 @@ interface CommentFormProps {
   onCancel?: () => void;
 }
 
-function CommentForm({ placeholder = "Write a comment…", onSubmit, compact = false, onCancel }: CommentFormProps) {
+const CommentForm = memo(function CommentForm({ placeholder = "Write a comment…", onSubmit, compact = false, onCancel }: CommentFormProps) {
   const [author, setAuthor] = useState("");
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim()) return;
     setLoading(true);
@@ -42,7 +44,7 @@ function CommentForm({ placeholder = "Write a comment…", onSubmit, compact = f
     } finally {
       setLoading(false);
     }
-  };
+  }, [content, author, onSubmit, compact]);
 
   return (
     <form onSubmit={handleSubmit} className="space-y-2">
@@ -53,7 +55,7 @@ function CommentForm({ placeholder = "Write a comment…", onSubmit, compact = f
           value={author}
           onChange={(e) => setAuthor(e.target.value)}
           maxLength={100}
-          className="w-full h-8 bg-secondary/40 border border-border/50 focus:border-primary/50 rounded-[2px] px-3 text-xs outline-none transition-all placeholder:text-muted-foreground/40"
+          className="w-full h-8 bg-secondary border border-border/50 focus:border-primary/50 rounded-[2px] px-3 text-xs outline-none transition-all placeholder:text-muted-foreground/40"
         />
       )}
       <div className="flex gap-2">
@@ -63,14 +65,14 @@ function CommentForm({ placeholder = "Write a comment…", onSubmit, compact = f
           onChange={(e) => setContent(e.target.value)}
           maxLength={5000}
           rows={compact ? 2 : 3}
-          className="flex-1 bg-secondary/40 border border-border/50 focus:border-primary/50 rounded-[2px] px-3 py-2 text-xs outline-none transition-all placeholder:text-muted-foreground/40 resize-none"
+          className="flex-1 bg-secondary border border-border/50 focus:border-primary/50 rounded-[2px] px-3 py-2 text-xs outline-none transition-all placeholder:text-muted-foreground/40 resize-none"
         />
       </div>
       <div className="flex items-center gap-2">
         <button
           type="submit"
           disabled={loading || !content.trim()}
-          className="inline-flex items-center gap-1.5 h-7 px-3 bg-primary text-white text-xs font-medium rounded-[2px] hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="inline-flex items-center gap-1.5 h-7 px-3 border border-primary/30 text-primary text-xs font-medium rounded-[2px] hover:border-primary/60 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
           {compact ? "Reply" : "Post"}
@@ -87,18 +89,19 @@ function CommentForm({ placeholder = "Write a comment…", onSubmit, compact = f
       </div>
     </form>
   );
-}
+});
 
 interface CommentNodeProps {
   comment: Comment;
   depth?: number;
   recordingId: string;
   sessionId: string;
+  userLoggedIn: boolean;
   onLike: (id: number, liked: boolean) => void;
   onReplyPosted: () => void;
 }
 
-function CommentNode({ comment, depth = 0, recordingId, sessionId, onLike, onReplyPosted }: CommentNodeProps) {
+const CommentNode = memo(function CommentNode({ comment, depth = 0, recordingId, sessionId, userLoggedIn, onLike, onReplyPosted }: CommentNodeProps) {
   const [showReply, setShowReply] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [localLikes, setLocalLikes] = useState(comment.likes ?? 0);
@@ -106,21 +109,21 @@ function CommentNode({ comment, depth = 0, recordingId, sessionId, onLike, onRep
 
   const createReply = useCreateReply();
 
-  const handleLike = () => {
+  const handleLike = useCallback(() => {
     const newLiked = !localLiked;
     setLocalLiked(newLiked);
     setLocalLikes((n: number) => n + (newLiked ? 1 : -1));
     onLike(comment.id, newLiked);
-  };
+  }, [localLiked, onLike, comment.id]);
 
-  const handleReplySubmit = async (author: string, content: string) => {
+  const handleReplySubmit = useCallback(async (author: string, content: string) => {
     await createReply.mutateAsync({
       commentId: comment.id,
       data: { author, content, session_id: sessionId },
     });
     setShowReply(false);
     onReplyPosted();
-  };
+  }, [createReply, comment.id, sessionId, onReplyPosted]);
 
   const hasReplies = (comment.replies?.length ?? 0) > 0;
   const initials = (comment.author || "A").slice(0, 2).toUpperCase();
@@ -145,16 +148,16 @@ function CommentNode({ comment, depth = 0, recordingId, sessionId, onLike, onRep
             {!comment.deleted && (
               <div className="flex items-center gap-3 mt-2">
                 <button
-                  onClick={handleLike}
-                  className={`flex items-center gap-1 text-[10px] transition-colors ${localLiked ? "text-primary" : "text-muted-foreground/50 hover:text-foreground/60"}`}
+                  onClick={userLoggedIn ? handleLike : undefined}
+                  className={`flex items-center gap-1 text-[10px] transition-colors ${localLiked ? "text-primary" : userLoggedIn ? "text-muted-foreground/50 hover:text-foreground/60" : "text-muted-foreground/30 cursor-default"}`}
                 >
                   <ThumbsUp className="w-3 h-3" />
                   {localLikes > 0 && <span>{localLikes}</span>}
                 </button>
                 {depth === 0 && (
                   <button
-                    onClick={() => setShowReply((v) => !v)}
-                    className="flex items-center gap-1 text-[10px] text-muted-foreground/50 hover:text-foreground/60 transition-colors"
+                    onClick={userLoggedIn ? () => setShowReply((v) => !v) : undefined}
+                    className={`flex items-center gap-1 text-[10px] transition-colors ${userLoggedIn ? "text-muted-foreground/50 hover:text-foreground/60" : "text-muted-foreground/30 cursor-default"}`}
                   >
                     <Reply className="w-3 h-3" />
                     Reply
@@ -196,6 +199,7 @@ function CommentNode({ comment, depth = 0, recordingId, sessionId, onLike, onRep
               depth={depth + 1}
               recordingId={recordingId}
               sessionId={sessionId}
+              userLoggedIn={userLoggedIn}
               onLike={onLike}
               onReplyPosted={onReplyPosted}
             />
@@ -204,13 +208,14 @@ function CommentNode({ comment, depth = 0, recordingId, sessionId, onLike, onRep
       )}
     </div>
   );
-}
+});
 
 interface CommentSectionProps {
   recordingId: string;
 }
 
 export function CommentSection({ recordingId }: CommentSectionProps) {
+  const { user } = useAuth();
   const sessionId = getSessionId();
   const [sort, setSort] = useState<ListCommentsSort>("new");
   const queryClient = useQueryClient();
@@ -229,19 +234,19 @@ export function CommentSection({ recordingId }: CommentSectionProps) {
     });
   }, [queryClient, recordingId, sort, sessionId]);
 
-  const handleLike = (commentId: number, _liked: boolean) => {
+  const handleLike = useCallback((commentId: number, _liked: boolean) => {
     toggleCommentLike.mutate({
       commentId,
       data: { session_id: sessionId },
     });
-  };
+  }, [toggleCommentLike, sessionId]);
 
-  const handlePost = async (author: string, content: string) => {
+  const handlePost = useCallback(async (author: string, content: string) => {
     await createComment.mutateAsync({
       data: { recording_id: recordingId, author, content, session_id: sessionId },
     });
     invalidate();
-  };
+  }, [createComment, recordingId, sessionId, invalidate]);
 
   const count = comments?.reduce((n: number, c: Comment) => n + 1 + (c.replies?.length ?? 0), 0) ?? 0;
 
@@ -262,7 +267,7 @@ export function CommentSection({ recordingId }: CommentSectionProps) {
               onClick={() => setSort(o.value)}
               className={`px-2.5 py-1 text-[10px] rounded-[2px] transition-colors ${
                 sort === o.value
-                  ? "bg-primary/10 text-primary font-medium"
+                  ? "text-primary border border-primary/30 font-medium"
                   : "text-muted-foreground/50 hover:text-foreground/60"
               }`}
             >
@@ -272,7 +277,16 @@ export function CommentSection({ recordingId }: CommentSectionProps) {
         </div>
       </div>
 
-      <CommentForm onSubmit={handlePost} />
+      {user ? (
+        <CommentForm onSubmit={handlePost} />
+      ) : (
+        <div className="flex items-center gap-2 p-4 border border-border/40 rounded-sm bg-secondary">
+          <LogIn className="w-4 h-4 text-muted-foreground/40" />
+          <p className="text-xs text-muted-foreground/60">
+            <Link href="/login" className="text-primary hover:underline font-medium">Sign in</Link> to leave a comment
+          </p>
+        </div>
+      )}
 
       <div className="space-y-0 divide-y divide-border/20">
         {isLoading ? (
@@ -293,6 +307,7 @@ export function CommentSection({ recordingId }: CommentSectionProps) {
               comment={comment}
               recordingId={recordingId}
               sessionId={sessionId}
+              userLoggedIn={!!user}
               onLike={handleLike}
               onReplyPosted={invalidate}
             />

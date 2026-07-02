@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 
 interface SpriteSlideshowProps {
   spriteUrl: string;
   fps?: number;
   className?: string;
+  active?: boolean;
 }
 
 interface SpriteLayout {
@@ -12,9 +13,10 @@ interface SpriteLayout {
   totalFrames: number;
 }
 
+const FRAME_WIDTH_CANDIDATES = [80, 120, 160, 240, 320];
+
 function detectLayout(width: number, height: number): SpriteLayout {
-  const candidates = [80, 120, 160, 240, 320];
-  for (const fw of candidates) {
+  for (const fw of FRAME_WIDTH_CANDIDATES) {
     if (width % fw === 0) {
       const cols = width / fw;
       const fh = Math.round(fw * 9 / 16);
@@ -31,57 +33,76 @@ function detectLayout(width: number, height: number): SpriteLayout {
   return { cols, rows, totalFrames: Math.max(cols * rows, 1) };
 }
 
-export function SpriteSlideshow({ spriteUrl, fps = 10, className }: SpriteSlideshowProps) {
+export const SpriteSlideshow = memo(function SpriteSlideshow({ spriteUrl, fps = 10, className, active = true }: SpriteSlideshowProps) {
   const [layout, setLayout] = useState<SpriteLayout | null>(null);
+  const [imageLoaded, setImageLoaded] = useState(false);
   const frameRef = useRef(0);
-  const styleRef = useRef<React.CSSProperties>({});
-  const [, forceUpdate] = useState(0);
+  const divRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setLayout(null);
+    setImageLoaded(false);
+    frameRef.current = 0;
+
+    let cancelled = false;
     const img = new Image();
+
     img.onload = () => {
-      setLayout(detectLayout(img.naturalWidth, img.naturalHeight));
+      if (!cancelled) {
+        setLayout(detectLayout(img.naturalWidth, img.naturalHeight));
+        setImageLoaded(true);
+      }
+    };
+    img.onerror = () => {
+      if (!cancelled) setImageLoaded(true);
     };
     img.src = spriteUrl;
+
+    // If already cached by browser, fire onload immediately
+    if (img.complete && img.naturalWidth > 0) {
+      setLayout(detectLayout(img.naturalWidth, img.naturalHeight));
+      setImageLoaded(true);
+    }
+
+    return () => {
+      cancelled = true;
+    };
   }, [spriteUrl]);
 
+  // Direct DOM animation — no React state updates per frame
   useEffect(() => {
-    if (!layout || layout.totalFrames < 2) return;
+    const el = divRef.current;
+    if (!el || !layout || layout.totalFrames < 2 || !imageLoaded) return;
 
     const intervalMs = 1000 / fps;
     frameRef.current = 0;
+    const bgUrl = `url(${spriteUrl})`;
+    const bgSize = `${layout.cols * 100}% auto`;
 
     const update = () => {
       const frame = frameRef.current % layout.totalFrames;
       const col = frame % layout.cols;
       const row = Math.floor(frame / layout.cols);
-      styleRef.current = {
-        backgroundImage: `url(${spriteUrl})`,
-        backgroundSize: `${layout.cols * 100}% auto`,
-        backgroundPosition: `${-col * 100}% ${-row * 100}%`,
-        backgroundRepeat: "no-repeat",
-      };
-      forceUpdate((n) => n + 1);
+      el.style.backgroundPosition = `${-col * 100}% ${-row * 100}%`;
       frameRef.current++;
     };
 
+    el.style.backgroundImage = bgUrl;
+    el.style.backgroundSize = bgSize;
+    el.style.backgroundRepeat = "no-repeat";
     update();
+
     const interval = setInterval(update, intervalMs);
     return () => clearInterval(interval);
-  }, [layout, spriteUrl, fps]);
+  }, [layout, spriteUrl, fps, imageLoaded]);
 
-  if (!layout) {
-    return (
-      <div
-        className={className}
-        style={{
-          backgroundImage: `url(${spriteUrl})`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-        }}
-      />
-    );
-  }
-
-  return <div className={className} style={styleRef.current} />;
-}
+  return (
+    <div
+      ref={divRef}
+      className={className}
+      style={{
+        opacity: active && imageLoaded ? 1 : 0,
+      }}
+    />
+  );
+});

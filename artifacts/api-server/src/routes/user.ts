@@ -1,6 +1,4 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
-import { sql } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 
 const router = Router();
@@ -10,312 +8,682 @@ router.use("/user", requireAuth);
 // ─── Profile ─────────────────────────────────────────────────────────────────
 
 router.get("/user/profile", async (req, res) => {
-  const userId = req.user!.id;
-  const result = await db.execute(sql`
-    SELECT user_id, display_name, avatar_url, bio, created_at, updated_at
-    FROM user_profiles WHERE user_id = ${userId}
-  `);
-  if (!result.rows.length) {
-    const name = req.user!.email?.split("@")[0] ?? "User";
-    const created = await db.execute(sql`
-      INSERT INTO user_profiles (user_id, display_name, created_at, updated_at)
-      VALUES (${userId}, ${name}, NOW(), NOW())
-      ON CONFLICT (user_id) DO UPDATE SET updated_at = NOW()
-      RETURNING user_id, display_name, avatar_url, bio, created_at, updated_at
-    `);
-    res.json(created.rows[0] ?? { user_id: userId, display_name: name });
-    return;
+  try {
+    const userId = req.user!.id;
+    const { data, error } = await req.supabase!
+      .from("user_profiles")
+      .select("user_id, display_name, avatar_url, bio, created_at, updated_at")
+      .eq("user_id", userId)
+      .single();
+
+    if (error && error.code !== "PGRST116") {
+      req.log.error({ err: error }, "Supabase error fetching user profile");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+
+    if (!data) {
+      const name = req.user!.email?.split("@")[0] ?? "User";
+      const { data: created, error: insertError } = await req.supabase!
+        .from("user_profiles")
+        .insert({ user_id: userId, display_name: name })
+        .select("user_id, display_name, avatar_url, bio, created_at, updated_at")
+        .single();
+
+      if (insertError) {
+        req.log.error({ err: insertError }, "Supabase error creating user profile");
+        res.status(500).json({ error: "Internal server error" });
+        return;
+      }
+      res.json(created ?? { user_id: userId, display_name: name });
+      return;
+    }
+
+    res.json(data);
+  } catch (err) {
+    req.log.error({ err }, "GET /user/profile unexpected error");
+    res.status(500).json({ error: "Internal server error" });
   }
-  res.json(result.rows[0]);
 });
 
 router.put("/user/profile", async (req, res) => {
-  const userId = req.user!.id;
-  const { display_name, avatar_url, bio } = req.body as {
-    display_name?: string;
-    avatar_url?: string;
-    bio?: string;
-  };
-  await db.execute(sql`
-    INSERT INTO user_profiles (user_id, display_name, avatar_url, bio, created_at, updated_at)
-    VALUES (${userId}, ${display_name ?? null}, ${avatar_url ?? null}, ${bio ?? null}, NOW(), NOW())
-    ON CONFLICT (user_id) DO UPDATE SET
-      display_name = COALESCE(${display_name ?? null}, user_profiles.display_name),
-      avatar_url = ${avatar_url !== undefined ? (avatar_url ?? null) : sql`user_profiles.avatar_url`},
-      bio = ${bio !== undefined ? (bio ?? null) : sql`user_profiles.bio`},
-      updated_at = NOW()
-  `);
-  const result = await db.execute(sql`
-    SELECT user_id, display_name, avatar_url, bio, created_at, updated_at
-    FROM user_profiles WHERE user_id = ${userId}
-  `);
-  res.json(result.rows[0]);
+  try {
+    const userId = req.user!.id;
+    const { display_name, avatar_url, bio } = req.body as {
+      display_name?: string;
+      avatar_url?: string;
+      bio?: string;
+    };
+
+    const updates: { updated_at: string; display_name?: string; avatar_url?: string; bio?: string } = { updated_at: new Date().toISOString() };
+    if (display_name !== undefined) updates.display_name = display_name;
+    if (avatar_url !== undefined) updates.avatar_url = avatar_url;
+    if (bio !== undefined) updates.bio = bio;
+
+    const { data, error } = await req.supabase!
+      .from("user_profiles")
+      .upsert({ user_id: userId, ...updates })
+      .select("user_id, display_name, avatar_url, bio, created_at, updated_at")
+      .single();
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error updating user profile");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json(data);
+  } catch (err) {
+    req.log.error({ err }, "PUT /user/profile unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 // ─── Role ─────────────────────────────────────────────────────────────────────
 
 router.get("/user/role", async (req, res) => {
-  const userId = req.user!.id;
-  const result = await db.execute(sql`
-    SELECT role FROM user_roles WHERE user_id = ${userId}
-  `);
-  res.json({ role: (result.rows[0] as any)?.role ?? "user" });
+  try {
+    const userId = req.user!.id;
+    const { data, error } = await req.supabase!
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .single();
+
+    if (error && error.code !== "PGRST116") {
+      req.log.error({ err: error }, "Supabase error fetching user role");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json({ role: data?.role ?? "user" });
+  } catch (err) {
+    req.log.error({ err }, "GET /user/role unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 // ─── Saved Videos ─────────────────────────────────────────────────────────────
 
 router.get("/user/saved", async (req, res) => {
-  const userId = req.user!.id;
-  const result = await db.execute(sql`
-    SELECT recording_id, metadata, saved_at
-    FROM saved_videos WHERE user_id = ${userId}
-    ORDER BY saved_at DESC
-  `);
-  res.json(result.rows);
+  try {
+    const userId = req.user!.id;
+    const { data, error } = await req.supabase!
+      .from("saved_videos")
+      .select("recording_id, metadata, saved_at")
+      .eq("user_id", userId)
+      .order("saved_at", { ascending: false });
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error fetching saved videos");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json(data ?? []);
+  } catch (err) {
+    req.log.error({ err }, "GET /user/saved unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.post("/user/saved", async (req, res) => {
-  const userId = req.user!.id;
-  const { recording_id, metadata } = req.body as { recording_id: string; metadata?: string };
-  if (!recording_id) { res.status(400).json({ error: "recording_id required" }); return; }
-  await db.execute(sql`
-    INSERT INTO saved_videos (user_id, recording_id, metadata, saved_at)
-    VALUES (${userId}, ${recording_id}, ${metadata ?? null}, NOW())
-    ON CONFLICT (user_id, recording_id) DO UPDATE SET metadata = EXCLUDED.metadata
-  `);
-  res.status(201).json({ ok: true });
+  try {
+    const userId = req.user!.id;
+    const { recording_id, metadata } = req.body as { recording_id: string; metadata?: string };
+    if (!recording_id) { res.status(400).json({ error: "recording_id required" }); return; }
+
+    const { error } = await req.supabase!.from("saved_videos").upsert(
+      { user_id: userId, recording_id, metadata: metadata ?? null },
+      { onConflict: "user_id, recording_id" },
+    );
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error saving video");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "POST /user/saved unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.delete("/user/saved/:recordingId", async (req, res) => {
-  const userId = req.user!.id;
-  await db.execute(sql`
-    DELETE FROM saved_videos WHERE user_id = ${userId} AND recording_id = ${req.params.recordingId}
-  `);
-  res.json({ ok: true });
+  try {
+    const userId = req.user!.id;
+    const { error } = await req.supabase!
+      .from("saved_videos")
+      .delete()
+      .eq("user_id", userId)
+      .eq("recording_id", req.params.recordingId);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error deleting saved video");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "DELETE /user/saved/:recordingId unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 // ─── Watch History ────────────────────────────────────────────────────────────
 
 router.get("/user/history", async (req, res) => {
-  const userId = req.user!.id;
-  const result = await db.execute(sql`
-    SELECT recording_id, metadata, watched_at
-    FROM watch_history WHERE user_id = ${userId}
-    ORDER BY watched_at DESC LIMIT 200
-  `);
-  res.json(result.rows);
+  try {
+    const userId = req.user!.id;
+    const { data, error } = await req.supabase!
+      .from("watch_history")
+      .select("recording_id, metadata, watched_at")
+      .eq("user_id", userId)
+      .order("watched_at", { ascending: false })
+      .limit(200);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error fetching watch history");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json(data ?? []);
+  } catch (err) {
+    req.log.error({ err }, "GET /user/history unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.post("/user/history", async (req, res) => {
-  const userId = req.user!.id;
-  const { recording_id, metadata } = req.body as { recording_id: string; metadata?: string };
-  if (!recording_id) { res.status(400).json({ error: "recording_id required" }); return; }
-  await db.execute(sql`
-    INSERT INTO watch_history (user_id, recording_id, metadata, watched_at)
-    VALUES (${userId}, ${recording_id}, ${metadata ?? null}, NOW())
-    ON CONFLICT (user_id, recording_id) DO UPDATE SET watched_at = NOW(), metadata = EXCLUDED.metadata
-  `);
-  res.status(201).json({ ok: true });
+  try {
+    const userId = req.user!.id;
+    const { recording_id, metadata } = req.body as { recording_id: string; metadata?: string };
+    if (!recording_id) { res.status(400).json({ error: "recording_id required" }); return; }
+
+    const { error } = await req.supabase!.from("watch_history").upsert(
+      { user_id: userId, recording_id, metadata: metadata ?? null, watched_at: new Date().toISOString() },
+      { onConflict: "user_id, recording_id" },
+    );
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error adding watch history");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "POST /user/history unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.delete("/user/history", async (req, res) => {
-  const userId = req.user!.id;
-  await db.execute(sql`DELETE FROM watch_history WHERE user_id = ${userId}`);
-  res.json({ ok: true });
+  try {
+    const userId = req.user!.id;
+    const { error } = await req.supabase!
+      .from("watch_history")
+      .delete()
+      .eq("user_id", userId);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error clearing watch history");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "DELETE /user/history unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 // ─── Watch Later ──────────────────────────────────────────────────────────────
 
 router.get("/user/watch-later", async (req, res) => {
-  const userId = req.user!.id;
-  const result = await db.execute(sql`
-    SELECT recording_id, metadata, added_at
-    FROM watch_later_items WHERE user_id = ${userId}
-    ORDER BY added_at ASC
-  `);
-  res.json(result.rows);
+  try {
+    const userId = req.user!.id;
+    const { data, error } = await req.supabase!
+      .from("watch_later_items")
+      .select("recording_id, metadata, added_at")
+      .eq("user_id", userId)
+      .order("added_at", { ascending: true });
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error fetching watch later");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json(data ?? []);
+  } catch (err) {
+    req.log.error({ err }, "GET /user/watch-later unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.post("/user/watch-later", async (req, res) => {
-  const userId = req.user!.id;
-  const { recording_id, metadata } = req.body as { recording_id: string; metadata?: string };
-  if (!recording_id) { res.status(400).json({ error: "recording_id required" }); return; }
-  await db.execute(sql`
-    INSERT INTO watch_later_items (user_id, recording_id, metadata, added_at)
-    VALUES (${userId}, ${recording_id}, ${metadata ?? null}, NOW())
-    ON CONFLICT (user_id, recording_id) DO NOTHING
-  `);
-  res.status(201).json({ ok: true });
+  try {
+    const userId = req.user!.id;
+    const { recording_id, metadata } = req.body as { recording_id: string; metadata?: string };
+    if (!recording_id) { res.status(400).json({ error: "recording_id required" }); return; }
+
+    const { error } = await req.supabase!.from("watch_later_items").upsert(
+      { user_id: userId, recording_id, metadata: metadata ?? null, added_at: new Date().toISOString() },
+      { onConflict: "user_id, recording_id", ignoreDuplicates: true },
+    );
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error adding watch later");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "POST /user/watch-later unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.delete("/user/watch-later/:recordingId", async (req, res) => {
-  const userId = req.user!.id;
-  await db.execute(sql`
-    DELETE FROM watch_later_items WHERE user_id = ${userId} AND recording_id = ${req.params.recordingId}
-  `);
-  res.json({ ok: true });
+  try {
+    const userId = req.user!.id;
+    const { error } = await req.supabase!
+      .from("watch_later_items")
+      .delete()
+      .eq("user_id", userId)
+      .eq("recording_id", req.params.recordingId);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error deleting watch later item");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "DELETE /user/watch-later/:recordingId unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.delete("/user/watch-later", async (req, res) => {
-  const userId = req.user!.id;
-  await db.execute(sql`DELETE FROM watch_later_items WHERE user_id = ${userId}`);
-  res.json({ ok: true });
+  try {
+    const userId = req.user!.id;
+    const { error } = await req.supabase!
+      .from("watch_later_items")
+      .delete()
+      .eq("user_id", userId);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error clearing watch later");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "DELETE /user/watch-later unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 // ─── Collections ──────────────────────────────────────────────────────────────
 
 router.get("/user/collections", async (req, res) => {
-  const userId = req.user!.id;
-  const cols = await db.execute(sql`
-    SELECT c.id, c.name, c.description, c.created_at, c.updated_at,
-      COUNT(ci.id)::int AS item_count,
-      MIN(ci.metadata) AS first_item_metadata
-    FROM user_collections c
-    LEFT JOIN user_collection_items ci ON ci.collection_id = c.id
-    WHERE c.user_id = ${userId}
-    GROUP BY c.id
-    ORDER BY c.created_at DESC
-  `);
-  res.json(cols.rows);
+  try {
+    const userId = req.user!.id;
+    const { data: cols, error } = await req.supabase!
+      .from("user_collections")
+      .select("id, name, description, created_at, updated_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error fetching collections");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+
+    // Enrich with item count and first item metadata
+    const enriched = await Promise.all(
+      (cols ?? []).map(async (col) => {
+        const { data: items, count, error: itemsError } = await req.supabase!
+          .from("user_collection_items")
+          .select("metadata", { count: "exact", head: false })
+          .eq("collection_id", col.id)
+          .order("added_at", { ascending: true });
+
+        interface CollectionItem {
+          metadata: string | null;
+        }
+        const collectionItems = (items ?? []) as CollectionItem[];
+        return {
+          ...col,
+          item_count: count ?? items?.length ?? 0,
+          first_item_metadata: collectionItems[0]?.metadata ?? null,
+        };
+      }),
+    );
+
+    res.json(enriched);
+  } catch (err) {
+    req.log.error({ err }, "GET /user/collections unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.post("/user/collections", async (req, res) => {
-  const userId = req.user!.id;
-  const { name, description } = req.body as { name: string; description?: string };
-  if (!name?.trim()) { res.status(400).json({ error: "name required" }); return; }
-  const id = crypto.randomUUID();
-  const result = await db.execute(sql`
-    INSERT INTO user_collections (id, user_id, name, description, created_at, updated_at)
-    VALUES (${id}, ${userId}, ${name.trim()}, ${description ?? null}, NOW(), NOW())
-    RETURNING id, name, description, created_at, updated_at
-  `);
-  res.status(201).json(result.rows[0]);
+  try {
+    const userId = req.user!.id;
+    const { name, description } = req.body as { name: string; description?: string };
+    if (!name?.trim()) { res.status(400).json({ error: "name required" }); return; }
+
+    const id = crypto.randomUUID();
+    const { data, error } = await req.supabase!
+      .from("user_collections")
+      .insert({ id, user_id: userId, name: name.trim(), description: description ?? null })
+      .select("id, name, description, created_at, updated_at")
+      .single();
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error creating collection");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.status(201).json(data);
+  } catch (err) {
+    req.log.error({ err }, "POST /user/collections unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.put("/user/collections/:id", async (req, res) => {
-  const userId = req.user!.id;
-  const { name, description } = req.body as { name?: string; description?: string };
-  const result = await db.execute(sql`
-    UPDATE user_collections SET
-      name = COALESCE(${name ?? null}, name),
-      description = ${description !== undefined ? (description ?? null) : sql`description`},
-      updated_at = NOW()
-    WHERE id = ${req.params.id} AND user_id = ${userId}
-    RETURNING id, name, description, created_at, updated_at
-  `);
-  if (!result.rows.length) { res.status(404).json({ error: "Not found" }); return; }
-  res.json(result.rows[0]);
+  try {
+    const userId = req.user!.id;
+    const { name, description } = req.body as { name?: string; description?: string };
+
+    const updates: { updated_at: string; name?: string; description?: string } = { updated_at: new Date().toISOString() };
+    if (name !== undefined) updates.name = name;
+    if (description !== undefined) updates.description = description;
+
+    const { data, error } = await req.supabase!
+      .from("user_collections")
+      .update(updates)
+      .eq("id", req.params.id)
+      .eq("user_id", userId)
+      .select("id, name, description, created_at, updated_at")
+      .single();
+
+    if (error) {
+      if (error.code === "PGRST116") {
+        res.status(404).json({ error: "Not found" });
+        return;
+      }
+      req.log.error({ err: error }, "Supabase error updating collection");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json(data);
+  } catch (err) {
+    req.log.error({ err }, "PUT /user/collections/:id unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.delete("/user/collections/:id", async (req, res) => {
-  const userId = req.user!.id;
-  await db.execute(sql`DELETE FROM user_collection_items WHERE collection_id = ${req.params.id}`);
-  await db.execute(sql`
-    DELETE FROM user_collections WHERE id = ${req.params.id} AND user_id = ${userId}
-  `);
-  res.json({ ok: true });
+  try {
+    const userId = req.user!.id;
+    // Delete collection items first (cascade should handle this, but be explicit)
+    await req.supabase!.from("user_collection_items").delete().eq("collection_id", req.params.id);
+
+    const { error } = await req.supabase!
+      .from("user_collections")
+      .delete()
+      .eq("id", req.params.id)
+      .eq("user_id", userId);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error deleting collection");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "DELETE /user/collections/:id unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.get("/user/collections/:id/items", async (req, res) => {
-  const userId = req.user!.id;
-  const col = await db.execute(sql`
-    SELECT id FROM user_collections WHERE id = ${req.params.id} AND user_id = ${userId}
-  `);
-  if (!col.rows.length) { res.status(404).json({ error: "Not found" }); return; }
-  const items = await db.execute(sql`
-    SELECT recording_id, metadata, added_at
-    FROM user_collection_items WHERE collection_id = ${req.params.id}
-    ORDER BY added_at DESC
-  `);
-  res.json(items.rows);
+  try {
+    const userId = req.user!.id;
+    // Verify ownership
+    const { data: col, error: colError } = await req.supabase!
+      .from("user_collections")
+      .select("id")
+      .eq("id", req.params.id)
+      .eq("user_id", userId)
+      .single();
+
+    if (colError || !col) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const { data: items, error } = await req.supabase!
+      .from("user_collection_items")
+      .select("recording_id, metadata, added_at")
+      .eq("collection_id", req.params.id)
+      .order("added_at", { ascending: false });
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error fetching collection items");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json(items ?? []);
+  } catch (err) {
+    req.log.error({ err }, "GET /user/collections/:id/items unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.post("/user/collections/:id/items", async (req, res) => {
-  const userId = req.user!.id;
-  const { recording_id, metadata } = req.body as { recording_id: string; metadata?: string };
-  if (!recording_id) { res.status(400).json({ error: "recording_id required" }); return; }
-  const col = await db.execute(sql`
-    SELECT id FROM user_collections WHERE id = ${req.params.id} AND user_id = ${userId}
-  `);
-  if (!col.rows.length) { res.status(404).json({ error: "Not found" }); return; }
-  await db.execute(sql`
-    INSERT INTO user_collection_items (collection_id, recording_id, metadata, added_at)
-    VALUES (${req.params.id}, ${recording_id}, ${metadata ?? null}, NOW())
-    ON CONFLICT (collection_id, recording_id) DO NOTHING
-  `);
-  res.status(201).json({ ok: true });
+  try {
+    const userId = req.user!.id;
+    const { recording_id, metadata } = req.body as { recording_id: string; metadata?: string };
+    if (!recording_id) { res.status(400).json({ error: "recording_id required" }); return; }
+
+    // Verify ownership
+    const { data: col, error: colError } = await req.supabase!
+      .from("user_collections")
+      .select("id")
+      .eq("id", req.params.id)
+      .eq("user_id", userId)
+      .single();
+
+    if (colError || !col) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    const { error } = await req.supabase!.from("user_collection_items").upsert(
+      { collection_id: req.params.id, recording_id, metadata: metadata ?? null },
+      { onConflict: "collection_id, recording_id", ignoreDuplicates: true },
+    );
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error adding collection item");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "POST /user/collections/:id/items unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.delete("/user/collections/:id/items/:recordingId", async (req, res) => {
-  const userId = req.user!.id;
-  const col = await db.execute(sql`
-    SELECT id FROM user_collections WHERE id = ${req.params.id} AND user_id = ${userId}
-  `);
-  if (!col.rows.length) { res.status(403).json({ error: "Forbidden" }); return; }
-  await db.execute(sql`
-    DELETE FROM user_collection_items
-    WHERE collection_id = ${req.params.id} AND recording_id = ${req.params.recordingId}
-  `);
-  res.json({ ok: true });
+  try {
+    const userId = req.user!.id;
+    // Verify collection ownership
+    const { data: col, error: colError } = await req.supabase!
+      .from("user_collections")
+      .select("id")
+      .eq("id", req.params.id)
+      .eq("user_id", userId)
+      .single();
+
+    if (colError || !col) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    const { error } = await req.supabase!
+      .from("user_collection_items")
+      .delete()
+      .eq("collection_id", req.params.id)
+      .eq("recording_id", req.params.recordingId);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error deleting collection item");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "DELETE /user/collections/:id/items/:recordingId unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 // ─── Performer Follows ────────────────────────────────────────────────────────
 
 router.get("/user/follows", async (req, res) => {
-  const userId = req.user!.id;
-  const result = await db.execute(sql`
-    SELECT performer_username, followed_at
-    FROM performer_follows WHERE user_id = ${userId}
-    ORDER BY followed_at DESC
-  `);
-  res.json(result.rows);
+  try {
+    const userId = req.user!.id;
+    const { data, error } = await req.supabase!
+      .from("performer_follows")
+      .select("performer_username, followed_at")
+      .eq("user_id", userId)
+      .order("followed_at", { ascending: false });
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error fetching follows");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json(data ?? []);
+  } catch (err) {
+    req.log.error({ err }, "GET /user/follows unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.post("/user/follows", async (req, res) => {
-  const userId = req.user!.id;
-  const { performer_username } = req.body as { performer_username: string };
-  if (!performer_username) { res.status(400).json({ error: "performer_username required" }); return; }
-  await db.execute(sql`
-    INSERT INTO performer_follows (user_id, performer_username, followed_at)
-    VALUES (${userId}, ${performer_username}, NOW())
-    ON CONFLICT (user_id, performer_username) DO NOTHING
-  `);
-  res.status(201).json({ ok: true });
+  try {
+    const userId = req.user!.id;
+    const { performer_username } = req.body as { performer_username: string };
+    if (!performer_username) { res.status(400).json({ error: "performer_username required" }); return; }
+
+    const { error } = await req.supabase!.from("performer_follows").upsert(
+      { user_id: userId, performer_username, followed_at: new Date().toISOString() },
+      { onConflict: "user_id, performer_username", ignoreDuplicates: true },
+    );
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error following performer");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "POST /user/follows unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.delete("/user/follows/:username", async (req, res) => {
-  const userId = req.user!.id;
-  await db.execute(sql`
-    DELETE FROM performer_follows
-    WHERE user_id = ${userId} AND performer_username = ${req.params.username}
-  `);
-  res.json({ ok: true });
+  try {
+    const userId = req.user!.id;
+    const { error } = await req.supabase!
+      .from("performer_follows")
+      .delete()
+      .eq("user_id", userId)
+      .eq("performer_username", req.params.username);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error unfollowing performer");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "DELETE /user/follows/:username unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 // ─── Notifications ────────────────────────────────────────────────────────────
 
 router.get("/user/notifications", async (req, res) => {
-  const userId = req.user!.id;
-  const result = await db.execute(sql`
-    SELECT id, type, message, related_id, is_read, created_at
-    FROM user_notifications WHERE user_id = ${userId}
-    ORDER BY created_at DESC LIMIT 50
-  `);
-  res.json(result.rows);
+  try {
+    const userId = req.user!.id;
+    const { data, error } = await req.supabase!
+      .from("user_notifications")
+      .select("id, type, message, related_id, is_read, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error fetching notifications");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json(data ?? []);
+  } catch (err) {
+    req.log.error({ err }, "GET /user/notifications unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.put("/user/notifications/read-all", async (req, res) => {
-  const userId = req.user!.id;
-  await db.execute(sql`UPDATE user_notifications SET is_read = TRUE WHERE user_id = ${userId}`);
-  res.json({ ok: true });
+  try {
+    const userId = req.user!.id;
+    const { error } = await req.supabase!
+      .from("user_notifications")
+      .update({ is_read: true })
+      .eq("user_id", userId)
+      .eq("is_read", false);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error marking notifications read");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "PUT /user/notifications/read-all unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.delete("/user/notifications/:id", async (req, res) => {
-  const userId = req.user!.id;
-  await db.execute(sql`
-    DELETE FROM user_notifications WHERE id = ${req.params.id} AND user_id = ${userId}
-  `);
-  res.json({ ok: true });
+  try {
+    const userId = req.user!.id;
+    const { error } = await req.supabase!
+      .from("user_notifications")
+      .delete()
+      .eq("id", req.params.id)
+      .eq("user_id", userId);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error deleting notification");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "DELETE /user/notifications/:id unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 export default router;

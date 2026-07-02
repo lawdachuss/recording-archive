@@ -24,27 +24,43 @@ export function AppPagination({
   if (totalPages <= 1) return null;
 
   const buildPages = (): (number | "ellipsis")[] => {
-    const pages: (number | "ellipsis")[] = [];
+    const visible = new Set<number>();
+
+    visible.add(1);
+    visible.add(totalPages);
+
+    // Margin pages at both ends
+    for (let i = 2; i <= Math.min(marginPagesDisplayed + 1, totalPages - 1); i++) {
+      visible.add(i);
+    }
+    for (let i = Math.max(2, totalPages - marginPagesDisplayed); i < totalPages; i++) {
+      visible.add(i);
+    }
+
+    // Sliding window around current page
     const half = Math.floor(pageRangeDisplayed / 2);
-    let rangeStart = Math.max(1, currentPage - half);
-    let rangeEnd = Math.min(totalPages, currentPage + half);
-
+    let rangeStart = Math.max(2, currentPage - half);
+    let rangeEnd = Math.min(totalPages - 1, rangeStart + pageRangeDisplayed - 1);
     if (rangeEnd - rangeStart + 1 < pageRangeDisplayed) {
-      if (rangeStart === 1) rangeEnd = Math.min(totalPages, pageRangeDisplayed);
-      else rangeStart = Math.max(1, totalPages - pageRangeDisplayed + 1);
+      if (rangeStart === 2) rangeEnd = Math.min(totalPages - 1, pageRangeDisplayed);
+      else rangeStart = Math.max(2, totalPages - pageRangeDisplayed);
     }
 
-    for (let i = 1; i <= Math.min(marginPagesDisplayed, totalPages); i++) {
-      if (i < rangeStart) pages.push(i);
-    }
-    if (rangeStart > marginPagesDisplayed + 1) pages.push("ellipsis");
-    for (let i = rangeStart; i <= rangeEnd; i++) pages.push(i);
-    if (rangeEnd < totalPages - marginPagesDisplayed) pages.push("ellipsis");
-    for (let i = Math.max(totalPages - marginPagesDisplayed + 1, rangeEnd + 1); i <= totalPages; i++) {
-      pages.push(i);
+    for (let i = rangeStart; i <= rangeEnd; i++) {
+      visible.add(i);
     }
 
-    return [...new Set(pages)];
+    const sorted = [...visible].sort((a, b) => a - b);
+    const result: (number | "ellipsis")[] = [];
+
+    for (let i = 0; i < sorted.length; i++) {
+      if (i > 0 && sorted[i] - sorted[i - 1] > 1) {
+        result.push("ellipsis");
+      }
+      result.push(sorted[i]);
+    }
+
+    return result;
   };
 
   const pages = buildPages();

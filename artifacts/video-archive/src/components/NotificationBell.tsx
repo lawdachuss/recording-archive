@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Link } from "wouter";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, type UserNotification } from "@/lib/user-api";
 import { Bell, X, CheckCheck } from "lucide-react";
@@ -16,15 +17,19 @@ export function NotificationBell() {
     queryKey: ["user", "notifications"],
     queryFn: () => userApi.getNotifications(),
     enabled: !!user,
-    refetchInterval: 30_000,
+    refetchInterval: (query) => {
+      // Stop polling when the tab is hidden — saves CPU/network
+      if (document.hidden) return false;
+      return 30_000;
+    },
   });
 
-  const markAllRead = useMutation({
+  const markAllRead = useTrackedMutation({
     mutationFn: () => userApi.markAllRead(),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "notifications"] }),
   });
 
-  const deleteOne = useMutation({
+  const deleteOne = useTrackedMutation({
     mutationFn: (id: number) => userApi.deleteNotification(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "notifications"] }),
   });
@@ -52,7 +57,7 @@ export function NotificationBell() {
       >
         <Bell className="w-4 h-4" />
         {unread > 0 && (
-          <span className="absolute top-1 right-1 w-3.5 h-3.5 bg-primary text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
+          <span className="absolute top-1 right-1 w-3.5 h-3.5 border border-primary/40 text-primary text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
             {unread > 9 ? "9+" : unread}
           </span>
         )}
@@ -83,7 +88,7 @@ export function NotificationBell() {
                 <div
                   key={n.id}
                   className={`flex items-start gap-2 px-3 py-2.5 border-b border-border/30 last:border-0 ${
-                    !n.is_read ? "bg-primary/5" : ""
+                    !n.is_read ? "border-l-2 border-primary/40" : ""
                   }`}
                 >
                   {!n.is_read && (

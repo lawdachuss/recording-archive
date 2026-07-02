@@ -16,6 +16,7 @@ router.get("/stats", cache({ ttlSeconds: 300, tags: ["stats"] }), async (req, re
     return;
   }
 
+  // Safety net: remove empty-link rows that slipped through the DB filter
   const rows = (data ?? []).filter(
     (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0,
   );

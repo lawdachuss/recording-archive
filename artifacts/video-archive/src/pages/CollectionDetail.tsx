@@ -1,47 +1,126 @@
-import { useState, useEffect } from "react";
-import { useParams, Link } from "wouter";
+import { useEffect, useState } from "react";
+import { useParams, Link, useLocation } from "wouter";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
 import { OptimizedImage } from "@/components/ui/optimized-image";
-import {
-  getCollection,
-  removeFromCollection,
-  renameCollection,
-  type Collection,
-} from "@/lib/collections";
+import { useAuth } from "@/contexts/AuthContext";
+import { userApi, parseCloudItem, type CloudItem, type CloudCollection } from "@/lib/user-api";
+import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
+import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { ArrowLeft, Film, Pencil, Check, X, Trash2, ListVideo } from "lucide-react";
 import { formatRelativeTime } from "@/lib/formatters";
 
+function toRecording(r: ReturnType<typeof parseCloudItem>) {
+  return {
+    id: r.id,
+    username: r.username,
+    filename: r.filename,
+    room_title: r.room_title ?? null,
+    thumbnail_url: r.thumbnail_url ?? null,
+    resolution: r.resolution ?? null,
+    timestamp: r.timestamp,
+    created_at: r.saved_at,
+    tags: [] as string[],
+    viewers: null,
+    framerate: null,
+    filesize: null,
+    gender: null,
+    sprite_url: null,
+    embed_url: null,
+    preview_url: null,
+    instance_id: null,
+    updated_at: null,
+    channel_id: null,
+  };
+}
+
 export default function CollectionDetail() {
   const { id } = useParams<{ id: string }>();
-  const [collection, setCollection] = useState<Collection | undefined>();
+  const { user, loading } = useAuth();
+  const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
+
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState("");
 
   useEffect(() => {
-    if (id) {
-      const col = getCollection(id);
-      setCollection(col);
-      setEditName(col?.name ?? "");
-    }
-  }, [id]);
+    if (!loading && !user) setLocation("/login");
+  }, [user, loading, setLocation]);
+
+  const { data: cloudCollections = [] } = useQuery({
+    queryKey: ["user", "collections"],
+    queryFn: () => userApi.getCollections(),
+    enabled: !!user,
+  });
+
+  const cloudMeta: CloudCollection | undefined = cloudCollections.find(
+    (c: CloudCollection) => c.id === id,
+  );
+
+  const { data: cloudItems = [], isLoading: cloudLoading } = useQuery({
+    queryKey: ["user", "collections", id],
+    queryFn: () => userApi.getCollectionItems(id!),
+    enabled: !!user && !!id,
+  });
+
+  const renameCloud = useTrackedMutation({
+    mutationFn: (name: string) => userApi.updateCollection(id!, name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "collections"] });
+    },
+  });
+
+  const removeItemCloud = useTrackedMutation({
+    mutationFn: (recordingId: string) =>
+      userApi.removeCollectionItem(id!, recordingId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "collections", id] });
+      queryClient.invalidateQueries({ queryKey: ["user", "collections"] });
+    },
+  });
+
+  const recentlyWatched = useRecentlyWatched();
+
+  const deleteCloud = useTrackedMutation({
+    mutationFn: () => userApi.deleteCollection(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "collections"] });
+    },
+  });
 
   const handleRemove = (recordingId: string) => {
-    if (!id) return;
-    removeFromCollection(id, recordingId);
-    setCollection((prev) =>
-      prev ? { ...prev, items: prev.items.filter((r) => r.id !== recordingId) } : prev,
-    );
+    removeItemCloud.mutate(recordingId);
   };
 
   const handleRename = () => {
-    if (!id || !editName.trim()) return;
-    renameCollection(id, editName.trim());
-    setCollection((prev) => (prev ? { ...prev, name: editName.trim() } : prev));
+    if (!editName.trim()) return;
+    renameCloud.mutate(editName.trim());
     setEditing(false);
   };
 
-  if (!collection) {
+  if (!user) return null;
+
+  const notFound = !cloudLoading && !cloudMeta;
+  const items = cloudItems;
+  const collectionName = cloudMeta?.name ?? "Collection";
+  const collectionDesc = cloudMeta?.description ?? undefined;
+  const collectionCreatedAt = cloudMeta?.created_at;
+
+  const previewThumbnail = (() => {
+    const first = items[0];
+    if (first?.metadata) {
+      try {
+        return JSON.parse(first.metadata).thumbnail_url;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  })();
+
+  if (notFound) {
     return (
       <Layout>
         <div className="container mx-auto px-4 sm:px-6 py-24 text-center">
@@ -58,7 +137,6 @@ export default function CollectionDetail() {
   return (
     <Layout>
       <div className="container mx-auto px-4 sm:px-6 py-10 max-w-7xl">
-        {/* Back nav */}
         <Link
           href="/collections"
           className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors mb-6 group"
@@ -67,13 +145,12 @@ export default function CollectionDetail() {
           Collections
         </Link>
 
-        {/* Header */}
-        <div className="flex items-start gap-4 mb-8">
+        <div className="flex items-start gap-4 mb-8 pb-6 border-b border-border/40">
           <div className="w-16 h-16 rounded-sm bg-secondary shrink-0 overflow-hidden">
-            {collection.items[0]?.thumbnail_url ? (
+            {previewThumbnail ? (
               <OptimizedImage
-                src={collection.items[0].thumbnail_url}
-                alt={collection.name}
+                src={previewThumbnail}
+                alt={collectionName}
                 className="w-full h-full object-cover"
                 containerClassName="w-16 h-16"
                 fallback={
@@ -97,7 +174,10 @@ export default function CollectionDetail() {
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") handleRename(); if (e.key === "Escape") setEditing(false); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleRename();
+                    if (e.key === "Escape") setEditing(false);
+                  }}
                   maxLength={80}
                   className="h-9 bg-background border border-primary/50 rounded-sm px-3 text-sm font-bold outline-none flex-1 max-w-xs"
                 />
@@ -110,9 +190,9 @@ export default function CollectionDetail() {
               </div>
             ) : (
               <div className="flex items-center gap-2 mb-1">
-                <h1 className="text-xl sm:text-2xl font-black tracking-tighter">{collection.name}</h1>
+                <h1 className="text-xl sm:text-2xl font-black tracking-tighter">{collectionName}</h1>
                 <button
-                  onClick={() => setEditing(true)}
+                  onClick={() => { setEditing(true); setEditName(collectionName); }}
                   className="text-muted-foreground hover:text-foreground transition-colors"
                   title="Rename collection"
                 >
@@ -120,17 +200,39 @@ export default function CollectionDetail() {
                 </button>
               </div>
             )}
-            {collection.description && (
-              <p className="text-sm text-muted-foreground mb-1">{collection.description}</p>
+            {collectionDesc && (
+              <p className="text-sm text-muted-foreground mb-1">{collectionDesc}</p>
             )}
             <p className="text-xs text-muted-foreground/60">
-              {collection.items.length} {collection.items.length === 1 ? "video" : "videos"} · Created {formatRelativeTime(collection.created_at)}
+              {items.length} {items.length === 1 ? "video" : "videos"}
+              {collectionCreatedAt && (
+                <> · Created {formatRelativeTime(collectionCreatedAt)}</>
+              )}
+              <CloudSyncIndicator compact />
             </p>
           </div>
+
+          <button
+            onClick={async () => {
+              if (!confirm("Delete this collection? This cannot be undone.")) return;
+              await deleteCloud.mutateAsync();
+              setLocation("/collections");
+            }}
+            className="shrink-0 flex items-center gap-1.5 h-9 px-3 text-xs font-medium text-muted-foreground/50 hover:text-destructive border border-border/40 hover:border-destructive/40 rounded-sm transition-all"
+            title="Delete collection"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Delete</span>
+          </button>
         </div>
 
-        {/* Videos */}
-        {collection.items.length === 0 ? (
+        {cloudLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="aspect-video bg-secondary/30 animate-pulse rounded-sm" />
+            ))}
+          </div>
+        ) : items.length === 0 ? (
           <div className="py-20 text-center border border-dashed border-border/40 rounded-sm">
             <Film className="w-8 h-8 text-muted-foreground/20 mx-auto mb-3" />
             <p className="text-sm text-muted-foreground">No videos in this collection yet.</p>
@@ -139,41 +241,22 @@ export default function CollectionDetail() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
-            {collection.items.map((rec) => (
-              <div key={rec.id} className="relative group/card">
-                <VideoCard
-                  recording={{
-                    id: rec.id,
-                    username: rec.username,
-                    filename: rec.filename,
-                    room_title: rec.room_title ?? null,
-                    thumbnail_url: rec.thumbnail_url ?? null,
-                    resolution: rec.resolution ?? null,
-                    timestamp: rec.timestamp,
-                    created_at: rec.saved_at,
-                    tags: [],
-                    viewers: null,
-                    framerate: null,
-                    filesize: null,
-                    gender: null,
-                    sprite_url: null,
-                    embed_url: null,
-                    preview_url: null,
-                    instance_id: null,
-                    updated_at: null,
-                    channel_id: null,
-                  }}
-                />
-                <button
-                  onClick={() => handleRemove(rec.id)}
-                  className="absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center bg-black/80 text-white/60 hover:text-red-400 hover:bg-black transition-all rounded opacity-0 group-hover/card:opacity-100"
-                  title="Remove from collection"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </div>
-            ))}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+            {items.map((item: CloudItem) => {
+              const rec = parseCloudItem(item);
+              return (
+                <div key={rec.id} className="relative group/card">
+                  <VideoCard recording={toRecording(rec)} isWatched={recentlyWatched.has(rec.id)} />
+                  <button
+                    onClick={() => handleRemove(rec.id)}
+                    className="absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center bg-black/30 backdrop-blur-sm ring-1 ring-white/10 text-white/60 hover:text-red-400 hover:bg-red-600/60 hover:ring-red-600/30 transition-all rounded opacity-0 group-hover/card:opacity-100"
+                    title="Remove from collection"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

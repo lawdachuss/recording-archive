@@ -99,13 +99,15 @@ export default function Settings() {
         </div>
 
         {/* Profile */}
-        <section className="mb-8">
-          <div className="flex items-center gap-2 mb-4 pb-2 border-b border-border/40">
-            <User className="w-4 h-4 text-primary" />
+        <section className="mb-8 border border-border/40 rounded-xl p-5 sm:p-6 bg-card">
+          <div className="flex items-center gap-2 mb-5 pb-3 border-b border-border/30">
+            <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+              <User className="w-3.5 h-3.5 text-primary" />
+            </div>
             <h2 className="text-sm font-semibold">Profile</h2>
           </div>
           <form onSubmit={handleSaveProfile} className="space-y-4">
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Email
               </label>
@@ -113,10 +115,10 @@ export default function Settings() {
                 type="email"
                 value={user.email ?? ""}
                 disabled
-                className="w-full h-10 bg-secondary/20 border border-border/40 rounded-sm px-3 text-sm text-muted-foreground/60 cursor-not-allowed"
+                className="w-full h-10 bg-secondary border border-border/40 rounded-lg px-3 text-sm text-muted-foreground/60 cursor-not-allowed"
               />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Display Name
               </label>
@@ -126,10 +128,10 @@ export default function Settings() {
                 onChange={(e) => setDisplayName(e.target.value)}
                 maxLength={60}
                 placeholder="How others see you"
-                className="w-full h-10 bg-secondary/40 border border-border/60 focus:border-primary/50 rounded-sm px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/40"
+                className="w-full h-10 bg-secondary border border-border/60 focus:border-primary/50 rounded-lg px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/40 focus:ring-2 focus:ring-primary/5"
               />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Avatar URL
               </label>
@@ -138,10 +140,10 @@ export default function Settings() {
                 value={avatarUrl}
                 onChange={(e) => setAvatarUrl(e.target.value)}
                 placeholder="https://example.com/avatar.jpg"
-                className="w-full h-10 bg-secondary/40 border border-border/60 focus:border-primary/50 rounded-sm px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/40"
+                className="w-full h-10 bg-secondary border border-border/60 focus:border-primary/50 rounded-lg px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/40 focus:ring-2 focus:ring-primary/5"
               />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Bio
               </label>
@@ -151,13 +153,13 @@ export default function Settings() {
                 maxLength={300}
                 rows={3}
                 placeholder="A little about you (optional)"
-                className="w-full bg-secondary/40 border border-border/60 focus:border-primary/50 rounded-sm px-3 py-2 text-sm outline-none transition-all resize-none placeholder:text-muted-foreground/40"
+                className="w-full bg-secondary border border-border/60 focus:border-primary/50 rounded-lg px-3 py-2 text-sm outline-none transition-all resize-none placeholder:text-muted-foreground/40 focus:ring-2 focus:ring-primary/5"
               />
             </div>
 
             {saveMsg && (
               <div
-                className={`flex items-center gap-2 p-3 border rounded-sm text-xs ${
+                className={`flex items-center gap-2 p-3 border rounded-lg text-xs ${
                   saveMsg.ok
                     ? "bg-green-500/10 border-green-500/30 text-green-400"
                     : "bg-destructive/10 border-destructive/30 text-destructive"
@@ -175,7 +177,7 @@ export default function Settings() {
             <button
               type="submit"
               disabled={saving}
-              className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-semibold bg-primary text-white hover:bg-primary/90 transition-colors rounded-sm disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-semibold border border-primary/30 text-primary hover:border-primary/60 transition-colors rounded-lg disabled:opacity-60"
             >
               <Save className="w-3.5 h-3.5" />
               {saving ? "Saving…" : "Save profile"}
@@ -184,13 +186,15 @@ export default function Settings() {
         </section>
 
         {/* Password */}
-        <section>
-          <div className="flex items-center gap-2 mb-4 pb-2 border-b border-border/40">
-            <Lock className="w-4 h-4 text-primary" />
+        <section className="border border-border/40 rounded-xl p-5 sm:p-6 bg-card">
+          <div className="flex items-center gap-2 mb-5 pb-3 border-b border-border/30">
+            <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Lock className="w-3.5 h-3.5 text-primary" />
+            </div>
             <h2 className="text-sm font-semibold">Change Password</h2>
           </div>
           <form onSubmit={handleChangePassword} className="space-y-4">
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 New Password
               </label>
@@ -199,10 +203,10 @@ export default function Settings() {
                 value={newPw}
                 onChange={(e) => setNewPw(e.target.value)}
                 placeholder="At least 6 characters"
-                className="w-full h-10 bg-secondary/40 border border-border/60 focus:border-primary/50 rounded-sm px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/40"
+                className="w-full h-10 bg-secondary border border-border/60 focus:border-primary/50 rounded-lg px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/40 focus:ring-2 focus:ring-primary/5"
               />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Confirm New Password
               </label>
@@ -211,13 +215,13 @@ export default function Settings() {
                 value={confirmPw}
                 onChange={(e) => setConfirmPw(e.target.value)}
                 placeholder="Repeat new password"
-                className="w-full h-10 bg-secondary/40 border border-border/60 focus:border-primary/50 rounded-sm px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/40"
+                className="w-full h-10 bg-secondary border border-border/60 focus:border-primary/50 rounded-lg px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/40 focus:ring-2 focus:ring-primary/5"
               />
             </div>
 
             {pwMsg && (
               <div
-                className={`flex items-center gap-2 p-3 border rounded-sm text-xs ${
+                className={`flex items-center gap-2 p-3 border rounded-lg text-xs ${
                   pwMsg.ok
                     ? "bg-green-500/10 border-green-500/30 text-green-400"
                     : "bg-destructive/10 border-destructive/30 text-destructive"
@@ -235,7 +239,7 @@ export default function Settings() {
             <button
               type="submit"
               disabled={pwSaving || !newPw}
-              className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-semibold bg-primary text-white hover:bg-primary/90 transition-colors rounded-sm disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-semibold border border-primary/30 text-primary hover:border-primary/60 transition-colors rounded-lg disabled:opacity-60"
             >
               <Lock className="w-3.5 h-3.5" />
               {pwSaving ? "Updating…" : "Update password"}

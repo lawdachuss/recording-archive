@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useLocation } from "wouter";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, type UserNotification } from "@/lib/user-api";
@@ -23,12 +24,12 @@ export default function Notifications() {
     staleTime: 30_000,
   });
 
-  const markAll = useMutation({
+  const markAll = useTrackedMutation({
     mutationFn: () => userApi.markAllRead(),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "notifications"] }),
   });
 
-  const deleteOne = useMutation({
+  const deleteOne = useTrackedMutation({
     mutationFn: (id: number) => userApi.deleteNotification(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "notifications"] }),
   });
