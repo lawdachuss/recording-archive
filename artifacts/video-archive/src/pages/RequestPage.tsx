@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useCreateRequest } from "@workspace/api-client-react";
 import { Layout } from "@/components/Layout";
-import { Send, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Send, CheckCircle2, AlertTriangle, Globe } from "lucide-react";
 
 type Step = "site" | "username";
 
 const SITES = [
-  { id: "chaturbate", label: "Chaturbate", color: "text-green-500", border: "border-green-500/40 hover:border-green-500/70" },
-  { id: "stripchat", label: "Stripchat", color: "text-pink-500", border: "border-pink-500/40 hover:border-pink-500/70" },
+  { id: "chaturbate", label: "Chaturbate", initials: "CB" },
+  { id: "stripchat", label: "Stripchat", initials: "SC" },
 ] as const;
 
 export default function RequestPage() {
@@ -44,12 +44,8 @@ export default function RequestPage() {
         },
       },
       {
-        onSuccess: () => {
-          setSubmitted(true);
-        },
-        onError: () => {
-          setError("Failed to submit request. Please try again.");
-        },
+        onSuccess: () => setSubmitted(true),
+        onError: () => setError("Failed to submit request. Please try again."),
       },
     );
   };
@@ -61,18 +57,30 @@ export default function RequestPage() {
     setError(null);
   };
 
+  const handleReset = () => {
+    setSubmitted(false);
+    setStep("site");
+    setSite(null);
+    setUsername("");
+    setError(null);
+  };
+
   if (submitted) {
     return (
       <Layout>
         <div className="container mx-auto px-4 sm:px-6 py-24 max-w-lg text-center">
-          <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-5" />
-          <h1 className="text-xl font-black tracking-tighter mb-2">Request submitted!</h1>
-          <p className="text-sm text-muted-foreground mb-8">
-            Your recording request for <span className="text-foreground font-semibold">{site}</span> performer{" "}
-            <span className="text-foreground font-semibold">{username}</span> has been received.
+          <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-6">
+            <CheckCircle2 className="w-7 h-7 text-primary" />
+          </div>
+          <h1 className="text-xl font-black tracking-tighter mb-2">Request submitted</h1>
+          <p className="text-sm text-muted-foreground mb-2">
+            {site} — <span className="text-foreground font-semibold">{username}</span>
+          </p>
+          <p className="text-xs text-muted-foreground/60 mb-8">
+            We'll try to archive their next broadcast.
           </p>
           <button
-            onClick={() => { setSubmitted(false); setStep("site"); setSite(null); setUsername(""); }}
+            onClick={handleReset}
             className="h-9 px-5 text-xs font-semibold border border-primary/30 text-primary hover:border-primary/60 transition-colors rounded-sm"
           >
             Submit another
@@ -84,32 +92,40 @@ export default function RequestPage() {
 
   return (
     <Layout>
-      <div className="container mx-auto px-4 sm:px-6 py-10 max-w-xl">
+      <div className="container mx-auto px-4 sm:px-6 py-10 max-w-lg">
         <div className="mb-8">
           <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold mb-3">
             <Send className="w-3.5 h-3.5 text-primary" />
             Requests
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tighter">Request a Recording</h1>
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tighter">
+            {step === "site" ? "Select Site" : "Enter Username"}
+          </h1>
           <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
             {step === "site"
-              ? "Select the site where the performer streams."
-              : "Enter the performer's username to request archiving."}
+              ? "Choose the platform where the performer streams."
+              : "Type the performer's exact username to request archiving."}
           </p>
         </div>
 
         {step === "site" ? (
-          <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-3">
             {SITES.map((s) => (
               <button
                 key={s.id}
                 onClick={() => handleSiteSelect(s.id)}
-                className={`flex flex-col items-center justify-center gap-3 h-40 border-2 rounded-sm bg-secondary/30 ${s.border} transition-all hover:bg-secondary/60 hover:scale-[1.02] active:scale-[0.98] cursor-pointer`}
+                className="w-full flex items-center gap-4 p-4 border border-border/50 hover:border-border hover:bg-secondary/40 rounded-sm transition-all group cursor-pointer"
               >
-                <span className={`text-2xl font-black tracking-tighter ${s.color}`}>
-                  {s.id === "chaturbate" ? "CB" : "SC"}
-                </span>
-                <span className="text-sm font-semibold text-foreground/80">{s.label}</span>
+                <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center shrink-0 group-hover:bg-secondary/80 transition-colors">
+                  <Globe className="w-4 h-4 text-muted-foreground/60" />
+                </div>
+                <div className="text-left">
+                  <div className="text-sm font-semibold text-foreground">{s.label}</div>
+                  <div className="text-xs text-muted-foreground/50">{s.initials}.com</div>
+                </div>
+                <div className="ml-auto text-xs text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors">
+                  Select →
+                </div>
               </button>
             ))}
           </div>
@@ -117,24 +133,19 @@ export default function RequestPage() {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="flex items-center gap-1.5 text-xs font-semibold text-foreground/80 uppercase tracking-wide">
-                  {site === "chaturbate" ? (
-                    <span className="text-green-500">Chaturbate</span>
-                  ) : (
-                    <span className="text-pink-500">Stripchat</span>
-                  )}
-                  <span className="text-muted-foreground/50 normal-case tracking-normal font-normal">username</span>
+                <label className="text-xs font-semibold text-foreground/80 uppercase tracking-wide">
+                  {site} username
                 </label>
                 <button
                   type="button"
                   onClick={handleBack}
-                  className="text-[11px] text-muted-foreground/50 hover:text-foreground transition-colors"
+                  className="text-xs text-muted-foreground/40 hover:text-foreground/70 transition-colors"
                 >
                   Change site
                 </button>
               </div>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/50 pointer-events-none">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/40 pointer-events-none select-none">
                   {site}.com/
                 </span>
                 <input
@@ -144,7 +155,7 @@ export default function RequestPage() {
                   onChange={(e) => setUsername(e.target.value)}
                   maxLength={100}
                   autoFocus
-                  className="w-full h-10 bg-secondary border border-border/60 focus:border-primary/50 rounded-sm pl-28 pr-3 text-sm outline-none transition-all placeholder:text-muted-foreground/40"
+                  className="w-full h-10 bg-secondary border border-border/60 focus:border-primary/50 rounded-sm pl-28 pr-3 text-sm outline-none transition-all placeholder:text-muted-foreground/30"
                 />
               </div>
             </div>
@@ -163,7 +174,7 @@ export default function RequestPage() {
             >
               {createRequest.isPending ? (
                 <>
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
                   Submitting…
                 </>
               ) : (
@@ -174,7 +185,7 @@ export default function RequestPage() {
               )}
             </button>
 
-            <p className="text-[11px] text-muted-foreground/50 text-center leading-relaxed">
+            <p className="text-xs text-muted-foreground/40 text-center leading-relaxed">
               Requests are reviewed and captured manually. No SLA is guaranteed.
             </p>
           </form>
