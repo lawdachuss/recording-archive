@@ -16,34 +16,33 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import { formatBytes, formatRelativeTime } from "@/lib/formatters";
 import { getSessionId } from "@/lib/session";
-import {
-  isBookmarked, toggleBookmark,
-  isInWatchLater, toggleWatchLater,
-  addToHistory,
-} from "@/lib/bookmarks";
-import {
-  getCollections, addToCollection, createCollection, type Collection,
-} from "@/lib/collections";
+import { trackView } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, recordingToMeta, type CloudCollection } from "@/lib/user-api";
+
 import {
   Eye, HardDrive, MonitorPlay, AlertCircle, ArrowLeft, Maximize2, Minimize2,
   Calendar, User, Tag, Clapperboard, ThumbsUp, ThumbsDown, Bookmark, Share2,
   Check, Server, Film, Download, Clock, Play, Code2, ListVideo, Shuffle,
-  FolderPlus, Plus, ChevronDown, ExternalLink,
+  FolderPlus, Plus, ChevronDown, ExternalLink, LogIn,
 } from "lucide-react";
 
-function useFullscreen(ref: React.RefObject<HTMLElement | null>) {
+function useFullscreen(ref: React.RefObject<HTMLDivElement | null>) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const enter = useCallback(() => {
     const el = ref.current;
     if (!el) return;
-    if (el.requestFullscreen) el.requestFullscreen();
-    else if ((el as any).webkitRequestFullscreen) (el as any).webkitRequestFullscreen();
+    // Element has requestFullscreen; add webkit variant for Safari support
+    type FullEl = Element & { webkitRequestFullscreen?: () => Promise<void> };
+    const fEl = el as FullEl;
+    if (fEl.requestFullscreen) fEl.requestFullscreen();
+    else if (fEl.webkitRequestFullscreen) fEl.webkitRequestFullscreen();
   }, [ref]);
   const exit = useCallback(() => {
-    if (document.exitFullscreen) document.exitFullscreen();
-    else if ((document as any).webkitExitFullscreen) (document as any).webkitExitFullscreen();
+    type FullDoc = Document & { webkitExitFullscreen?: () => void };
+    const fDoc = document as FullDoc;
+    if (fDoc.exitFullscreen) fDoc.exitFullscreen();
+    else if (fDoc.webkitExitFullscreen) fDoc.webkitExitFullscreen();
   }, []);
   useEffect(() => {
     const handler = () => setIsFullscreen(!!document.fullscreenElement);
@@ -64,6 +63,8 @@ function detectHostLabel(url: string): string {
     if (hostname.includes("upstream")) return "Upstream";
     if (hostname.includes("vidoza")) return "Vidoza";
     if (hostname.includes("mp4upload")) return "MP4Upload";
+    if (hostname.includes("pixeldrain")) return "Pixeldrain";
+    if (hostname.includes("seekstreaming")) return "SeekStreaming";
     return hostname.replace(/^www\./, "");
   } catch {
     return "Server";
@@ -72,8 +73,17 @@ function detectHostLabel(url: string): string {
 
 function isEmbedUrl(url: string): boolean {
   try {
-    const { pathname } = new URL(url);
-    return pathname.includes("/e/") || pathname.includes("/embed/") || pathname.includes("/player/");
+    const { pathname, hostname } = new URL(url);
+    // Path-based detection for common embed patterns
+    if (pathname.includes("/e/") || pathname.includes("/embed/") || pathname.includes("/player/") || pathname.includes("/v/")) {
+      return true;
+    }
+    // Host-based detection for known embed-friendly providers
+    // Some hosts embed via direct URL without a standard embed path
+    if (hostname.includes("seekstreaming")) {
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -96,6 +106,12 @@ function deriveServers(
           const parsed = new URL(url);
           if (parsed.hostname.includes("voe") && !parsed.pathname.startsWith("/e/")) {
             url = parsed.origin + "/e" + parsed.pathname;
+          }
+          // Convert pixeldrain API URLs to user-facing page URLs
+          // The API endpoint returns 403 (hotlinking blocked), but /u/{id} page works.
+          const pdMatch = parsed.pathname.match(/^\/api\/file\/(.+)/);
+          if (parsed.hostname.includes("pixeldrain") && pdMatch) {
+            url = `https://pixeldrain.com/u/${pdMatch[1]}`;
           }
         } catch {}
         if (isEmbedUrl(url)) {
@@ -137,18 +153,25 @@ export default function VideoDetail() {
   const { isFullscreen, enter: enterFS, exit: exitFS } = useFullscreen(playerRef);
   const { user } = useAuth();
 
-  const [activeServer, setActiveServer] = useState(0);
-  const [videoStarted, setVideoStarted] = useState(false);
+  const [activeServer, setActiveServer] = useState(() => {
+    if (typeof window === "undefined") return 0;
+    const stored = sessionStorage.getItem("vserver");
+    return stored ? parseInt(stored, 10) : 0;
+  });
+  const [videoStarted, setVideoStarted] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return sessionStorage.getItem("vplayed") === id;
+  });
   const [bookmarked, setBookmarked] = useState(false);
   const [watchLater, setWatchLater] = useState(false);
   const [copied, setCopied] = useState(false);
   const [embedCopied, setEmbedCopied] = useState(false);
   const [collectionOpen, setCollectionOpen] = useState(false);
-  const [collections, setCollections] = useState<Collection[]>([]);
   const [cloudCollections, setCloudCollections] = useState<CloudCollection[]>([]);
   const [newColName, setNewColName] = useState("");
   const [addedToCol, setAddedToCol] = useState<string | null>(null);
   const queryClient = useQueryClient();
+
 
   const { data: video, isLoading, isError } = useGetRecording(id || "", {
     query: { enabled: !!id, queryKey: getGetRecordingQueryKey(id || "") },
@@ -167,32 +190,28 @@ export default function VideoDetail() {
   const toggleReaction = useToggleReaction();
 
   useEffect(() => {
-    setVideoStarted(false);
-    setActiveServer(0);
+    setVideoStarted(sessionStorage.getItem("vplayed") === id);
+    setActiveServer(() => {
+      const stored = sessionStorage.getItem("vserver");
+      return stored ? parseInt(stored, 10) : 0;
+    });
     setCollectionOpen(false);
     setAddedToCol(null);
-    if (id) {
-      if (!user) {
-        setBookmarked(isBookmarked(id));
-        setWatchLater(isInWatchLater(id));
-      } else {
-        userApi.getSaved().then((items) => {
-          setBookmarked(items.some((i) => i.recording_id === id));
-        }).catch(() => {});
-        userApi.getWatchLater().then((items) => {
-          setWatchLater(items.some((i) => i.recording_id === id));
-        }).catch(() => {});
-      }
+    setBookmarked(false);
+    setWatchLater(false);
+    if (id && user) {
+      userApi.getSaved().then((items) => {
+        setBookmarked(items.some((i) => i.recording_id === id));
+      }).catch(() => {});
+      userApi.getWatchLater().then((items) => {
+        setWatchLater(items.some((i) => i.recording_id === id));
+      }).catch(() => {});
     }
   }, [id, user]);
 
   useEffect(() => {
-    if (collectionOpen) {
-      if (user) {
-        userApi.getCollections().then(setCloudCollections).catch(() => {});
-      } else {
-        setCollections(getCollections());
-      }
+    if (collectionOpen && user) {
+      userApi.getCollections().then(setCloudCollections).catch(() => {});
     }
   }, [collectionOpen, user]);
 
@@ -214,12 +233,8 @@ export default function VideoDetail() {
 
   const handleAddToCollection = async (colId: string) => {
     const meta = getVideoMeta();
-    if (!meta) return;
-    if (user) {
-      await userApi.addCollectionItem(colId, meta.id, recordingToMeta(meta));
-    } else {
-      addToCollection(colId, meta);
-    }
+    if (!meta || !user) return;
+    await userApi.addCollectionItem(colId, meta.id, recordingToMeta(meta));
     setAddedToCol(colId);
     setTimeout(() => {
       setCollectionOpen(false);
@@ -228,20 +243,13 @@ export default function VideoDetail() {
   };
 
   const handleCreateAndAdd = async () => {
-    if (!newColName.trim()) return;
+    if (!newColName.trim() || !user) return;
     const meta = getVideoMeta();
     if (!meta) return;
-    if (user) {
-      const col = await userApi.createCollection(newColName.trim());
-      await userApi.addCollectionItem(col.id, meta.id, recordingToMeta(meta));
-      setCloudCollections((prev) => [{ ...col, item_count: 1 }, ...prev]);
-      setAddedToCol(col.id);
-    } else {
-      const col = createCollection(newColName.trim());
-      addToCollection(col.id, meta);
-      setCollections((prev) => [col, ...prev]);
-      setAddedToCol(col.id);
-    }
+    const col = await userApi.createCollection(newColName.trim());
+    await userApi.addCollectionItem(col.id, meta.id, recordingToMeta(meta));
+    setCloudCollections((prev) => [{ ...col, item_count: 1 }, ...prev]);
+    setAddedToCol(col.id);
     setNewColName("");
     setTimeout(() => {
       setCollectionOpen(false);
@@ -250,7 +258,7 @@ export default function VideoDetail() {
   };
 
   useEffect(() => {
-    if (!video) return;
+    if (!video || !user) return;
     const meta = {
       id: video.id,
       username: video.username,
@@ -263,12 +271,17 @@ export default function VideoDetail() {
       timestamp: video.timestamp,
       saved_at: new Date().toISOString(),
     };
-    if (user) {
-      userApi.addHistory(video.id, recordingToMeta(meta)).catch(() => {});
-    } else {
-      addToHistory(meta);
-    }
-  }, [video, user]);
+    userApi.addHistory(video.id, recordingToMeta(meta)).catch(() => {});
+    // Only depend on video.id — the full video object changes reference
+    // on every background refetch, causing history API spam
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [video?.id, user]);
+
+  // ─── Track view on page load (once per session) ──────────
+  useEffect(() => {
+    if (!video?.id) return;
+    trackView(video.id);
+  }, [video?.id]);
 
   useEffect(() => {
     if (!video?.thumbnail_url) return;
@@ -292,7 +305,7 @@ export default function VideoDetail() {
   const currentServer = servers[activeServer] ?? servers[0];
 
   const handleReaction = (type: "like" | "dislike") => {
-    if (!id) return;
+    if (!id || !user) return;
     toggleReaction.mutate(
       { data: { recording_id: id, type, session_id: sessionId } },
       {
@@ -307,7 +320,7 @@ export default function VideoDetail() {
   };
 
   const handleBookmark = async () => {
-    if (!video) return;
+    if (!video || !user) return;
     const savedRec = {
       id: video.id,
       username: video.username,
@@ -320,21 +333,17 @@ export default function VideoDetail() {
       timestamp: video.timestamp,
       saved_at: new Date().toISOString(),
     };
-    if (user) {
-      if (bookmarked) {
-        await userApi.removeSaved(video.id).catch(() => {});
-        setBookmarked(false);
-      } else {
-        await userApi.addSaved(video.id, recordingToMeta(savedRec)).catch(() => {});
-        setBookmarked(true);
-      }
+    if (bookmarked) {
+      await userApi.removeSaved(video.id).catch(() => {});
+      setBookmarked(false);
     } else {
-      setBookmarked(toggleBookmark(savedRec));
+      await userApi.addSaved(video.id, recordingToMeta(savedRec)).catch(() => {});
+      setBookmarked(true);
     }
   };
 
   const handleWatchLater = async () => {
-    if (!video) return;
+    if (!video || !user) return;
     const savedRec = {
       id: video.id,
       username: video.username,
@@ -347,16 +356,12 @@ export default function VideoDetail() {
       timestamp: video.timestamp,
       saved_at: new Date().toISOString(),
     };
-    if (user) {
-      if (watchLater) {
-        await userApi.removeWatchLater(video.id).catch(() => {});
-        setWatchLater(false);
-      } else {
-        await userApi.addWatchLater(video.id, recordingToMeta(savedRec)).catch(() => {});
-        setWatchLater(true);
-      }
+    if (watchLater) {
+      await userApi.removeWatchLater(video.id).catch(() => {});
+      setWatchLater(false);
     } else {
-      setWatchLater(toggleWatchLater(savedRec));
+      await userApi.addWatchLater(video.id, recordingToMeta(savedRec)).catch(() => {});
+      setWatchLater(true);
     }
   };
 
@@ -407,13 +412,6 @@ export default function VideoDetail() {
             <ArrowLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" />
             Browse
           </Link>
-          <button
-            onClick={() => setLocation("/random")}
-            className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Shuffle className="w-3 h-3" />
-            Random
-          </button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-8">
@@ -427,10 +425,10 @@ export default function VideoDetail() {
                   {servers.map((s, i) => (
                     <button
                       key={i}
-                      onClick={() => { setActiveServer(i); setVideoStarted(false); }}
+                      onClick={() => { setActiveServer(i); sessionStorage.setItem("vserver", String(i)); setVideoStarted(false); sessionStorage.removeItem("vplayed"); }}
                       className={`px-3 py-1 text-[11px] font-medium rounded-[2px] border transition-all ${
                         activeServer === i
-                          ? "bg-primary text-white border-primary"
+                          ? "border-primary/60 text-primary"
                           : "border-border/50 text-muted-foreground hover:border-primary/40 hover:text-foreground"
                       }`}
                     >
@@ -449,13 +447,16 @@ export default function VideoDetail() {
                 ref={playerRef}
                 className="relative group aspect-video w-full bg-black overflow-hidden rounded-sm"
               >
-                {currentServer?.type === "iframe" && !videoStarted ? (
-                  /* Poster / click-to-play */
-                  <button
-                    className="absolute inset-0 w-full h-full cursor-pointer focus:outline-none"
-                    onClick={() => setVideoStarted(true)}
-                    aria-label="Play video"
-                  >
+                  {currentServer?.type === "iframe" && !videoStarted ? (
+                    /* Poster / click-to-play */
+                    <button
+                      className="absolute inset-0 w-full h-full cursor-pointer focus:outline-none"
+                      onClick={() => {
+                        setVideoStarted(true);
+                        if (id) sessionStorage.setItem("vplayed", id);
+                      }}
+                      aria-label="Play video"
+                    >
                     {video.thumbnail_url ? (
                       <OptimizedImage
                         src={video.thumbnail_url}
@@ -476,13 +477,13 @@ export default function VideoDetail() {
                       </div>
                     )}
                     <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center gap-3">
-                      <div className="w-16 h-16 rounded-full bg-primary/90 hover:bg-primary flex items-center justify-center shadow-lg shadow-primary/30 transition-all hover:scale-105">
+                      <div className="w-16 h-16 rounded-full border-2 border-primary/60 hover:border-primary flex items-center justify-center transition-all hover:scale-105">
                         <Play className="w-7 h-7 text-white fill-white ml-1" />
                       </div>
                       <span className="text-white/80 text-xs font-medium">Click to play</span>
                     </div>
                     {video.resolution && (
-                      <div className="absolute top-3 right-3 text-[10px] font-bold text-white/80 bg-black/60 px-2 py-0.5 rounded-[2px]">
+                      <div className="absolute top-3 right-3 text-[10px] font-bold text-white/80 bg-black/30 backdrop-blur-sm ring-1 ring-white/10 px-2 py-0.5 rounded-[2px]">
                         {video.resolution}
                       </div>
                     )}
@@ -496,7 +497,7 @@ export default function VideoDetail() {
                       href={currentServer.src}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors"
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded border border-primary/30 text-primary text-sm font-medium hover:border-primary/60 transition-colors"
                     >
                       <ExternalLink className="w-4 h-4" />
                       Open on {currentServer.label}
@@ -544,7 +545,7 @@ export default function VideoDetail() {
                 {videoStarted && (
                   <button
                     onClick={isFullscreen ? exitFS : enterFS}
-                    className="absolute bottom-3 right-3 z-10 w-8 h-8 flex items-center justify-center bg-black/60 hover:bg-black/80 text-white/70 hover:text-white rounded transition-all opacity-0 group-hover:opacity-100"
+                    className="absolute bottom-3 right-3 z-10 w-8 h-8 flex items-center justify-center bg-black/30 backdrop-blur-sm ring-1 ring-white/10 hover:bg-black/50 hover:ring-white/20 text-white/70 hover:text-white rounded transition-all opacity-0 group-hover:opacity-100"
                     aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
                     title="Fullscreen (F)"
                   >
@@ -614,11 +615,13 @@ export default function VideoDetail() {
 
                 {/* Action bar */}
                 <div className="flex flex-wrap items-center gap-2">
+                  {user ? (
+                    <>
                   <button
                     onClick={() => handleReaction("like")}
                     className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border transition-all ${
                       reactions?.user_reaction === "like"
-                        ? "bg-primary/10 border-primary/40 text-primary"
+                        ? "border-primary/60 text-primary"
                         : "border-border/50 text-muted-foreground hover:border-primary/30 hover:text-foreground"
                     }`}
                   >
@@ -631,7 +634,7 @@ export default function VideoDetail() {
                     onClick={() => handleReaction("dislike")}
                     className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border transition-all ${
                       reactions?.user_reaction === "dislike"
-                        ? "bg-destructive/10 border-destructive/40 text-destructive"
+                        ? "border-destructive/40 text-destructive"
                         : "border-border/50 text-muted-foreground hover:border-border hover:text-foreground"
                     }`}
                   >
@@ -644,7 +647,7 @@ export default function VideoDetail() {
                     onClick={handleBookmark}
                     className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border transition-all ${
                       bookmarked
-                        ? "bg-amber-500/10 border-amber-500/40 text-amber-500"
+                        ? "border-amber-500/40 text-amber-500"
                         : "border-border/50 text-muted-foreground hover:border-border hover:text-foreground"
                     }`}
                   >
@@ -656,13 +659,15 @@ export default function VideoDetail() {
                     onClick={handleWatchLater}
                     className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border transition-all ${
                       watchLater
-                        ? "bg-blue-500/10 border-blue-500/40 text-blue-400"
+                        ? "border-blue-500/40 text-blue-400"
                         : "border-border/50 text-muted-foreground hover:border-border hover:text-foreground"
                     }`}
                   >
                     <ListVideo className="w-3.5 h-3.5" />
                     {watchLater ? "Queued" : "Watch Later"}
                   </button>
+                    </>
+                  ) : null}
 
                   <button
                     onClick={handleShare}
@@ -701,6 +706,7 @@ export default function VideoDetail() {
                   )}
 
                   {/* Add to Collection dropdown */}
+                  {user && (
                   <div className="relative">
                     <button
                       onClick={() => setCollectionOpen((v) => !v)}
@@ -722,67 +728,50 @@ export default function VideoDetail() {
                               onChange={(e) => setNewColName(e.target.value)}
                               onKeyDown={(e) => { if (e.key === "Enter") handleCreateAndAdd(); }}
                               maxLength={60}
-                              className="flex-1 h-7 bg-secondary/60 border border-border/40 focus:border-primary/50 rounded-[2px] px-2 text-xs outline-none"
+                              className="flex-1 h-7 bg-card border border-border/40 focus:border-primary/50 rounded-[2px] px-2 text-xs outline-none"
                             />
                             <button
                               onClick={handleCreateAndAdd}
                               disabled={!newColName.trim()}
-                              className="w-7 h-7 flex items-center justify-center bg-primary text-white rounded-[2px] disabled:opacity-40 transition-opacity"
+                              className="w-7 h-7 flex items-center justify-center border border-primary/30 text-primary rounded-[2px] disabled:opacity-40 hover:border-primary/60 transition-opacity"
                               title="Create and add"
                             >
                               <Plus className="w-3 h-3" />
                             </button>
                           </div>
                         </div>
-                        {(user ? cloudCollections : collections).length === 0 ? (
+                        {cloudCollections.length === 0 ? (
                           <div className="px-3 py-4 text-center">
                             <p className="text-[11px] text-muted-foreground">No collections yet.</p>
                             <p className="text-[11px] text-muted-foreground/60">Create one above.</p>
                           </div>
                         ) : (
                           <div className="max-h-48 overflow-y-auto">
-                            {user
-                              ? cloudCollections.map((col) => (
-                                  <button
-                                    key={col.id}
-                                    onClick={() => handleAddToCollection(col.id)}
-                                    className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-secondary transition-colors"
-                                  >
-                                    {addedToCol === col.id ? (
-                                      <Check className="w-3 h-3 text-green-500 shrink-0" />
-                                    ) : (
-                                      <ListVideo className="w-3 h-3 text-muted-foreground/50 shrink-0" />
-                                    )}
-                                    <span className="truncate">{col.name}</span>
-                                    <span className="ml-auto text-[10px] text-muted-foreground/40 shrink-0">
-                                      {col.item_count ?? 0}
-                                    </span>
-                                  </button>
-                                ))
-                              : collections.map((col) => (
-                                  <button
-                                    key={col.id}
-                                    onClick={() => handleAddToCollection(col.id)}
-                                    className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-secondary transition-colors"
-                                  >
-                                    {addedToCol === col.id ? (
-                                      <Check className="w-3 h-3 text-green-500 shrink-0" />
-                                    ) : (
-                                      <ListVideo className="w-3 h-3 text-muted-foreground/50 shrink-0" />
-                                    )}
-                                    <span className="truncate">{col.name}</span>
-                                    <span className="ml-auto text-[10px] text-muted-foreground/40 shrink-0">
-                                      {col.items.length}
-                                    </span>
-                                  </button>
-                                ))
-                            }
+                            {cloudCollections.map((col) => (
+                              <button
+                                key={col.id}
+                                onClick={() => handleAddToCollection(col.id)}
+                                className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-secondary transition-colors"
+                              >
+                                {addedToCol === col.id ? (
+                                  <Check className="w-3 h-3 text-green-500 shrink-0" />
+                                ) : (
+                                  <ListVideo className="w-3 h-3 text-muted-foreground/50 shrink-0" />
+                                )}
+                                <span className="truncate">{col.name}</span>
+                                <span className="ml-auto text-[10px] text-muted-foreground/40 shrink-0">
+                                  {col.item_count ?? 0}
+                                </span>
+                              </button>
+                            ))}
                           </div>
                         )}
                       </div>
                     )}
                   </div>
+                  )}
 
+                  {user && (
                   <Link
                     href="/history"
                     className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border border-border/50 text-muted-foreground hover:border-border hover:text-foreground transition-all"
@@ -790,7 +779,18 @@ export default function VideoDetail() {
                     <Clock className="w-3.5 h-3.5" />
                     History
                   </Link>
+                  )}
                 </div>
+
+                {/* Sign-in prompt for unauthenticated users */}
+                {!user && (
+                  <div className="flex items-center gap-2 p-3 border border-border/40 rounded-sm bg-secondary">
+                    <LogIn className="w-4 h-4 text-muted-foreground/40" />
+                    <p className="text-xs text-muted-foreground/60">
+                      <Link href="/login" className="text-primary hover:underline font-medium">Sign in</Link> to like, save, or add to collections
+                    </p>
+                  </div>
+                )}
 
                 {/* Like ratio bar */}
                 {likePercent !== null && totalReactions > 0 && (
@@ -852,13 +852,6 @@ export default function VideoDetail() {
               <p className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground font-semibold">
                 More from {video?.username ?? "this performer"}
               </p>
-              <button
-                onClick={() => setLocation("/random")}
-                className="text-[10px] text-muted-foreground/50 hover:text-primary transition-colors flex items-center gap-1"
-              >
-                <Shuffle className="w-3 h-3" />
-                Random
-              </button>
             </div>
 
             {relatedLoading ? (

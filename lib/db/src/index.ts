@@ -10,7 +10,16 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+// Supabase database host (db.*.supabase.co) is IPv6-only.
+// Vercel serverless and most corporate networks are IPv4-only, so we must use
+// the Supavisor connection pooler with SSL enabled.
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false,
+  },
+});
 export const db = drizzle(pool, { schema });
 
 export * from "./schema";
+export { sql } from "drizzle-orm";

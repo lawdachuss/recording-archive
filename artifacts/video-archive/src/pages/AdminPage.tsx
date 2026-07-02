@@ -109,7 +109,7 @@ export default function AdminPage() {
               : "Your account doesn't have admin privileges."}
           </p>
           <Link href={user ? "/" : "/login"}>
-            <span className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-semibold bg-primary text-white hover:bg-primary/90 rounded-sm transition-colors">
+            <span className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-semibold border border-primary/30 text-primary hover:border-primary/60 rounded-sm transition-colors">
               {user ? "Go Home" : "Sign In"}
             </span>
           </Link>
@@ -164,7 +164,7 @@ export default function AdminPage() {
               Refresh
             </button>
             <Link href="/request">
-              <span className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-medium bg-primary text-white hover:bg-primary/90 transition-colors rounded-sm">
+              <span className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-medium border border-primary/30 text-primary hover:border-primary/60 transition-colors rounded-sm">
                 + Submit
               </span>
             </Link>
@@ -178,7 +178,7 @@ export default function AdminPage() {
               onClick={() => setStatusFilter(id)}
               className={`p-3 border rounded-sm text-left transition-all ${
                 statusFilter === id
-                  ? "border-primary/50 bg-primary/5"
+                  ? "border-primary/60"
                   : "border-border/40 hover:border-border/70"
               }`}
             >
@@ -198,13 +198,13 @@ export default function AdminPage() {
               onClick={() => setStatusFilter(id)}
               className={`px-3 py-1 text-xs rounded-sm transition-all border ${
                 statusFilter === id
-                  ? "bg-primary text-white border-primary"
+                  ? "border-primary/60 text-primary"
                   : "border-border/40 text-muted-foreground hover:text-foreground hover:border-border"
               }`}
             >
               {label}
               {counts[id] > 0 && (
-                <span className={`ml-1.5 ${statusFilter === id ? "text-white/70" : "text-muted-foreground/50"}`}>
+                <span className={`ml-1.5 ${                statusFilter === id ? "text-primary/60" : "text-muted-foreground/50"}`}>
                   {counts[id]}
                 </span>
               )}
@@ -307,7 +307,7 @@ export default function AdminPage() {
                         <button
                           onClick={() => updateStatus(req.id!, "done")}
                           disabled={updating === req.id}
-                          className="h-7 px-3 text-[11px] font-medium text-primary border border-primary/30 hover:bg-primary/10 transition-colors rounded-sm"
+                          className="h-7 px-3 text-[11px] font-medium border border-primary/30 text-primary hover:border-primary/60 transition-colors rounded-sm"
                         >
                           Mark Done
                         </button>
@@ -356,7 +356,7 @@ export default function AdminPage() {
                           {req.status !== "approved" && (
                             <button
                               onClick={() => updateStatus(req.id!, "approved")}
-                              className="h-7 px-3 text-[11px] font-medium bg-green-500/10 text-green-400 border border-green-500/30 hover:bg-green-500/20 transition-colors rounded-sm"
+                              className="h-7 px-3 text-[11px] font-medium border border-green-500/40 text-green-400 hover:border-green-500/60 transition-colors rounded-sm"
                             >
                               Approve
                             </button>
@@ -364,7 +364,7 @@ export default function AdminPage() {
                           {req.status !== "rejected" && (
                             <button
                               onClick={() => updateStatus(req.id!, "rejected")}
-                              className="h-7 px-3 text-[11px] font-medium bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 transition-colors rounded-sm"
+                              className="h-7 px-3 text-[11px] font-medium border border-red-500/40 text-red-400 hover:border-red-500/60 transition-colors rounded-sm"
                             >
                               Reject
                             </button>
@@ -372,7 +372,7 @@ export default function AdminPage() {
                           {req.status === "approved" && (
                             <button
                               onClick={() => updateStatus(req.id!, "done")}
-                              className="h-7 px-3 text-[11px] font-medium bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 transition-colors rounded-sm"
+                              className="h-7 px-3 text-[11px] font-medium border border-primary/30 text-primary hover:border-primary/60 transition-colors rounded-sm"
                             >
                               Mark Done
                             </button>

@@ -31,7 +31,7 @@ export function UserMenu() {
           </span>
         </Link>
         <Link href="/signup">
-          <span className="hidden sm:inline-flex items-center h-7 px-3 text-xs font-semibold bg-primary text-white hover:bg-primary/90 rounded-sm transition-colors">
+          <span className="hidden sm:inline-flex items-center h-7 px-3 text-xs font-semibold border border-primary/30 text-primary hover:border-primary/60 rounded-sm transition-colors">
             Sign up
           </span>
         </Link>
@@ -61,7 +61,7 @@ export function UserMenu() {
         aria-expanded={open}
         aria-haspopup="true"
       >
-        <div className="w-6 h-6 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center text-[10px] font-bold text-primary">
+        <div className="w-6 h-6 rounded-full border border-primary/40 flex items-center justify-center text-[10px] font-bold text-primary">
           {initials}
         </div>
         <ChevronDown className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`} />

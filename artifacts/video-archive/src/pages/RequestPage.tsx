@@ -72,7 +72,7 @@ export default function RequestPage() {
           <div className="flex gap-3 justify-center">
             <button
               onClick={handleReset}
-              className="h-9 px-5 text-xs font-semibold bg-primary text-white hover:bg-primary/90 transition-colors rounded-sm"
+              className="h-9 px-5 text-xs font-semibold border border-primary/30 text-primary hover:border-primary/60 transition-colors rounded-sm"
             >
               Submit another
             </button>
@@ -111,7 +111,7 @@ export default function RequestPage() {
               value={performerUsername}
               onChange={(e) => setPerformerUsername(e.target.value)}
               maxLength={100}
-              className="w-full h-10 bg-secondary/40 border border-border/60 focus:border-primary/50 rounded-sm px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/40"
+              className="w-full h-10 bg-secondary border border-border/60 focus:border-primary/50 rounded-sm px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/40"
             />
             <p className="text-[11px] text-muted-foreground/60">
               Chaturbate username of the performer to archive
@@ -137,7 +137,7 @@ export default function RequestPage() {
               value={streamLink}
               onChange={(e) => setStreamLink(e.target.value)}
               maxLength={500}
-              className="w-full h-10 bg-secondary/40 border border-border/60 focus:border-primary/50 rounded-sm px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/40"
+              className="w-full h-10 bg-secondary border border-border/60 focus:border-primary/50 rounded-sm px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/40"
             />
             <p className="text-[11px] text-muted-foreground/60">
               Direct link to the performer's page or a specific broadcast
@@ -159,7 +159,7 @@ export default function RequestPage() {
               onChange={(e) => setNotes(e.target.value)}
               maxLength={500}
               rows={3}
-              className="w-full bg-secondary/40 border border-border/60 focus:border-primary/50 rounded-sm px-3 py-2.5 text-sm outline-none transition-all placeholder:text-muted-foreground/40 resize-none"
+              className="w-full bg-secondary border border-border/60 focus:border-primary/50 rounded-sm px-3 py-2.5 text-sm outline-none transition-all placeholder:text-muted-foreground/40 resize-none"
             />
             <p className="text-right text-[11px] text-muted-foreground/40">{notes.length}/500</p>
           </div>
@@ -177,7 +177,7 @@ export default function RequestPage() {
                   onClick={() => setPriority(p)}
                   className={`flex-1 h-9 text-xs font-medium rounded-sm border transition-all ${
                     priority === p
-                      ? "border-primary bg-primary/10 text-primary"
+                      ? "border-primary/60 text-primary"
                       : "border-border/50 text-muted-foreground hover:border-border hover:text-foreground"
                   }`}
                 >
@@ -199,7 +199,7 @@ export default function RequestPage() {
           <button
             type="submit"
             disabled={createRequest.isPending}
-            className="w-full h-10 flex items-center justify-center gap-2 text-sm font-semibold bg-primary text-white hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors rounded-sm"
+            className="w-full h-10 flex items-center justify-center gap-2 text-sm font-semibold border border-primary/30 text-primary hover:border-primary/60 disabled:opacity-60 disabled:cursor-not-allowed transition-colors rounded-sm"
           >
             {createRequest.isPending ? (
               <>

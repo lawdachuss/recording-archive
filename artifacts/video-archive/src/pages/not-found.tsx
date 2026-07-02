@@ -5,7 +5,8 @@ import { Film } from "lucide-react";
 export default function NotFound() {
   return (
     <Layout>
-      <div className="flex-1 flex flex-col items-center justify-center px-4 py-32 text-center">
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-32 text-center relative overflow-hidden">
+        <div className="pattern-square absolute inset-0 pointer-events-none opacity-[0.15] dark:opacity-[0.30]" />
         <Film className="w-10 h-10 text-muted-foreground/20 mb-6" />
         <div className="text-[clamp(4rem,12vw,8rem)] font-black tracking-tighter text-foreground/[0.04] leading-none select-none mb-4">
           404
@@ -17,7 +18,7 @@ export default function NotFound() {
         <div className="flex items-center gap-4">
           <Link
             href="/"
-            className="h-9 px-5 bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors rounded-sm inline-flex items-center"
+            className="h-9 px-5 border border-primary/30 text-primary text-sm font-medium hover:border-primary/60 transition-colors rounded-sm inline-flex items-center"
           >
             Home
           </Link>

@@ -1,70 +1,113 @@
+import { lazy, Suspense, useEffect } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { SyncStatusProvider } from "@/contexts/SyncStatusContext";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { createQueryClient, restoreQueryCache, persistQueryCache } from "@/lib/query-client";
+import { initCache } from "@/lib/cache";
 
+// Home is eagerly imported for instant first paint (landing page)
+// All other pages are lazy-loaded — fetched on-demand when navigated to
 import Home from "@/pages/Home";
-import Browse from "@/pages/Browse";
-import VideoDetail from "@/pages/VideoDetail";
-import PerformersList from "@/pages/PerformersList";
-import PerformerProfile from "@/pages/PerformerProfile";
-import TagsPage from "@/pages/TagsPage";
-import Bookmarks from "@/pages/Bookmarks";
-import History from "@/pages/History";
-import WatchLater from "@/pages/WatchLater";
-import RandomRedirect from "@/pages/RandomRedirect";
-import Charts from "@/pages/Charts";
-import Collections from "@/pages/Collections";
-import CollectionDetail from "@/pages/CollectionDetail";
-import RequestPage from "@/pages/RequestPage";
-import AdminPage from "@/pages/AdminPage";
-import Login from "@/pages/Login";
-import Signup from "@/pages/Signup";
-import ForgotPassword from "@/pages/ForgotPassword";
-import AuthCallback from "@/pages/AuthCallback";
-import Settings from "@/pages/Settings";
-import Following from "@/pages/Following";
-import Notifications from "@/pages/Notifications";
-import NotFound from "@/pages/not-found";
+const Browse = lazy(() => import("@/pages/Browse"));
+const VideoDetail = lazy(() => import("@/pages/VideoDetail"));
+const PerformersList = lazy(() => import("@/pages/PerformersList"));
+const PerformerProfile = lazy(() => import("@/pages/PerformerProfile"));
+const TagsPage = lazy(() => import("@/pages/TagsPage"));
+const Bookmarks = lazy(() => import("@/pages/Bookmarks"));
+const History = lazy(() => import("@/pages/History"));
+const WatchLater = lazy(() => import("@/pages/WatchLater"));
+const RandomRedirect = lazy(() => import("@/pages/RandomRedirect"));
+const Charts = lazy(() => import("@/pages/Charts"));
+const Collections = lazy(() => import("@/pages/Collections"));
+const CollectionDetail = lazy(() => import("@/pages/CollectionDetail"));
+const RequestPage = lazy(() => import("@/pages/RequestPage"));
+const AdminPage = lazy(() => import("@/pages/AdminPage"));
+const Login = lazy(() => import("@/pages/Login"));
+const Signup = lazy(() => import("@/pages/Signup"));
+const ForgotPassword = lazy(() => import("@/pages/ForgotPassword"));
+const AuthCallback = lazy(() => import("@/pages/AuthCallback"));
+const Settings = lazy(() => import("@/pages/Settings"));
+const Following = lazy(() => import("@/pages/Following"));
+const Notifications = lazy(() => import("@/pages/Notifications"));
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 5 * 60 * 1000,
-      retry: 1,
-      retryDelay: 500,
-    },
-  },
-});
+const NotFound = lazy(() => import("@/pages/not-found"));
+
+// Full-page spinner for lazy-loading transitions
+function PageLoading() {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
+
+const queryClient = createQueryClient();
+
+// Initialize cache layer on app load
+initCache();
+
+// Restore persisted query cache on mount (survives full page reloads)
+setTimeout(() => restoreQueryCache(queryClient), 0);
+
+// Persist query cache on page unload
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", () => persistQueryCache(queryClient));
+}
 
 function Router() {
   return (
-    <Switch>
-      <Route path="/" component={Home} />
-      <Route path="/browse" component={Browse} />
-      <Route path="/video/:id" component={VideoDetail} />
-      <Route path="/performers" component={PerformersList} />
-      <Route path="/performers/:username" component={PerformerProfile} />
-      <Route path="/tags" component={TagsPage} />
-      <Route path="/bookmarks" component={Bookmarks} />
-      <Route path="/history" component={History} />
-      <Route path="/watch-later" component={WatchLater} />
-      <Route path="/random" component={RandomRedirect} />
-      <Route path="/charts" component={Charts} />
-      <Route path="/collections" component={Collections} />
-      <Route path="/collections/:id" component={CollectionDetail} />
-      <Route path="/request" component={RequestPage} />
-      <Route path="/admin" component={AdminPage} />
-      <Route path="/login" component={Login} />
-      <Route path="/signup" component={Signup} />
-      <Route path="/forgot-password" component={ForgotPassword} />
-      <Route path="/auth/callback" component={AuthCallback} />
-      <Route path="/settings" component={Settings} />
-      <Route path="/following" component={Following} />
-      <Route path="/notifications" component={Notifications} />
-      <Route component={NotFound} />
-    </Switch>
+    <Suspense fallback={<PageLoading />}>
+      <Switch>
+        <Route path="/" component={Home} />
+        <Route path="/browse" component={Browse} />
+        <Route path="/video/:id" component={VideoDetail} />
+        <Route path="/performers" component={PerformersList} />
+        <Route path="/performers/:username" component={PerformerProfile} />
+        <Route path="/tags" component={TagsPage} />
+        <Route path="/bookmarks">
+          <ProtectedRoute><Bookmarks /></ProtectedRoute>
+        </Route>
+        <Route path="/history">
+          <ProtectedRoute><History /></ProtectedRoute>
+        </Route>
+        <Route path="/watch-later">
+          <ProtectedRoute><WatchLater /></ProtectedRoute>
+        </Route>
+
+        <Route path="/random" component={RandomRedirect} />
+        <Route path="/charts" component={Charts} />
+        <Route path="/collections">
+          <ProtectedRoute><Collections /></ProtectedRoute>
+        </Route>
+        <Route path="/collections/:id">
+          <ProtectedRoute><CollectionDetail /></ProtectedRoute>
+        </Route>
+        <Route path="/request">
+          <ProtectedRoute><RequestPage /></ProtectedRoute>
+        </Route>
+        <Route path="/admin">
+          <ProtectedRoute><AdminPage /></ProtectedRoute>
+        </Route>
+        <Route path="/login" component={Login} />
+        <Route path="/signup" component={Signup} />
+        <Route path="/forgot-password" component={ForgotPassword} />
+        <Route path="/auth/callback" component={AuthCallback} />
+        <Route path="/settings">
+          <ProtectedRoute><Settings /></ProtectedRoute>
+        </Route>
+        <Route path="/following">
+          <ProtectedRoute><Following /></ProtectedRoute>
+        </Route>
+        <Route path="/notifications">
+          <ProtectedRoute><Notifications /></ProtectedRoute>
+        </Route>
+        <Route component={NotFound} />
+      </Switch>
+    </Suspense>
   );
 }
 
@@ -72,12 +115,14 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Router />
-          </WouterRouter>
-          <Toaster />
-        </TooltipProvider>
+        <SyncStatusProvider>
+          <TooltipProvider>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+              <Router />
+            </WouterRouter>
+            <Toaster />
+          </TooltipProvider>
+        </SyncStatusProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

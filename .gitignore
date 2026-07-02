@@ -50,3 +50,13 @@ Thumbs.db
 .local/
 .vercel
 .vercel-output/
+
+# Generated / temp
+nul
+tmp-analyze-host*
+report.json
+sql/
+migrate-auth.*
+.env.vercel
+artifacts/api-server/tmp-analyze-*
+artifacts/video-archive/json

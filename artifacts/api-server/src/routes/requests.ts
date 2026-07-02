@@ -1,6 +1,5 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { db, sql } from "@workspace/db";
 import { invalidateOnSuccess } from "../middleware/cache";
 
 const router = Router();

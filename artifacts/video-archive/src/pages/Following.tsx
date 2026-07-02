@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, type PerformerFollow } from "@/lib/user-api";
@@ -22,7 +23,7 @@ export default function Following() {
     enabled: !!user,
   });
 
-  const unfollow = useMutation({
+  const unfollow = useTrackedMutation({
     mutationFn: (username: string) => userApi.removeFollow(username),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "follows"] }),
   });

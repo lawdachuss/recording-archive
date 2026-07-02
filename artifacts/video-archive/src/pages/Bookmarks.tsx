@@ -1,14 +1,16 @@
-import { useState, useEffect } from "react";
-import { Link } from "wouter";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { Link, useLocation } from "wouter";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
 import { useAuth } from "@/contexts/AuthContext";
-import { getBookmarks, removeBookmark, type SavedRecording } from "@/lib/bookmarks";
-import { userApi, parseCloudItem } from "@/lib/user-api";
+import { userApi, parseCloudItem, type CloudItem } from "@/lib/user-api";
+import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
+import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { Bookmark, Trash2, BookmarkX } from "lucide-react";
 
-function toRecording(r: SavedRecording) {
+function toRecording(r: ReturnType<typeof parseCloudItem>) {
   return {
     id: r.id,
     username: r.username,
@@ -33,11 +35,15 @@ function toRecording(r: SavedRecording) {
 }
 
 export default function Bookmarks() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
-  const [localBookmarks, setLocalBookmarks] = useState<SavedRecording[]>(() =>
-    user ? [] : getBookmarks(),
-  );
+
+  useEffect(() => {
+    if (!loading && !user) setLocation("/login");
+  }, [user, loading, setLocation]);
+
+  const recentlyWatched = useRecentlyWatched();
 
   const { data: cloudItems = [], isLoading } = useQuery({
     queryKey: ["user", "saved"],
@@ -45,55 +51,42 @@ export default function Bookmarks() {
     enabled: !!user,
   });
 
-  const removeCloud = useMutation({
+  const removeCloud = useTrackedMutation({
     mutationFn: (id: string) => userApi.removeSaved(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "saved"] }),
   });
 
-  useEffect(() => {
-    if (!user) setLocalBookmarks(getBookmarks());
-  }, [user]);
-
-  const bookmarks: SavedRecording[] = user
-    ? cloudItems.map(parseCloudItem)
-    : localBookmarks;
-
   const handleRemove = (id: string) => {
-    if (user) {
-      removeCloud.mutate(id);
-    } else {
-      removeBookmark(id);
-      setLocalBookmarks(getBookmarks());
-    }
+    removeCloud.mutate(id);
   };
 
   const handleClearAll = () => {
-    if (user) {
-      bookmarks.forEach((b) => removeCloud.mutate(b.id));
-    } else {
-      bookmarks.forEach((b) => removeBookmark(b.id));
-      setLocalBookmarks([]);
-    }
+    cloudItems.forEach((b: CloudItem) => removeCloud.mutate(b.recording_id));
   };
+
+  if (!user) return null;
+
+  const bookmarks = cloudItems.map(parseCloudItem);
 
   return (
     <Layout>
       <div className="container mx-auto px-4 sm:px-6 py-8 max-w-7xl">
         <div className="flex items-center justify-between mb-8 pb-6 border-b border-border/40">
           <div>
-            <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight">
-              <Bookmark className="w-5 h-5 text-primary" />
-              Bookmarks
-            </h1>
-            <p className="text-xs text-muted-foreground mt-1">
+            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold mb-3">
+              <Bookmark className="w-3.5 h-3.5 text-primary" />
+              Saved
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tighter">Bookmarks</h1>
+            <p className="text-sm text-muted-foreground mt-2">
               {bookmarks.length} saved recording{bookmarks.length !== 1 ? "s" : ""}
-              {user && <span className="text-primary/60 ml-1">· cloud synced</span>}
+              <CloudSyncIndicator compact />
             </p>
           </div>
           {bookmarks.length > 0 && (
             <button
               onClick={handleClearAll}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground/50 hover:text-destructive transition-colors"
+              className="inline-flex items-center gap-1.5 h-8 px-3 text-xs text-muted-foreground/50 hover:text-destructive border border-border/40 hover:border-destructive/30 rounded-lg transition-all"
             >
               <Trash2 className="w-3.5 h-3.5" />
               Clear all
@@ -102,31 +95,35 @@ export default function Bookmarks() {
         </div>
 
         {isLoading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
             {[...Array(10)].map((_, i) => (
-              <div key={i} className="aspect-video bg-secondary/30 animate-pulse rounded-sm" />
+              <div key={i} className="aspect-video bg-secondary/30 animate-pulse rounded-lg" />
             ))}
           </div>
         ) : bookmarks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-32 text-center">
-            <BookmarkX className="w-10 h-10 text-muted-foreground/20 mb-4" />
-            <p className="text-sm font-medium text-muted-foreground/50 mb-1">No bookmarks yet</p>
-            <p className="text-xs text-muted-foreground/30 mb-6">
-              Save recordings to watch later by clicking the bookmark icon on any video.
+          <div className="flex flex-col items-center justify-center py-24 text-center border border-border/30 rounded-2xl bg-secondary/10 animate-fade-in-up">
+            <div className="w-14 h-14 rounded-full bg-secondary/50 flex items-center justify-center mb-4">
+              <BookmarkX className="w-6 h-6 text-muted-foreground/30" />
+            </div>
+            <p className="text-sm font-medium text-muted-foreground mb-1">No bookmarks yet</p>
+            <p className="text-xs text-muted-foreground/40 mb-6 max-w-xs">
+              Save recordings by clicking the bookmark icon on any video to access them later.
             </p>
-            <Link href="/browse" className="text-xs text-primary hover:underline">
+            <Link href="/browse" className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-medium text-primary hover:text-primary/80 border border-primary/20 hover:border-primary/40 rounded-lg transition-colors">
               Browse recordings →
             </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
-            {bookmarks.map((rec) => (
-              <VideoCard
-                key={rec.id}
-                recording={toRecording(rec)}
-                showRemove
-                onRemove={() => handleRemove(rec.id)}
-              />
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+            {bookmarks.map((rec, i) => (
+              <div key={rec.id} className="animate-fade-in-up" style={{ animationDelay: `${i * 25}ms` }}>
+                <VideoCard
+                  recording={toRecording(rec)}
+                  showRemove
+                  onRemove={() => handleRemove(rec.id)}
+                  isWatched={recentlyWatched.has(rec.id)}
+                />
+              </div>
             ))}
           </div>
         )}

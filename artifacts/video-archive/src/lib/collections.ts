@@ -1,84 +1,69 @@
 import type { SavedRecording } from "./bookmarks";
 
-const COLLECTIONS_KEY = "vault-collections";
-
 export interface Collection {
   id: string;
   name: string;
   description?: string;
-  created_at: string;
   items: SavedRecording[];
+  createdAt: string;
 }
 
-function readCollections(): Collection[] {
+const STORAGE_KEY = "vault-collections";
+
+export function getCollections(): Collection[] {
   try {
-    const raw = localStorage.getItem(COLLECTIONS_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-function writeCollections(list: Collection[]) {
-  localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(list));
-}
-
-export function getCollections(): Collection[] {
-  return readCollections();
-}
-
-export function getCollection(id: string): Collection | undefined {
-  return readCollections().find((c) => c.id === id);
+function saveCollections(collections: Collection[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(collections));
 }
 
 export function createCollection(name: string, description?: string): Collection {
-  const list = readCollections();
-  const col: Collection = {
+  const collections = getCollections();
+  const newCol: Collection = {
     id: crypto.randomUUID(),
-    name: name.trim(),
-    description: description?.trim(),
-    created_at: new Date().toISOString(),
+    name,
+    description,
     items: [],
+    createdAt: new Date().toISOString(),
   };
-  list.unshift(col);
-  writeCollections(list);
-  return col;
+  collections.unshift(newCol);
+  saveCollections(collections);
+  return newCol;
 }
 
-export function deleteCollection(id: string) {
-  const list = readCollections().filter((c) => c.id !== id);
-  writeCollections(list);
-}
-
-export function renameCollection(id: string, name: string) {
-  const list = readCollections().map((c) =>
-    c.id === id ? { ...c, name: name.trim() } : c,
-  );
-  writeCollections(list);
-}
-
-export function addToCollection(collectionId: string, rec: SavedRecording): boolean {
-  const list = readCollections();
-  const idx = list.findIndex((c) => c.id === collectionId);
-  if (idx < 0) return false;
-  const col = list[idx];
-  if (col.items.some((r) => r.id === rec.id)) return false;
-  col.items.unshift({ ...rec, saved_at: new Date().toISOString() });
-  list[idx] = col;
-  writeCollections(list);
-  return true;
+export function addToCollection(collectionId: string, recording: SavedRecording) {
+  const collections = getCollections();
+  const updated = collections.map((col) => {
+    if (col.id !== collectionId) return col;
+    if (col.items.some((item) => item.id === recording.id)) return col;
+    return { ...col, items: [...col.items, recording] };
+  });
+  saveCollections(updated);
 }
 
 export function removeFromCollection(collectionId: string, recordingId: string) {
-  const list = readCollections().map((c) =>
-    c.id === collectionId
-      ? { ...c, items: c.items.filter((r) => r.id !== recordingId) }
-      : c,
-  );
-  writeCollections(list);
+  const collections = getCollections();
+  const updated = collections.map((col) => {
+    if (col.id !== collectionId) return col;
+    return { ...col, items: col.items.filter((item) => item.id !== recordingId) };
+  });
+  saveCollections(updated);
 }
 
-export function isInCollection(collectionId: string, recordingId: string): boolean {
-  const col = getCollection(collectionId);
-  return col ? col.items.some((r) => r.id === recordingId) : false;
+export function deleteCollection(id: string) {
+  const collections = getCollections().filter((col) => col.id !== id);
+  saveCollections(collections);
+}
+
+export function updateCollectionName(id: string, name: string) {
+  const collections = getCollections().map((col) =>
+    col.id === id ? { ...col, name } : col,
+  );
+  saveCollections(collections);
 }

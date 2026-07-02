@@ -3,7 +3,7 @@
   "buildCommand": "pnpm --filter @workspace/api-server run vercel-build && cd artifacts/video-archive && pnpm exec vite build",
   "outputDirectory": "artifacts/video-archive/dist",
   "framework": "vite",
-  "installCommand": "pnpm install",
+  "installCommand": "pnpm install --ignore-scripts",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },
     { "source": "/(.*)", "destination": "/index.html" }

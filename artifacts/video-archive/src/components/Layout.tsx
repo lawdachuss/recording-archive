@@ -1,11 +1,29 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useLocation } from "wouter";
-import { Search, X, Menu, Sun, Moon, Film, Shuffle, User, Tag, Clapperboard } from "lucide-react";
-import { addRecentSearch, getRecentSearches } from "@/lib/bookmarks";
+import { Menu, X, Film, Sun, Moon } from "lucide-react";
 import { UserMenu } from "@/components/UserMenu";
 import { NotificationBell } from "@/components/NotificationBell";
-import { Pattern } from "@/components/Pattern";
-import { useSearchSuggestions, type SearchSuggestion } from "@/lib/api";
+import { DesktopNav } from "@/components/nav/DesktopNav";
+import { SearchDropdown } from "@/components/nav/SearchDropdown";
+import { MobileMenu } from "@/components/nav/MobileMenu";
+import { enqueuePrefetch, flushPrefetch } from "@/lib/query-client";
+
+const FOOTER_PAGE_IMPORTS: Record<string, () => Promise<unknown>> = {
+  "/browse": () => import("@/pages/Browse"),
+  "/performers": () => import("@/pages/PerformersList"),
+  "/tags": () => import("@/pages/TagsPage"),
+  "/charts": () => import("@/pages/Charts"),
+  "/collections": () => import("@/pages/Collections"),
+  "/request": () => import("@/pages/RequestPage"),
+  "/bookmarks": () => import("@/pages/Bookmarks"),
+  "/watch-later": () => import("@/pages/WatchLater"),
+  "/history": () => import("@/pages/History"),
+};
+
+function prefetchFooter(href: string) {
+  const imp = FOOTER_PAGE_IMPORTS[href];
+  if (imp) imp().catch(() => {});
+}
 
 function useDarkMode() {
   const [dark, setDark] = useState(() => {
@@ -27,6 +45,105 @@ function useDarkMode() {
   }, [dark]);
 
   return [dark, setDark] as const;
+}
+
+function Logo() {
+  return (
+    <Link href="/" className="shrink-0 flex items-center gap-2.5 group">
+      <div className="relative flex items-center justify-center w-8 h-8 rounded-lg border border-primary/20 group-hover:border-primary/40 transition-all duration-300">
+        <Film className="w-4 h-4 text-primary" />
+      </div>
+      <div className="flex items-baseline gap-0.5">
+        <span className="font-black text-xl tracking-tighter text-foreground group-hover:text-primary transition-colors duration-300">
+          VAULT
+        </span>
+        <span className="logo-dot w-1.5 h-1.5 rounded-full bg-primary inline-block" />
+      </div>
+    </Link>
+  );
+}
+
+function RandomFab() {
+  const [, setLocation] = useLocation();
+  const [visible, setVisible] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const hideTimer = useRef<number | null>(null);
+
+  const h = (a: number) => `hsl(var(--primary) / ${a})`;
+
+  useEffect(() => {
+    const onScroll = () => {
+      const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+      setProgress(maxScroll > 0 ? window.scrollY / maxScroll : 0);
+      if (!visible) setVisible(true);
+
+      if (hideTimer.current !== null) clearTimeout(hideTimer.current);
+      hideTimer.current = window.setTimeout(() => setVisible(false), 80);
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (hideTimer.current !== null) clearTimeout(hideTimer.current);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="fixed top-[62px] md:top-[70px] bottom-8 right-8 z-50 flex flex-col items-center pointer-events-none">
+      {/* Scroll indicator track */}
+      <div className="flex-1 w-px min-h-0 relative">
+        <div
+          className="absolute inset-0 rounded-full"
+          style={{
+            opacity: visible ? 1 : 0,
+            background: `linear-gradient(to bottom, transparent, ${h(0.06)} 50%, ${h(0.12)} 100%)`,
+          }}
+        />
+        {/* Fill portion — grows from bottom */}
+        <div
+          className="absolute bottom-0 left-0 right-0 rounded-full"
+          style={{
+            height: `${Math.max(progress * 100, 0.5)}%`,
+            opacity: visible ? 1 : 0,
+            background: `linear-gradient(to top, ${h(1)}, ${h(0.5)} 60%, transparent)`,
+            boxShadow: visible ? `0 0 4px ${h(0.35)}` : 'none',
+          }}
+        />
+        {/* Glowing dot at scroll position */}
+        <div
+          className="absolute w-1.5 h-1.5 rounded-full"
+          style={{
+            left: '50%',
+            top: `${progress * 100}%`,
+            transform: `translate(-50%, -50%)`,
+            opacity: visible ? 1 : 0,
+            background: h(1),
+            boxShadow: visible ? `0 0 6px ${h(1)}, 0 0 12px ${h(0.25)}` : 'none',
+          }}
+        />
+      </div>
+
+      <div className="h-5 shrink-0" />
+
+      <button
+        onClick={() => setLocation("/random")}
+        className="random-fab cursor-pointer hover:scale-110 active:scale-95 transition-transform duration-200 pointer-events-auto"
+        aria-label="Random video"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7 opacity-60 hover:opacity-100 transition-opacity" style={{ color: h(1) }}>
+          <path d="M10.82 16.12c1.69.6 3.91.79 5.18.85.28.01.53-.09.7-.27"/>
+          <path d="M11.14 20.57c.52.24 2.44 1.12 4.08 1.37.46.06.86-.25.9-.71.12-1.52-.3-3.43-.5-4.28"/>
+          <path d="M16.13 21.05c1.65.63 3.68.84 4.87.91a.9.9 0 0 0 .7-.26"/>
+          <path d="M17.99 5.52a20.83 20.83 0 0 1 3.15 4.5.8.8 0 0 1-.68 1.13c-1.17.1-2.5.02-3.9-.25"/>
+          <path d="M20.57 11.14c.24.52 1.12 2.44 1.37 4.08.04.3-.08.59-.31.75"/>
+          <path d="M4.93 4.93a10 10 0 0 0-.67 13.4c.35.43.96.4 1.17-.12.69-1.71 1.07-5.07 1.07-6.71 1.34.45 3.1.9 4.88.62a.85.85 0 0 0 .48-.24"/>
+          <path d="M5.52 17.99c1.05.95 2.91 2.42 4.5 3.15a.8.8 0 0 0 1.13-.68c.2-2.34-.33-5.3-1.57-8.28"/>
+          <path d="M8.35 2.68a10 10 0 0 1 9.98 1.58c.43.35.4.96-.12 1.17-1.5.6-4.3.98-6.07 1.05"/>
+          <path d="m2 2 20 20"/>
+        </svg>
+      </button>
+    </div>
+  );
 }
 
 export function AgeGate() {
@@ -119,7 +236,7 @@ export function AgeGate() {
         </div>
         <div className="space-y-3">
           <button
-            className="w-full h-12 bg-primary text-white text-sm font-semibold tracking-wide hover:bg-primary/90 transition-colors"
+            className="w-full h-12 border border-primary/30 text-primary text-sm font-semibold tracking-wide hover:border-primary/60 transition-colors"
             onClick={() => {
               localStorage.setItem("age-gate-passed", "true");
               setIsOpen(false);
@@ -141,36 +258,10 @@ export function AgeGate() {
 
 export function Navbar() {
   const [location, setLocation] = useLocation();
-  const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dark, setDark] = useDarkMode();
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [scrolled, setScrolled] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState(-1);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const suggestionsRef = useRef<HTMLDivElement>(null);
-
-  // Debounce: wait 250ms after the user stops typing before fetching predictions
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 250);
-    return () => clearTimeout(timer);
-  }, [search]);
-
-  // Fetch live predictions
-  const { data: predictionsData, isLoading: predictionsLoading } = useSearchSuggestions(debouncedSearch);
-  const predictions = predictionsData?.suggestions ?? [];
-
-  // Reset selected index when results change
-  useEffect(() => {
-    setSelectedIndex(-1);
-  }, [predictions, debouncedSearch]);
-
-  useEffect(() => {
-    if (searchOpen) setRecentSearches(getRecentSearches());
-  }, [searchOpen]);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -178,329 +269,26 @@ export function Navbar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Scroll selected item into view in the suggestions dropdown
-  useEffect(() => {
-    if (selectedIndex >= 0 && suggestionsRef.current) {
-      const items = suggestionsRef.current.querySelectorAll<HTMLElement>("[data-index]");
-      items[selectedIndex]?.scrollIntoView({ block: "nearest" });
-    }
-  }, [selectedIndex]);
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    submitSearch(search);
-  };
-
-  const submitSearch = (q: string) => {
-    if (q.trim()) {
-      addRecentSearch(q.trim());
-      setLocation(`/browse?search=${encodeURIComponent(q.trim())}`);
-    } else {
-      setLocation("/browse");
-    }
-    closeSearch();
-  };
-
-  const closeSearch = () => {
-    setSearchOpen(false);
-    setSearch("");
-    setDebouncedSearch("");
-    setShowSuggestions(false);
-    setSelectedIndex(-1);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    const totalItems = search.trim().length >= 2 ? predictions.length : recentSearches.slice(0, 5).length;
-
-    switch (e.key) {
-      case "ArrowDown":
-        e.preventDefault();
-        setSelectedIndex((prev) => (prev < totalItems - 1 ? prev + 1 : 0));
-        break;
-      case "ArrowUp":
-        e.preventDefault();
-        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : totalItems - 1));
-        break;
-      case "Enter":
-        if (selectedIndex >= 0) {
-          e.preventDefault();
-          if (search.trim().length >= 2 && predictions[selectedIndex]) {
-            const suggestion = predictions[selectedIndex];
-            setLocation(suggestion.href);
-            closeSearch();
-          } else {
-            const recentItem = recentSearches.slice(0, 5)[selectedIndex];
-            if (recentItem) {
-              submitSearch(recentItem);
-            }
-          }
-        }
-        break;
-      case "Escape":
-        closeSearch();
-        break;
-    }
-  };
-
-  const isActive = (href: string) =>
-    href === "/" ? location === "/" : location.startsWith(href);
-
-  const navLinks = [
-    { href: "/browse", label: "Browse" },
-    { href: "/performers", label: "Performers" },
-    { href: "/tags", label: "Tags" },
-    { href: "/charts", label: "Charts" },
-    { href: "/request", label: "Request" },
-  ];
-
-  const filteredSuggestions = search.trim()
-    ? recentSearches.filter((s) => s.toLowerCase().includes(search.toLowerCase())).slice(0, 5)
-    : recentSearches.slice(0, 5);
-
   return (
     <header
       className={`sticky top-0 z-50 w-full transition-all duration-300 ${
         scrolled ? "glass-panel scrolled" : "glass-panel"
       }`}
     >
-      {/* Subtle gradient bottom border accent */}
-      <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent pointer-events-none" />
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent pointer-events-none" />
+      <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-primary/12 to-transparent pointer-events-none" />
 
-      <div className="container mx-auto px-4 sm:px-6 h-14 flex items-center gap-4 relative">
-        {/* ─── Logo ─────────────────────────────────────────── */}
-        <Link href="/" className="shrink-0 flex items-center gap-2.5 group">
-          <div className="relative flex items-center justify-center w-7 h-7 rounded-md bg-primary/10 dark:bg-primary/15 group-hover:bg-primary/20 transition-colors">
-            <Film className="w-3.5 h-3.5 text-primary" />
-          </div>
-          <div className="flex items-baseline gap-0.5">
-            <span className="font-black text-lg tracking-tighter text-foreground group-hover:text-primary transition-colors">
-              VAULT
-            </span>
-            <span className="logo-dot w-1.5 h-1.5 rounded-full bg-primary inline-block" />
-          </div>
-        </Link>
+      <div className="nav-inner container mx-auto px-4 sm:px-6 h-14 md:h-16 flex items-center gap-4 relative transition-all duration-300">
+        <Logo />
 
-        {/* ─── Divider ──────────────────────────────────────── */}
-        <div className="hidden md:block w-px h-6 bg-border/40" />
+        <div className="hidden md:block w-px h-5 bg-border/30" />
 
-        {/* ─── Desktop Nav ──────────────────────────────────── */}
-        <nav className="hidden md:flex items-center gap-0.5 text-sm">
-          {navLinks.map(({ href, label }) => (
-            <Link key={href} href={href}>
-              <span
-                className={`nav-underline px-3 py-1.5 rounded transition-colors ${
-                  isActive(href)
-                    ? "text-foreground font-medium active"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {label}
-              </span>
-            </Link>
-          ))}
-        </nav>
+        <DesktopNav location={location} />
 
         <div className="flex-1" />
 
-        {/* ─── Right side actions ───────────────────────────── */}
         <div className="flex items-center gap-0.5">
-          {searchOpen ? (
-            <div className="relative flex items-center">
-              <form onSubmit={handleSearch} className="flex items-center gap-1.5">
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/50 pointer-events-none" />
-                  <input
-                    ref={searchInputRef}
-                    autoFocus
-                    type="text"
-                    placeholder="Search recordings..."
-                    value={search}
-                    onChange={(e) => { setSearch(e.target.value); setShowSuggestions(true); }}
-                    onFocus={() => setShowSuggestions(true)}
-                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                    onKeyDown={handleKeyDown}
-                    className="w-44 sm:w-64 h-9 pl-8 pr-3 bg-secondary/50 dark:bg-white/5 border border-border/50 focus:border-primary/40 rounded-full text-sm outline-none transition-all placeholder:text-muted-foreground/40"
-                  />
-
-                  {/* ── Suggestions dropdown ── */}
-                  {showSuggestions && (() => {
-                    // Mode 1: user has typed 2+ characters → show live predictions
-                    if (search.trim().length >= 2) {
-                      if (predictionsLoading) {
-                        return (
-                          <div className="absolute top-full left-0 right-0 mt-1.5 glass-dropdown rounded-lg z-50 overflow-hidden">
-                            <div className="px-4 py-3 text-xs text-muted-foreground/50 flex items-center gap-2">
-                              <div className="w-3 h-3 rounded-full border border-muted-foreground/30 border-t-transparent animate-spin" />
-                              Searching…
-                            </div>
-                          </div>
-                        );
-                      }
-                      if (predictions.length === 0 && debouncedSearch.length >= 2) {
-                        return (
-                          <div className="absolute top-full left-0 right-0 mt-1.5 glass-dropdown rounded-lg z-50 overflow-hidden">
-                            <div className="px-4 py-3 text-xs text-muted-foreground/50">
-                              No results for "{debouncedSearch}"
-                            </div>
-                          </div>
-                        );
-                      }
-                      if (predictions.length > 0) {
-                        // Group predictions by type
-                        const groups: { type: SearchSuggestion["type"]; items: SearchSuggestion[]; label: string; icon: React.ReactNode }[] = [];
-                        const performerItems = predictions.filter(s => s.type === "performer");
-                        const recordingItems = predictions.filter(s => s.type === "recording");
-                        const tagItems = predictions.filter(s => s.type === "tag");
-
-                        let idx = 0;
-                        if (performerItems.length) {
-                          groups.push({ type: "performer", items: performerItems, label: "Performers", icon: <User className="w-3 h-3" /> });
-                        }
-                        if (recordingItems.length) {
-                          groups.push({ type: "recording", items: recordingItems, label: "Recordings", icon: <Clapperboard className="w-3 h-3" /> });
-                        }
-                        if (tagItems.length) {
-                          groups.push({ type: "tag", items: tagItems, label: "Tags", icon: <Tag className="w-3 h-3" /> });
-                        }
-
-                        return (
-                          <div ref={suggestionsRef} className="absolute top-full left-0 right-0 mt-1.5 glass-dropdown rounded-lg z-50 max-h-[70vh] overflow-y-auto overflow-x-hidden">
-                            {groups.map((group) => (
-                              <div key={group.type}>
-                                <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/40 font-semibold bg-secondary/30 dark:bg-white/[0.02]">
-                                  {group.icon}
-                                  {group.label}
-                                </div>
-                                {group.items.map((suggestion) => {
-                                  const currentIdx = idx++;
-                                  return (
-                                    <button
-                                      key={`${suggestion.type}-${suggestion.label}`}
-                                      type="button"
-                                      data-index={currentIdx}
-                                      onMouseDown={() => {
-                                        setLocation(suggestion.href);
-                                        closeSearch();
-                                      }}
-                                      onMouseEnter={() => setSelectedIndex(currentIdx)}
-                                      className={`w-full text-left px-3 py-2.5 text-xs transition-colors flex items-center gap-3 ${
-                                        selectedIndex === currentIdx
-                                          ? "bg-secondary/60 dark:bg-white/8 text-foreground"
-                                          : "text-muted-foreground hover:text-foreground hover:bg-secondary/30 dark:hover:bg-white/5"
-                                      }`}
-                                    >
-                                      {/* Thumbnail for performers/recordings */}
-                                      {suggestion.image_url ? (
-                                        <div className="w-8 h-8 rounded shrink-0 overflow-hidden bg-secondary">
-                                          <img
-                                            src={suggestion.image_url}
-                                            alt=""
-                                            className="w-full h-full object-cover"
-                                            loading="lazy"
-                                          />
-                                        </div>
-                                      ) : suggestion.type === "performer" ? (
-                                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                                          <User className="w-3.5 h-3.5 text-primary/50" />
-                                        </div>
-                                      ) : suggestion.type === "tag" ? (
-                                        <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center shrink-0">
-                                          <Tag className="w-3.5 h-3.5 text-amber-500/50" />
-                                        </div>
-                                      ) : (
-                                        <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center shrink-0">
-                                          <Clapperboard className="w-3.5 h-3.5 text-primary/50" />
-                                        </div>
-                                      )}
-                                      <div className="min-w-0 flex-1">
-                                        <div className="truncate font-medium">
-                                          {suggestion.type === "tag" && <span className="text-muted-foreground/50">#</span>}
-                                          {suggestion.label}
-                                        </div>
-                                        {suggestion.subtitle && (
-                                          <div className="truncate text-[10px] text-muted-foreground/40 mt-0.5">
-                                            {suggestion.subtitle}
-                                          </div>
-                                        )}
-                                      </div>
-                                      {/* Navigate hint */}
-                                      <span className="text-[9px] text-muted-foreground/20 shrink-0">
-                                        ↵
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            ))}
-                          </div>
-                        );
-                      }
-                      return null;
-                    }
-
-                    // Mode 2: empty or short query → show recent searches
-                    if (filteredSuggestions.length > 0) {
-                      return (
-                        <div className="absolute top-full left-0 right-0 mt-1.5 glass-dropdown rounded-lg z-50 overflow-hidden">
-                          <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/40 font-semibold bg-secondary/30 dark:bg-white/[0.02]">
-                            <Search className="w-3 h-3" />
-                            Recent Searches
-                          </div>
-                          {filteredSuggestions.map((s, i) => (
-                            <button
-                              key={s}
-                              type="button"
-                              data-index={i}
-                              onMouseDown={() => submitSearch(s)}
-                              onMouseEnter={() => setSelectedIndex(i)}
-                              className={`w-full text-left px-3 py-2.5 text-xs transition-colors flex items-center gap-2 ${
-                                selectedIndex === i
-                                  ? "bg-secondary/60 dark:bg-white/8 text-foreground"
-                                  : "text-muted-foreground hover:text-foreground hover:bg-secondary/30 dark:hover:bg-white/5"
-                              }`}
-                            >
-                              <Search className="w-3 h-3 shrink-0 text-muted-foreground/40" />
-                              <span className="truncate">{s}</span>
-                            </button>
-                          ))}
-                        </div>
-                      );
-                    }
-
-                    return null;
-                  })()}
-                </div>
-                <button
-                  type="button"
-                  onClick={closeSearch}
-                  className="flex items-center justify-center w-7 h-7 text-muted-foreground hover:text-foreground hover:bg-secondary/50 dark:hover:bg-white/5 rounded-full transition-all"
-                  aria-label="Close search"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </form>
-            </div>
-          ) : (
-            <button
-              onClick={() => setSearchOpen(true)}
-              className="nav-btn group"
-              aria-label="Open search"
-              title="Search"
-            >
-              <Search className="w-4 h-4 relative z-10" />
-            </button>
-          )}
-
-          {!searchOpen && (
-            <button
-              onClick={() => setLocation("/random")}
-              title="Random video"
-              className="nav-btn hidden sm:flex"
-              aria-label="Random video"
-            >
-              <Shuffle className="w-4 h-4 relative z-10" />
-            </button>
-          )}
+          <SearchDropdown open={searchOpen} onOpenChange={setSearchOpen} />
 
           {!searchOpen && (
             <button
@@ -509,7 +297,7 @@ export function Navbar() {
               aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
               title={dark ? "Light mode" : "Dark mode"}
             >
-              <div className="relative z-10">
+              <div className="relative z-10 transition-transform duration-200 hover:scale-105">
                 {dark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
               </div>
             </button>
@@ -524,126 +312,63 @@ export function Navbar() {
             aria-label="Toggle menu"
             aria-expanded={mobileOpen}
           >
-            {mobileOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+            <div className="relative transition-transform duration-200" style={{ transform: mobileOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+              {mobileOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+            </div>
           </button>
         </div>
       </div>
 
-      {/* ─── Mobile Menu ──────────────────────────────────────── */}
-      {mobileOpen && (
-        <div className="md:hidden glass-dropdown border-t-0 rounded-b-lg mx-2 mb-2 overflow-hidden">
-          <div className="px-3 py-3 space-y-0.5">
-            {navLinks.map(({ href, label }) => (
-              <Link key={href} href={href}>
-                <span
-                  className={`nav-underline block px-3 py-2.5 text-sm rounded-lg transition-colors ${
-                    isActive(href)
-                      ? "text-foreground font-medium bg-secondary/50 dark:bg-white/5 active"
-                      : "text-muted-foreground hover:text-foreground hover:bg-secondary/30 dark:hover:bg-white/5"
-                  }`}
-                  onClick={() => setMobileOpen(false)}
-                >
-                  {label}
-                </span>
-              </Link>
-            ))}
-          </div>
-
-          <div className="border-t border-border/30 mx-3" />
-
-          <div className="px-3 py-2 space-y-0.5">
-            <p className="px-3 py-1 text-[10px] uppercase tracking-wider text-muted-foreground/40 font-semibold">
-              Library
-            </p>
-            {[
-              { href: "/bookmarks", label: "Bookmarks" },
-              { href: "/collections", label: "Collections" },
-              { href: "/watch-later", label: "Watch Later" },
-              { href: "/history", label: "History" },
-              { href: "/following", label: "Following" },
-            ].map(({ href, label }) => (
-              <Link key={href} href={href}>
-                <span
-                  className={`block px-3 py-2 text-sm rounded-lg transition-colors ${
-                    isActive(href)
-                      ? "text-foreground font-medium bg-secondary/50 dark:bg-white/5"
-                      : "text-muted-foreground hover:text-foreground hover:bg-secondary/30 dark:hover:bg-white/5"
-                  }`}
-                  onClick={() => setMobileOpen(false)}
-                >
-                  {label}
-                </span>
-              </Link>
-            ))}
-          </div>
-
-          <div className="border-t border-border/30 mx-3" />
-
-          <div className="px-3 py-2 space-y-0.5">
-            {[
-              { href: "/notifications", label: "Notifications" },
-              { href: "/settings", label: "Settings" },
-            ].map(({ href, label }) => (
-              <Link key={href} href={href}>
-                <span
-                  className={`block px-3 py-2 text-sm rounded-lg transition-colors ${
-                    isActive(href)
-                      ? "text-foreground font-medium bg-secondary/50 dark:bg-white/5"
-                      : "text-muted-foreground hover:text-foreground hover:bg-secondary/30 dark:hover:bg-white/5"
-                  }`}
-                  onClick={() => setMobileOpen(false)}
-                >
-                  {label}
-                </span>
-              </Link>
-            ))}
-            <button
-              onClick={() => { setLocation("/random"); setMobileOpen(false); }}
-              className="w-full text-left px-3 py-2 text-sm rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/30 dark:hover:bg-white/5 transition-colors flex items-center gap-2"
-            >
-              <Shuffle className="w-3.5 h-3.5 text-muted-foreground/50" />
-              Random
-            </button>
-          </div>
-
-          <div className="border-t border-border/30 mx-3" />
-
-          <div className="px-3 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {dark ? (
-                <Sun className="w-3.5 h-3.5 text-muted-foreground/50" />
-              ) : (
-                <Moon className="w-3.5 h-3.5 text-muted-foreground/50" />
-              )}
-              <span className="text-xs text-muted-foreground">{dark ? "Dark" : "Light"} mode</span>
-            </div>
-            <button
-              onClick={() => setDark((d) => !d)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                dark ? "bg-primary" : "bg-border/60"
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform ${
-                  dark ? "translate-x-[18px]" : "translate-x-1"
-                }`}
-              />
-            </button>
-          </div>
-        </div>
-      )}
+      <MobileMenu
+        open={mobileOpen}
+        location={location}
+        dark={dark}
+        onDarkToggle={() => setDark((d) => !d)}
+        onClose={() => setMobileOpen(false)}
+      />
     </header>
   );
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    let rafId: number | null = null;
+    let lastUpdate = 0;
+
+    const onMouseMove = (e: MouseEvent) => {
+      const now = performance.now();
+      if (now - lastUpdate < 80) return;
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        lastUpdate = now;
+        const x = ((e.clientX / window.innerWidth) - 0.5) * 2;
+        const y = ((e.clientY / window.innerHeight) - 0.5) * 2;
+        document.documentElement.style.setProperty("--mx", x.toFixed(4));
+        document.documentElement.style.setProperty("--my", y.toFixed(4));
+      });
+    };
+
+    document.addEventListener("mousemove", onMouseMove, { passive: true });
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, []);
+
   return (
-    <div className="min-h-screen bg-background dark:bg-transparent text-foreground flex flex-col font-sans">
-      <Pattern />
+    <div className="min-h-screen text-foreground flex flex-col font-sans">
       <AgeGate />
       <Navbar />
-      <main className="flex-1 flex flex-col bg-background/70 dark:bg-transparent">{children}</main>
-      <footer className="py-10 border-t border-border/40 mt-16 bg-background/80 dark:bg-background/90">
+      <main className="flex-1 flex flex-col bg-dot-pattern relative">
+        <div className="bg-cross-dots absolute inset-0 pointer-events-none opacity-[0.06] dark:opacity-[0.06]" />
+        {children}
+      </main>
+
+      <RandomFab />
+
+      <footer className="py-10 border-t border-border/40 mt-16 bg-background dark:bg-background backdrop-blur-sm relative overflow-hidden">
+        <div className="pattern-square absolute inset-0 pointer-events-none opacity-[0.12] dark:opacity-[0.25]" />
         <div className="container mx-auto px-4 sm:px-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
             <div className="space-y-2">
@@ -661,15 +386,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
               className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground/50"
               aria-label="Footer navigation"
             >
-              <Link href="/browse" className="hover:text-muted-foreground transition-colors">Browse</Link>
-              <Link href="/performers" className="hover:text-muted-foreground transition-colors">Performers</Link>
-              <Link href="/tags" className="hover:text-muted-foreground transition-colors">Tags</Link>
-              <Link href="/charts" className="hover:text-muted-foreground transition-colors">Charts</Link>
-              <Link href="/collections" className="hover:text-muted-foreground transition-colors">Collections</Link>
-              <Link href="/request" className="hover:text-muted-foreground transition-colors">Request</Link>
-              <Link href="/bookmarks" className="hover:text-muted-foreground transition-colors">Bookmarks</Link>
-              <Link href="/watch-later" className="hover:text-muted-foreground transition-colors">Watch Later</Link>
-              <Link href="/history" className="hover:text-muted-foreground transition-colors">History</Link>
+              <Link href="/browse" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/browse")}>Browse</Link>
+              <Link href="/performers" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/performers")}>Performers</Link>
+              <Link href="/tags" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/tags")}>Tags</Link>
+              <Link href="/charts" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/charts")}>Charts</Link>
+              <Link href="/collections" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/collections")}>Collections</Link>
+              <Link href="/request" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/request")}>Request</Link>
+              <Link href="/bookmarks" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/bookmarks")}>Bookmarks</Link>
+              <Link href="/watch-later" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/watch-later")}>Watch Later</Link>
+              <Link href="/history" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/history")}>History</Link>
               <span className="hidden sm:block w-px h-3 bg-border/40 self-center" />
               <span className="cursor-default">Terms</span>
               <span className="cursor-default">Privacy</span>

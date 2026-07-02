@@ -18686,8 +18686,8 @@ var require_view = __commonJS({
     var extname = path.extname;
     var join = path.join;
     var resolve = path.resolve;
-    module.exports = View2;
-    function View2(name, options) {
+    module.exports = View3;
+    function View3(name, options) {
       var opts = options || {};
       this.defaultEngine = opts.defaultEngine;
       this.ext = extname(name);
@@ -18713,7 +18713,7 @@ var require_view = __commonJS({
       this.engine = opts.engines[this.ext];
       this.path = this.lookup(fileName);
     }
-    View2.prototype.lookup = function lookup(name) {
+    View3.prototype.lookup = function lookup(name) {
       var path2;
       var roots = [].concat(this.root);
       debug('lookup "%s"', name);
@@ -18726,7 +18726,7 @@ var require_view = __commonJS({
       }
       return path2;
     };
-    View2.prototype.render = function render(options, callback) {
+    View3.prototype.render = function render(options, callback) {
       var sync = true;
       debug('render "%s"', this.path);
       this.engine(this.path, options, function onRender() {
@@ -18744,7 +18744,7 @@ var require_view = __commonJS({
       });
       sync = false;
     };
-    View2.prototype.resolve = function resolve2(dir, file2) {
+    View3.prototype.resolve = function resolve2(dir, file2) {
       var ext = this.ext;
       var path2 = join(dir, file2);
       var stat = tryStat(path2);
@@ -20503,27 +20503,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router13;
+    module.exports = Router16;
     module.exports.Route = Route;
-    function Router13(options) {
-      if (!(this instanceof Router13)) {
-        return new Router13(options);
+    function Router16(options) {
+      if (!(this instanceof Router16)) {
+        return new Router16(options);
       }
       const opts = options || {};
-      function router13(req, res, next) {
-        router13.handle(req, res, next);
+      function router16(req, res, next) {
+        router16.handle(req, res, next);
       }
-      Object.setPrototypeOf(router13, this);
-      router13.caseSensitive = opts.caseSensitive;
-      router13.mergeParams = opts.mergeParams;
-      router13.params = {};
-      router13.strict = opts.strict;
-      router13.stack = [];
-      return router13;
+      Object.setPrototypeOf(router16, this);
+      router16.caseSensitive = opts.caseSensitive;
+      router16.mergeParams = opts.mergeParams;
+      router16.params = {};
+      router16.strict = opts.strict;
+      router16.stack = [];
+      return router16;
     }
-    Router13.prototype = function() {
+    Router16.prototype = function() {
     };
-    Router13.prototype.param = function param(name, fn) {
+    Router16.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20543,7 +20543,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router13.prototype.handle = function handle(req, res, callback) {
+    Router16.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20670,7 +20670,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router13.prototype.use = function use(handler) {
+    Router16.prototype.use = function use(handler) {
       let offset = 0;
       let path = "/";
       if (typeof handler !== "function") {
@@ -20703,7 +20703,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router13.prototype.route = function route(path) {
+    Router16.prototype.route = function route(path) {
       const route2 = new Route(path);
       const layer = new Layer(path, {
         sensitive: this.caseSensitive,
@@ -20718,7 +20718,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router13.prototype[method] = function(path) {
+      Router16.prototype[method] = function(path) {
         const route = this.route(path);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -20893,7 +20893,7 @@ var require_application = __commonJS({
     "use strict";
     var finalhandler = require_finalhandler();
     var debug = require_src()("express:application");
-    var View2 = require_view();
+    var View3 = require_view();
     var http = __require("node:http");
     var methods = require_utils3().methods;
     var compileETag = require_utils3().compileETag;
@@ -20901,13 +20901,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router13 = require_router();
+    var Router16 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init() {
-      var router13 = null;
+      var router16 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -20916,13 +20916,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router13 === null) {
-            router13 = new Router13({
+          if (router16 === null) {
+            router16 = new Router16({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router13;
+          return router16;
         }
       });
     };
@@ -20952,7 +20952,7 @@ var require_application = __commonJS({
       this.locals = /* @__PURE__ */ Object.create(null);
       this.mountpath = "/";
       this.locals.settings = this.settings;
-      this.set("view", View2);
+      this.set("view", View3);
       this.set("views", resolve("views"));
       this.set("jsonp callback name", "callback");
       if (env === "production") {
@@ -20993,15 +20993,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router13 = this.router;
+      var router16 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router13.use(path, fn2);
+          return router16.use(path, fn2);
         }
         debug(".use app under %s", path);
         fn2.mountpath = path;
         fn2.parent = this;
-        router13.use(path, function mounted_app(req, res, next) {
+        router16.use(path, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -21108,8 +21108,8 @@ var require_application = __commonJS({
         view = cache2[name];
       }
       if (!view) {
-        var View3 = this.get("view");
-        view = new View3(name, {
+        var View4 = this.get("view");
+        view = new View4(name, {
           defaultEngine: this.get("view engine"),
           root: this.get("views"),
           engines
@@ -21953,7 +21953,7 @@ var require_request = __commonJS({
       var querystring = parse3(this).query;
       return queryparse(querystring);
     });
-    req.is = function is2(types3) {
+    req.is = function is3(types3) {
       var arr = types3;
       if (!Array.isArray(types3)) {
         arr = new Array(arguments.length);
@@ -23574,7 +23574,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router13 = require_router();
+    var Router16 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23596,8 +23596,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router13.Route;
-    exports.Router = Router13;
+    exports.Route = Router16.Route;
+    exports.Router = Router16;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -25882,7 +25882,7 @@ var require_indexes = __commonJS({
 var require_thread_stream = __commonJS({
   "../../node_modules/.pnpm/thread-stream@3.1.0/node_modules/thread-stream/index.js"(exports, module) {
     "use strict";
-    var { version: version5 } = require_package();
+    var { version: version6 } = require_package();
     var { EventEmitter } = __require("events");
     var { Worker: Worker2 } = __require("worker_threads");
     var { join } = __require("path");
@@ -25931,7 +25931,7 @@ var require_thread_stream = __commonJS({
           stateBuf: stream[kImpl].stateBuf,
           workerData: {
             $context: {
-              threadStreamVersion: version5
+              threadStreamVersion: version6
             },
             ...workerData
           }
@@ -27041,7 +27041,7 @@ var require_proto = __commonJS({
       noop
     } = require_tools();
     var {
-      version: version5
+      version: version6
     } = require_meta();
     var redaction = require_redaction();
     var constructor = class Pino {
@@ -27053,7 +27053,7 @@ var require_proto = __commonJS({
       setBindings,
       flush,
       isLevelEnabled,
-      version: version5,
+      version: version6,
       get level() {
         return this[getLevelSym]();
       },
@@ -28010,7 +28010,7 @@ var require_pino = __commonJS({
       normalizeDestFileDescriptor,
       noop
     } = require_tools();
-    var { version: version5 } = require_meta();
+    var { version: version6 } = require_meta();
     var {
       chindingsSym,
       redactFmtSym,
@@ -28191,7 +28191,7 @@ var require_pino = __commonJS({
     module.exports.stdSerializers = serializers;
     module.exports.stdTimeFunctions = Object.assign({}, time4);
     module.exports.symbols = symbols;
-    module.exports.version = version5;
+    module.exports.version = version6;
     module.exports.default = pino2;
     module.exports.pino = pino2;
   }
@@ -35704,7 +35704,7 @@ var require_ethereum = __commonJS({
     }
     function createSiweMessage(parameters) {
       var _a;
-      const { chainId, domain: domain2, expirationTime, issuedAt = /* @__PURE__ */ new Date(), nonce, notBefore, requestId, resources, scheme, uri, version: version5 } = parameters;
+      const { chainId, domain: domain2, expirationTime, issuedAt = /* @__PURE__ */ new Date(), nonce, notBefore, requestId, resources, scheme, uri, version: version6 } = parameters;
       {
         if (!Number.isInteger(chainId))
           throw new Error(`@supabase/auth-js: Invalid SIWE message field "chainId". Chain ID must be a EIP-155 chain ID. Provided value: ${chainId}`);
@@ -35714,8 +35714,8 @@ var require_ethereum = __commonJS({
           throw new Error(`@supabase/auth-js: Invalid SIWE message field "nonce". Nonce must be at least 8 characters. Provided value: ${nonce}`);
         if (!uri)
           throw new Error(`@supabase/auth-js: Invalid SIWE message field "uri". URI must be provided.`);
-        if (version5 !== "1")
-          throw new Error(`@supabase/auth-js: Invalid SIWE message field "version". Version must be '1'. Provided value: ${version5}`);
+        if (version6 !== "1")
+          throw new Error(`@supabase/auth-js: Invalid SIWE message field "version". Version must be '1'. Provided value: ${version6}`);
         if ((_a = parameters.statement) === null || _a === void 0 ? void 0 : _a.includes("\n"))
           throw new Error(`@supabase/auth-js: Invalid SIWE message field "statement". Statement must not include '\\n'. Provided value: ${parameters.statement}`);
       }
@@ -35728,7 +35728,7 @@ ${address}
 
 ${statement}`;
       let suffix = `URI: ${uri}
-Version: ${version5}
+Version: ${version6}
 Chain ID: ${chainId}${nonce ? `
 Nonce: ${nonce}` : ""}
 Issued At: ${issuedAt.toISOString()}`;
@@ -56792,12 +56792,12 @@ var require_lib6 = __commonJS({
 });
 
 // src/app.ts
-var import_express13 = __toESM(require_express2(), 1);
+var import_express16 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 
 // src/routes/index.ts
-var import_express12 = __toESM(require_express2(), 1);
+var import_express15 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
@@ -57660,11 +57660,11 @@ function datetimeRegex(args) {
   regex = `${regex}(${opts.join("|")})`;
   return new RegExp(`^${regex}$`);
 }
-function isValidIP(ip, version5) {
-  if ((version5 === "v4" || !version5) && ipv4Regex.test(ip)) {
+function isValidIP(ip, version6) {
+  if ((version6 === "v4" || !version6) && ipv4Regex.test(ip)) {
     return true;
   }
-  if ((version5 === "v6" || !version5) && ipv6Regex.test(ip)) {
+  if ((version6 === "v6" || !version6) && ipv6Regex.test(ip)) {
     return true;
   }
   return false;
@@ -57691,11 +57691,11 @@ function isValidJWT(jwt2, alg) {
     return false;
   }
 }
-function isValidCidr(ip, version5) {
-  if ((version5 === "v4" || !version5) && ipv4CidrRegex.test(ip)) {
+function isValidCidr(ip, version6) {
+  if ((version6 === "v4" || !version6) && ipv4CidrRegex.test(ip)) {
     return true;
   }
-  if ((version5 === "v6" || !version5) && ipv6CidrRegex.test(ip)) {
+  if ((version6 === "v6" || !version6) && ipv6CidrRegex.test(ip)) {
     return true;
   }
   return false;
@@ -69248,10 +69248,10 @@ function loadOtel() {
 function extractTraceContext() {
   return __awaiter2(this, void 0, void 0, function* () {
     try {
-      const otel2 = yield loadOtel();
-      if (!otel2 || !otel2.propagation || !otel2.context) return null;
+      const otel3 = yield loadOtel();
+      if (!otel3 || !otel3.propagation || !otel3.context) return null;
       const carrier = {};
-      otel2.propagation.inject(otel2.context.active(), carrier);
+      otel3.propagation.inject(otel3.context.active(), carrier);
       const traceparent = carrier["traceparent"];
       if (!traceparent) return null;
       return {
@@ -70168,119 +70168,128 @@ async function purgeAllCache() {
 // src/routes/recordings.ts
 var router2 = (0, import_express2.Router)();
 router2.get("/recordings", cache({ ttlSeconds: 60, tags: ["recordings"] }), async (req, res) => {
-  const parsed = ListRecordingsQueryParams.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Invalid query params" });
-    return;
-  }
-  const {
-    page = 1,
-    limit = 24,
-    search,
-    tags,
-    gender,
-    username,
-    resolution,
-    sort
-  } = parsed.data;
-  const offset = (page - 1) * limit;
-  let query = supabase.from("recordings_with_links").select("*", { count: "exact" }).not("links", "is", "null").range(offset, offset + limit - 1);
-  if (search) {
-    query = query.or(
-      `username.ilike.%${search}%,room_title.ilike.%${search}%,filename.ilike.%${search}%`
-    );
-  }
-  if (tags) {
-    const tagList = tags.split(",").map((t) => t.trim()).filter(Boolean);
-    if (tagList.length > 0) {
-      query = query.contains("tags", tagList);
+  try {
+    const parsed = ListRecordingsQueryParams.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
     }
-  }
-  if (gender) {
-    query = query.eq("gender", gender);
-  }
-  if (username) {
-    query = query.eq("username", username);
-  }
-  if (resolution) {
-    query = query.eq("resolution", resolution);
-  }
-  if (sort === "oldest") {
-    query = query.order("timestamp", { ascending: true });
-  } else if (sort === "largest") {
-    query = query.order("filesize", { ascending: false });
-  } else if (sort === "popular") {
-    query = query.order("viewers", { ascending: false, nullsFirst: false });
-  } else {
-    query = query.order("timestamp", { ascending: false });
-  }
-  const { data, count, error: error40 } = await query;
-  if (error40) {
-    req.log.error({ err: error40 }, "Supabase error listing recordings");
+    const { page = 1, limit = 24, search, tags, gender, username, resolution, sort } = parsed.data;
+    const fetchLimit = limit * 3;
+    const offset = (page - 1) * fetchLimit;
+    let query = supabase.from("recordings_with_links").select("*", { count: "exact" }).not("links", "is", "null").range(offset, offset + fetchLimit - 1);
+    if (search) {
+      query = query.or(`username.ilike.%${search}%,room_title.ilike.%${search}%,filename.ilike.%${search}%`);
+    }
+    if (tags) {
+      const tagList = tags.split(",").map((t) => t.trim()).filter(Boolean);
+      if (tagList.length > 0) query = query.contains("tags", tagList);
+    }
+    if (gender) query = query.eq("gender", gender);
+    if (username) query = query.eq("username", username);
+    if (resolution) query = query.eq("resolution", resolution);
+    if (sort === "oldest") query = query.order("timestamp", { ascending: true });
+    else if (sort === "largest") query = query.order("filesize", { ascending: false });
+    else if (sort === "popular") query = query.order("viewers", { ascending: false, nullsFirst: false });
+    else query = query.order("timestamp", { ascending: false });
+    const { data, count, error: error40 } = await query;
+    if (error40) {
+      req.log.error({ err: error40 }, "Supabase error listing recordings");
+      res.status(500).json({ error: "Failed to fetch recordings" });
+      return;
+    }
+    const allWithLinks = (data ?? []).filter(
+      (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0
+    );
+    const excludedCount = (data ?? []).length - allWithLinks.length;
+    res.json({
+      data: allWithLinks.slice(0, limit),
+      total: (count ?? 0) - excludedCount,
+      page,
+      limit
+    });
+  } catch (err) {
+    req.log.error({ err }, "GET /recordings unexpected error");
     res.status(500).json({ error: "Failed to fetch recordings" });
-    return;
   }
-  const filteredData = (data ?? []).filter(
-    (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0
-  );
-  const excludedCount = (data ?? []).length - filteredData.length;
-  res.json({
-    data: filteredData,
-    total: (count ?? 0) - excludedCount,
-    page,
-    limit
-  });
 });
-router2.get("/recordings/random", async (_req, res) => {
-  const { count, error: countError } = await supabase.from("recordings_with_links").select("*", { count: "exact", head: true }).not("links", "is", "null");
-  if (countError || !count) {
-    res.status(500).json({ error: "Failed to get recording count" });
-    return;
-  }
-  const randomOffset = Math.floor(Math.random() * count);
-  const { data, error: error40 } = await supabase.from("recordings_with_links").select("id").not("links", "is", "null").range(randomOffset, randomOffset).single();
-  if (error40 || !data) {
+router2.get("/recordings/random", async (req, res) => {
+  try {
+    const { count, error: countError } = await supabase.from("recordings_with_links").select("*", { count: "exact", head: true }).not("links", "is", "null");
+    if (countError || !count) {
+      req.log.error({ err: countError }, "Supabase error getting recording count");
+      res.status(500).json({ error: "Failed to get recording count" });
+      return;
+    }
+    const randomOffset = Math.floor(Math.random() * count);
+    const { data, error: error40 } = await supabase.from("recordings_with_links").select("id").not("links", "is", "null").range(randomOffset, randomOffset).single();
+    if (error40 || !data) {
+      req.log.error({ err: error40, count, randomOffset }, "Supabase error fetching random recording");
+      res.status(500).json({ error: "Failed to get random recording" });
+      return;
+    }
+    res.json({ id: data.id });
+  } catch (err) {
+    req.log.error({ err }, "GET /recordings/random unexpected error");
     res.status(500).json({ error: "Failed to get random recording" });
-    return;
   }
-  res.json({ id: data.id });
 });
 router2.get("/recordings/related", cache({ ttlSeconds: 300, tags: ["recordings"] }), async (req, res) => {
-  const parsed = ListRelatedRecordingsQueryParams.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Invalid query params" });
-    return;
-  }
-  const { id, limit = 8 } = parsed.data;
-  const { data: recording, error: recError } = await supabase.from("recordings_with_links").select("username, tags").eq("id", id).single();
-  if (recError || !recording) {
-    res.status(404).json({ error: "Recording not found" });
-    return;
-  }
-  const { data, error: error40 } = await supabase.from("recordings_with_links").select("*").neq("id", id).eq("username", recording.username).not("links", "is", "null").order("timestamp", { ascending: false }).limit(limit);
-  if (error40) {
-    req.log.error({ err: error40 }, "Supabase error fetching related recordings");
+  try {
+    const parsed = ListRelatedRecordingsQueryParams.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid query params" });
+      return;
+    }
+    const { id, limit = 8 } = parsed.data;
+    const { data: recording, error: recError } = await supabase.from("recordings_with_links").select("username, tags").eq("id", id).single();
+    if (recError) {
+      req.log.error({ err: recError, id }, "Supabase error fetching source recording for related");
+      res.status(500).json({ error: "Failed to fetch related recordings" });
+      return;
+    }
+    if (!recording) {
+      res.status(404).json({ error: "Recording not found" });
+      return;
+    }
+    const { data, error: error40 } = await supabase.from("recordings_with_links").select("*").neq("id", id).eq("username", recording.username).not("links", "is", "null").order("timestamp", { ascending: false }).limit(limit);
+    if (error40) {
+      req.log.error({ err: error40, id }, "Supabase error fetching related recordings");
+      res.status(500).json({ error: "Failed to fetch related recordings" });
+      return;
+    }
+    const filteredData = (data ?? []).filter(
+      (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0
+    );
+    res.json(filteredData);
+  } catch (err) {
+    req.log.error({ err, id: req.query.id }, "GET /recordings/related unexpected error");
     res.status(500).json({ error: "Failed to fetch related recordings" });
-    return;
   }
-  const filteredData = (data ?? []).filter(
-    (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0
-  );
-  res.json(filteredData);
 });
 router2.get("/recordings/:id", cache({ ttlSeconds: 300, tags: ["recordings"] }), async (req, res) => {
-  const parsed = GetRecordingParams.safeParse(req.params);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Invalid params" });
-    return;
+  try {
+    const parsed = GetRecordingParams.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid params" });
+      return;
+    }
+    const { id } = parsed.data;
+    const { data, error: error40 } = await supabase.from("recordings_with_links").select("*").eq("id", id).single();
+    if (error40) {
+      req.log.error({ err: error40, id }, "Supabase error fetching recording");
+      res.status(500).json({ error: "Failed to fetch recording" });
+      return;
+    }
+    if (!data) {
+      res.status(404).json({ error: "Recording not found" });
+      return;
+    }
+    res.json(data);
+  } catch (err) {
+    req.log.error({ err, id: req.params.id }, "GET /recordings/:id unexpected error");
+    res.status(500).json({ error: "Failed to fetch recording" });
   }
-  const { id } = parsed.data;
-  const { data, error: error40 } = await supabase.from("recordings_with_links").select("*").eq("id", id).single();
-  if (error40 || !data) {
-    res.status(404).json({ error: "Recording not found" });
-    return;
-  }
-  res.json(data);
 });
 var recordings_default = router2;
 
@@ -70288,88 +70297,95 @@ var recordings_default = router2;
 var import_express3 = __toESM(require_express2(), 1);
 var router3 = (0, import_express3.Router)();
 router3.get("/performers", cache({ ttlSeconds: 300, tags: ["performers"] }), async (req, res) => {
-  const page = Math.max(1, parseInt(req.query.page) || 1);
-  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 24));
-  const search = req.query.search || "";
-  const gender = req.query.gender || "";
-  const sort = req.query.sort || "count";
-  let query = supabase.from("recordings_with_links").select("username, gender, thumbnail_url, sprite_url, preview_url, timestamp, links").not("links", "is", "null").order("timestamp", { ascending: false }).limit(1e3);
-  if (search) {
-    query = query.ilike("username", `%${search}%`);
-  }
-  if (gender) {
-    query = query.eq("gender", gender);
-  }
-  const { data, error: error40 } = await query;
-  if (error40) {
-    req.log.error({ err: error40 }, "Supabase error listing performers");
-    res.status(500).json({ error: "Failed to fetch performers" });
-    return;
-  }
-  const validData = (data ?? []).filter(
-    (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0
-  );
-  const performerMap = /* @__PURE__ */ new Map();
-  for (const row of validData) {
-    const existing = performerMap.get(row.username);
-    if (!existing) {
-      const image = row.thumbnail_url || row.sprite_url || row.preview_url || null;
-      performerMap.set(row.username, {
-        username: row.username,
-        recording_count: 1,
-        latest_thumbnail: image,
-        gender: row.gender,
-        latest_timestamp: row.timestamp
-      });
-    } else {
-      existing.recording_count += 1;
-      if (!existing.latest_thumbnail) {
+  try {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 24));
+    const search = req.query.search || "";
+    const gender = req.query.gender || "";
+    const sort = req.query.sort || "count";
+    let query = supabase.from("recordings_with_links").select("username, gender, thumbnail_url, sprite_url, preview_url, timestamp, links").not("links", "is", "null").order("timestamp", { ascending: false }).limit(1e3);
+    if (search) query = query.ilike("username", `%${search}%`);
+    if (gender) query = query.eq("gender", gender);
+    const { data, error: error40 } = await query;
+    if (error40) {
+      req.log.error({ err: error40 }, "Supabase error listing performers");
+      res.status(500).json({ error: "Failed to fetch performers" });
+      return;
+    }
+    const validData = (data ?? []).filter(
+      (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0
+    );
+    const performerMap = /* @__PURE__ */ new Map();
+    for (const row of validData) {
+      const existing = performerMap.get(row.username);
+      if (!existing) {
         const image = row.thumbnail_url || row.sprite_url || row.preview_url || null;
-        if (image) {
-          existing.latest_thumbnail = image;
+        performerMap.set(row.username, {
+          username: row.username,
+          recording_count: 1,
+          latest_thumbnail: image,
+          sprite_url: row.sprite_url,
+          gender: row.gender,
+          latest_timestamp: row.timestamp
+        });
+      } else {
+        existing.recording_count += 1;
+        if (!existing.latest_thumbnail) {
+          const image = row.thumbnail_url || row.sprite_url || row.preview_url || null;
+          if (image) {
+            existing.latest_thumbnail = image;
+            existing.sprite_url = row.sprite_url;
+          }
         }
       }
     }
+    let performers = Array.from(performerMap.values());
+    if (sort === "name") {
+      performers.sort((a, b) => a.username.localeCompare(b.username));
+    } else {
+      performers.sort((a, b) => b.recording_count - a.recording_count);
+    }
+    const totalPerformers = performers.length;
+    const totalPages = Math.ceil(totalPerformers / limit) || 1;
+    const start = (page - 1) * limit;
+    const pagedPerformers = performers.slice(start, start + limit);
+    res.json({ performers: pagedPerformers, total: totalPerformers, page, limit, totalPages });
+  } catch (err) {
+    req.log.error({ err }, "GET /performers unexpected error");
+    res.status(500).json({ error: "Failed to fetch performers" });
   }
-  let performers = Array.from(performerMap.values());
-  if (sort === "name") {
-    performers.sort((a, b) => a.username.localeCompare(b.username));
-  } else {
-    performers.sort((a, b) => b.recording_count - a.recording_count);
-  }
-  const totalPerformers = performers.length;
-  const totalPages = Math.ceil(totalPerformers / limit) || 1;
-  const start = (page - 1) * limit;
-  const pagedPerformers = performers.slice(start, start + limit);
-  res.json({
-    performers: pagedPerformers,
-    total: totalPerformers,
-    page,
-    limit,
-    totalPages
-  });
 });
 router3.get("/performers/:username", cache({ ttlSeconds: 300, tags: ["performers"] }), async (req, res) => {
-  const parsed = GetPerformerParams.safeParse(req.params);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Invalid params" });
-    return;
+  try {
+    const parsed = GetPerformerParams.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid params" });
+      return;
+    }
+    const { username } = parsed.data;
+    const { data, error: error40 } = await supabase.from("recordings_with_links").select("*").eq("username", username).not("links", "is", "null").order("timestamp", { ascending: false });
+    if (error40) {
+      req.log.error({ err: error40, username }, "Supabase error fetching performer");
+      res.status(500).json({ error: "Failed to fetch performer" });
+      return;
+    }
+    const filteredData = (data ?? []).filter(
+      (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0
+    );
+    if (filteredData.length === 0) {
+      res.status(404).json({ error: "Performer not found" });
+      return;
+    }
+    res.json({
+      username,
+      recording_count: filteredData.length,
+      gender: filteredData[0].gender ?? null,
+      recordings: filteredData
+    });
+  } catch (err) {
+    req.log.error({ err, username: req.params.username }, "GET /performers/:username unexpected error");
+    res.status(500).json({ error: "Failed to fetch performer" });
   }
-  const { username } = parsed.data;
-  const { data, error: error40 } = await supabase.from("recordings_with_links").select("*").eq("username", username).not("links", "is", "null").order("timestamp", { ascending: false });
-  const filteredData = (data ?? []).filter(
-    (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0
-  );
-  if (error40 || filteredData.length === 0) {
-    res.status(404).json({ error: "Performer not found" });
-    return;
-  }
-  res.json({
-    username,
-    recording_count: filteredData.length,
-    gender: filteredData[0].gender ?? null,
-    recordings: filteredData
-  });
 });
 var performers_default = router3;
 
@@ -71118,10 +71134,10 @@ var PgEnumColumn = class extends PgColumn {
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.20.0/node_modules/drizzle-orm/subquery.js
 var Subquery = class {
   static [entityKind] = "Subquery";
-  constructor(sql2, fields, alias, isWith = false, usedTables = []) {
+  constructor(sql3, fields, alias, isWith = false, usedTables = []) {
     this._ = {
       brand: "Subquery",
-      sql: sql2,
+      sql: sql3,
       selectedFields: fields,
       alias,
       isWith,
@@ -71151,14 +71167,14 @@ var tracer = {
       rawTracer = otel.trace.getTracer("drizzle-orm", version3);
     }
     return iife(
-      (otel2, rawTracer2) => rawTracer2.startActiveSpan(
+      (otel22, rawTracer22) => rawTracer22.startActiveSpan(
         name,
         (span) => {
           try {
             return fn(span);
           } catch (e) {
             span.setStatus({
-              code: otel2.SpanStatusCode.ERROR,
+              code: otel22.SpanStatusCode.ERROR,
               message: e instanceof Error ? e.message : "Unknown error"
               // eslint-disable-line no-instanceof/no-instanceof
             });
@@ -71522,19 +71538,19 @@ function sql(strings, ...params) {
   }
   return new SQL(queryChunks);
 }
-((sql2) => {
+((sql22) => {
   function empty() {
     return new SQL([]);
   }
-  sql2.empty = empty;
+  sql22.empty = empty;
   function fromList(list) {
     return new SQL(list);
   }
-  sql2.fromList = fromList;
+  sql22.fromList = fromList;
   function raw(str) {
     return new SQL([new StringChunk(str)]);
   }
-  sql2.raw = raw;
+  sql22.raw = raw;
   function join(chunks, separator) {
     const result = [];
     for (const [i, chunk] of chunks.entries()) {
@@ -71545,24 +71561,24 @@ function sql(strings, ...params) {
     }
     return new SQL(result);
   }
-  sql2.join = join;
+  sql22.join = join;
   function identifier(value) {
     return new Name(value);
   }
-  sql2.identifier = identifier;
+  sql22.identifier = identifier;
   function placeholder2(name2) {
     return new Placeholder(name2);
   }
-  sql2.placeholder = placeholder2;
+  sql22.placeholder = placeholder2;
   function param2(value, encoder) {
     return new Param(value, encoder);
   }
-  sql2.param = param2;
+  sql22.param = param2;
 })(sql || (sql = {}));
-((SQL2) => {
+((SQL22) => {
   class Aliased {
-    constructor(sql2, fieldAlias) {
-      this.sql = sql2;
+    constructor(sql22, fieldAlias) {
+      this.sql = sql22;
       this.fieldAlias = fieldAlias;
     }
     static [entityKind] = "SQL.Aliased";
@@ -71576,7 +71592,7 @@ function sql(strings, ...params) {
       return new Aliased(this.sql, this.fieldAlias);
     }
   }
-  SQL2.Aliased = Aliased;
+  SQL22.Aliased = Aliased;
 })(SQL || (SQL = {}));
 var Placeholder = class {
   constructor(name2) {
@@ -74259,8 +74275,8 @@ var PgDialect = class {
       return "none";
     }
   }
-  sqlToQuery(sql2, invokeSource) {
-    return sql2.toQuery({
+  sqlToQuery(sql22, invokeSource) {
+    return sql22.toQuery({
       casing: this.casing,
       escapeName: this.escapeName,
       escapeParam: this.escapeParam,
@@ -76619,10 +76635,10 @@ var PgRelationalQuery = class extends QueryPromise {
 
 // ../../node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.20.0_pg@8.20.0/node_modules/drizzle-orm/pg-core/query-builders/raw.js
 var PgRaw = class extends QueryPromise {
-  constructor(execute, sql2, query, mapBatchResult) {
+  constructor(execute, sql3, query, mapBatchResult) {
     super();
     this.execute = execute;
-    this.sql = sql2;
+    this.sql = sql3;
     this.query = query;
     this.mapBatchResult = mapBatchResult;
   }
@@ -76942,8 +76958,8 @@ var NoopCache = class extends Cache {
   async onMutate(_params) {
   }
 };
-async function hashQuery(sql2, params) {
-  const dataToHash = `${sql2}-${JSON.stringify(params)}`;
+async function hashQuery(sql3, params) {
+  const dataToHash = `${sql3}-${JSON.stringify(params)}`;
   const encoder = new TextEncoder();
   const data = encoder.encode(dataToHash);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
@@ -77076,8 +77092,8 @@ var PgSession = class {
     ).all();
   }
   /** @internal */
-  async count(sql2, token) {
-    const res = await this.execute(sql2, token);
+  async count(sql22, token) {
+    const res = await this.execute(sql22, token);
     return Number(
       res[0]["count"]
     );
@@ -77299,8 +77315,8 @@ var NodePgSession = class _NodePgSession extends PgSession {
       if (isPool) session.client.release();
     }
   }
-  async count(sql2) {
-    const res = await this.execute(sql2);
+  async count(sql22) {
+    const res = await this.execute(sql22);
     return Number(
       res["rows"][0]["count"]
     );
@@ -78709,10 +78725,10 @@ var nanoid = /^[a-zA-Z0-9_-]{21}$/;
 var duration = /^P(?:(\d+W)|(?!.*W)(?=\d|T\d)(\d+Y)?(\d+M)?(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+([.,]\d+)?S)?)?)$/;
 var extendedDuration = /^[-+]?P(?!$)(?:(?:[-+]?\d+Y)|(?:[-+]?\d+[.,]\d+Y$))?(?:(?:[-+]?\d+M)|(?:[-+]?\d+[.,]\d+M$))?(?:(?:[-+]?\d+W)|(?:[-+]?\d+[.,]\d+W$))?(?:(?:[-+]?\d+D)|(?:[-+]?\d+[.,]\d+D$))?(?:T(?=[\d+-])(?:(?:[-+]?\d+H)|(?:[-+]?\d+[.,]\d+H$))?(?:(?:[-+]?\d+M)|(?:[-+]?\d+[.,]\d+M$))?(?:[-+]?\d+(?:[.,]\d+)?S)?)??$/;
 var guid = /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
-var uuid2 = (version5) => {
-  if (!version5)
+var uuid2 = (version6) => {
+  if (!version6)
     return /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$/;
-  return new RegExp(`^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-${version5}[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$`);
+  return new RegExp(`^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-${version6}[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$`);
 };
 var uuid4 = /* @__PURE__ */ uuid2(4);
 var uuid6 = /* @__PURE__ */ uuid2(6);
@@ -88944,10 +88960,1115 @@ if (!process.env.DATABASE_URL) {
 var pool = new Pool3({ connectionString: process.env.DATABASE_URL });
 var db = drizzle(pool, { schema: schema_exports });
 
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2/node_modules/drizzle-orm/entity.js
+var entityKind2 = /* @__PURE__ */ Symbol.for("drizzle:entityKind");
+function is2(value, type) {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  if (value instanceof type) {
+    return true;
+  }
+  if (!Object.prototype.hasOwnProperty.call(type, entityKind2)) {
+    throw new Error(
+      `Class "${type.name ?? "<unknown>"}" doesn't look like a Drizzle entity. If this is incorrect and the class is provided by Drizzle, please report this as a bug.`
+    );
+  }
+  let cls = Object.getPrototypeOf(value).constructor;
+  if (cls) {
+    while (cls) {
+      if (entityKind2 in cls && cls[entityKind2] === type[entityKind2]) {
+        return true;
+      }
+      cls = Object.getPrototypeOf(cls);
+    }
+  }
+  return false;
+}
+
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2/node_modules/drizzle-orm/column.js
+var Column2 = class {
+  constructor(table, config2) {
+    this.table = table;
+    this.config = config2;
+    this.name = config2.name;
+    this.keyAsName = config2.keyAsName;
+    this.notNull = config2.notNull;
+    this.default = config2.default;
+    this.defaultFn = config2.defaultFn;
+    this.onUpdateFn = config2.onUpdateFn;
+    this.hasDefault = config2.hasDefault;
+    this.primary = config2.primaryKey;
+    this.isUnique = config2.isUnique;
+    this.uniqueName = config2.uniqueName;
+    this.uniqueType = config2.uniqueType;
+    this.dataType = config2.dataType;
+    this.columnType = config2.columnType;
+    this.generated = config2.generated;
+    this.generatedIdentity = config2.generatedIdentity;
+  }
+  static [entityKind2] = "Column";
+  name;
+  keyAsName;
+  primary;
+  notNull;
+  default;
+  defaultFn;
+  onUpdateFn;
+  hasDefault;
+  isUnique;
+  uniqueName;
+  uniqueType;
+  dataType;
+  columnType;
+  enumValues = void 0;
+  generated = void 0;
+  generatedIdentity = void 0;
+  config;
+  mapFromDriverValue(value) {
+    return value;
+  }
+  mapToDriverValue(value) {
+    return value;
+  }
+  // ** @internal */
+  shouldDisableInsert() {
+    return this.config.generated !== void 0 && this.config.generated.type !== "byDefault";
+  }
+};
+
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2/node_modules/drizzle-orm/column-builder.js
+var ColumnBuilder2 = class {
+  static [entityKind2] = "ColumnBuilder";
+  config;
+  constructor(name, dataType, columnType) {
+    this.config = {
+      name,
+      keyAsName: name === "",
+      notNull: false,
+      default: void 0,
+      hasDefault: false,
+      primaryKey: false,
+      isUnique: false,
+      uniqueName: void 0,
+      uniqueType: void 0,
+      dataType,
+      columnType,
+      generated: void 0
+    };
+  }
+  /**
+   * Changes the data type of the column. Commonly used with `json` columns. Also, useful for branded types.
+   *
+   * @example
+   * ```ts
+   * const users = pgTable('users', {
+   * 	id: integer('id').$type<UserId>().primaryKey(),
+   * 	details: json('details').$type<UserDetails>().notNull(),
+   * });
+   * ```
+   */
+  $type() {
+    return this;
+  }
+  /**
+   * Adds a `not null` clause to the column definition.
+   *
+   * Affects the `select` model of the table - columns *without* `not null` will be nullable on select.
+   */
+  notNull() {
+    this.config.notNull = true;
+    return this;
+  }
+  /**
+   * Adds a `default <value>` clause to the column definition.
+   *
+   * Affects the `insert` model of the table - columns *with* `default` are optional on insert.
+   *
+   * If you need to set a dynamic default value, use {@link $defaultFn} instead.
+   */
+  default(value) {
+    this.config.default = value;
+    this.config.hasDefault = true;
+    return this;
+  }
+  /**
+   * Adds a dynamic default value to the column.
+   * The function will be called when the row is inserted, and the returned value will be used as the column value.
+   *
+   * **Note:** This value does not affect the `drizzle-kit` behavior, it is only used at runtime in `drizzle-orm`.
+   */
+  $defaultFn(fn) {
+    this.config.defaultFn = fn;
+    this.config.hasDefault = true;
+    return this;
+  }
+  /**
+   * Alias for {@link $defaultFn}.
+   */
+  $default = this.$defaultFn;
+  /**
+   * Adds a dynamic update value to the column.
+   * The function will be called when the row is updated, and the returned value will be used as the column value if none is provided.
+   * If no `default` (or `$defaultFn`) value is provided, the function will be called when the row is inserted as well, and the returned value will be used as the column value.
+   *
+   * **Note:** This value does not affect the `drizzle-kit` behavior, it is only used at runtime in `drizzle-orm`.
+   */
+  $onUpdateFn(fn) {
+    this.config.onUpdateFn = fn;
+    this.config.hasDefault = true;
+    return this;
+  }
+  /**
+   * Alias for {@link $onUpdateFn}.
+   */
+  $onUpdate = this.$onUpdateFn;
+  /**
+   * Adds a `primary key` clause to the column definition. This implicitly makes the column `not null`.
+   *
+   * In SQLite, `integer primary key` implicitly makes the column auto-incrementing.
+   */
+  primaryKey() {
+    this.config.primaryKey = true;
+    this.config.notNull = true;
+    return this;
+  }
+  /** @internal Sets the name of the column to the key within the table definition if a name was not given. */
+  setName(name) {
+    if (this.config.name !== "") return;
+    this.config.name = name;
+  }
+};
+
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2/node_modules/drizzle-orm/table.utils.js
+var TableName2 = /* @__PURE__ */ Symbol.for("drizzle:Name");
+
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2/node_modules/drizzle-orm/pg-core/foreign-keys.js
+var ForeignKeyBuilder2 = class {
+  static [entityKind2] = "PgForeignKeyBuilder";
+  /** @internal */
+  reference;
+  /** @internal */
+  _onUpdate = "no action";
+  /** @internal */
+  _onDelete = "no action";
+  constructor(config2, actions) {
+    this.reference = () => {
+      const { name, columns, foreignColumns } = config2();
+      return { name, columns, foreignTable: foreignColumns[0].table, foreignColumns };
+    };
+    if (actions) {
+      this._onUpdate = actions.onUpdate;
+      this._onDelete = actions.onDelete;
+    }
+  }
+  onUpdate(action) {
+    this._onUpdate = action === void 0 ? "no action" : action;
+    return this;
+  }
+  onDelete(action) {
+    this._onDelete = action === void 0 ? "no action" : action;
+    return this;
+  }
+  /** @internal */
+  build(table) {
+    return new ForeignKey2(table, this);
+  }
+};
+var ForeignKey2 = class {
+  constructor(table, builder) {
+    this.table = table;
+    this.reference = builder.reference;
+    this.onUpdate = builder._onUpdate;
+    this.onDelete = builder._onDelete;
+  }
+  static [entityKind2] = "PgForeignKey";
+  reference;
+  onUpdate;
+  onDelete;
+  getName() {
+    const { name, columns, foreignColumns } = this.reference();
+    const columnNames = columns.map((column) => column.name);
+    const foreignColumnNames = foreignColumns.map((column) => column.name);
+    const chunks = [
+      this.table[TableName2],
+      ...columnNames,
+      foreignColumns[0].table[TableName2],
+      ...foreignColumnNames
+    ];
+    return name ?? `${chunks.join("_")}_fk`;
+  }
+};
+
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2/node_modules/drizzle-orm/tracing-utils.js
+function iife2(fn, ...args) {
+  return fn(...args);
+}
+
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2/node_modules/drizzle-orm/pg-core/unique-constraint.js
+function uniqueKeyName2(table, columns) {
+  return `${table[TableName2]}_${columns.join("_")}_unique`;
+}
+var UniqueConstraintBuilder2 = class {
+  constructor(columns, name) {
+    this.name = name;
+    this.columns = columns;
+  }
+  static [entityKind2] = "PgUniqueConstraintBuilder";
+  /** @internal */
+  columns;
+  /** @internal */
+  nullsNotDistinctConfig = false;
+  nullsNotDistinct() {
+    this.nullsNotDistinctConfig = true;
+    return this;
+  }
+  /** @internal */
+  build(table) {
+    return new UniqueConstraint2(table, this.columns, this.nullsNotDistinctConfig, this.name);
+  }
+};
+var UniqueOnConstraintBuilder2 = class {
+  static [entityKind2] = "PgUniqueOnConstraintBuilder";
+  /** @internal */
+  name;
+  constructor(name) {
+    this.name = name;
+  }
+  on(...columns) {
+    return new UniqueConstraintBuilder2(columns, this.name);
+  }
+};
+var UniqueConstraint2 = class {
+  constructor(table, columns, nullsNotDistinct, name) {
+    this.table = table;
+    this.columns = columns;
+    this.name = name ?? uniqueKeyName2(this.table, this.columns.map((column) => column.name));
+    this.nullsNotDistinct = nullsNotDistinct;
+  }
+  static [entityKind2] = "PgUniqueConstraint";
+  columns;
+  name;
+  nullsNotDistinct = false;
+  getName() {
+    return this.name;
+  }
+};
+
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2/node_modules/drizzle-orm/pg-core/utils/array.js
+function parsePgArrayValue2(arrayString, startFrom, inQuotes) {
+  for (let i = startFrom; i < arrayString.length; i++) {
+    const char2 = arrayString[i];
+    if (char2 === "\\") {
+      i++;
+      continue;
+    }
+    if (char2 === '"') {
+      return [arrayString.slice(startFrom, i).replace(/\\/g, ""), i + 1];
+    }
+    if (inQuotes) {
+      continue;
+    }
+    if (char2 === "," || char2 === "}") {
+      return [arrayString.slice(startFrom, i).replace(/\\/g, ""), i];
+    }
+  }
+  return [arrayString.slice(startFrom).replace(/\\/g, ""), arrayString.length];
+}
+function parsePgNestedArray2(arrayString, startFrom = 0) {
+  const result = [];
+  let i = startFrom;
+  let lastCharIsComma = false;
+  while (i < arrayString.length) {
+    const char2 = arrayString[i];
+    if (char2 === ",") {
+      if (lastCharIsComma || i === startFrom) {
+        result.push("");
+      }
+      lastCharIsComma = true;
+      i++;
+      continue;
+    }
+    lastCharIsComma = false;
+    if (char2 === "\\") {
+      i += 2;
+      continue;
+    }
+    if (char2 === '"') {
+      const [value2, startFrom2] = parsePgArrayValue2(arrayString, i + 1, true);
+      result.push(value2);
+      i = startFrom2;
+      continue;
+    }
+    if (char2 === "}") {
+      return [result, i + 1];
+    }
+    if (char2 === "{") {
+      const [value2, startFrom2] = parsePgNestedArray2(arrayString, i + 1);
+      result.push(value2);
+      i = startFrom2;
+      continue;
+    }
+    const [value, newStartFrom] = parsePgArrayValue2(arrayString, i, false);
+    result.push(value);
+    i = newStartFrom;
+  }
+  return [result, i];
+}
+function parsePgArray2(arrayString) {
+  const [result] = parsePgNestedArray2(arrayString, 1);
+  return result;
+}
+function makePgArray2(array2) {
+  return `{${array2.map((item) => {
+    if (Array.isArray(item)) {
+      return makePgArray2(item);
+    }
+    if (typeof item === "string") {
+      return `"${item.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+    }
+    return `${item}`;
+  }).join(",")}}`;
+}
+
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2/node_modules/drizzle-orm/pg-core/columns/common.js
+var PgColumnBuilder2 = class extends ColumnBuilder2 {
+  foreignKeyConfigs = [];
+  static [entityKind2] = "PgColumnBuilder";
+  array(size) {
+    return new PgArrayBuilder2(this.config.name, this, size);
+  }
+  references(ref, actions = {}) {
+    this.foreignKeyConfigs.push({ ref, actions });
+    return this;
+  }
+  unique(name, config2) {
+    this.config.isUnique = true;
+    this.config.uniqueName = name;
+    this.config.uniqueType = config2?.nulls;
+    return this;
+  }
+  generatedAlwaysAs(as) {
+    this.config.generated = {
+      as,
+      type: "always",
+      mode: "stored"
+    };
+    return this;
+  }
+  /** @internal */
+  buildForeignKeys(column, table) {
+    return this.foreignKeyConfigs.map(({ ref, actions }) => {
+      return iife2(
+        (ref2, actions2) => {
+          const builder = new ForeignKeyBuilder2(() => {
+            const foreignColumn = ref2();
+            return { columns: [column], foreignColumns: [foreignColumn] };
+          });
+          if (actions2.onUpdate) {
+            builder.onUpdate(actions2.onUpdate);
+          }
+          if (actions2.onDelete) {
+            builder.onDelete(actions2.onDelete);
+          }
+          return builder.build(table);
+        },
+        ref,
+        actions
+      );
+    });
+  }
+  /** @internal */
+  buildExtraConfigColumn(table) {
+    return new ExtraConfigColumn2(table, this.config);
+  }
+};
+var PgColumn2 = class extends Column2 {
+  constructor(table, config2) {
+    if (!config2.uniqueName) {
+      config2.uniqueName = uniqueKeyName2(table, [config2.name]);
+    }
+    super(table, config2);
+    this.table = table;
+  }
+  static [entityKind2] = "PgColumn";
+};
+var ExtraConfigColumn2 = class extends PgColumn2 {
+  static [entityKind2] = "ExtraConfigColumn";
+  getSQLType() {
+    return this.getSQLType();
+  }
+  indexConfig = {
+    order: this.config.order ?? "asc",
+    nulls: this.config.nulls ?? "last",
+    opClass: this.config.opClass
+  };
+  defaultConfig = {
+    order: "asc",
+    nulls: "last",
+    opClass: void 0
+  };
+  asc() {
+    this.indexConfig.order = "asc";
+    return this;
+  }
+  desc() {
+    this.indexConfig.order = "desc";
+    return this;
+  }
+  nullsFirst() {
+    this.indexConfig.nulls = "first";
+    return this;
+  }
+  nullsLast() {
+    this.indexConfig.nulls = "last";
+    return this;
+  }
+  /**
+   * ### PostgreSQL documentation quote
+   *
+   * > An operator class with optional parameters can be specified for each column of an index.
+   * The operator class identifies the operators to be used by the index for that column.
+   * For example, a B-tree index on four-byte integers would use the int4_ops class;
+   * this operator class includes comparison functions for four-byte integers.
+   * In practice the default operator class for the column's data type is usually sufficient.
+   * The main point of having operator classes is that for some data types, there could be more than one meaningful ordering.
+   * For example, we might want to sort a complex-number data type either by absolute value or by real part.
+   * We could do this by defining two operator classes for the data type and then selecting the proper class when creating an index.
+   * More information about operator classes check:
+   *
+   * ### Useful links
+   * https://www.postgresql.org/docs/current/sql-createindex.html
+   *
+   * https://www.postgresql.org/docs/current/indexes-opclass.html
+   *
+   * https://www.postgresql.org/docs/current/xindex.html
+   *
+   * ### Additional types
+   * If you have the `pg_vector` extension installed in your database, you can use the
+   * `vector_l2_ops`, `vector_ip_ops`, `vector_cosine_ops`, `vector_l1_ops`, `bit_hamming_ops`, `bit_jaccard_ops`, `halfvec_l2_ops`, `sparsevec_l2_ops` options, which are predefined types.
+   *
+   * **You can always specify any string you want in the operator class, in case Drizzle doesn't have it natively in its types**
+   *
+   * @param opClass
+   * @returns
+   */
+  op(opClass) {
+    this.indexConfig.opClass = opClass;
+    return this;
+  }
+};
+var IndexedColumn2 = class {
+  static [entityKind2] = "IndexedColumn";
+  constructor(name, keyAsName, type, indexConfig) {
+    this.name = name;
+    this.keyAsName = keyAsName;
+    this.type = type;
+    this.indexConfig = indexConfig;
+  }
+  name;
+  keyAsName;
+  type;
+  indexConfig;
+};
+var PgArrayBuilder2 = class extends PgColumnBuilder2 {
+  static [entityKind2] = "PgArrayBuilder";
+  constructor(name, baseBuilder, size) {
+    super(name, "array", "PgArray");
+    this.config.baseBuilder = baseBuilder;
+    this.config.size = size;
+  }
+  /** @internal */
+  build(table) {
+    const baseColumn = this.config.baseBuilder.build(table);
+    return new PgArray2(
+      table,
+      this.config,
+      baseColumn
+    );
+  }
+};
+var PgArray2 = class _PgArray extends PgColumn2 {
+  constructor(table, config2, baseColumn, range) {
+    super(table, config2);
+    this.baseColumn = baseColumn;
+    this.range = range;
+    this.size = config2.size;
+  }
+  size;
+  static [entityKind2] = "PgArray";
+  getSQLType() {
+    return `${this.baseColumn.getSQLType()}[${typeof this.size === "number" ? this.size : ""}]`;
+  }
+  mapFromDriverValue(value) {
+    if (typeof value === "string") {
+      value = parsePgArray2(value);
+    }
+    return value.map((v) => this.baseColumn.mapFromDriverValue(v));
+  }
+  mapToDriverValue(value, isNestedArray = false) {
+    const a = value.map(
+      (v) => v === null ? null : is2(this.baseColumn, _PgArray) ? this.baseColumn.mapToDriverValue(v, true) : this.baseColumn.mapToDriverValue(v)
+    );
+    if (isNestedArray) return a;
+    return makePgArray2(a);
+  }
+};
+
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2/node_modules/drizzle-orm/pg-core/columns/enum.js
+var PgEnumObjectColumnBuilder2 = class extends PgColumnBuilder2 {
+  static [entityKind2] = "PgEnumObjectColumnBuilder";
+  constructor(name, enumInstance) {
+    super(name, "string", "PgEnumObjectColumn");
+    this.config.enum = enumInstance;
+  }
+  /** @internal */
+  build(table) {
+    return new PgEnumObjectColumn2(
+      table,
+      this.config
+    );
+  }
+};
+var PgEnumObjectColumn2 = class extends PgColumn2 {
+  static [entityKind2] = "PgEnumObjectColumn";
+  enum;
+  enumValues = this.config.enum.enumValues;
+  constructor(table, config2) {
+    super(table, config2);
+    this.enum = config2.enum;
+  }
+  getSQLType() {
+    return this.enum.enumName;
+  }
+};
+var isPgEnumSym2 = /* @__PURE__ */ Symbol.for("drizzle:isPgEnum");
+function isPgEnum2(obj) {
+  return !!obj && typeof obj === "function" && isPgEnumSym2 in obj && obj[isPgEnumSym2] === true;
+}
+var PgEnumColumnBuilder2 = class extends PgColumnBuilder2 {
+  static [entityKind2] = "PgEnumColumnBuilder";
+  constructor(name, enumInstance) {
+    super(name, "string", "PgEnumColumn");
+    this.config.enum = enumInstance;
+  }
+  /** @internal */
+  build(table) {
+    return new PgEnumColumn2(
+      table,
+      this.config
+    );
+  }
+};
+var PgEnumColumn2 = class extends PgColumn2 {
+  static [entityKind2] = "PgEnumColumn";
+  enum = this.config.enum;
+  enumValues = this.config.enum.enumValues;
+  constructor(table, config2) {
+    super(table, config2);
+    this.enum = config2.enum;
+  }
+  getSQLType() {
+    return this.enum.enumName;
+  }
+};
+
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2/node_modules/drizzle-orm/subquery.js
+var Subquery2 = class {
+  static [entityKind2] = "Subquery";
+  constructor(sql3, fields, alias, isWith = false, usedTables = []) {
+    this._ = {
+      brand: "Subquery",
+      sql: sql3,
+      selectedFields: fields,
+      alias,
+      isWith,
+      usedTables
+    };
+  }
+  // getSQL(): SQL<unknown> {
+  // 	return new SQL([this]);
+  // }
+};
+var WithSubquery2 = class extends Subquery2 {
+  static [entityKind2] = "WithSubquery";
+};
+
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2/node_modules/drizzle-orm/version.js
+var version5 = "0.45.2";
+
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2/node_modules/drizzle-orm/tracing.js
+var otel2;
+var rawTracer2;
+var tracer2 = {
+  startActiveSpan(name, fn) {
+    if (!otel2) {
+      return fn();
+    }
+    if (!rawTracer2) {
+      rawTracer2 = otel2.trace.getTracer("drizzle-orm", version5);
+    }
+    return iife2(
+      (otel22, rawTracer22) => rawTracer22.startActiveSpan(
+        name,
+        (span) => {
+          try {
+            return fn(span);
+          } catch (e) {
+            span.setStatus({
+              code: otel22.SpanStatusCode.ERROR,
+              message: e instanceof Error ? e.message : "Unknown error"
+              // eslint-disable-line no-instanceof/no-instanceof
+            });
+            throw e;
+          } finally {
+            span.end();
+          }
+        }
+      ),
+      otel2,
+      rawTracer2
+    );
+  }
+};
+
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2/node_modules/drizzle-orm/view-common.js
+var ViewBaseConfig2 = /* @__PURE__ */ Symbol.for("drizzle:ViewBaseConfig");
+
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2/node_modules/drizzle-orm/table.js
+var Schema2 = /* @__PURE__ */ Symbol.for("drizzle:Schema");
+var Columns2 = /* @__PURE__ */ Symbol.for("drizzle:Columns");
+var ExtraConfigColumns2 = /* @__PURE__ */ Symbol.for("drizzle:ExtraConfigColumns");
+var OriginalName2 = /* @__PURE__ */ Symbol.for("drizzle:OriginalName");
+var BaseName2 = /* @__PURE__ */ Symbol.for("drizzle:BaseName");
+var IsAlias2 = /* @__PURE__ */ Symbol.for("drizzle:IsAlias");
+var ExtraConfigBuilder2 = /* @__PURE__ */ Symbol.for("drizzle:ExtraConfigBuilder");
+var IsDrizzleTable2 = /* @__PURE__ */ Symbol.for("drizzle:IsDrizzleTable");
+var Table2 = class {
+  static [entityKind2] = "Table";
+  /** @internal */
+  static Symbol = {
+    Name: TableName2,
+    Schema: Schema2,
+    OriginalName: OriginalName2,
+    Columns: Columns2,
+    ExtraConfigColumns: ExtraConfigColumns2,
+    BaseName: BaseName2,
+    IsAlias: IsAlias2,
+    ExtraConfigBuilder: ExtraConfigBuilder2
+  };
+  /**
+   * @internal
+   * Can be changed if the table is aliased.
+   */
+  [TableName2];
+  /**
+   * @internal
+   * Used to store the original name of the table, before any aliasing.
+   */
+  [OriginalName2];
+  /** @internal */
+  [Schema2];
+  /** @internal */
+  [Columns2];
+  /** @internal */
+  [ExtraConfigColumns2];
+  /**
+   *  @internal
+   * Used to store the table name before the transformation via the `tableCreator` functions.
+   */
+  [BaseName2];
+  /** @internal */
+  [IsAlias2] = false;
+  /** @internal */
+  [IsDrizzleTable2] = true;
+  /** @internal */
+  [ExtraConfigBuilder2] = void 0;
+  constructor(name, schema, baseName) {
+    this[TableName2] = this[OriginalName2] = name;
+    this[Schema2] = schema;
+    this[BaseName2] = baseName;
+  }
+};
+
+// ../../node_modules/.pnpm/drizzle-orm@0.45.2/node_modules/drizzle-orm/sql/sql.js
+var FakePrimitiveParam2 = class {
+  static [entityKind2] = "FakePrimitiveParam";
+};
+function isSQLWrapper2(value) {
+  return value !== null && value !== void 0 && typeof value.getSQL === "function";
+}
+function mergeQueries2(queries) {
+  const result = { sql: "", params: [] };
+  for (const query of queries) {
+    result.sql += query.sql;
+    result.params.push(...query.params);
+    if (query.typings?.length) {
+      if (!result.typings) {
+        result.typings = [];
+      }
+      result.typings.push(...query.typings);
+    }
+  }
+  return result;
+}
+var StringChunk2 = class {
+  static [entityKind2] = "StringChunk";
+  value;
+  constructor(value) {
+    this.value = Array.isArray(value) ? value : [value];
+  }
+  getSQL() {
+    return new SQL2([this]);
+  }
+};
+var SQL2 = class _SQL {
+  constructor(queryChunks) {
+    this.queryChunks = queryChunks;
+    for (const chunk of queryChunks) {
+      if (is2(chunk, Table2)) {
+        const schemaName = chunk[Table2.Symbol.Schema];
+        this.usedTables.push(
+          schemaName === void 0 ? chunk[Table2.Symbol.Name] : schemaName + "." + chunk[Table2.Symbol.Name]
+        );
+      }
+    }
+  }
+  static [entityKind2] = "SQL";
+  /** @internal */
+  decoder = noopDecoder2;
+  shouldInlineParams = false;
+  /** @internal */
+  usedTables = [];
+  append(query) {
+    this.queryChunks.push(...query.queryChunks);
+    return this;
+  }
+  toQuery(config2) {
+    return tracer2.startActiveSpan("drizzle.buildSQL", (span) => {
+      const query = this.buildQueryFromSourceParams(this.queryChunks, config2);
+      span?.setAttributes({
+        "drizzle.query.text": query.sql,
+        "drizzle.query.params": JSON.stringify(query.params)
+      });
+      return query;
+    });
+  }
+  buildQueryFromSourceParams(chunks, _config) {
+    const config2 = Object.assign({}, _config, {
+      inlineParams: _config.inlineParams || this.shouldInlineParams,
+      paramStartIndex: _config.paramStartIndex || { value: 0 }
+    });
+    const {
+      casing,
+      escapeName,
+      escapeParam,
+      prepareTyping,
+      inlineParams,
+      paramStartIndex
+    } = config2;
+    return mergeQueries2(chunks.map((chunk) => {
+      if (is2(chunk, StringChunk2)) {
+        return { sql: chunk.value.join(""), params: [] };
+      }
+      if (is2(chunk, Name2)) {
+        return { sql: escapeName(chunk.value), params: [] };
+      }
+      if (chunk === void 0) {
+        return { sql: "", params: [] };
+      }
+      if (Array.isArray(chunk)) {
+        const result = [new StringChunk2("(")];
+        for (const [i, p] of chunk.entries()) {
+          result.push(p);
+          if (i < chunk.length - 1) {
+            result.push(new StringChunk2(", "));
+          }
+        }
+        result.push(new StringChunk2(")"));
+        return this.buildQueryFromSourceParams(result, config2);
+      }
+      if (is2(chunk, _SQL)) {
+        return this.buildQueryFromSourceParams(chunk.queryChunks, {
+          ...config2,
+          inlineParams: inlineParams || chunk.shouldInlineParams
+        });
+      }
+      if (is2(chunk, Table2)) {
+        const schemaName = chunk[Table2.Symbol.Schema];
+        const tableName = chunk[Table2.Symbol.Name];
+        return {
+          sql: schemaName === void 0 || chunk[IsAlias2] ? escapeName(tableName) : escapeName(schemaName) + "." + escapeName(tableName),
+          params: []
+        };
+      }
+      if (is2(chunk, Column2)) {
+        const columnName = casing.getColumnCasing(chunk);
+        if (_config.invokeSource === "indexes") {
+          return { sql: escapeName(columnName), params: [] };
+        }
+        const schemaName = chunk.table[Table2.Symbol.Schema];
+        return {
+          sql: chunk.table[IsAlias2] || schemaName === void 0 ? escapeName(chunk.table[Table2.Symbol.Name]) + "." + escapeName(columnName) : escapeName(schemaName) + "." + escapeName(chunk.table[Table2.Symbol.Name]) + "." + escapeName(columnName),
+          params: []
+        };
+      }
+      if (is2(chunk, View2)) {
+        const schemaName = chunk[ViewBaseConfig2].schema;
+        const viewName = chunk[ViewBaseConfig2].name;
+        return {
+          sql: schemaName === void 0 || chunk[ViewBaseConfig2].isAlias ? escapeName(viewName) : escapeName(schemaName) + "." + escapeName(viewName),
+          params: []
+        };
+      }
+      if (is2(chunk, Param2)) {
+        if (is2(chunk.value, Placeholder2)) {
+          return { sql: escapeParam(paramStartIndex.value++, chunk), params: [chunk], typings: ["none"] };
+        }
+        const mappedValue = chunk.value === null ? null : chunk.encoder.mapToDriverValue(chunk.value);
+        if (is2(mappedValue, _SQL)) {
+          return this.buildQueryFromSourceParams([mappedValue], config2);
+        }
+        if (inlineParams) {
+          return { sql: this.mapInlineParam(mappedValue, config2), params: [] };
+        }
+        let typings = ["none"];
+        if (prepareTyping) {
+          typings = [prepareTyping(chunk.encoder)];
+        }
+        return { sql: escapeParam(paramStartIndex.value++, mappedValue), params: [mappedValue], typings };
+      }
+      if (is2(chunk, Placeholder2)) {
+        return { sql: escapeParam(paramStartIndex.value++, chunk), params: [chunk], typings: ["none"] };
+      }
+      if (is2(chunk, _SQL.Aliased) && chunk.fieldAlias !== void 0) {
+        return { sql: escapeName(chunk.fieldAlias), params: [] };
+      }
+      if (is2(chunk, Subquery2)) {
+        if (chunk._.isWith) {
+          return { sql: escapeName(chunk._.alias), params: [] };
+        }
+        return this.buildQueryFromSourceParams([
+          new StringChunk2("("),
+          chunk._.sql,
+          new StringChunk2(") "),
+          new Name2(chunk._.alias)
+        ], config2);
+      }
+      if (isPgEnum2(chunk)) {
+        if (chunk.schema) {
+          return { sql: escapeName(chunk.schema) + "." + escapeName(chunk.enumName), params: [] };
+        }
+        return { sql: escapeName(chunk.enumName), params: [] };
+      }
+      if (isSQLWrapper2(chunk)) {
+        if (chunk.shouldOmitSQLParens?.()) {
+          return this.buildQueryFromSourceParams([chunk.getSQL()], config2);
+        }
+        return this.buildQueryFromSourceParams([
+          new StringChunk2("("),
+          chunk.getSQL(),
+          new StringChunk2(")")
+        ], config2);
+      }
+      if (inlineParams) {
+        return { sql: this.mapInlineParam(chunk, config2), params: [] };
+      }
+      return { sql: escapeParam(paramStartIndex.value++, chunk), params: [chunk], typings: ["none"] };
+    }));
+  }
+  mapInlineParam(chunk, { escapeString }) {
+    if (chunk === null) {
+      return "null";
+    }
+    if (typeof chunk === "number" || typeof chunk === "boolean") {
+      return chunk.toString();
+    }
+    if (typeof chunk === "string") {
+      return escapeString(chunk);
+    }
+    if (typeof chunk === "object") {
+      const mappedValueAsString = chunk.toString();
+      if (mappedValueAsString === "[object Object]") {
+        return escapeString(JSON.stringify(chunk));
+      }
+      return escapeString(mappedValueAsString);
+    }
+    throw new Error("Unexpected param value: " + chunk);
+  }
+  getSQL() {
+    return this;
+  }
+  as(alias) {
+    if (alias === void 0) {
+      return this;
+    }
+    return new _SQL.Aliased(this, alias);
+  }
+  mapWith(decoder) {
+    this.decoder = typeof decoder === "function" ? { mapFromDriverValue: decoder } : decoder;
+    return this;
+  }
+  inlineParams() {
+    this.shouldInlineParams = true;
+    return this;
+  }
+  /**
+   * This method is used to conditionally include a part of the query.
+   *
+   * @param condition - Condition to check
+   * @returns itself if the condition is `true`, otherwise `undefined`
+   */
+  if(condition) {
+    return condition ? this : void 0;
+  }
+};
+var Name2 = class {
+  constructor(value) {
+    this.value = value;
+  }
+  static [entityKind2] = "Name";
+  brand;
+  getSQL() {
+    return new SQL2([this]);
+  }
+};
+var noopDecoder2 = {
+  mapFromDriverValue: (value) => value
+};
+var noopEncoder2 = {
+  mapToDriverValue: (value) => value
+};
+var noopMapper2 = {
+  ...noopDecoder2,
+  ...noopEncoder2
+};
+var Param2 = class {
+  /**
+   * @param value - Parameter value
+   * @param encoder - Encoder to convert the value to a driver parameter
+   */
+  constructor(value, encoder = noopEncoder2) {
+    this.value = value;
+    this.encoder = encoder;
+  }
+  static [entityKind2] = "Param";
+  brand;
+  getSQL() {
+    return new SQL2([this]);
+  }
+};
+function sql2(strings, ...params) {
+  const queryChunks = [];
+  if (params.length > 0 || strings.length > 0 && strings[0] !== "") {
+    queryChunks.push(new StringChunk2(strings[0]));
+  }
+  for (const [paramIndex, param2] of params.entries()) {
+    queryChunks.push(param2, new StringChunk2(strings[paramIndex + 1]));
+  }
+  return new SQL2(queryChunks);
+}
+((sql22) => {
+  function empty() {
+    return new SQL2([]);
+  }
+  sql22.empty = empty;
+  function fromList(list) {
+    return new SQL2(list);
+  }
+  sql22.fromList = fromList;
+  function raw(str) {
+    return new SQL2([new StringChunk2(str)]);
+  }
+  sql22.raw = raw;
+  function join(chunks, separator) {
+    const result = [];
+    for (const [i, chunk] of chunks.entries()) {
+      if (i > 0 && separator !== void 0) {
+        result.push(separator);
+      }
+      result.push(chunk);
+    }
+    return new SQL2(result);
+  }
+  sql22.join = join;
+  function identifier(value) {
+    return new Name2(value);
+  }
+  sql22.identifier = identifier;
+  function placeholder2(name2) {
+    return new Placeholder2(name2);
+  }
+  sql22.placeholder = placeholder2;
+  function param2(value, encoder) {
+    return new Param2(value, encoder);
+  }
+  sql22.param = param2;
+})(sql2 || (sql2 = {}));
+((SQL22) => {
+  class Aliased {
+    constructor(sql22, fieldAlias) {
+      this.sql = sql22;
+      this.fieldAlias = fieldAlias;
+    }
+    static [entityKind2] = "SQL.Aliased";
+    /** @internal */
+    isSelectionField = false;
+    getSQL() {
+      return this.sql;
+    }
+    /** @internal */
+    clone() {
+      return new Aliased(this.sql, this.fieldAlias);
+    }
+  }
+  SQL22.Aliased = Aliased;
+})(SQL2 || (SQL2 = {}));
+var Placeholder2 = class {
+  constructor(name2) {
+    this.name = name2;
+  }
+  static [entityKind2] = "Placeholder";
+  getSQL() {
+    return new SQL2([this]);
+  }
+};
+var IsDrizzleView2 = /* @__PURE__ */ Symbol.for("drizzle:IsDrizzleView");
+var View2 = class {
+  static [entityKind2] = "View";
+  /** @internal */
+  [ViewBaseConfig2];
+  /** @internal */
+  [IsDrizzleView2] = true;
+  constructor({ name: name2, schema, selectedFields, query }) {
+    this[ViewBaseConfig2] = {
+      name: name2,
+      originalName: name2,
+      schema,
+      selectedFields,
+      query,
+      isExisting: !query,
+      isAlias: false
+    };
+  }
+  getSQL() {
+    return new SQL2([this]);
+  }
+};
+Column2.prototype.getSQL = function() {
+  return new SQL2([this]);
+};
+Table2.prototype.getSQL = function() {
+  return new SQL2([this]);
+};
+Subquery2.prototype.getSQL = function() {
+  return new SQL2([this]);
+};
+
 // src/routes/reactions.ts
 var router6 = (0, import_express6.Router)();
 async function getReactionCounts(recordingId) {
-  const result = await db.execute(sql`
+  const result = await db.execute(sql2`
     SELECT
       COUNT(*) FILTER (WHERE type = 'like') AS likes,
       COUNT(*) FILTER (WHERE type = 'dislike') AS dislikes
@@ -88958,58 +90079,68 @@ async function getReactionCounts(recordingId) {
   return { likes: Number(row?.likes ?? 0), dislikes: Number(row?.dislikes ?? 0) };
 }
 async function getUserReaction(recordingId, sessionId) {
-  const result = await db.execute(sql`
+  const result = await db.execute(sql2`
     SELECT type FROM reactions
     WHERE recording_id = ${recordingId} AND session_id = ${sessionId}
   `);
   return result.rows[0]?.type ?? null;
 }
 router6.get("/reactions", async (req, res) => {
-  const { recording_id, session_id } = req.query;
-  if (!recording_id) {
-    res.status(400).json({ error: "recording_id is required" });
-    return;
+  try {
+    const { recording_id, session_id } = req.query;
+    if (!recording_id) {
+      res.status(400).json({ error: "recording_id is required" });
+      return;
+    }
+    const counts = await getReactionCounts(recording_id);
+    const user_reaction = session_id ? await getUserReaction(recording_id, session_id) : null;
+    res.json({ ...counts, user_reaction });
+  } catch (err) {
+    req.log?.error?.({ err, recording_id: req.query.recording_id }, "GET /reactions error");
+    res.status(500).json({ error: "Failed to fetch reactions" });
   }
-  const counts = await getReactionCounts(recording_id);
-  const user_reaction = session_id ? await getUserReaction(recording_id, session_id) : null;
-  res.json({ ...counts, user_reaction });
 });
 router6.post("/reactions", invalidateOnSuccess(["stats"]), async (req, res) => {
-  const { recording_id, type, session_id } = req.body;
-  if (!recording_id || !type || !session_id) {
-    res.status(400).json({ error: "recording_id, type, and session_id are required" });
-    return;
-  }
-  if (type !== "like" && type !== "dislike") {
-    res.status(400).json({ error: "type must be 'like' or 'dislike'" });
-    return;
-  }
-  const existing = await db.execute(sql`
-    SELECT id, type FROM reactions
-    WHERE recording_id = ${recording_id} AND session_id = ${session_id}
-  `);
-  const existingRow = existing.rows[0];
-  if (existingRow) {
-    if (existingRow.type === type) {
-      await db.execute(sql`
-        DELETE FROM reactions
-        WHERE recording_id = ${recording_id} AND session_id = ${session_id}
-      `);
+  try {
+    const { recording_id, type, session_id } = req.body;
+    if (!recording_id || !type || !session_id) {
+      res.status(400).json({ error: "recording_id, type, and session_id are required" });
+      return;
+    }
+    if (type !== "like" && type !== "dislike") {
+      res.status(400).json({ error: "type must be 'like' or 'dislike'" });
+      return;
+    }
+    const existing = await db.execute(sql2`
+      SELECT id, type FROM reactions
+      WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+    `);
+    const existingRow = existing.rows[0];
+    if (existingRow) {
+      if (existingRow.type === type) {
+        await db.execute(sql2`
+          DELETE FROM reactions
+          WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+        `);
+      } else {
+        await db.execute(sql2`
+          UPDATE reactions SET type = ${type}
+          WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+        `);
+      }
     } else {
-      await db.execute(sql`
-        UPDATE reactions SET type = ${type}
-        WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+      await db.execute(sql2`
+        INSERT INTO reactions (recording_id, session_id, type)
+        VALUES (${recording_id}, ${session_id}, ${type})
       `);
     }
-  } else {
-    await db.execute(sql`
-      INSERT INTO reactions (recording_id, session_id, type)
-      VALUES (${recording_id}, ${session_id}, ${type})
-    `);
+    const counts = await getReactionCounts(recording_id);
+    const user_reaction = await getUserReaction(recording_id, session_id);
+    res.json({ ...counts, user_reaction });
+  } catch (err) {
+    req.log?.error?.({ err, recording_id: req.body.recording_id }, "POST /reactions error");
+    res.status(500).json({ error: "Failed to process reaction" });
   }
-  const counts = await getReactionCounts(recording_id);
-  const user_reaction = await getUserReaction(recording_id, session_id);
-  res.json({ ...counts, user_reaction });
 });
 var reactions_default = router6;
 
@@ -89054,7 +90185,7 @@ router7.get("/comments", async (req, res) => {
   if (sort === "top") orderClause = "likes_count DESC, c.created_at DESC";
   else if (sort === "old") orderClause = "c.created_at ASC";
   else orderClause = "c.created_at DESC";
-  const result = await db.execute(sql`
+  const result = await db.execute(sql2`
     SELECT
       c.id, c.recording_id, c.parent_id, c.author, c.content, c.deleted, c.created_at,
       COUNT(cl.id) AS likes
@@ -89068,7 +90199,7 @@ router7.get("/comments", async (req, res) => {
   let likedSet;
   if (session_id && rows.length > 0) {
     const commentIds = rows.map((r) => Number(r.id));
-    const liked = await db.execute(sql`
+    const liked = await db.execute(sql2`
       SELECT comment_id FROM comment_likes
       WHERE comment_id = ANY(${commentIds}::int[]) AND session_id = ${session_id}
     `);
@@ -89085,7 +90216,7 @@ router7.post("/comments", invalidateOnSuccess(["stats"]), async (req, res) => {
   }
   const safeAuthor = (author?.trim() || "Anonymous").slice(0, 100);
   const safeContent = content.trim().slice(0, 5e3);
-  const result = await db.execute(sql`
+  const result = await db.execute(sql2`
     INSERT INTO comments (recording_id, author, content, session_id)
     VALUES (${recording_id}, ${safeAuthor}, ${safeContent}, ${session_id})
     RETURNING id, recording_id, parent_id, author, content, deleted, created_at
@@ -89100,7 +90231,7 @@ router7.post("/comments/:commentId/replies", invalidateOnSuccess(["stats"]), asy
     res.status(400).json({ error: "Valid commentId, content, and session_id are required" });
     return;
   }
-  const parentResult = await db.execute(sql`
+  const parentResult = await db.execute(sql2`
     SELECT id, recording_id, parent_id FROM comments WHERE id = ${commentId}
   `);
   const parent = parentResult.rows[0];
@@ -89111,7 +90242,7 @@ router7.post("/comments/:commentId/replies", invalidateOnSuccess(["stats"]), asy
   const rootId = parent.parent_id != null ? Number(parent.parent_id) : commentId;
   const safeAuthor = (author?.trim() || "Anonymous").slice(0, 100);
   const safeContent = content.trim().slice(0, 5e3);
-  const result = await db.execute(sql`
+  const result = await db.execute(sql2`
     INSERT INTO comments (recording_id, parent_id, author, content, session_id)
     VALUES (${parent.recording_id}, ${rootId}, ${safeAuthor}, ${safeContent}, ${session_id})
     RETURNING id, recording_id, parent_id, author, content, deleted, created_at
@@ -89126,23 +90257,23 @@ router7.post("/comments/:commentId/like", async (req, res) => {
     res.status(400).json({ error: "Valid commentId and session_id are required" });
     return;
   }
-  const existing = await db.execute(sql`
+  const existing = await db.execute(sql2`
     SELECT id FROM comment_likes
     WHERE comment_id = ${commentId} AND session_id = ${session_id}
   `);
   if (existing.rows.length > 0) {
-    await db.execute(sql`
+    await db.execute(sql2`
       DELETE FROM comment_likes
       WHERE comment_id = ${commentId} AND session_id = ${session_id}
     `);
   } else {
-    await db.execute(sql`
+    await db.execute(sql2`
       INSERT INTO comment_likes (comment_id, session_id)
       VALUES (${commentId}, ${session_id})
       ON CONFLICT DO NOTHING
     `);
   }
-  const countResult = await db.execute(sql`
+  const countResult = await db.execute(sql2`
     SELECT COUNT(*) AS likes FROM comment_likes WHERE comment_id = ${commentId}
   `);
   res.json({
@@ -89157,7 +90288,7 @@ var import_express8 = __toESM(require_express2(), 1);
 var router8 = (0, import_express8.Router)();
 router8.get("/requests", async (_req, res) => {
   try {
-    const result = await db.execute(sql`
+    const result = await db.execute(sql2`
       SELECT id, performer_username, stream_link, notes, priority, status, created_at
       FROM requests
       ORDER BY created_at DESC
@@ -89185,7 +90316,7 @@ router8.post("/requests", async (req, res) => {
     created_at: (/* @__PURE__ */ new Date()).toISOString()
   };
   try {
-    const result = await db.execute(sql`
+    const result = await db.execute(sql2`
       INSERT INTO requests (performer_username, stream_link, notes, priority, status, created_at)
       VALUES (
         ${performer_username ?? null},
@@ -89211,7 +90342,7 @@ router8.patch("/requests/:id/status", invalidateOnSuccess(["performers", "record
     return;
   }
   try {
-    const result = await db.execute(sql`
+    const result = await db.execute(sql2`
       UPDATE requests SET status = ${status} WHERE id = ${id}
       RETURNING id, performer_username, stream_link, notes, priority, status, created_at
     `);
@@ -89231,22 +90362,27 @@ var import_express9 = __toESM(require_express2(), 1);
 
 // src/middleware/auth.ts
 async function requireAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const token = authHeader.slice(7);
+    const {
+      data: { user },
+      error: error40
+    } = await supabase.auth.getUser(token);
+    if (error40 || !user) {
+      res.status(401).json({ error: "Invalid or expired token" });
+      return;
+    }
+    req.user = { id: user.id, email: user.email };
+    next();
+  } catch (err) {
+    req.log?.error?.({ err }, "Auth middleware error");
+    res.status(503).json({ error: "Authentication service unavailable" });
   }
-  const token = authHeader.slice(7);
-  const {
-    data: { user },
-    error: error40
-  } = await supabase.auth.getUser(token);
-  if (error40 || !user) {
-    res.status(401).json({ error: "Invalid or expired token" });
-    return;
-  }
-  req.user = { id: user.id, email: user.email };
-  next();
 }
 
 // src/routes/user.ts
@@ -89254,13 +90390,13 @@ var router9 = (0, import_express9.Router)();
 router9.use("/user", requireAuth);
 router9.get("/user/profile", async (req, res) => {
   const userId = req.user.id;
-  const result = await db.execute(sql`
+  const result = await db.execute(sql2`
     SELECT user_id, display_name, avatar_url, bio, created_at, updated_at
     FROM user_profiles WHERE user_id = ${userId}
   `);
   if (!result.rows.length) {
     const name = req.user.email?.split("@")[0] ?? "User";
-    const created = await db.execute(sql`
+    const created = await db.execute(sql2`
       INSERT INTO user_profiles (user_id, display_name, created_at, updated_at)
       VALUES (${userId}, ${name}, NOW(), NOW())
       ON CONFLICT (user_id) DO UPDATE SET updated_at = NOW()
@@ -89274,16 +90410,16 @@ router9.get("/user/profile", async (req, res) => {
 router9.put("/user/profile", async (req, res) => {
   const userId = req.user.id;
   const { display_name, avatar_url, bio } = req.body;
-  await db.execute(sql`
+  await db.execute(sql2`
     INSERT INTO user_profiles (user_id, display_name, avatar_url, bio, created_at, updated_at)
     VALUES (${userId}, ${display_name ?? null}, ${avatar_url ?? null}, ${bio ?? null}, NOW(), NOW())
     ON CONFLICT (user_id) DO UPDATE SET
       display_name = COALESCE(${display_name ?? null}, user_profiles.display_name),
-      avatar_url = ${avatar_url !== void 0 ? avatar_url ?? null : sql`user_profiles.avatar_url`},
-      bio = ${bio !== void 0 ? bio ?? null : sql`user_profiles.bio`},
+      avatar_url = ${avatar_url !== void 0 ? avatar_url ?? null : sql2`user_profiles.avatar_url`},
+      bio = ${bio !== void 0 ? bio ?? null : sql2`user_profiles.bio`},
       updated_at = NOW()
   `);
-  const result = await db.execute(sql`
+  const result = await db.execute(sql2`
     SELECT user_id, display_name, avatar_url, bio, created_at, updated_at
     FROM user_profiles WHERE user_id = ${userId}
   `);
@@ -89291,14 +90427,14 @@ router9.put("/user/profile", async (req, res) => {
 });
 router9.get("/user/role", async (req, res) => {
   const userId = req.user.id;
-  const result = await db.execute(sql`
+  const result = await db.execute(sql2`
     SELECT role FROM user_roles WHERE user_id = ${userId}
   `);
   res.json({ role: result.rows[0]?.role ?? "user" });
 });
 router9.get("/user/saved", async (req, res) => {
   const userId = req.user.id;
-  const result = await db.execute(sql`
+  const result = await db.execute(sql2`
     SELECT recording_id, metadata, saved_at
     FROM saved_videos WHERE user_id = ${userId}
     ORDER BY saved_at DESC
@@ -89312,7 +90448,7 @@ router9.post("/user/saved", async (req, res) => {
     res.status(400).json({ error: "recording_id required" });
     return;
   }
-  await db.execute(sql`
+  await db.execute(sql2`
     INSERT INTO saved_videos (user_id, recording_id, metadata, saved_at)
     VALUES (${userId}, ${recording_id}, ${metadata ?? null}, NOW())
     ON CONFLICT (user_id, recording_id) DO UPDATE SET metadata = EXCLUDED.metadata
@@ -89321,14 +90457,14 @@ router9.post("/user/saved", async (req, res) => {
 });
 router9.delete("/user/saved/:recordingId", async (req, res) => {
   const userId = req.user.id;
-  await db.execute(sql`
+  await db.execute(sql2`
     DELETE FROM saved_videos WHERE user_id = ${userId} AND recording_id = ${req.params.recordingId}
   `);
   res.json({ ok: true });
 });
 router9.get("/user/history", async (req, res) => {
   const userId = req.user.id;
-  const result = await db.execute(sql`
+  const result = await db.execute(sql2`
     SELECT recording_id, metadata, watched_at
     FROM watch_history WHERE user_id = ${userId}
     ORDER BY watched_at DESC LIMIT 200
@@ -89342,7 +90478,7 @@ router9.post("/user/history", async (req, res) => {
     res.status(400).json({ error: "recording_id required" });
     return;
   }
-  await db.execute(sql`
+  await db.execute(sql2`
     INSERT INTO watch_history (user_id, recording_id, metadata, watched_at)
     VALUES (${userId}, ${recording_id}, ${metadata ?? null}, NOW())
     ON CONFLICT (user_id, recording_id) DO UPDATE SET watched_at = NOW(), metadata = EXCLUDED.metadata
@@ -89351,12 +90487,12 @@ router9.post("/user/history", async (req, res) => {
 });
 router9.delete("/user/history", async (req, res) => {
   const userId = req.user.id;
-  await db.execute(sql`DELETE FROM watch_history WHERE user_id = ${userId}`);
+  await db.execute(sql2`DELETE FROM watch_history WHERE user_id = ${userId}`);
   res.json({ ok: true });
 });
 router9.get("/user/watch-later", async (req, res) => {
   const userId = req.user.id;
-  const result = await db.execute(sql`
+  const result = await db.execute(sql2`
     SELECT recording_id, metadata, added_at
     FROM watch_later_items WHERE user_id = ${userId}
     ORDER BY added_at ASC
@@ -89370,7 +90506,7 @@ router9.post("/user/watch-later", async (req, res) => {
     res.status(400).json({ error: "recording_id required" });
     return;
   }
-  await db.execute(sql`
+  await db.execute(sql2`
     INSERT INTO watch_later_items (user_id, recording_id, metadata, added_at)
     VALUES (${userId}, ${recording_id}, ${metadata ?? null}, NOW())
     ON CONFLICT (user_id, recording_id) DO NOTHING
@@ -89379,19 +90515,19 @@ router9.post("/user/watch-later", async (req, res) => {
 });
 router9.delete("/user/watch-later/:recordingId", async (req, res) => {
   const userId = req.user.id;
-  await db.execute(sql`
+  await db.execute(sql2`
     DELETE FROM watch_later_items WHERE user_id = ${userId} AND recording_id = ${req.params.recordingId}
   `);
   res.json({ ok: true });
 });
 router9.delete("/user/watch-later", async (req, res) => {
   const userId = req.user.id;
-  await db.execute(sql`DELETE FROM watch_later_items WHERE user_id = ${userId}`);
+  await db.execute(sql2`DELETE FROM watch_later_items WHERE user_id = ${userId}`);
   res.json({ ok: true });
 });
 router9.get("/user/collections", async (req, res) => {
   const userId = req.user.id;
-  const cols = await db.execute(sql`
+  const cols = await db.execute(sql2`
     SELECT c.id, c.name, c.description, c.created_at, c.updated_at,
       COUNT(ci.id)::int AS item_count,
       MIN(ci.metadata) AS first_item_metadata
@@ -89411,7 +90547,7 @@ router9.post("/user/collections", async (req, res) => {
     return;
   }
   const id = crypto.randomUUID();
-  const result = await db.execute(sql`
+  const result = await db.execute(sql2`
     INSERT INTO user_collections (id, user_id, name, description, created_at, updated_at)
     VALUES (${id}, ${userId}, ${name.trim()}, ${description ?? null}, NOW(), NOW())
     RETURNING id, name, description, created_at, updated_at
@@ -89421,10 +90557,10 @@ router9.post("/user/collections", async (req, res) => {
 router9.put("/user/collections/:id", async (req, res) => {
   const userId = req.user.id;
   const { name, description } = req.body;
-  const result = await db.execute(sql`
+  const result = await db.execute(sql2`
     UPDATE user_collections SET
       name = COALESCE(${name ?? null}, name),
-      description = ${description !== void 0 ? description ?? null : sql`description`},
+      description = ${description !== void 0 ? description ?? null : sql2`description`},
       updated_at = NOW()
     WHERE id = ${req.params.id} AND user_id = ${userId}
     RETURNING id, name, description, created_at, updated_at
@@ -89437,22 +90573,22 @@ router9.put("/user/collections/:id", async (req, res) => {
 });
 router9.delete("/user/collections/:id", async (req, res) => {
   const userId = req.user.id;
-  await db.execute(sql`DELETE FROM user_collection_items WHERE collection_id = ${req.params.id}`);
-  await db.execute(sql`
+  await db.execute(sql2`DELETE FROM user_collection_items WHERE collection_id = ${req.params.id}`);
+  await db.execute(sql2`
     DELETE FROM user_collections WHERE id = ${req.params.id} AND user_id = ${userId}
   `);
   res.json({ ok: true });
 });
 router9.get("/user/collections/:id/items", async (req, res) => {
   const userId = req.user.id;
-  const col = await db.execute(sql`
+  const col = await db.execute(sql2`
     SELECT id FROM user_collections WHERE id = ${req.params.id} AND user_id = ${userId}
   `);
   if (!col.rows.length) {
     res.status(404).json({ error: "Not found" });
     return;
   }
-  const items = await db.execute(sql`
+  const items = await db.execute(sql2`
     SELECT recording_id, metadata, added_at
     FROM user_collection_items WHERE collection_id = ${req.params.id}
     ORDER BY added_at DESC
@@ -89466,14 +90602,14 @@ router9.post("/user/collections/:id/items", async (req, res) => {
     res.status(400).json({ error: "recording_id required" });
     return;
   }
-  const col = await db.execute(sql`
+  const col = await db.execute(sql2`
     SELECT id FROM user_collections WHERE id = ${req.params.id} AND user_id = ${userId}
   `);
   if (!col.rows.length) {
     res.status(404).json({ error: "Not found" });
     return;
   }
-  await db.execute(sql`
+  await db.execute(sql2`
     INSERT INTO user_collection_items (collection_id, recording_id, metadata, added_at)
     VALUES (${req.params.id}, ${recording_id}, ${metadata ?? null}, NOW())
     ON CONFLICT (collection_id, recording_id) DO NOTHING
@@ -89482,14 +90618,14 @@ router9.post("/user/collections/:id/items", async (req, res) => {
 });
 router9.delete("/user/collections/:id/items/:recordingId", async (req, res) => {
   const userId = req.user.id;
-  const col = await db.execute(sql`
+  const col = await db.execute(sql2`
     SELECT id FROM user_collections WHERE id = ${req.params.id} AND user_id = ${userId}
   `);
   if (!col.rows.length) {
     res.status(403).json({ error: "Forbidden" });
     return;
   }
-  await db.execute(sql`
+  await db.execute(sql2`
     DELETE FROM user_collection_items
     WHERE collection_id = ${req.params.id} AND recording_id = ${req.params.recordingId}
   `);
@@ -89497,7 +90633,7 @@ router9.delete("/user/collections/:id/items/:recordingId", async (req, res) => {
 });
 router9.get("/user/follows", async (req, res) => {
   const userId = req.user.id;
-  const result = await db.execute(sql`
+  const result = await db.execute(sql2`
     SELECT performer_username, followed_at
     FROM performer_follows WHERE user_id = ${userId}
     ORDER BY followed_at DESC
@@ -89511,7 +90647,7 @@ router9.post("/user/follows", async (req, res) => {
     res.status(400).json({ error: "performer_username required" });
     return;
   }
-  await db.execute(sql`
+  await db.execute(sql2`
     INSERT INTO performer_follows (user_id, performer_username, followed_at)
     VALUES (${userId}, ${performer_username}, NOW())
     ON CONFLICT (user_id, performer_username) DO NOTHING
@@ -89520,7 +90656,7 @@ router9.post("/user/follows", async (req, res) => {
 });
 router9.delete("/user/follows/:username", async (req, res) => {
   const userId = req.user.id;
-  await db.execute(sql`
+  await db.execute(sql2`
     DELETE FROM performer_follows
     WHERE user_id = ${userId} AND performer_username = ${req.params.username}
   `);
@@ -89528,7 +90664,7 @@ router9.delete("/user/follows/:username", async (req, res) => {
 });
 router9.get("/user/notifications", async (req, res) => {
   const userId = req.user.id;
-  const result = await db.execute(sql`
+  const result = await db.execute(sql2`
     SELECT id, type, message, related_id, is_read, created_at
     FROM user_notifications WHERE user_id = ${userId}
     ORDER BY created_at DESC LIMIT 50
@@ -89537,12 +90673,12 @@ router9.get("/user/notifications", async (req, res) => {
 });
 router9.put("/user/notifications/read-all", async (req, res) => {
   const userId = req.user.id;
-  await db.execute(sql`UPDATE user_notifications SET is_read = TRUE WHERE user_id = ${userId}`);
+  await db.execute(sql2`UPDATE user_notifications SET is_read = TRUE WHERE user_id = ${userId}`);
   res.json({ ok: true });
 });
 router9.delete("/user/notifications/:id", async (req, res) => {
   const userId = req.user.id;
-  await db.execute(sql`
+  await db.execute(sql2`
     DELETE FROM user_notifications WHERE id = ${req.params.id} AND user_id = ${userId}
   `);
   res.json({ ok: true });
@@ -89719,23 +90855,279 @@ router11.get("/search", cache({ ttlSeconds: 30, tags: ["search"] }), async (req,
 });
 var search_default = router11;
 
-// src/routes/index.ts
+// src/routes/media-proxy.ts
+var import_express12 = __toESM(require_express2(), 1);
+var ALLOWED_HOSTS = [
+  "pixeldrain.com",
+  "www.pixeldrain.com",
+  "img2.pixhost.to",
+  "pixhost.to",
+  "www.pixhost.to",
+  "files.catbox.moe",
+  "catbox.moe",
+  "lobfile.com",
+  "www.lobfile.com",
+  "i.ibb.co"
+];
 var router12 = (0, import_express12.Router)();
-router12.use(health_default);
-router12.use(recordings_default);
-router12.use(performers_default);
-router12.use(tags_default);
-router12.use(stats_default);
-router12.use(reactions_default);
-router12.use(comments_default);
-router12.use(requests_default);
-router12.use(user_default);
-router12.use(cache_admin_default);
-router12.use(search_default);
-var routes_default = router12;
+router12.get("/media", async (req, res) => {
+  const rawUrl = req.query.url;
+  if (!rawUrl) {
+    res.status(400).json({ error: "Missing 'url' query parameter" });
+    return;
+  }
+  let urlStr;
+  try {
+    urlStr = decodeURIComponent(rawUrl);
+    new URL(urlStr);
+  } catch {
+    res.status(400).json({ error: "Invalid URL" });
+    return;
+  }
+  const parsed = new URL(urlStr);
+  if (!ALLOWED_HOSTS.includes(parsed.hostname)) {
+    res.status(403).json({ error: "Domain not allowed" });
+    return;
+  }
+  try {
+    const upstreamHeaders = {
+      // Mimic a browser request to avoid being blocked
+      "User-Agent": "Mozilla/5.0 (compatible; MediaProxy/1.0)",
+      Accept: "*/*"
+    };
+    const rangeHeader = req.headers["range"];
+    if (rangeHeader) {
+      upstreamHeaders["Range"] = rangeHeader;
+    }
+    const response = await fetch(urlStr, {
+      headers: upstreamHeaders
+    });
+    if (!response.ok && response.status !== 206) {
+      req.log.error({ url: urlStr, status: response.status }, "Media proxy upstream error");
+      res.status(502).json({ error: "Upstream fetch failed" });
+      return;
+    }
+    const contentType = response.headers.get("content-type");
+    if (contentType) res.setHeader("Content-Type", contentType);
+    const contentLength = response.headers.get("content-length");
+    if (contentLength) res.setHeader("Content-Length", contentLength);
+    const contentRange = response.headers.get("content-range");
+    if (contentRange) res.setHeader("Content-Range", contentRange);
+    const acceptRanges = response.headers.get("accept-ranges");
+    if (acceptRanges) res.setHeader("Accept-Ranges", acceptRanges);
+    if (response.status === 206) {
+      res.status(206);
+    }
+    res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+    if (response.body) {
+      const reader = response.body.getReader();
+      const pump = async () => {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            res.end();
+            return;
+          }
+          res.write(value);
+        }
+      };
+      pump().catch((err) => {
+        req.log.error({ err }, "Media proxy stream error");
+        if (!res.headersSent) res.status(500).end();
+      });
+    } else {
+      const text2 = await response.text();
+      res.send(text2);
+    }
+  } catch (err) {
+    req.log.error({ err }, "Media proxy fetch error");
+    if (!res.headersSent) res.status(502).json({ error: "Upstream fetch failed" });
+  }
+});
+var media_proxy_default = router12;
+
+// src/routes/migrate-auth.ts
+var import_express13 = __toESM(require_express2(), 1);
+var migrationSql = `
+-- User Profiles
+CREATE TABLE IF NOT EXISTS user_profiles (
+  user_id TEXT PRIMARY KEY,
+  display_name TEXT,
+  avatar_url TEXT,
+  bio TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- User Roles
+CREATE TABLE IF NOT EXISTS user_roles (
+  user_id TEXT PRIMARY KEY,
+  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'moderator', 'admin')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Saved Videos (Bookmarks)
+CREATE TABLE IF NOT EXISTS saved_videos (
+  id SERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  recording_id TEXT NOT NULL,
+  metadata TEXT,
+  saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT saved_videos_uniq UNIQUE (user_id, recording_id)
+);
+
+-- Watch History
+CREATE TABLE IF NOT EXISTS watch_history (
+  id SERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  recording_id TEXT NOT NULL,
+  metadata TEXT,
+  watched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT watch_history_uniq UNIQUE (user_id, recording_id)
+);
+
+-- Watch Later Items
+CREATE TABLE IF NOT EXISTS watch_later_items (
+  id SERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  recording_id TEXT NOT NULL,
+  metadata TEXT,
+  added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT watch_later_uniq UNIQUE (user_id, recording_id)
+);
+
+-- User Collections
+CREATE TABLE IF NOT EXISTS user_collections (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- User Collection Items
+CREATE TABLE IF NOT EXISTS user_collection_items (
+  id SERIAL PRIMARY KEY,
+  collection_id TEXT NOT NULL REFERENCES user_collections(id) ON DELETE CASCADE,
+  recording_id TEXT NOT NULL,
+  metadata TEXT,
+  added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT collection_items_uniq UNIQUE (collection_id, recording_id)
+);
+
+-- Performer Follows
+CREATE TABLE IF NOT EXISTS performer_follows (
+  id SERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  performer_username TEXT NOT NULL,
+  followed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT performer_follows_uniq UNIQUE (user_id, performer_username)
+);
+
+-- User Notifications
+CREATE TABLE IF NOT EXISTS user_notifications (
+  id SERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  message TEXT NOT NULL,
+  related_id TEXT,
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_saved_videos_user ON saved_videos(user_id);
+CREATE INDEX IF NOT EXISTS idx_watch_history_user ON watch_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_watch_later_user ON watch_later_items(user_id);
+CREATE INDEX IF NOT EXISTS idx_collections_user ON user_collections(user_id);
+CREATE INDEX IF NOT EXISTS idx_collection_items_collection ON user_collection_items(collection_id);
+CREATE INDEX IF NOT EXISTS idx_performer_follows_user ON performer_follows(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON user_notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread ON user_notifications(user_id, is_read);
+`;
+var router13 = (0, import_express13.Router)();
+router13.get("/migrate-auth", async (_req, res) => {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) {
+    res.status(500).json({ success: false, error: "DATABASE_URL not set" });
+    return;
+  }
+  try {
+    const { Pool: Pool4 } = __require("pg");
+    const pool2 = new Pool4({
+      connectionString: dbUrl,
+      ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 15e3
+    });
+    console.log("[migrate-auth] Running migration...");
+    await pool2.query(migrationSql);
+    console.log("[migrate-auth] Migration completed");
+    const result = await pool2.query(
+      "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name"
+    );
+    const tables = result.rows.map((r) => r.table_name);
+    console.log("[migrate-auth] Tables:", tables);
+    await pool2.end();
+    res.json({ success: true, tables });
+  } catch (err) {
+    console.error("[migrate-auth] Failed:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+var migrate_auth_default = router13;
+
+// src/routes/views.ts
+var import_express14 = __toESM(require_express2(), 1);
+var router14 = (0, import_express14.Router)();
+router14.post("/recordings/:id/view", async (req, res) => {
+  const { id } = req.params;
+  if (!id) {
+    res.status(400).json({ error: "Missing recording id" });
+    return;
+  }
+  try {
+    const { data: current, error: fetchError } = await supabase.from("recordings").select("viewers").eq("id", id).single();
+    if (fetchError || !current) {
+      req.log.error({ err: fetchError, id }, "Failed to fetch recording for view increment");
+      res.status(500).json({ error: "Failed to record view" });
+      return;
+    }
+    const newCount = (current.viewers ?? 0) + 1;
+    const { error: updateError } = await supabase.from("recordings").update({ viewers: newCount }).eq("id", id);
+    if (updateError) {
+      req.log.error({ err: updateError, id }, "Failed to update view count");
+      res.status(500).json({ error: "Failed to record view" });
+      return;
+    }
+    res.json({ viewers: newCount });
+  } catch (err) {
+    req.log.error({ err, id }, "Unexpected error recording view");
+    res.status(500).json({ error: "Failed to record view" });
+  }
+});
+var views_default = router14;
+
+// src/routes/index.ts
+var router15 = (0, import_express15.Router)();
+router15.use(health_default);
+router15.use(recordings_default);
+router15.use(performers_default);
+router15.use(tags_default);
+router15.use(stats_default);
+router15.use(reactions_default);
+router15.use(comments_default);
+router15.use(requests_default);
+router15.use(user_default);
+router15.use(cache_admin_default);
+router15.use(search_default);
+router15.use(media_proxy_default);
+router15.use(migrate_auth_default);
+router15.use(views_default);
+var routes_default = router15;
 
 // src/app.ts
-var app = (0, import_express13.default)();
+var app = (0, import_express16.default)();
 app.use(
   (0, import_pino_http.default)({
     logger,
@@ -89756,9 +91148,14 @@ app.use(
   })
 );
 app.use((0, import_cors.default)());
-app.use(import_express13.default.json());
-app.use(import_express13.default.urlencoded({ extended: true }));
+app.use(import_express16.default.json());
+app.use(import_express16.default.urlencoded({ extended: true }));
 app.use("/api", routes_default);
+app.use((err, _req, res, _next) => {
+  logger.error({ err }, "Unhandled route error");
+  if (res.headersSent) return;
+  res.status(500).json({ error: "Internal server error" });
+});
 var app_default = app;
 
 // ../video-archive/api/index.ts

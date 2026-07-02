@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import { QUERY_PRESETS } from "./query-client";
 
 export interface Recording {
   id: string;
@@ -27,6 +28,7 @@ export interface Performer {
   username: string;
   recording_count: number;
   latest_thumbnail?: string | null;
+  sprite_url?: string | null;
   gender?: string | null;
   latest_timestamp?: string | null;
 }
@@ -121,6 +123,7 @@ export function useListPerformers(
     queryKey: ["performers", searchParams.toString()],
     queryFn: () => fetchApi<PerformersResponse>(`/api/performers?${searchParams}`),
     placeholderData: keepPreviousData,
+    ...QUERY_PRESETS.page(3 * 60_000),
     staleTime: queryOptions?.staleTime,
   });
 }
@@ -130,6 +133,7 @@ export function useGetPerformer(username: string) {
     queryKey: ["performer", username],
     queryFn: () => fetchApi<PerformerProfile>(`/api/performers/${username}`),
     enabled: !!username,
+    ...QUERY_PRESETS.page(),
   });
 }
 
@@ -142,6 +146,7 @@ export function useListRecordings(params: ListRecordingsParams = {}) {
   return useQuery({
     queryKey: ["recordings", searchParams.toString()],
     queryFn: () => fetchApi<ListRecordingsResponse>(`/api/recordings?${searchParams}`),
+    ...QUERY_PRESETS.page(),
   });
 }
 
@@ -149,6 +154,7 @@ export function useListTags() {
   return useQuery({
     queryKey: ["tags"],
     queryFn: () => fetchApi<TagCount[]>(`/api/tags`),
+    ...QUERY_PRESETS.page(),
   });
 }
 
@@ -156,6 +162,7 @@ export function useGetStats() {
   return useQuery({
     queryKey: ["stats"],
     queryFn: () => fetchApi<SiteStats>(`/api/stats`),
+    ...QUERY_PRESETS.stats(),
   });
 }
 
@@ -183,7 +190,7 @@ export function useSearchSuggestions(query: string) {
     queryKey: ["search", "suggestions", query],
     queryFn: () => fetchApi<SearchSuggestionsResponse>(`/api/search?q=${encodeURIComponent(query)}`),
     enabled: query.trim().length >= 2,
-    staleTime: 15_000,
+    ...QUERY_PRESETS.search(),
   });
 }
 
@@ -210,6 +217,7 @@ export function useGetRecording(id: string) {
     queryKey: ["recording", id],
     queryFn: () => fetchApi<Recording>(`/api/recordings/${id}`),
     enabled: !!id,
+    ...QUERY_PRESETS.detail(),
   });
 }
 
@@ -218,6 +226,7 @@ export function useListRelatedRecordings(id: string, limit = 8) {
     queryKey: ["recordings", "related", id, limit],
     queryFn: () => fetchApi<Recording[]>(`/api/recordings/related?id=${id}&limit=${limit}`),
     enabled: !!id,
+    ...QUERY_PRESETS.page(),
   });
 }
 
@@ -226,6 +235,7 @@ export function useGetReactions(id: string) {
     queryKey: ["reactions", id],
     queryFn: () => fetchApi<{ likes: number; dislikes: number; user_reaction?: string | null }>(`/api/recordings/${id}/reactions`),
     enabled: !!id,
+    ...QUERY_PRESETS.search(), // reactions change fast
   });
 }
 
@@ -285,9 +295,10 @@ export function useListComments(params: ListCommentsParams) {
   if (params.limit) searchParams.set("limit", params.limit.toString());
   if (params.sort) searchParams.set("sort", params.sort);
 
-  return useQuery({
+  return useQuery<{ data: Comment[]; total: number; page: number; limit: number; totalPages: number }>({
     queryKey: ["comments", searchParams.toString()],
     queryFn: () => fetchApi<{ data: Comment[]; total: number; page: number; limit: number; totalPages: number }>(`/api/comments?${searchParams}`),
+    ...QUERY_PRESETS.page(),
   });
 }
 
@@ -340,4 +351,37 @@ export function getListCommentsQueryKey(params: ListCommentsParams) {
   if (params.limit) searchParams.set("limit", params.limit.toString());
   if (params.sort) searchParams.set("sort", params.sort);
   return ["comments", searchParams.toString()];
+}
+
+// ─── View Counting ───────────────────────────────────────────
+
+const VIEWED_SET_KEY = "vault_viewed_recordings";
+
+/**
+ * Track a view for a recording. Uses sessionStorage to ensure we only
+ * count one view per video per browser session.
+ *
+ * Returns true if the view was tracked, false if already viewed this session.
+ */
+export async function trackView(recordingId: string): Promise<boolean> {
+  // Check sessionStorage dedup
+  try {
+    const viewed = JSON.parse(sessionStorage.getItem(VIEWED_SET_KEY) || "[]") as string[];
+    if (viewed.includes(recordingId)) {
+      return false; // Already counted this session
+    }
+
+    // Send view event to API
+    await fetchApi<{ viewers: number }>(`/api/recordings/${recordingId}/view`, {
+      method: "POST",
+    });
+
+    // Mark as viewed
+    viewed.push(recordingId);
+    sessionStorage.setItem(VIEWED_SET_KEY, JSON.stringify(viewed));
+    return true;
+  } catch {
+    // Silently fail — view tracking is non-critical
+    return false;
+  }
 }

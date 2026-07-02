@@ -73,6 +73,55 @@
   --opaque-button-border-intensity: -8;
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
+  --mx: 0;
+  --my: 0;
+  --a-x: calc(var(--mx) * 8px);
+  --a-y: calc(var(--my) * 8px);
+  --b-x: calc(var(--mx) * -6px);
+  --b-y: calc(var(--my) * -6px);
+  --c-x: calc(var(--mx) * 4px);
+  --c-y: calc(var(--my) * 4px);
+  --bg-pattern:
+    repeating-linear-gradient(
+        45deg,
+        #0000 calc(-650% / 13) calc(50% / 13),
+        rgba(0,0,0,0.15) 0 calc(100% / 13),
+        #0000 0 calc(150% / 13),
+        rgba(0,0,0,0.15) 0 calc(200% / 13),
+        #0000 0 calc(250% / 13),
+        rgba(0,0,0,0.15) 0 calc(300% / 13)
+      )
+      calc(0px + var(--c-x)) calc(0px + var(--c-y)),
+    repeating-linear-gradient(
+        45deg,
+        #0000 calc(-650% / 13) calc(50% / 13),
+        rgba(0,0,0,0.15) 0 calc(100% / 13),
+        #0000 0 calc(150% / 13),
+        rgba(0,0,0,0.15) 0 calc(200% / 13),
+        #0000 0 calc(250% / 13),
+        rgba(0,0,0,0.15) 0 calc(300% / 13)
+      )
+      calc(32px + var(--a-x)) calc(32px + var(--a-y)),
+    repeating-linear-gradient(
+        -45deg,
+        #0000 calc(-650% / 13) calc(50% / 13),
+        rgba(0,0,0,0.15) 0 calc(100% / 13),
+        #0000 0 calc(150% / 13),
+        rgba(0,0,0,0.15) 0 calc(200% / 13),
+        #0000 0 calc(250% / 13),
+        rgba(0,0,0,0.15) 0 calc(300% / 13)
+      )
+      calc(0px + var(--b-x)) calc(0px + var(--b-y)),
+    repeating-linear-gradient(
+        -45deg,
+        #0000 calc(-650% / 13) calc(50% / 13),
+        rgba(0,0,0,0.15) 0 calc(100% / 13),
+        #0000 0 calc(150% / 13),
+        rgba(0,0,0,0.15) 0 calc(200% / 13),
+        #0000 0 calc(250% / 13),
+        rgba(0,0,0,0.15) 0 calc(300% / 13)
+      )
+      calc(32px + var(--a-x)) calc(32px + var(--a-y)) transparent;
 
   --background: 0 0% 97%;
   --foreground: 0 0% 9%;
@@ -141,6 +190,55 @@
   --opaque-button-border-intensity: 9;
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
+  --mx: 0;
+  --my: 0;
+  --a-x: calc(var(--mx) * 8px);
+  --a-y: calc(var(--my) * 8px);
+  --b-x: calc(var(--mx) * -6px);
+  --b-y: calc(var(--my) * -6px);
+  --c-x: calc(var(--mx) * 4px);
+  --c-y: calc(var(--my) * 4px);
+  --bg-pattern:
+    repeating-linear-gradient(
+        45deg,
+        #0000 calc(-650% / 13) calc(50% / 13),
+        rgba(255,255,255,0.12) 0 calc(100% / 13),
+        #0000 0 calc(150% / 13),
+        rgba(255,255,255,0.12) 0 calc(200% / 13),
+        #0000 0 calc(250% / 13),
+        rgba(255,255,255,0.12) 0 calc(300% / 13)
+      )
+      calc(0px + var(--c-x)) calc(0px + var(--c-y)),
+    repeating-linear-gradient(
+        45deg,
+        #0000 calc(-650% / 13) calc(50% / 13),
+        rgba(255,255,255,0.12) 0 calc(100% / 13),
+        #0000 0 calc(150% / 13),
+        rgba(255,255,255,0.12) 0 calc(200% / 13),
+        #0000 0 calc(250% / 13),
+        rgba(255,255,255,0.12) 0 calc(300% / 13)
+      )
+      calc(32px + var(--a-x)) calc(32px + var(--a-y)),
+    repeating-linear-gradient(
+        -45deg,
+        #0000 calc(-650% / 13) calc(50% / 13),
+        rgba(255,255,255,0.12) 0 calc(100% / 13),
+        #0000 0 calc(150% / 13),
+        rgba(255,255,255,0.12) 0 calc(200% / 13),
+        #0000 0 calc(250% / 13),
+        rgba(255,255,255,0.12) 0 calc(300% / 13)
+      )
+      calc(0px + var(--b-x)) calc(0px + var(--b-y)),
+    repeating-linear-gradient(
+        -45deg,
+        #0000 calc(-650% / 13) calc(50% / 13),
+        rgba(255,255,255,0.12) 0 calc(100% / 13),
+        #0000 0 calc(150% / 13),
+        rgba(255,255,255,0.12) 0 calc(200% / 13),
+        #0000 0 calc(250% / 13),
+        rgba(255,255,255,0.12) 0 calc(300% / 13)
+      )
+      calc(32px + var(--a-x)) calc(32px + var(--a-y)) transparent;
 
   --background: 0 0% 7%;
   --foreground: 0 0% 96%;
@@ -201,100 +299,33 @@
   }
 
   body {
-    @apply font-sans antialiased bg-background text-foreground;
+    @apply font-sans antialiased text-foreground bg-background;
   }
-}
 
-.bg-pattern {
-  background:
-    repeating-linear-gradient(
-        45deg,
-        #0000 calc(-650% / 13) calc(50% / 13),
-        #ffffff06 0 calc(100% / 13),
-        #0000 0 calc(150% / 13),
-        #ffffff06 0 calc(200% / 13),
-        #0000 0 calc(250% / 13),
-        #ffffff06 0 calc(300% / 13)
-      )
-      0px 0px,
-    repeating-linear-gradient(
-        45deg,
-        #0000 calc(-650% / 13) calc(50% / 13),
-        #ffffff06 0 calc(100% / 13),
-        #0000 0 calc(150% / 13),
-        #ffffff06 0 calc(200% / 13),
-        #0000 0 calc(250% / 13),
-        #ffffff06 0 calc(300% / 13)
-      )
-      32px 32px,
-    repeating-linear-gradient(
-        -45deg,
-        #0000 calc(-650% / 13) calc(50% / 13),
-        #ffffff06 0 calc(100% / 13),
-        #0000 0 calc(150% / 13),
-        #ffffff06 0 calc(200% / 13),
-        #0000 0 calc(250% / 13),
-        #ffffff06 0 calc(300% / 13)
-      )
-      0px 0px,
-    repeating-linear-gradient(
-        -45deg,
-        #0000 calc(-650% / 13) calc(50% / 13),
-        #ffffff06 0 calc(100% / 13),
-        #0000 0 calc(150% / 13),
-        #ffffff06 0 calc(200% / 13),
-        #0000 0 calc(250% / 13),
-        #ffffff06 0 calc(300% / 13)
-      )
-      32px 32px #1e1e1e;
+  html {
+    scroll-behavior: smooth !important;
+  }
 
-  background-size: 64px 64px;
-}
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth !important;
+    }
+  }
 
-.bg-pattern-light {
-  background:
-    repeating-linear-gradient(
-        45deg,
-        #0000 calc(-650% / 13) calc(50% / 13),
-        #00000006 0 calc(100% / 13),
-        #0000 0 calc(150% / 13),
-        #00000006 0 calc(200% / 13),
-        #0000 0 calc(250% / 13),
-        #00000006 0 calc(300% / 13)
-      )
-      0px 0px,
-    repeating-linear-gradient(
-        45deg,
-        #0000 calc(-650% / 13) calc(50% / 13),
-        #00000006 0 calc(100% / 13),
-        #0000 0 calc(150% / 13),
-        #00000006 0 calc(200% / 13),
-        #0000 0 calc(250% / 13),
-        #00000006 0 calc(300% / 13)
-      )
-      32px 32px,
-    repeating-linear-gradient(
-        -45deg,
-        #0000 calc(-650% / 13) calc(50% / 13),
-        #00000006 0 calc(100% / 13),
-        #0000 0 calc(150% / 13),
-        #00000006 0 calc(200% / 13),
-        #0000 0 calc(250% / 13),
-        #00000006 0 calc(300% / 13)
-      )
-      0px 0px,
-    repeating-linear-gradient(
-        -45deg,
-        #0000 calc(-650% / 13) calc(50% / 13),
-        #00000006 0 calc(100% / 13),
-        #0000 0 calc(150% / 13),
-        #00000006 0 calc(200% / 13),
-        #0000 0 calc(250% / 13),
-        #00000006 0 calc(300% / 13)
-      )
-      32px 32px;
+  ::selection {
+    background-color: hsl(var(--primary) / 0.25);
+    color: hsl(var(--foreground));
+  }
 
-  background-size: 64px 64px;
+  /* ─── Hidden default scrollbar ─────────────────── */
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  * {
+    scrollbar-width: none;
+  }
 }
 
 @layer utilities {
@@ -308,64 +339,105 @@
     pointer-events: none;
   }
 
-  .no-default-hover-elevate {}
-  .no-default-active-elevate {}
-
-  .toggle-elevate::before,
-  .toggle-elevate-2::before {
-    content: "";
-    pointer-events: none;
-    position: absolute;
-    inset: 0px;
-    border-radius: inherit;
-    z-index: -1;
+  .content-visibility-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: 200px;
   }
 
-  .toggle-elevate.toggle-elevated::before {
-    background-color: var(--elevate-2);
+  .bg-dot-pattern {
+    background-image: var(--bg-pattern, none);
+    background-size: 64px 64px;
+    background-position: 0 0;
+    background-repeat: repeat;
   }
 
-  .border.toggle-elevate::before {
-    inset: -1px;
+  .bg-cross-dots {
+    background:
+      radial-gradient(circle at 50% 50%, #100f0f 1.5px, transparent 1.5px),
+      radial-gradient(circle at 50% 50%, #100f0f 0.75px, transparent 0.75px);
+    background-size: 32px 32px, 32px 32px;
+    background-position: 0 0, 16px 16px;
+    width: 100%;
+    height: 100%;
+    will-change: background-position;
   }
 
-  .hover-elevate:not(.no-default-hover-elevate),
-  .active-elevate:not(.no-default-active-elevate),
-  .hover-elevate-2:not(.no-default-hover-elevate),
-  .active-elevate-2:not(.no-default-active-elevate) {
-    position: relative;
-    z-index: 0;
+  .dark .bg-cross-dots {
+    background:
+      radial-gradient(circle at 50% 50%, rgba(255,255,255,0.12) 1.5px, transparent 1.5px),
+      radial-gradient(circle at 50% 50%, rgba(255,255,255,0.07) 0.75px, transparent 0.75px);
+    background-size: 32px 32px, 32px 32px;
+    background-position: 0 0, 16px 16px;
   }
 
-  .hover-elevate:not(.no-default-hover-elevate)::after,
-  .active-elevate:not(.no-default-active-elevate)::after,
-  .hover-elevate-2:not(.no-default-hover-elevate)::after,
-  .active-elevate-2:not(.no-default-active-elevate)::after {
-    content: "";
-    pointer-events: none;
-    position: absolute;
-    inset: 0px;
-    border-radius: inherit;
-    z-index: 999;
+  .pattern-square {
+    --mx: 0;
+    --my: 0;
+    --a-x: calc(var(--mx) * 8px);
+    --a-y: calc(var(--my) * 8px);
+    --b-x: calc(var(--mx) * -6px);
+    --b-y: calc(var(--my) * -6px);
+    --c-x: calc(var(--mx) * 4px);
+    --c-y: calc(var(--my) * 4px);
+
+    background:
+      repeating-linear-gradient(
+          45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          #100f0f 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          #100f0f 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          #100f0f 0 calc(300% / 13)
+        )
+        calc(0px + var(--c-x)) calc(0px + var(--c-y)),
+      repeating-linear-gradient(
+          45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          #100f0f 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          #100f0f 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          #100f0f 0 calc(300% / 13)
+        )
+        calc(32px + var(--a-x)) calc(32px + var(--a-y)),
+      repeating-linear-gradient(
+          -45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          #100f0f 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          #100f0f 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          #100f0f 0 calc(300% / 13)
+        )
+        calc(0px + var(--b-x)) calc(0px + var(--b-y)),
+      repeating-linear-gradient(
+          -45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          #100f0f 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          #100f0f 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          #100f0f 0 calc(300% / 13)
+        )
+        calc(32px + var(--a-x)) calc(32px + var(--a-y)) #1e1e1e;
+
+    background-size: 64px 64px;
+    width: 100%;
+    height: 100%;
+    will-change: background-position;
   }
 
-  .hover-elevate:hover:not(.no-default-hover-elevate)::after,
-  .active-elevate:active:not(.no-default-active-elevate)::after {
-    background-color: var(--elevate-1);
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 
-  .hover-elevate-2:hover:not(.no-default-hover-elevate)::after,
-  .active-elevate-2:active:not(.no-default-active-elevate)::after {
-    background-color: var(--elevate-2);
-  }
 
-  .border.hover-elevate:not(.no-hover-interaction-elevate)::after,
-  .border.active-elevate:not(.no-active-interaction-elevate)::after,
-  .border.hover-elevate-2:not(.no-hover-interaction-elevate)::after,
-  .border.active-elevate-2:not(.no-active-interaction-elevate)::after,
-  .border.hover-elevate:not(.no-hover-interaction-elevate)::after {
-    inset: -1px;
-  }
 
   @keyframes shimmer {
     100% {
@@ -382,33 +454,102 @@
     }
   }
 
+  @keyframes fade-in-up {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 
+  @keyframes fade-in-scale {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% {
+      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.3);
+    }
+    50% {
+      box-shadow: 0 0 0 4px hsl(var(--primary) / 0.05);
+    }
+  }
+
+  @keyframes slide-in-right {
+    from {
+      opacity: 0;
+      transform: translateX(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes count-up {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fade-in-up {
+    animation: fade-in-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .animate-fade-in-scale {
+    animation: fade-in-scale 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .animate-slide-in-right {
+    animation: slide-in-right 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
 
   .nav-underline {
     position: relative;
+    transition: color 0.2s ease;
   }
 
   .nav-underline::after {
     content: '';
     position: absolute;
     bottom: -2px;
-    left: 50%;
-    width: 60%;
+    left: 0;
+    width: 100%;
     height: 2px;
     background: hsl(var(--primary));
     border-radius: 1px;
-    transform: translateX(-50%) scaleX(0);
-    transition: transform 0.2s ease, opacity 0.2s ease;
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.25s ease;
     opacity: 0;
   }
 
   .nav-underline:hover::after {
-    transform: translateX(-50%) scaleX(1);
+    transform: scaleX(1);
     opacity: 0.5;
   }
 
   .nav-underline.active::after {
-    transform: translateX(-50%) scaleX(1);
+    transform: scaleX(1);
     opacity: 1;
   }
 
@@ -417,33 +558,38 @@
   }
 
   .glass-panel {
-    background: hsl(var(--background) / 0.5);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
+    background: hsl(var(--background) / 0.45);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
     border-bottom: 1px solid hsl(var(--border) / 0.4);
+    transition: background 0.35s ease, box-shadow 0.35s ease, padding 0.35s ease, height 0.35s ease;
   }
 
   .glass-panel.scrolled {
-    background: hsl(var(--background) / 0.85);
-    backdrop-filter: blur(32px);
-    -webkit-backdrop-filter: blur(32px);
-    box-shadow: 0 4px 24px hsl(0 0% 0% / 0.08);
+    background: hsl(var(--background) / 0.82);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    box-shadow: 0 1px 0 hsl(var(--primary) / 0.06), 0 4px 24px hsl(0 0% 0% / 0.08);
+  }
+
+  .glass-panel.scrolled .nav-inner {
+    height: 3.25rem;
   }
 
   .dark .glass-panel {
-    background: hsl(0 0% 0% / 0.25);
-    border-bottom: 1px solid hsl(var(--border) / 0.3);
+    background: hsl(0 0% 0% / 0.20);
+    border-bottom: 1px solid hsl(var(--border) / 0.25);
   }
 
   .dark .glass-panel.scrolled {
-    background: hsl(0 0% 0% / 0.55);
-    box-shadow: 0 4px 24px hsl(0 0% 0% / 0.3);
+    background: hsl(0 0% 0% / 0.50);
+    box-shadow: 0 1px 0 hsl(var(--primary) / 0.08), 0 4px 24px hsl(0 0% 0% / 0.35);
   }
 
   .glass-dropdown {
     background: hsl(var(--background) / 0.85);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     border: 1px solid hsl(var(--border) / 0.5);
     box-shadow: 0 8px 32px hsl(0 0% 0% / 0.12);
   }

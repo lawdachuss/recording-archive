@@ -1,14 +1,16 @@
-import { useState, useEffect } from "react";
-import { Link } from "wouter";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { Link, useLocation } from "wouter";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
 import { useAuth } from "@/contexts/AuthContext";
-import { getHistory, clearHistory, type SavedRecording } from "@/lib/bookmarks";
 import { userApi, parseCloudItem } from "@/lib/user-api";
+import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
+import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { History as HistoryIcon, Trash2, Clock } from "lucide-react";
 
-function toRecording(r: SavedRecording) {
+function toRecording(r: ReturnType<typeof parseCloudItem>) {
   return {
     id: r.id,
     username: r.username,
@@ -33,11 +35,13 @@ function toRecording(r: SavedRecording) {
 }
 
 export default function History() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
-  const [localHistory, setLocalHistory] = useState<SavedRecording[]>(() =>
-    user ? [] : getHistory(),
-  );
+
+  useEffect(() => {
+    if (!loading && !user) setLocation("/login");
+  }, [user, loading, setLocation]);
 
   const { data: cloudItems = [], isLoading } = useQuery({
     queryKey: ["user", "history"],
@@ -45,46 +49,40 @@ export default function History() {
     enabled: !!user,
   });
 
-  const clearCloud = useMutation({
+  const recentlyWatched = useRecentlyWatched();
+
+  const clearCloud = useTrackedMutation({
     mutationFn: () => userApi.clearHistory(),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "history"] }),
   });
 
-  useEffect(() => {
-    if (!user) setLocalHistory(getHistory());
-  }, [user]);
-
-  const history: SavedRecording[] = user
-    ? cloudItems.map(parseCloudItem)
-    : localHistory;
-
   const handleClear = () => {
-    if (user) {
-      clearCloud.mutate();
-    } else {
-      clearHistory();
-      setLocalHistory([]);
-    }
+    clearCloud.mutate();
   };
+
+  if (!user) return null;
+
+  const history = cloudItems.map(parseCloudItem);
 
   return (
     <Layout>
       <div className="container mx-auto px-4 sm:px-6 py-8 max-w-7xl">
         <div className="flex items-center justify-between mb-8 pb-6 border-b border-border/40">
           <div>
-            <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight">
-              <HistoryIcon className="w-5 h-5 text-primary" />
-              Watch History
-            </h1>
-            <p className="text-xs text-muted-foreground mt-1">
+            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold mb-3">
+              <HistoryIcon className="w-3.5 h-3.5 text-primary" />
+              History
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tighter">Watch History</h1>
+            <p className="text-sm text-muted-foreground mt-2">
               {history.length} recording{history.length !== 1 ? "s" : ""} watched
-              {user && <span className="text-primary/60 ml-1">· cloud synced</span>}
+              <CloudSyncIndicator compact />
             </p>
           </div>
           {history.length > 0 && (
             <button
               onClick={handleClear}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground/50 hover:text-destructive transition-colors"
+              className="inline-flex items-center gap-1.5 h-8 px-3 text-xs text-muted-foreground/50 hover:text-destructive border border-border/40 hover:border-destructive/30 rounded-lg transition-all"
             >
               <Trash2 className="w-3.5 h-3.5" />
               Clear history
@@ -93,26 +91,30 @@ export default function History() {
         </div>
 
         {isLoading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
             {[...Array(10)].map((_, i) => (
-              <div key={i} className="aspect-video bg-secondary/30 animate-pulse rounded-sm" />
+              <div key={i} className="aspect-video bg-secondary/30 animate-pulse rounded-lg" />
             ))}
           </div>
         ) : history.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-32 text-center">
-            <Clock className="w-10 h-10 text-muted-foreground/20 mb-4" />
-            <p className="text-sm font-medium text-muted-foreground/50 mb-1">No watch history</p>
-            <p className="text-xs text-muted-foreground/30 mb-6">
-              Videos you watch will appear here automatically.
+          <div className="flex flex-col items-center justify-center py-24 text-center border border-border/30 rounded-2xl bg-secondary/10 animate-fade-in-up">
+            <div className="w-14 h-14 rounded-full bg-secondary/50 flex items-center justify-center mb-4">
+              <Clock className="w-6 h-6 text-muted-foreground/30" />
+            </div>
+            <p className="text-sm font-medium text-muted-foreground mb-1">No watch history yet</p>
+            <p className="text-xs text-muted-foreground/40 mb-6 max-w-xs">
+              Videos you watch will appear here automatically so you can pick up where you left off.
             </p>
-            <Link href="/browse" className="text-xs text-primary hover:underline">
+            <Link href="/browse" className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-medium text-primary hover:text-primary/80 border border-primary/20 hover:border-primary/40 rounded-lg transition-colors">
               Browse recordings →
             </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
-            {history.map((rec) => (
-              <VideoCard key={rec.id} recording={toRecording(rec)} />
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+            {history.map((rec, i) => (
+              <div key={rec.id} className="animate-fade-in-up" style={{ animationDelay: `${i * 25}ms` }}>
+                <VideoCard key={rec.id} recording={toRecording(rec)} isWatched={recentlyWatched.has(rec.id)} />
+              </div>
             ))}
           </div>
         )}

@@ -10,6 +10,9 @@ import requestsRouter from "./requests";
 import userRouter from "./user";
 import cacheAdminRouter from "./cache-admin";
 import searchRouter from "./search";
+import mediaProxyRouter from "./media-proxy";
+import migrateAuthRouter from "./migrate-auth";
+import viewsRouter from "./views";
 
 const router: IRouter = Router();
 
@@ -24,5 +27,8 @@ router.use(requestsRouter);
 router.use(userRouter);
 router.use(cacheAdminRouter);
 router.use(searchRouter);
+router.use(mediaProxyRouter);
+router.use(migrateAuthRouter);
+router.use(viewsRouter);
 
 export default router;
