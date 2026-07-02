@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { Menu, X, Film, Sun, Moon } from "lucide-react";
 import { UserMenu } from "@/components/UserMenu";
@@ -63,86 +63,26 @@ function Logo() {
   );
 }
 
-function RandomFab() {
+function RandomButton() {
   const [, setLocation] = useLocation();
-  const [visible, setVisible] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const hideTimer = useRef<number | null>(null);
-
-  const h = (a: number) => `hsl(var(--primary) / ${a})`;
-
-  useEffect(() => {
-    const onScroll = () => {
-      const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
-      setProgress(maxScroll > 0 ? window.scrollY / maxScroll : 0);
-      if (!visible) setVisible(true);
-
-      if (hideTimer.current !== null) clearTimeout(hideTimer.current);
-      hideTimer.current = window.setTimeout(() => setVisible(false), 80);
-    };
-
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      if (hideTimer.current !== null) clearTimeout(hideTimer.current);
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   return (
-    <div className="fixed top-[62px] md:top-[70px] bottom-8 right-8 z-50 flex flex-col items-center pointer-events-none">
-      {/* Scroll indicator track */}
-      <div className="flex-1 w-px min-h-0 relative">
-        <div
-          className="absolute inset-0 rounded-full"
-          style={{
-            opacity: visible ? 1 : 0,
-            background: `linear-gradient(to bottom, transparent, ${h(0.06)} 50%, ${h(0.12)} 100%)`,
-          }}
-        />
-        {/* Fill portion — grows from bottom */}
-        <div
-          className="absolute bottom-0 left-0 right-0 rounded-full"
-          style={{
-            height: `${Math.max(progress * 100, 0.5)}%`,
-            opacity: visible ? 1 : 0,
-            background: `linear-gradient(to top, ${h(1)}, ${h(0.5)} 60%, transparent)`,
-            boxShadow: visible ? `0 0 4px ${h(0.35)}` : 'none',
-          }}
-        />
-        {/* Glowing dot at scroll position */}
-        <div
-          className="absolute w-1.5 h-1.5 rounded-full"
-          style={{
-            left: '50%',
-            top: `${progress * 100}%`,
-            transform: `translate(-50%, -50%)`,
-            opacity: visible ? 1 : 0,
-            background: h(1),
-            boxShadow: visible ? `0 0 6px ${h(1)}, 0 0 12px ${h(0.25)}` : 'none',
-          }}
-        />
-      </div>
-
-      <div className="h-5 shrink-0" />
-
-      <button
-        onClick={() => setLocation("/random")}
-        className="random-fab cursor-pointer hover:scale-110 active:scale-95 transition-transform duration-200 pointer-events-auto"
-        aria-label="Random video"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7 opacity-60 hover:opacity-100 transition-opacity" style={{ color: h(1) }}>
-          <path d="M10.82 16.12c1.69.6 3.91.79 5.18.85.28.01.53-.09.7-.27"/>
-          <path d="M11.14 20.57c.52.24 2.44 1.12 4.08 1.37.46.06.86-.25.9-.71.12-1.52-.3-3.43-.5-4.28"/>
-          <path d="M16.13 21.05c1.65.63 3.68.84 4.87.91a.9.9 0 0 0 .7-.26"/>
-          <path d="M17.99 5.52a20.83 20.83 0 0 1 3.15 4.5.8.8 0 0 1-.68 1.13c-1.17.1-2.5.02-3.9-.25"/>
-          <path d="M20.57 11.14c.24.52 1.12 2.44 1.37 4.08.04.3-.08.59-.31.75"/>
-          <path d="M4.93 4.93a10 10 0 0 0-.67 13.4c.35.43.96.4 1.17-.12.69-1.71 1.07-5.07 1.07-6.71 1.34.45 3.1.9 4.88.62a.85.85 0 0 0 .48-.24"/>
-          <path d="M5.52 17.99c1.05.95 2.91 2.42 4.5 3.15a.8.8 0 0 0 1.13-.68c.2-2.34-.33-5.3-1.57-8.28"/>
-          <path d="M8.35 2.68a10 10 0 0 1 9.98 1.58c.43.35.4.96-.12 1.17-1.5.6-4.3.98-6.07 1.05"/>
-          <path d="m2 2 20 20"/>
-        </svg>
-      </button>
-    </div>
+    <button
+      onClick={() => setLocation("/random")}
+      className="random-fab fixed bottom-8 right-8 z-50 cursor-pointer hover:scale-110 active:scale-95 transition-transform duration-200 pointer-events-auto"
+      aria-label="Random video"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7 opacity-60 hover:opacity-100 transition-opacity" style={{ color: 'hsl(var(--primary))' }}>
+        <path d="M10.82 16.12c1.69.6 3.91.79 5.18.85.28.01.53-.09.7-.27"/>
+        <path d="M11.14 20.57c.52.24 2.44 1.12 4.08 1.37.46.06.86-.25.9-.71.12-1.52-.3-3.43-.5-4.28"/>
+        <path d="M16.13 21.05c1.65.63 3.68.84 4.87.91a.9.9 0 0 0 .7-.26"/>
+        <path d="M17.99 5.52a20.83 20.83 0 0 1 3.15 4.5.8.8 0 0 1-.68 1.13c-1.17.1-2.5.02-3.9-.25"/>
+        <path d="M20.57 11.14c.24.52 1.12 2.44 1.37 4.08.04.3-.08.59-.31.75"/>
+        <path d="M4.93 4.93a10 10 0 0 0-.67 13.4c.35.43.96.4 1.17-.12.69-1.71 1.07-5.07 1.07-6.71 1.34.45 3.1.9 4.88.62a.85.85 0 0 0 .48-.24"/>
+        <path d="M5.52 17.99c1.05.95 2.91 2.42 4.5 3.15a.8.8 0 0 0 1.13-.68c.2-2.34-.33-5.3-1.57-8.28"/>
+        <path d="M8.35 2.68a10 10 0 0 1 9.98 1.58c.43.35.4.96-.12 1.17-1.5.6-4.3.98-6.07 1.05"/>
+        <path d="m2 2 20 20"/>
+      </svg>
+    </button>
   );
 }
 
@@ -365,7 +305,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
 
-      <RandomFab />
+      <RandomButton />
 
       <footer className="py-10 border-t border-border/40 mt-16 bg-background dark:bg-background backdrop-blur-sm relative overflow-hidden">
         <div className="pattern-square absolute inset-0 pointer-events-none opacity-[0.12] dark:opacity-[0.25]" />
