@@ -317,14 +317,27 @@
     color: hsl(var(--foreground));
   }
 
-  /* ─── Hidden default scrollbar ─────────────────── */
   ::-webkit-scrollbar {
-    width: 0;
-    height: 0;
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--foreground) / 0.15);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--foreground) / 0.25);
   }
 
   * {
-    scrollbar-width: none;
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--foreground) / 0.15) transparent;
   }
 }
 
