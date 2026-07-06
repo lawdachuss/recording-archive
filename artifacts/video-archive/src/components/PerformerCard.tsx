@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
+import { useState, useCallback, useMemo, memo } from "react";
 import { Link } from "wouter";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import { SpriteSlideshow } from "@/components/SpriteSlideshow";
 import { Users } from "lucide-react";
 
-const CORS_HOSTS: string[] = ["pixhost.to"];
+const CORS_HOSTS: string[] = ["pixhost.to", "lobfile.com"];
 
 function needsProxy(url: string | null | undefined): boolean {
   if (!url) return false;
@@ -141,38 +141,12 @@ export const PerformerCard = memo(function PerformerCard({ performer, performers
 
 const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { performer: Performer; fetchPriority: "high" | "low" | "auto" }) {
   const [isHovered, setIsHovered] = useState(false);
-  const cardRef = useRef<HTMLDivElement>(null);
 
   const spriteUrl = useMemo(() => proxyUrl(performer.sprite_url), [performer.sprite_url]);
   const hasSprite = !!spriteUrl;
 
   const handleMouseEnter = useCallback(() => { setIsHovered(true); }, []);
   const handleMouseLeave = useCallback(() => { setIsHovered(false); }, []);
-
-  useEffect(() => {
-    const el = cardRef.current;
-    if (!el || !spriteUrl) return;
-
-    let timer: number | undefined;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          timer = window.setTimeout(() => {
-            const img = new Image();
-            img.src = spriteUrl;
-          }, 80);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "200px" },
-    );
-
-    observer.observe(el);
-    return () => {
-      observer.disconnect();
-      if (timer) clearTimeout(timer);
-    };
-  }, [spriteUrl]);
 
   const hasThumbnail = !!performer.latest_thumbnail;
   const initial = useMemo(() => performer.username.charAt(0).toUpperCase(), [performer.username]);
@@ -181,7 +155,6 @@ const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { perf
   return (
     <Link href={`/performers/${performer.username}`} className="group block outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg">
       <div
-        ref={cardRef}
         className="relative overflow-hidden rounded-lg bg-card will-change-transform
           transition-all duration-400 ease-out
           group-hover:-translate-y-[2px]
@@ -216,18 +189,13 @@ const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { perf
             </div>
           )}
 
-          {hasSprite && (
-            <div
-              className={[
-                "absolute inset-0 transition-all duration-400 ease-out will-change-transform",
-                isHovered ? "opacity-100 scale-100" : "opacity-0 scale-[1.03] pointer-events-none",
-              ].join(" ")}
-            >
+          {hasSprite && isHovered && (
+            <div className="absolute inset-0 transition-all duration-400 ease-out will-change-transform opacity-100 scale-100">
               <SpriteSlideshow
                 spriteUrl={spriteUrl}
                 fps={8}
                 className="absolute inset-0 w-full h-full"
-                active={isHovered}
+                active
               />
             </div>
           )}

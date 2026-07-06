@@ -10,11 +10,16 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
+const dbUrl = new URL(process.env.DATABASE_URL);
 // Supabase database host (db.*.supabase.co) is IPv6-only.
 // Vercel serverless and most corporate networks are IPv4-only, so we must use
 // the Supavisor connection pooler with SSL enabled.
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  host: dbUrl.hostname,
+  port: Number(dbUrl.port),
+  user: decodeURIComponent(dbUrl.username),
+  password: decodeURIComponent(dbUrl.password),
+  database: dbUrl.pathname.replace(/^\//, ""),
   ssl: {
     rejectUnauthorized: false,
   },

@@ -1,3 +1,4 @@
+import { useState, type FormEvent } from "react";
 import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,7 +22,22 @@ export function AppPagination({
   className,
 }: AppPaginationProps) {
   const totalPages = Math.ceil(itemsCount / itemsPerPage);
+  const [jumpPage, setJumpPage] = useState("");
   if (totalPages <= 1) return null;
+
+  const goToPage = (page: number) => {
+    const clampedPage = Math.min(Math.max(1, page), totalPages);
+    if (clampedPage !== currentPage) onPageChange(clampedPage);
+  };
+
+  const submitJump = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const page = Number(jumpPage);
+    if (Number.isFinite(page)) {
+      goToPage(Math.trunc(page));
+      setJumpPage("");
+    }
+  };
 
   const buildPages = (): (number | "ellipsis")[] => {
     const visible = new Set<number>();
@@ -74,7 +90,7 @@ export function AppPagination({
       className={cn("flex items-center gap-1", className)}
     >
       <button
-        onClick={() => onPageChange(currentPage - 1)}
+        onClick={() => goToPage(currentPage - 1)}
         disabled={currentPage === 1}
         className={cn(
           btnBase,
@@ -94,7 +110,7 @@ export function AppPagination({
         ) : (
           <button
             key={p}
-            onClick={() => onPageChange(p)}
+            onClick={() => goToPage(p)}
             aria-current={p === currentPage ? "page" : undefined}
             className={cn(
               btnBase,
@@ -109,7 +125,7 @@ export function AppPagination({
       )}
 
       <button
-        onClick={() => onPageChange(currentPage + 1)}
+        onClick={() => goToPage(currentPage + 1)}
         disabled={currentPage === totalPages}
         className={cn(
           btnBase,
@@ -120,6 +136,27 @@ export function AppPagination({
         <span className="hidden sm:inline">Next</span>
         <ChevronRight className="w-3.5 h-3.5" />
       </button>
+
+      {totalPages > 25 && (
+        <form onSubmit={submitJump} className="ml-2 hidden sm:flex items-center gap-1">
+          <input
+            type="number"
+            min={1}
+            max={totalPages}
+            value={jumpPage}
+            onChange={(event) => setJumpPage(event.target.value)}
+            placeholder="Page"
+            aria-label="Jump to page"
+            className="h-8 w-20 rounded border border-border/60 bg-background px-2 text-xs text-foreground outline-none focus:border-primary/60"
+          />
+          <button
+            type="submit"
+            className={cn(btnBase, "border-border/60 text-muted-foreground hover:border-border hover:text-foreground")}
+          >
+            Go
+          </button>
+        </form>
+      )}
     </nav>
   );
 }

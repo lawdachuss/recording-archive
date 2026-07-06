@@ -19,7 +19,7 @@ export const OptimizedImage = memo(function OptimizedImage({
   containerClassName,
   fallback,
   fetchPriority,
-  loading = "lazy",
+  loading,
   noShimmer = false,
 }: OptimizedImageProps) {
   const [loaded, setLoaded] = useState(false);
@@ -50,20 +50,16 @@ export const OptimizedImage = memo(function OptimizedImage({
 
   return (
     <div className={cn("relative overflow-hidden bg-secondary", containerClassName)}>
-      <picture>
-        <source srcSet={src} type="image/avif" />
-        <source srcSet={src} type="image/webp" />
-        <img
-          src={src}
-          alt={alt}
-          loading={loading}
-          decoding="async"
-          fetchPriority={fetchPriority}
-          onLoad={onLoad}
-          onError={onError}
-          className={cn("absolute inset-0 w-full h-full object-cover", className)}
-        />
-      </picture>
+      <img
+        src={src}
+        alt={alt}
+        loading={loading ?? (fetchPriority === "high" ? "eager" : "lazy")}
+        decoding="async"
+        fetchPriority={fetchPriority}
+        onLoad={onLoad}
+        onError={onError}
+        className={cn("absolute inset-0 w-full h-full object-cover", className)}
+      />
       {!loaded && !noShimmer && (
         <div className="absolute inset-0 z-10 bg-secondary">
           <div className="absolute inset-0 -translate-x-full animate-[shimmer_0.6s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-white/15 to-transparent" />

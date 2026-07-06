@@ -44,7 +44,7 @@ export function UserMenu() {
     );
   }
 
-  const displayName = user.email?.split("@")[0] ?? "Account";
+  const displayName = (user.user_metadata?.username as string) ?? user.email?.split("@")[0] ?? "Account";
   const initials = displayName.slice(0, 2).toUpperCase();
 
   const handleSignOut = async () => {

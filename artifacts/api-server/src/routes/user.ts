@@ -1,7 +1,40 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth";
+import { supabase } from "../lib/supabase";
+import { db, sql } from "@workspace/db";
 
 const router = Router();
+
+// ─── Public: Resolve username to email (used by login page) ───────────────────
+
+router.get("/user/resolve-username", async (req, res) => {
+  try {
+    const username = (req.query.username as string)?.trim().toLowerCase();
+    if (!username) {
+      res.status(400).json({ error: "username query param required" });
+      return;
+    }
+
+    const { data: email, error } = await supabase.rpc("resolve_username", {
+      p_username: username,
+    });
+
+    if (error) {
+      req.log?.error?.({ err: error }, "Supabase error resolving username");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+
+    if (!email) {
+      res.status(404).json({ error: "Username not found" });
+      return;
+    }
+    res.json({ email });
+  } catch (err) {
+    req.log?.error?.({ err }, "GET /user/resolve-username unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 router.use("/user", requireAuth);
 
@@ -12,7 +45,7 @@ router.get("/user/profile", async (req, res) => {
     const userId = req.user!.id;
     const { data, error } = await req.supabase!
       .from("user_profiles")
-      .select("user_id, display_name, avatar_url, bio, created_at, updated_at")
+      .select("user_id, display_name, avatar_url, bio, created_at, updated_at, username, email")
       .eq("user_id", userId)
       .single();
 
@@ -23,11 +56,12 @@ router.get("/user/profile", async (req, res) => {
     }
 
     if (!data) {
-      const name = req.user!.email?.split("@")[0] ?? "User";
+      const meta = req.user!.user_metadata as Record<string, unknown> | undefined;
+      const name = (meta?.username as string) ?? req.user!.email?.split("@")[0] ?? "User";
       const { data: created, error: insertError } = await req.supabase!
         .from("user_profiles")
-        .insert({ user_id: userId, display_name: name })
-        .select("user_id, display_name, avatar_url, bio, created_at, updated_at")
+        .insert({ user_id: userId, display_name: name, email: req.user!.email, username: meta?.username as string | undefined })
+        .select("user_id, display_name, avatar_url, bio, created_at, updated_at, username, email")
         .single();
 
       if (insertError) {
@@ -49,21 +83,23 @@ router.get("/user/profile", async (req, res) => {
 router.put("/user/profile", async (req, res) => {
   try {
     const userId = req.user!.id;
-    const { display_name, avatar_url, bio } = req.body as {
+    const { display_name, avatar_url, bio, username } = req.body as {
       display_name?: string;
       avatar_url?: string;
       bio?: string;
+      username?: string;
     };
 
-    const updates: { updated_at: string; display_name?: string; avatar_url?: string; bio?: string } = { updated_at: new Date().toISOString() };
+    const updates: { updated_at: string; display_name?: string; avatar_url?: string; bio?: string; username?: string } = { updated_at: new Date().toISOString() };
     if (display_name !== undefined) updates.display_name = display_name;
     if (avatar_url !== undefined) updates.avatar_url = avatar_url;
     if (bio !== undefined) updates.bio = bio;
+    if (username !== undefined) updates.username = username.trim().toLowerCase();
 
     const { data, error } = await req.supabase!
       .from("user_profiles")
       .upsert({ user_id: userId, ...updates })
-      .select("user_id, display_name, avatar_url, bio, created_at, updated_at")
+      .select("user_id, display_name, avatar_url, bio, created_at, updated_at, username, email")
       .single();
 
     if (error) {
@@ -83,18 +119,14 @@ router.put("/user/profile", async (req, res) => {
 router.get("/user/role", async (req, res) => {
   try {
     const userId = req.user!.id;
-    const { data, error } = await req.supabase!
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId)
-      .single();
+    const result = await db.execute(sql`
+      SELECT role FROM user_roles WHERE user_id = ${userId}
+    `);
 
-    if (error && error.code !== "PGRST116") {
-      req.log.error({ err: error }, "Supabase error fetching user role");
-      res.status(500).json({ error: "Internal server error" });
-      return;
-    }
-    res.json({ role: data?.role ?? "user" });
+    const role = result.rows[0]?.role;
+    res.json({
+      role: role === "admin" || role === "moderator" || role === "user" ? role : "user",
+    });
   } catch (err) {
     req.log.error({ err }, "GET /user/role unexpected error");
     res.status(500).json({ error: "Internal server error" });

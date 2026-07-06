@@ -7,29 +7,27 @@ interface Props {
   requiredRole?: "moderator" | "admin";
 }
 
+const hierarchy = { user: 0, moderator: 1, admin: 2 };
+
 export function ProtectedRoute({ children, requiredRole }: Props) {
   const { user, loading, role } = useAuth();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+
+  const isAuthorized = !requiredRole || (role != null && (hierarchy[role] ?? 0) >= (hierarchy[requiredRole] ?? 0));
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || (requiredRole && role === null)) return;
     if (!user) {
-      setLocation("/login");
+      const redirectTo = location && location !== "/" ? `?redirect=${encodeURIComponent(location)}` : "";
+      setLocation(`/login${redirectTo}`);
       return;
     }
-    if (requiredRole) {
-      const hierarchy = { user: 0, moderator: 1, admin: 2 };
-      const userLevel = hierarchy[role ?? "user"] ?? 0;
-      const requiredLevel = hierarchy[requiredRole] ?? 0;
-      if (userLevel < requiredLevel) {
-        setLocation("/");
-      }
+    if (!isAuthorized) {
+      setLocation("/");
     }
-  }, [user, loading, role, requiredRole]);
-  // Intentionally omitting setLocation — wouter's setLocation is stable
-  // and including it in deps triggers a re-render loop on every navigation
+  }, [user, loading, role, requiredRole, isAuthorized, location]);
 
-  if (loading) {
+  if (loading || (requiredRole && role === null)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -38,10 +36,7 @@ export function ProtectedRoute({ children, requiredRole }: Props) {
   }
 
   if (!user) return null;
-  if (requiredRole) {
-    const hierarchy = { user: 0, moderator: 1, admin: 2 };
-    if ((hierarchy[role ?? "user"] ?? 0) < (hierarchy[requiredRole] ?? 0)) return null;
-  }
+  if (!isAuthorized) return null;
 
   return <>{children}</>;
 }

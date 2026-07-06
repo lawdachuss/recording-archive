@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import { resolveApiPath } from "@/lib/api-base";
 
 interface AuthContextType {
   user: User | null;
@@ -11,17 +12,18 @@ interface AuthContextType {
   signUp: (
     email: string,
     password: string,
-    displayName?: string,
+    username?: string,
   ) => Promise<{ error?: string; needsVerification?: boolean }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
+  resolveUsername: (username: string) => Promise<{ email?: string; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 async function fetchRole(token: string): Promise<"user" | "moderator" | "admin"> {
   try {
-    const res = await fetch("/api/user/role", {
+    const res = await fetch(resolveApiPath("/api/user/role"), {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.ok) {
@@ -38,6 +40,22 @@ async function fetchRole(token: string): Promise<"user" | "moderator" | "admin">
   return "user";
 }
 
+async function applyPendingUsername(token: string) {
+  const pending = localStorage.getItem("pendingUsername");
+  if (!pending) return;
+  localStorage.removeItem("pendingUsername");
+  try {
+    await fetch(resolveApiPath("/api/user/profile"), {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ username: pending }),
+    });
+  } catch {}
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -49,7 +67,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.access_token) {
+        setRole(null);
         fetchRole(session.access_token).then(setRole);
+        applyPendingUsername(session.access_token);
       }
       setLoading(false);
     });
@@ -60,7 +80,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.access_token) {
+        setRole(null);
         fetchRole(session.access_token).then(setRole);
+        applyPendingUsername(session.access_token);
       } else {
         setRole(null);
       }
@@ -73,28 +95,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     email: string,
     password: string,
   ): Promise<{ error?: string }> => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
+    if (data.session?.access_token) {
+      setSession(data.session);
+      setUser(data.session.user);
+      setRole(null);
+      fetchRole(data.session.access_token).then(setRole);
+      applyPendingUsername(data.session.access_token);
+    }
     return {};
   };
 
   const signUp = async (
     email: string,
     password: string,
-    displayName?: string,
+    username?: string,
   ): Promise<{ error?: string; needsVerification?: boolean }> => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { display_name: displayName } },
+      options: { data: { display_name: username, username } },
     });
     if (error) return { error: error.message };
-    if (data.user && !data.session) return { needsVerification: true };
+    if (data.user && !data.session) {
+      if (username) localStorage.setItem("pendingUsername", username);
+      return { needsVerification: true };
+    }
+    if (username && data.session?.access_token) {
+      try {
+        await fetch(resolveApiPath("/api/user/profile"), {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${data.session.access_token}`,
+          },
+          body: JSON.stringify({ username }),
+        });
+      } catch {}
+    }
     return {};
   };
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    setSession(null);
+    setUser(null);
+    setRole(null);
   };
 
   const resetPassword = async (email: string): Promise<{ error?: string }> => {
@@ -105,9 +152,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return {};
   };
 
+  const resolveUsername = async (username: string): Promise<{ email?: string; error?: string }> => {
+    try {
+      const res = await fetch(resolveApiPath(`/api/user/resolve-username?username=${encodeURIComponent(username)}`));
+      if (!res.ok) {
+        if (res.status === 404) return { error: "Username not found" };
+        return { error: "Failed to resolve username" };
+      }
+      const data = (await res.json()) as { email: string };
+      return { email: data.email };
+    } catch {
+      return { error: "Network error" };
+    }
+  };
+
   return (
     <AuthContext.Provider
-      value={{ user, session, loading, role, signIn, signUp, signOut, resetPassword }}
+      value={{ user, session, loading, role, signIn, signUp, signOut, resetPassword, resolveUsername }}
     >
       {children}
     </AuthContext.Provider>

@@ -7,11 +7,11 @@ export const NAV_LINKS = [
   { href: "/performers", label: "Performers", icon: Users },
   { href: "/tags", label: "Tags", icon: Tags },
   { href: "/charts", label: "Charts", icon: BarChart3 },
-  { href: "/request", label: "Request", icon: Send },
 ] as const;
 
 interface DesktopNavProps {
   location: string;
+  onRequestOpen?: () => void;
 }
 
 function isActive(href: string, location: string) {
@@ -23,15 +23,22 @@ const PAGE_IMPORTS: Record<string, () => Promise<unknown>> = {
   "/performers": () => import("@/pages/PerformersList"),
   "/tags": () => import("@/pages/TagsPage"),
   "/charts": () => import("@/pages/Charts"),
-  "/request": () => import("@/pages/RequestPage"),
 };
 
-export const DesktopNav = memo(function DesktopNav({ location }: DesktopNavProps) {
+export const DesktopNav = memo(function DesktopNav({ location, onRequestOpen }: DesktopNavProps) {
   return (
     <nav className="hidden md:flex items-center gap-0.5 text-sm">
       {NAV_LINKS.map(({ href, label, icon: Icon }) => (
         <NavLink key={href} href={href} label={label} icon={Icon} isActive={isActive(href, location)} />
       ))}
+      <span className="w-px h-4 bg-border/20 mx-1" />
+      <button
+        onClick={onRequestOpen}
+        className="nav-underline px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5 transition-all duration-200 text-muted-foreground/70 hover:text-foreground"
+      >
+        <Send className="w-3.5 h-3.5 text-muted-foreground/40" />
+        Request
+      </button>
     </nav>
   );
 });

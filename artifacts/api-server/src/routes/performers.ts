@@ -3,7 +3,225 @@ import { GetPerformerParams } from "@workspace/api-zod";
 import { supabase } from "../lib/supabase";
 import { cache } from "../middleware/cache";
 
+const COOKIES = process.env.COOKIES ?? "";
+
+async function fetchWithCookies(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        Cookie: COOKIES,
+      },
+    });
+    if (!res.ok) return null;
+    return res.text();
+  } catch {
+    return null;
+  }
+}
+
+function extractMetaContent(html: string, property: string): string | null {
+  const regex = new RegExp(`<meta\\s+property=["']${property}["']\\s+content=["']([^"']*)["']`, "i");
+  const match = html.match(regex);
+  return match ? match[1] : null;
+}
+
+function extractTextAfter(html: string, pattern: string): string | null {
+  const regex = new RegExp(`${pattern}\\s*[:]?\\s*([^<]+)`, "i");
+  const match = html.match(regex);
+  return match ? match[1].trim() : null;
+}
+
+interface LookupResult {
+  exists: boolean;
+  platform: string;
+  username: string;
+  display_name?: string;
+  avatar_url?: string;
+  is_online?: boolean;
+  last_seen?: string;
+  room_title?: string;
+  viewer_count?: number;
+  follower_count?: number;
+  profile_url: string;
+  in_archive: boolean;
+  archive_thumbnail?: string | null;
+  archive_recording_count?: number;
+  archive_last_recording?: string | null;
+  platform_check_failed?: boolean;
+}
+
+function parseCount(str: string): number {
+  const s = str.toLowerCase().replace(/,/g, "");
+  if (s.endsWith("m")) return parseFloat(s) * 1_000_000;
+  if (s.endsWith("k")) return parseFloat(s) * 1_000;
+  return parseFloat(s) || 0;
+}
+
+function performerExistsOnPlatform(html: string, username: string, platform: string): boolean {
+  const bodyLower = html.toLowerCase();
+  const usernameLower = username.toLowerCase();
+
+  if (platform === "chaturbate") {
+    if (bodyLower.includes(`data-room="${usernameLower}"`)) return true;
+    if (bodyLower.includes(`data-username="${usernameLower}"`)) return true;
+    if (/class="[^"]*profile-avatar[^"]*"/i.test(html)) return true;
+    if (/class="[^"]*panel-avatar[^"]*"/i.test(html)) return true;
+    if (/class="[^"]*room-status[^"]*"/i.test(html)) return true;
+  }
+
+  if (platform === "stripchat") {
+    if (bodyLower.includes(`"username":"${usernameLower}"`)) return true;
+    if (/class="[^"]*model-avatar[^"]*"/i.test(html)) return true;
+    if (/class="[^"]*model-card[^"]*"/i.test(html)) return true;
+  }
+
+  const ogTitle = extractMetaContent(html, "og:title");
+  if (ogTitle && ogTitle.toLowerCase().includes(usernameLower)) return true;
+
+  const ogDescription = extractMetaContent(html, "og:description");
+  if (ogDescription && ogDescription.toLowerCase().includes(usernameLower)) return true;
+
+  const ogUrl = extractMetaContent(html, "og:url");
+  if (ogUrl && ogUrl.toLowerCase().includes(usernameLower)) return true;
+
+  if (bodyLower.includes(usernameLower) && (bodyLower.includes("is online") || bodyLower.includes("last online") || bodyLower.includes("live now"))) return true;
+
+  return false;
+}
+
 const router = Router();
+
+router.get("/performers/lookup", async (req, res) => {
+  try {
+    const platform = (req.query.platform as string)?.toLowerCase();
+    const username = (req.query.username as string)?.toLowerCase().trim();
+
+    if (!platform || !username) {
+      res.status(400).json({ error: "platform and username are required" });
+      return;
+    }
+    if (!["chaturbate", "stripchat"].includes(platform)) {
+      res.status(400).json({ error: 'platform must be "chaturbate" or "stripchat"' });
+      return;
+    }
+
+    const profileUrl = platform === "chaturbate"
+      ? `https://chaturbate.com/${username}/`
+      : `https://stripchat.com/${username}`;
+
+    const result: LookupResult = {
+      exists: false,
+      platform,
+      username,
+      profile_url: profileUrl,
+      in_archive: false,
+    };
+
+    // 1. Check local archive first
+    try {
+      const { data: archiveData } = await supabase
+        .from("recordings_with_links")
+        .select("thumbnail_url, sprite_url, preview_url, timestamp, username")
+        .eq("username", username)
+        .not("links", "is", "null")
+        .order("timestamp", { ascending: false })
+        .limit(50);
+
+      if (archiveData && archiveData.length > 0) {
+        result.in_archive = true;
+        result.archive_recording_count = archiveData.length;
+        result.archive_last_recording = archiveData[0].timestamp;
+        result.archive_thumbnail =
+          archiveData[0].thumbnail_url || archiveData[0].sprite_url || archiveData[0].preview_url || null;
+      }
+    } catch {
+      // Archive check failed, continue with platform check
+    }
+
+    // 2. Fetch platform page
+    const html = await fetchWithCookies(profileUrl);
+    if (!html) {
+      if (result.in_archive) {
+        result.exists = true;
+        result.platform_check_failed = true;
+        res.json(result);
+        return;
+      }
+      res.json(result);
+      return;
+    }
+
+    // 3. Positive detection — look for performer-specific elements on the page
+    if (performerExistsOnPlatform(html, username, platform)) {
+      result.exists = true;
+    } else {
+      // No positive signals — check <title> for not-found patterns
+      const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+      const title = titleMatch ? titleMatch[1].toLowerCase() : "";
+      const notFoundTitles = ["page not found", "not found", "404", "error"];
+      const isNotFound = notFoundTitles.some((p) => title.includes(p));
+
+      if (isNotFound) {
+        req.log.warn({ title, username, platform, htmlSample: html.slice(0, 500) }, "performer-lookup: title suggests not found");
+
+        if (result.in_archive) {
+          result.exists = true;
+          result.platform_check_failed = true;
+          res.json(result);
+          return;
+        }
+        result.exists = false;
+        res.json(result);
+        return;
+      }
+
+      // Page loaded without positive signals but title doesn't say "not found"
+      result.exists = true;
+      req.log.warn({ username, platform, title, htmlSample: html.slice(0, 300) }, "performer-lookup: no positive signals but page loaded");
+    }
+
+    // 4. Parse performer details
+    const bodyLower = html.toLowerCase();
+    result.display_name = extractMetaContent(html, "og:title") || username;
+    result.avatar_url = extractMetaContent(html, "og:image") ?? undefined;
+
+    if (bodyLower.includes("is online") || bodyLower.includes("online now") || bodyLower.includes("live now")) {
+      result.is_online = true;
+    } else {
+      result.is_online = false;
+      const lastSeenMatch = html.match(/(?:last\s+(?:online|seen|live)|offline)\s*[:]?\s*([^<]+)/i);
+      if (lastSeenMatch) {
+        result.last_seen = lastSeenMatch[1].trim();
+      }
+    }
+
+    const ogDesc = extractMetaContent(html, "og:description");
+    if (ogDesc) {
+      result.room_title = ogDesc;
+    }
+
+    if (result.is_online) {
+      const viewerMatch = html.match(/(\d[\d,]*)\s*(?:viewers?|watching)/i);
+      if (viewerMatch) {
+        result.viewer_count = parseInt(viewerMatch[1].replace(/,/g, ""), 10);
+      }
+    }
+
+    const followerMatch = html.match(/(\d[\d,.]*[kKmM]?)\s*(?:followers?|fans)/i);
+    if (followerMatch) {
+      result.follower_count = parseCount(followerMatch[1]);
+    }
+
+    res.json(result);
+  } catch (err) {
+    req.log.error({ err }, "GET /performers/lookup error");
+    res.status(500).json({ error: "Lookup failed" });
+  }
+});
 
 router.get("/performers", cache({ ttlSeconds: 300, tags: ["performers"] }), async (req, res) => {
   try {

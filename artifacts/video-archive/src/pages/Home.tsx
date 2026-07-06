@@ -220,7 +220,7 @@ export default function Home() {
 
       {/* Recordings — tabs */}
       <section className="px-4 sm:px-6 py-14 relative overflow-hidden">
-        <div className="bg-cross-dots absolute inset-0 pointer-events-none opacity-[0.10] dark:opacity-[0.06]" />
+        <div className="pattern-square absolute inset-0 pointer-events-none opacity-[0.15] dark:opacity-[0.30]" />
         <div className="container mx-auto">
           <div className="flex items-center justify-between mb-8">
             {/* Tabs */}
@@ -333,7 +333,7 @@ export default function Home() {
       {/* Top Performers — Circular avatars */}
       {topPerformers.length > 0 && (
         <section className="border-t border-border/50 px-4 sm:px-6 py-14 bg-[radial-gradient(ellipse_at_center,hsl(var(--primary)/0.02)_0%,transparent_70%)] relative overflow-hidden">
-          <div className="bg-cross-dots absolute inset-0 pointer-events-none opacity-[0.10] dark:opacity-[0.06]" />
+          <div className="pattern-square absolute inset-0 pointer-events-none opacity-[0.15] dark:opacity-[0.30]" />
           <div className="container mx-auto">
             <div className="flex items-center justify-between mb-8">
               <h2 className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold">
@@ -399,7 +399,7 @@ export default function Home() {
       {/* Popular Tags */}
       {Array.isArray(tags) && tags.length > 0 && (
         <section className="border-t border-border/50 px-4 sm:px-6 py-14 relative overflow-hidden">
-          <div className="bg-cross-dots absolute inset-0 pointer-events-none opacity-[0.10] dark:opacity-[0.06]" />
+          <div className="pattern-square absolute inset-0 pointer-events-none opacity-[0.15] dark:opacity-[0.30]" />
           <div className="container mx-auto">
             <div className="flex items-center justify-between mb-8">
               <h2 className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold">
