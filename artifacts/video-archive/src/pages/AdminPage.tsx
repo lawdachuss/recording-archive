@@ -163,11 +163,6 @@ export default function AdminPage() {
               <RefreshCw className={`w-3.5 h-3.5 ${pageLoading ? "animate-spin" : ""}`} />
               Refresh
             </button>
-            <Link href="/request">
-              <span className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-medium border border-primary/30 text-primary hover:border-primary/60 transition-colors rounded-sm">
-                + Submit
-              </span>
-            </Link>
           </div>
         </div>
 

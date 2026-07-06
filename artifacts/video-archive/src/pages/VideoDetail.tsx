@@ -12,6 +12,7 @@ import {
 } from "@workspace/api-client-react";
 import { Layout } from "@/components/Layout";
 import { CommentSection } from "@/components/CommentSection";
+import { VideoCard } from "@/components/VideoCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import { formatBytes, formatRelativeTime } from "@/lib/formatters";
@@ -64,7 +65,10 @@ function detectHostLabel(url: string): string {
     if (hostname.includes("vidoza")) return "Vidoza";
     if (hostname.includes("mp4upload")) return "MP4Upload";
     if (hostname.includes("pixeldrain")) return "Pixeldrain";
-    if (hostname.includes("seekstreaming")) return "SeekStreaming";
+    if (hostname.includes("gofile")) return "Gofile";
+    if (hostname.includes("streamwish")) return "Streamwish";
+    if (hostname.includes("earnvids")) return "EarnVids";
+    if (hostname.includes("seek") || hostname.includes("embedseek") || hostname.includes("seeks.cloud")) return "SeekStreaming";
     return hostname.replace(/^www\./, "");
   } catch {
     return "Server";
@@ -80,7 +84,7 @@ function isEmbedUrl(url: string): boolean {
     }
     // Host-based detection for known embed-friendly providers
     // Some hosts embed via direct URL without a standard embed path
-    if (hostname.includes("seekstreaming")) {
+    if (hostname.includes("seek") || hostname.includes("embedseek") || hostname.includes("seeks.cloud")) {
       return true;
     }
     return false;
@@ -866,10 +870,10 @@ export default function VideoDetail() {
                   </div>
                 ))}
               </div>
-            ) : related && related.filter((r) => r.id !== id).length > 0 ? (
+            ) : related && related.filter((r) => r.id !== id && r.username === video?.username).length > 0 ? (
               <div className="space-y-3">
                 {related
-                  .filter((r) => r.id !== id)
+                  .filter((r) => r.id !== id && r.username === video?.username)
                   .map((rec, i) => (
                     <Link key={rec.id} href={`/video/${rec.id}`} className="group flex gap-3 outline-none">
                       <div className="w-28 aspect-video shrink-0 overflow-hidden bg-secondary rounded-[2px] relative">
@@ -923,6 +927,42 @@ export default function VideoDetail() {
             )}
           </div>
         </div>
+
+        {/* ─── Bottom Recommendations ──────────────────────────── */}
+        {!isLoading ? (
+          <div className="mt-10 space-y-5">
+            <div className="flex flex-col gap-1">
+              <p className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground font-semibold">
+                Recommendations
+              </p>
+              <p className="text-[9px] text-muted-foreground/40">
+                {user ? "Based on your watch history" : `More like this`}
+              </p>
+            </div>
+
+            {relatedLoading ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                {Array.from({ length: 12 }).map((_, i) => (
+                  <div key={i} className="space-y-2">
+                    <Skeleton className="w-full aspect-video" />
+                    <Skeleton className="h-3 w-3/4" />
+                    <Skeleton className="h-2 w-1/2" />
+                  </div>
+                ))}
+              </div>
+            ) : related && related.filter((r) => r.id !== id && r.username !== video?.username).length > 0 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                {related
+                  .filter((r) => r.id !== id && r.username !== video?.username)
+                  .map((rec) => (
+                    <VideoCard key={rec.id} recording={rec} />
+                  ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground/40">No recommendations available.</p>
+            )}
+          </div>
+        ) : null}
       </div>
     </Layout>
   );

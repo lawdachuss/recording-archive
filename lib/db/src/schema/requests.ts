@@ -4,6 +4,8 @@ import { z } from "zod/v4";
 
 export const requestsTable = pgTable("requests", {
   id: serial("id").primaryKey(),
+  user_id: text("user_id").notNull(),
+  platform: text("platform").notNull(),
   performer_username: text("performer_username"),
   stream_link: text("stream_link"),
   notes: text("notes"),

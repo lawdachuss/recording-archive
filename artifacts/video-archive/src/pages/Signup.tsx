@@ -6,7 +6,7 @@ import { Film, Eye, EyeOff, AlertCircle, CheckCircle2 } from "lucide-react";
 export default function Signup() {
   const { signUp } = useAuth();
   const [, setLocation] = useLocation();
-  const [displayName, setDisplayName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -20,9 +20,18 @@ export default function Signup() {
       setError("Password must be at least 6 characters");
       return;
     }
+    const trimmed = username.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (!trimmed) {
+      setError("Username is required");
+      return;
+    }
+    if (trimmed.length < 3) {
+      setError("Username must be at least 3 characters");
+      return;
+    }
     setError(null);
     setLoading(true);
-    const result = await signUp(email, password, displayName);
+    const result = await signUp(email, password, trimmed);
     setLoading(false);
     if (result.error) {
       setError(result.error);
@@ -36,7 +45,7 @@ export default function Signup() {
   if (needsVerification) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden">
-        <div className="bg-cross-dots fixed inset-0 pointer-events-none opacity-[0.10] dark:opacity-[0.06]" />
+        <div className="pattern-square fixed inset-0 pointer-events-none opacity-[0.15] dark:opacity-[0.30]" />
         <div className="w-full max-w-sm text-center">
           <CheckCircle2 className="w-12 h-12 text-primary mx-auto mb-6" />
           <h1 className="text-2xl font-black tracking-tight mb-2">Check your email</h1>
@@ -57,7 +66,7 @@ export default function Signup() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden">
-        <div className="bg-cross-dots fixed inset-0 pointer-events-none opacity-[0.10] dark:opacity-[0.06]" />
+        <div className="pattern-square fixed inset-0 pointer-events-none opacity-[0.15] dark:opacity-[0.30]" />
       <div className="w-full max-w-sm">
         <div className="text-center mb-10">
           <Link href="/" className="inline-flex items-center gap-1.5 group mb-8">
@@ -82,15 +91,17 @@ export default function Signup() {
 
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Display Name <span className="text-muted-foreground/40 normal-case">(optional)</span>
+              Username
             </label>
             <input
               type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              autoFocus
-              placeholder="How others see you"
-              maxLength={60}
+              value={username}
+              onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}
+              required
+              autoComplete="username"
+              placeholder="your_username"
+              minLength={3}
+              maxLength={30}
               className="w-full h-10 bg-secondary border border-border/60 focus:border-primary/50 rounded-sm px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/40"
             />
           </div>

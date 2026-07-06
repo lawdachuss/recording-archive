@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { Sun, Moon, Bookmark, FolderOpen, Clock, History, Heart, Bell, Settings } from "lucide-react";
+import { Sun, Moon, Bookmark, FolderOpen, Clock, History, Heart, Bell, Settings, Send } from "lucide-react";
 import { NAV_LINKS } from "./DesktopNav";
 
 const LIBRARY_LINKS = [
@@ -21,6 +21,7 @@ interface MobileMenuProps {
   dark: boolean;
   onDarkToggle: () => void;
   onClose: () => void;
+  onRequestOpen?: () => void;
 }
 
 function isActive(href: string, location: string) {
@@ -33,6 +34,7 @@ export function MobileMenu({
   dark,
   onDarkToggle,
   onClose,
+  onRequestOpen,
 }: MobileMenuProps) {
   return (
     <div
@@ -60,6 +62,13 @@ export function MobileMenu({
                 </span>
               </Link>
             ))}
+            <button
+              onClick={() => { onClose?.(); onRequestOpen?.(); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm rounded-lg transition-all duration-150 text-muted-foreground hover:text-foreground hover:bg-secondary/30 dark:hover:bg-white/5"
+            >
+              <Send className="w-4 h-4 text-muted-foreground/40" />
+              Request
+            </button>
           </div>
 
           <div className="border-t border-border/30 mx-3" />

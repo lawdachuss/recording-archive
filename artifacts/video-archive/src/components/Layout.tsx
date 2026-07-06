@@ -6,6 +6,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { DesktopNav } from "@/components/nav/DesktopNav";
 import { SearchDropdown } from "@/components/nav/SearchDropdown";
 import { MobileMenu } from "@/components/nav/MobileMenu";
+import RequestDialog from "@/components/RequestDialog";
 import { enqueuePrefetch, flushPrefetch } from "@/lib/query-client";
 
 const FOOTER_PAGE_IMPORTS: Record<string, () => Promise<unknown>> = {
@@ -14,10 +15,10 @@ const FOOTER_PAGE_IMPORTS: Record<string, () => Promise<unknown>> = {
   "/tags": () => import("@/pages/TagsPage"),
   "/charts": () => import("@/pages/Charts"),
   "/collections": () => import("@/pages/Collections"),
-  "/request": () => import("@/pages/RequestPage"),
   "/bookmarks": () => import("@/pages/Bookmarks"),
   "/watch-later": () => import("@/pages/WatchLater"),
   "/history": () => import("@/pages/History"),
+  "/request": () => import("@/pages/RequestPage"),
 };
 
 function prefetchFooter(href: string) {
@@ -202,6 +203,7 @@ export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dark, setDark] = useDarkMode();
   const [scrolled, setScrolled] = useState(false);
+  const [requestOpen, setRequestOpen] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -223,7 +225,7 @@ export function Navbar() {
 
         <div className="hidden md:block w-px h-5 bg-border/30" />
 
-        <DesktopNav location={location} />
+        <DesktopNav location={location} onRequestOpen={() => setRequestOpen(true)} />
 
         <div className="flex-1" />
 
@@ -265,7 +267,9 @@ export function Navbar() {
         dark={dark}
         onDarkToggle={() => setDark((d) => !d)}
         onClose={() => setMobileOpen(false)}
+        onRequestOpen={() => setRequestOpen(true)}
       />
+      <RequestDialog open={requestOpen} onOpenChange={setRequestOpen} />
     </header>
   );
 }
@@ -300,8 +304,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen text-foreground flex flex-col font-sans">
       <AgeGate />
       <Navbar />
-      <main className="flex-1 flex flex-col bg-dot-pattern relative">
-        <div className="bg-cross-dots absolute inset-0 pointer-events-none opacity-[0.06] dark:opacity-[0.06]" />
+      <main className="flex-1 flex flex-col relative">
         {children}
       </main>
 
@@ -331,7 +334,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <Link href="/tags" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/tags")}>Tags</Link>
               <Link href="/charts" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/charts")}>Charts</Link>
               <Link href="/collections" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/collections")}>Collections</Link>
-              <Link href="/request" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/request")}>Request</Link>
+              <Link href="/request" className="hover:text-muted-foreground transition-colors">Request</Link>
               <Link href="/bookmarks" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/bookmarks")}>Bookmarks</Link>
               <Link href="/watch-later" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/watch-later")}>Watch Later</Link>
               <Link href="/history" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/history")}>History</Link>

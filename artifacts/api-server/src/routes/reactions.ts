@@ -105,4 +105,69 @@ router.post("/reactions", invalidateOnSuccess(["stats"]), async (req, res) => {
   }
 });
 
+// Nested routes matching /api/recordings/:recording_id/reactions (called by frontend)
+router.get("/recordings/:recording_id/reactions", async (req, res) => {
+  try {
+    const { recording_id } = req.params;
+    const { session_id } = req.query as Record<string, string>;
+
+    const counts = await getReactionCounts(recording_id);
+    const user_reaction = session_id ? await getUserReaction(recording_id, session_id) : null;
+
+    res.json({ ...counts, user_reaction });
+  } catch (err) {
+    req.log?.error?.({ err, recording_id: req.params.recording_id }, "GET /recordings/:id/reactions error");
+    res.status(500).json({ error: "Failed to fetch reactions" });
+  }
+});
+
+router.post("/recordings/:recording_id/reactions", async (req, res) => {
+  try {
+    const { recording_id } = req.params;
+    const { type, session_id } = req.body as { type: string; session_id: string };
+
+    if (!type || !session_id) {
+      res.status(400).json({ error: "type and session_id are required" });
+      return;
+    }
+    if (type !== "like" && type !== "dislike") {
+      res.status(400).json({ error: "type must be 'like' or 'dislike'" });
+      return;
+    }
+
+    const existing = await db.execute(sql`
+      SELECT id, type FROM reactions
+      WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+    `);
+    const existingRow = existing.rows[0] as unknown as ReactionRow | undefined;
+
+    if (existingRow) {
+      if (existingRow.type === type) {
+        await db.execute(sql`
+          DELETE FROM reactions
+          WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+        `);
+      } else {
+        await db.execute(sql`
+          UPDATE reactions SET type = ${type}
+          WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+        `);
+      }
+    } else {
+      await db.execute(sql`
+        INSERT INTO reactions (recording_id, session_id, type)
+        VALUES (${recording_id}, ${session_id}, ${type})
+      `);
+    }
+
+    const counts = await getReactionCounts(recording_id);
+    const user_reaction = await getUserReaction(recording_id, session_id);
+
+    res.json({ ...counts, user_reaction });
+  } catch (err) {
+    req.log?.error?.({ err, recording_id: req.params.recording_id }, "POST /recordings/:id/reactions error");
+    res.status(500).json({ error: "Failed to process reaction" });
+  }
+});
+
 export default router;

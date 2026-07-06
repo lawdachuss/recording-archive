@@ -1,12 +1,15 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { getRedis, isRedisConnected, getRedisStatus } from "../lib/redis";
 import { invalidateTags, invalidatePattern, purgeAllCache } from "../middleware/cache";
+import { requireRole } from "../middleware/requireRole";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
+const admin = requireRole("admin");
+
 // GET /api/cache/status — Check cache status
-router.get("/cache/status", async (_req: Request, res: Response) => {
+router.get("/cache/status", ...admin, async (_req: Request, res: Response) => {
   const redis = getRedis();
   const status = getRedisStatus();
   const connected = isRedisConnected();
@@ -26,7 +29,7 @@ router.get("/cache/status", async (_req: Request, res: Response) => {
 });
 
 // POST /api/cache/invalidate — Invalidate by tags or pattern
-router.post("/cache/invalidate", async (req: Request, res: Response) => {
+router.post("/cache/invalidate", ...admin, async (req: Request, res: Response) => {
   const { tags, pattern } = req.body as {
     tags?: string[];
     pattern?: string;
@@ -59,7 +62,7 @@ router.post("/cache/invalidate", async (req: Request, res: Response) => {
 
 // POST /api/cache/purge — Purge all known caches (performers, recordings, stats, tags)
 // Use after bulk data syncs or external data changes.
-router.post("/cache/purge", async (_req: Request, res: Response) => {
+router.post("/cache/purge", ...admin, async (_req: Request, res: Response) => {
   try {
     const result = await purgeAllCache();
     res.json({
@@ -74,7 +77,7 @@ router.post("/cache/purge", async (_req: Request, res: Response) => {
 });
 
 // DELETE /api/cache/flush — Clear all cache (use with caution)
-router.delete("/cache/flush", async (_req: Request, res: Response) => {
+router.delete("/cache/flush", ...admin, async (_req: Request, res: Response) => {
   const redis = getRedis();
   if (!redis) {
     res.status(503).json({ error: "Redis not available" });

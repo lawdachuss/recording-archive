@@ -24,8 +24,7 @@ const RandomRedirect = lazy(() => import("@/pages/RandomRedirect"));
 const Charts = lazy(() => import("@/pages/Charts"));
 const Collections = lazy(() => import("@/pages/Collections"));
 const CollectionDetail = lazy(() => import("@/pages/CollectionDetail"));
-const RequestPage = lazy(() => import("@/pages/RequestPage"));
-const AdminPage = lazy(() => import("@/pages/AdminPage"));
+const AdminPage = lazy(() => import("@/pages/admin"));
 const Login = lazy(() => import("@/pages/Login"));
 const Signup = lazy(() => import("@/pages/Signup"));
 const ForgotPassword = lazy(() => import("@/pages/ForgotPassword"));
@@ -33,6 +32,7 @@ const AuthCallback = lazy(() => import("@/pages/AuthCallback"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const Following = lazy(() => import("@/pages/Following"));
 const Notifications = lazy(() => import("@/pages/Notifications"));
+const RequestPage = lazy(() => import("@/pages/RequestPage"));
 
 const NotFound = lazy(() => import("@/pages/not-found"));
 
@@ -47,15 +47,13 @@ function PageLoading() {
 
 const queryClient = createQueryClient();
 
-// Initialize cache layer on app load
-initCache();
-
-// Restore persisted query cache on mount (survives full page reloads)
-setTimeout(() => restoreQueryCache(queryClient), 0);
-
-// Persist query cache on page unload
-if (typeof window !== "undefined") {
-  window.addEventListener("beforeunload", () => persistQueryCache(queryClient));
+function scheduleIdleWork(task: () => void, timeout = 1_500) {
+  if (typeof window === "undefined") return;
+  const requestIdle = window.requestIdleCallback ?? ((cb: IdleRequestCallback) => {
+    const id = window.setTimeout(() => cb({ didTimeout: false, timeRemaining: () => 0 }), timeout);
+    return id as unknown as number;
+  });
+  requestIdle(task, { timeout });
 }
 
 function Router() {
@@ -86,11 +84,11 @@ function Router() {
         <Route path="/collections/:id">
           <ProtectedRoute><CollectionDetail /></ProtectedRoute>
         </Route>
-        <Route path="/request">
-          <ProtectedRoute><RequestPage /></ProtectedRoute>
-        </Route>
         <Route path="/admin">
-          <ProtectedRoute><AdminPage /></ProtectedRoute>
+          <ProtectedRoute requiredRole="admin"><AdminPage /></ProtectedRoute>
+        </Route>
+        <Route path="/admin/*">
+          <ProtectedRoute requiredRole="admin"><AdminPage /></ProtectedRoute>
         </Route>
         <Route path="/login" component={Login} />
         <Route path="/signup" component={Signup} />
@@ -105,6 +103,9 @@ function Router() {
         <Route path="/notifications">
           <ProtectedRoute><Notifications /></ProtectedRoute>
         </Route>
+        <Route path="/request">
+          <ProtectedRoute><RequestPage /></ProtectedRoute>
+        </Route>
         <Route component={NotFound} />
       </Switch>
     </Suspense>
@@ -112,6 +113,22 @@ function Router() {
 }
 
 function App() {
+  useEffect(() => {
+    scheduleIdleWork(() => {
+      initCache();
+      restoreQueryCache(queryClient);
+    });
+
+    const persist = () => persistQueryCache(queryClient);
+    window.addEventListener("pagehide", persist);
+    window.addEventListener("beforeunload", persist);
+
+    return () => {
+      window.removeEventListener("pagehide", persist);
+      window.removeEventListener("beforeunload", persist);
+    };
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>

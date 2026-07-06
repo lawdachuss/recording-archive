@@ -194,14 +194,57 @@ export function useSearchSuggestions(query: string) {
   });
 }
 
+export interface PerformerLookupResult {
+  exists: boolean;
+  platform: string;
+  username: string;
+  display_name?: string;
+  avatar_url?: string;
+  is_online?: boolean;
+  last_seen?: string;
+  room_title?: string;
+  viewer_count?: number;
+  follower_count?: number;
+  profile_url: string;
+  in_archive: boolean;
+  archive_thumbnail?: string | null;
+  archive_recording_count?: number;
+  archive_last_recording?: string | null;
+  platform_check_failed?: boolean;
+}
+
+export function usePerformerLookup(platform: string, username: string) {
+  return useQuery({
+    queryKey: ["performer-lookup", platform, username],
+    queryFn: () => {
+      const params = new URLSearchParams({ platform, username });
+      return fetchApi<PerformerLookupResult>(`/api/performers/lookup?${params}`);
+    },
+    enabled: !!platform && username.length >= 2,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
 export function useCreateRequest() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { performer_username?: string; stream_link?: string; notes?: string; priority?: number }) =>
-      fetchApi<{ id: string }>("/api/requests", {
+    mutationFn: async (data: {
+      platform: string;
+      performer_username?: string;
+      stream_link?: string;
+      notes?: string;
+      priority?: string;
+    }) => {
+      const { supabase } = await import("@/lib/supabase");
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      return fetchApi<{ id: string }>("/api/requests", {
         method: "POST",
         body: JSON.stringify(data),
-      }),
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["requests"] });
     },

@@ -4,24 +4,46 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Film, Eye, EyeOff, AlertCircle } from "lucide-react";
 
 export default function Login() {
-  const { signIn } = useAuth();
-  const [, setLocation] = useLocation();
+  const { signIn, resolveUsername } = useAuth();
+  const [location, setLocation] = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isEmail = email.includes("@");
+  const locationSearch = location.includes("?")
+    ? location.slice(location.indexOf("?"))
+    : window.location.search;
+  const requestedRedirect = new URLSearchParams(locationSearch).get("redirect");
+  const redirectAfterLogin =
+    requestedRedirect?.startsWith("/") && !requestedRedirect.startsWith("//")
+      ? requestedRedirect
+      : "/";
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    const result = await signIn(email, password);
+
+    let loginEmail = email;
+    if (!isEmail) {
+      const resolved = await resolveUsername(email);
+      if (resolved.error || !resolved.email) {
+        setError(resolved.error ?? "Username not found");
+        setLoading(false);
+        return;
+      }
+      loginEmail = resolved.email;
+    }
+
+    const result = await signIn(loginEmail, password);
     setLoading(false);
     if (result.error) {
       setError(result.error);
     } else {
-      setLocation("/");
+      setLocation(redirectAfterLogin);
     }
   };
 
@@ -52,15 +74,16 @@ export default function Login() {
 
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Email
+              Email or Username
             </label>
             <input
-              type="email"
+              type="text"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
               autoFocus
-              placeholder="you@example.com"
+              autoComplete="username"
+              placeholder="you@example.com or username"
               className="w-full h-10 bg-secondary border border-border/60 focus:border-primary/50 rounded-sm px-3 text-sm outline-none transition-all placeholder:text-muted-foreground/40"
             />
           </div>

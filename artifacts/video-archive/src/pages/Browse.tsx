@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, useTransition } from "react";
 import { useSearch, useLocation } from "wouter";
 import { keepPreviousData } from "@tanstack/react-query";
 import { useListRecordings, useListTags, getListRecordingsQueryKey, getListTagsQueryKey, ListRecordingsSort } from "@workspace/api-client-react";
@@ -64,6 +64,7 @@ export default function Browse() {
   const [showFilters, setShowFilters] = useState(false);
   const [tagSearch, setTagSearch] = useState("");
   const [pageLoading, setPageLoading] = useState(false);
+  const [, startTransition] = useTransition();
   // ─── Filter presets ──────────────────────────────────
   const [presetMenuOpen, setPresetMenuOpen] = useState(false);
   const [savePresetOpen, setSavePresetOpen] = useState(false);
@@ -105,8 +106,8 @@ export default function Browse() {
 
   const handlePageChange = (newPage: number) => {
     setPageLoading(true);
-    setPage(newPage);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    startTransition(() => setPage(newPage));
+    window.scrollTo({ top: 0, behavior: "auto" });
     // Build URL from current state, not URL params — avoids stale searchString
     const params = new URLSearchParams();
     if (search) params.set("search", search);

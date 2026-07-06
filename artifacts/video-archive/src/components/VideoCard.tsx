@@ -6,7 +6,7 @@ import { Eye, HardDrive, Film, Clock, CheckCircle } from "lucide-react";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import { SpriteSlideshow } from "@/components/SpriteSlideshow";
 
-const CORS_HOSTS: string[] = ["pixhost.to"];
+const CORS_HOSTS: string[] = ["pixhost.to", "lobfile.com"];
 
 function needsProxy(url: string | null | undefined): boolean {
   if (!url) return false;
@@ -62,7 +62,6 @@ interface VideoCardProps {
 export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemove, fetchPriority, isWatched }: VideoCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [videoError, setVideoError] = useState(false);
-  const cardRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hoverTimerRef = useRef<number | undefined>(undefined);
   const isHoveredRef = useRef(false);
@@ -77,7 +76,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
 
   const previewFailed = videoError || previewBlocked;
   const hasPreview = !!previewUrl;
-  const hasSprite = !!spriteUrl;
+  const hasSprite = !!spriteUrl && !spriteBlocked;
   const previewIsImage = useMemo(() => isImagePreview(previewUrl), [previewUrl]);
 
   const hoverMedia: "mp4" | "sprite" | "none" = !isHovered
@@ -118,36 +117,6 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   }, []);
 
   useEffect(() => {
-    if (!recording.preview_url) return;
-    const el = cardRef.current;
-    if (!el) return;
-
-    let timer: number | undefined;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          timer = window.setTimeout(() => {
-            if (previewUrl && !previewBlocked && !previewIsImage) {
-              const video = document.createElement("video");
-              video.preload = "metadata";
-              video.src = previewUrl;
-              video.load();
-            }
-          }, 80);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "100px" },
-    );
-
-    observer.observe(el);
-    return () => {
-      observer.disconnect();
-      if (timer) clearTimeout(timer);
-    };
-  }, [previewUrl, previewBlocked]);
-
-  useEffect(() => {
     if (hoverMedia === "mp4" && videoRef.current) {
       const playPromise = videoRef.current.play();
       if (playPromise) {
@@ -156,7 +125,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     }
   }, [hoverMedia]);
 
-  const staticImage = thumbnailUrl || previewUrl || spriteUrl;
+  const staticImage = thumbnailUrl || (previewIsImage ? previewUrl : null);
   const staticImageBlocked = staticImage ? isHostBlocked(staticImage) : false;
   const hasStaticImage = !!staticImage && !staticImageBlocked;
   const initials = useMemo(() => recording.username?.slice(0, 2).toUpperCase() ?? "??", [recording.username]);
@@ -175,7 +144,6 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
       className="group block outline-none focus-visible:ring-1 focus-visible:ring-primary rounded"
     >
       <div
-        ref={cardRef}
         className="flex flex-col gap-2"
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
@@ -217,38 +185,32 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             ].join(" ")}
           />
 
-          <div
-            className={[
-              "absolute inset-0 transition-all duration-300 ease-out will-change-transform",
-              hoverMedia === "mp4" ? "opacity-100 scale-100" : "opacity-0 scale-[1.02] pointer-events-none",
-            ].join(" ")}
-          >
-            <video
-              ref={videoRef}
-              key={recording.id}
-              src={previewUrl!}
-              muted
-              playsInline
-              loop
-              preload="metadata"
-              className="absolute inset-0 w-full h-full object-cover"
-              onError={handleVideoError}
-            />
-          </div>
+          {hoverMedia === "mp4" && (
+            <div className="absolute inset-0 transition-all duration-300 ease-out will-change-transform opacity-100 scale-100">
+              <video
+                ref={videoRef}
+                key={recording.id}
+                src={previewUrl!}
+                muted
+                playsInline
+                loop
+                preload="none"
+                className="absolute inset-0 w-full h-full object-cover"
+                onError={handleVideoError}
+              />
+            </div>
+          )}
 
-          <div
-            className={[
-              "absolute inset-0 transition-all duration-300 ease-out will-change-transform",
-              hoverMedia === "sprite" ? "opacity-100 scale-100" : "opacity-0 scale-[1.02] pointer-events-none",
-            ].join(" ")}
-          >
-            <SpriteSlideshow
-              spriteUrl={spriteUrl!}
-              fps={8}
-              className="absolute inset-0 w-full h-full"
-              active={hoverMedia === "sprite"}
-            />
-          </div>
+          {hoverMedia === "sprite" && (
+            <div className="absolute inset-0 transition-all duration-300 ease-out will-change-transform opacity-100 scale-100">
+              <SpriteSlideshow
+                spriteUrl={spriteUrl!}
+                fps={8}
+                className="absolute inset-0 w-full h-full"
+                active
+              />
+            </div>
+          )}
 
           <div
             className={[
