@@ -168,6 +168,16 @@ export default function Home() {
     <Layout>
       {/* Hero */}
       <section className="relative border-b border-border/50 px-4 sm:px-6 py-20 md:py-28 overflow-hidden">
+        {/* Diamond texture — visible in centre, dissolves at all edges */}
+        <div
+          className="pattern-square absolute inset-0 pointer-events-none"
+          style={{
+            opacity: 0.55,
+            maskImage: "radial-gradient(ellipse 80% 85% at 50% 50%, black 15%, transparent 72%)",
+            WebkitMaskImage: "radial-gradient(ellipse 80% 85% at 50% 50%, black 15%, transparent 72%)",
+          }}
+          aria-hidden="true"
+        />
         <div className="container mx-auto max-w-4xl text-center relative">
           <div className="mb-4 flex items-center gap-3 animate-fade-in-up" style={{ animationDelay: '0ms' }}>
             <div className="h-px flex-1 bg-border/50" />
