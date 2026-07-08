@@ -275,33 +275,10 @@ export function Navbar() {
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  useEffect(() => {
-    let rafId: number | null = null;
-    let lastUpdate = 0;
-
-    const onMouseMove = (e: MouseEvent) => {
-      const now = performance.now();
-      if (now - lastUpdate < 80) return;
-      if (rafId !== null) return;
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        lastUpdate = now;
-        const x = ((e.clientX / window.innerWidth) - 0.5) * 2;
-        const y = ((e.clientY / window.innerHeight) - 0.5) * 2;
-        document.documentElement.style.setProperty("--mx", x.toFixed(4));
-        document.documentElement.style.setProperty("--my", y.toFixed(4));
-      });
-    };
-
-    document.addEventListener("mousemove", onMouseMove, { passive: true });
-    return () => {
-      document.removeEventListener("mousemove", onMouseMove);
-      if (rafId !== null) cancelAnimationFrame(rafId);
-    };
-  }, []);
-
   return (
     <div className="min-h-screen text-foreground flex flex-col font-sans">
+      <div className="bg-pattern fixed inset-0 -z-10 pointer-events-none hidden dark:block blur-[0.8px]" />
+      <div className="bg-pattern-light fixed inset-0 -z-10 pointer-events-none dark:hidden blur-[0.8px]" />
       <AgeGate />
       <Navbar />
       <main className="flex-1 flex flex-col relative pattern-flow">

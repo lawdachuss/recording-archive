@@ -45,7 +45,7 @@ export default function Signup() {
   if (needsVerification) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden">
-        <div className="pattern-square fixed inset-0 pointer-events-none" />
+        <div className="bg-pattern fixed inset-0 pointer-events-none" />
         <div className="w-full max-w-sm text-center">
           <CheckCircle2 className="w-12 h-12 text-primary mx-auto mb-6" />
           <h1 className="text-2xl font-black tracking-tight mb-2">Check your email</h1>
@@ -66,7 +66,7 @@ export default function Signup() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden">
-        <div className="pattern-square fixed inset-0 pointer-events-none" />
+        <div className="bg-pattern fixed inset-0 pointer-events-none" />
       <div className="w-full max-w-sm">
         <div className="text-center mb-10">
           <Link href="/" className="inline-flex items-center gap-1.5 group mb-8">

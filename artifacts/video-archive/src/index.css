@@ -298,43 +298,43 @@
       repeating-linear-gradient(
           45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          var(--pattern-color, #100f0f) 0 calc(100% / 13),
+          rgba(0,0,0,0.024) 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          var(--pattern-color, #100f0f) 0 calc(200% / 13),
+          rgba(0,0,0,0.024) 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          var(--pattern-color, #100f0f) 0 calc(300% / 13)
+          rgba(0,0,0,0.024) 0 calc(300% / 13)
         )
-        calc(0px + var(--c-x)) calc(0px + var(--c-y)),
+        0px 0px,
       repeating-linear-gradient(
           45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          var(--pattern-color, #100f0f) 0 calc(100% / 13),
+          rgba(0,0,0,0.024) 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          var(--pattern-color, #100f0f) 0 calc(200% / 13),
+          rgba(0,0,0,0.024) 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          var(--pattern-color, #100f0f) 0 calc(300% / 13)
+          rgba(0,0,0,0.024) 0 calc(300% / 13)
         )
-        calc(32px + var(--a-x)) calc(32px + var(--a-y)),
+        32px 32px,
       repeating-linear-gradient(
           -45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          var(--pattern-color, #100f0f) 0 calc(100% / 13),
+          rgba(0,0,0,0.024) 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          var(--pattern-color, #100f0f) 0 calc(200% / 13),
+          rgba(0,0,0,0.024) 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          var(--pattern-color, #100f0f) 0 calc(300% / 13)
+          rgba(0,0,0,0.024) 0 calc(300% / 13)
         )
-        calc(0px + var(--b-x)) calc(0px + var(--b-y)),
+        0px 0px,
       repeating-linear-gradient(
           -45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          var(--pattern-color, #100f0f) 0 calc(100% / 13),
+          rgba(0,0,0,0.024) 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          var(--pattern-color, #100f0f) 0 calc(200% / 13),
+          rgba(0,0,0,0.024) 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          var(--pattern-color, #100f0f) 0 calc(300% / 13)
+          rgba(0,0,0,0.024) 0 calc(300% / 13)
         )
-        calc(32px + var(--a-x)) calc(32px + var(--a-y)) var(--pattern-bg, #1e1e1e);
+        32px 32px #e8e8e8;
     background-size: 64px 64px;
     mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
   }
@@ -343,8 +343,49 @@
   .dark .pattern-flow > div::before,
   .dark .page-section::before,
   .dark .section-pattern::before {
-    --pattern-color: #100f0f;
-    --pattern-bg: #1e1e1e;
+    background:
+      repeating-linear-gradient(
+          45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          rgba(255,255,255,0.024) 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          rgba(255,255,255,0.024) 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          rgba(255,255,255,0.024) 0 calc(300% / 13)
+        )
+        0px 0px,
+      repeating-linear-gradient(
+          45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          rgba(255,255,255,0.024) 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          rgba(255,255,255,0.024) 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          rgba(255,255,255,0.024) 0 calc(300% / 13)
+        )
+        32px 32px,
+      repeating-linear-gradient(
+          -45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          rgba(255,255,255,0.024) 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          rgba(255,255,255,0.024) 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          rgba(255,255,255,0.024) 0 calc(300% / 13)
+        )
+        0px 0px,
+      repeating-linear-gradient(
+          -45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          rgba(255,255,255,0.024) 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          rgba(255,255,255,0.024) 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          rgba(255,255,255,0.024) 0 calc(300% / 13)
+        )
+        32px 32px #1e1e1e;
+    background-size: 64px 64px;
+    mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
   }
 
   .pattern-flow > section:nth-of-type(2n)::before,
@@ -358,62 +399,94 @@
 
 
 
-  /* From Uiverse.io by denverdelamasa */
-  .pattern-square {
-    --mx: 0;
-    --my: 0;
-    --a-x: calc(var(--mx) * 8px);
-    --a-y: calc(var(--my) * 8px);
-    --b-x: calc(var(--mx) * -6px);
-    --b-y: calc(var(--my) * -6px);
-    --c-x: calc(var(--mx) * 4px);
-    --c-y: calc(var(--my) * 4px);
-
+  .bg-pattern {
     background:
       repeating-linear-gradient(
           45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          #100f0f 0 calc(100% / 13),
+          rgba(255,255,255,0.024) 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          #100f0f 0 calc(200% / 13),
+          rgba(255,255,255,0.024) 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          #100f0f 0 calc(300% / 13)
+          rgba(255,255,255,0.024) 0 calc(300% / 13)
         )
-        calc(0px + var(--c-x)) calc(0px + var(--c-y)),
+        0px 0px,
       repeating-linear-gradient(
           45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          #100f0f 0 calc(100% / 13),
+          rgba(255,255,255,0.024) 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          #100f0f 0 calc(200% / 13),
+          rgba(255,255,255,0.024) 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          #100f0f 0 calc(300% / 13)
+          rgba(255,255,255,0.024) 0 calc(300% / 13)
         )
-        calc(32px + var(--a-x)) calc(32px + var(--a-y)),
+        32px 32px,
       repeating-linear-gradient(
           -45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          #100f0f 0 calc(100% / 13),
+          rgba(255,255,255,0.024) 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          #100f0f 0 calc(200% / 13),
+          rgba(255,255,255,0.024) 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          #100f0f 0 calc(300% / 13)
+          rgba(255,255,255,0.024) 0 calc(300% / 13)
         )
-        calc(0px + var(--b-x)) calc(0px + var(--b-y)),
+        0px 0px,
       repeating-linear-gradient(
           -45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          #100f0f 0 calc(100% / 13),
+          rgba(255,255,255,0.024) 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          #100f0f 0 calc(200% / 13),
+          rgba(255,255,255,0.024) 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          #100f0f 0 calc(300% / 13)
+          rgba(255,255,255,0.024) 0 calc(300% / 13)
         )
-        calc(32px + var(--a-x)) calc(32px + var(--a-y)) #1e1e1e;
-
+        32px 32px #1e1e1e;
     background-size: 64px 64px;
-    width: 100%;
-    height: 100%;
+  }
+
+  .bg-pattern-light {
+    background:
+      repeating-linear-gradient(
+          45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          rgba(0,0,0,0.024) 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          rgba(0,0,0,0.024) 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          rgba(0,0,0,0.024) 0 calc(300% / 13)
+        )
+        0px 0px,
+      repeating-linear-gradient(
+          45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          rgba(0,0,0,0.024) 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          rgba(0,0,0,0.024) 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          rgba(0,0,0,0.024) 0 calc(300% / 13)
+        )
+        32px 32px,
+      repeating-linear-gradient(
+          -45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          rgba(0,0,0,0.024) 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          rgba(0,0,0,0.024) 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          rgba(0,0,0,0.024) 0 calc(300% / 13)
+        )
+        0px 0px,
+      repeating-linear-gradient(
+          -45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          rgba(0,0,0,0.024) 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          rgba(0,0,0,0.024) 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          rgba(0,0,0,0.024) 0 calc(300% / 13)
+        )
+        32px 32px #e8e8e8;
+    background-size: 64px 64px;
   }
 
   @media (prefers-reduced-motion: reduce) {
