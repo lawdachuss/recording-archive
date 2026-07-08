@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, sql } from "@workspace/db";
-import { invalidateOnSuccess } from "../middleware/cache";
+import { cache, invalidateOnSuccess } from "../middleware/cache";
 
 interface CommentRow {
   id: string;
@@ -67,7 +67,7 @@ function buildCommentTree(rows: CommentRow[], likedSet?: Set<number>): CommentNo
 
 const router = Router();
 
-router.get("/comments", async (req, res) => {
+router.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comments"] }), async (req, res) => {
   const { recording_id, sort = "new", session_id } = req.query as Record<string, string>;
 
   if (!recording_id) {
@@ -131,7 +131,7 @@ router.get("/comments", async (req, res) => {
   }
 });
 
-router.post("/comments", invalidateOnSuccess(["stats"]), async (req, res) => {
+router.post("/comments", invalidateOnSuccess(["comments", "stats"]), async (req, res) => {
   const { recording_id, author, content, session_id } = req.body as {
     recording_id: string;
     author: string;
@@ -157,7 +157,7 @@ router.post("/comments", invalidateOnSuccess(["stats"]), async (req, res) => {
   res.status(201).json({ ...row, likes: 0, user_liked: false, replies: [] });
 });
 
-router.post("/comments/:commentId/replies", invalidateOnSuccess(["stats"]), async (req, res) => {
+router.post("/comments/:commentId/replies", invalidateOnSuccess(["comments", "stats"]), async (req, res) => {
   const commentId = parseInt(String(req.params.commentId), 10);
   const { author, content, session_id } = req.body as {
     author: string;
@@ -194,7 +194,7 @@ router.post("/comments/:commentId/replies", invalidateOnSuccess(["stats"]), asyn
   res.status(201).json({ ...row, likes: 0, user_liked: false, replies: [] });
 });
 
-router.post("/comments/:commentId/like", async (req, res) => {
+router.post("/comments/:commentId/like", invalidateOnSuccess(["comments"]), async (req, res) => {
   const commentId = parseInt(String(req.params.commentId), 10);
   const { session_id } = req.body as { session_id: string };
 

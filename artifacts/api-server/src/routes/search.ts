@@ -25,7 +25,7 @@ interface SearchSuggestion {
 
 import { cache } from "../middleware/cache";
 
-router.get("/search", cache({ ttlSeconds: 30, tags: ["search"] }), async (req, res) => {
+router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search", "recordings", "performers", "tags"] }), async (req, res) => {
   const q = String(req.query.q ?? "").trim();
 
   if (!q || q.length < 2) {

@@ -10,7 +10,7 @@ import { cache } from "../middleware/cache";
 
 const router = Router();
 
-router.get("/recordings", cache({ ttlSeconds: 60, tags: ["recordings"] }), async (req, res) => {
+router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["recordings", "search"] }), async (req, res) => {
   try {
     const parsed = ListRecordingsQueryParams.safeParse(req.query);
     if (!parsed.success) {
@@ -321,7 +321,7 @@ router.get("/recordings/related", async (req, res) => {
   }
 });
 
-router.get("/recordings/:id", cache({ ttlSeconds: 300, tags: ["recordings"] }), async (req, res) => {
+router.get("/recordings/:id", cache({ ttlSeconds: 600, staleSeconds: 900, tags: ["recordings"] }), async (req, res) => {
   try {
     const parsed = GetRecordingParams.safeParse(req.params);
     if (!parsed.success) {

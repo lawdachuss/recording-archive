@@ -84,15 +84,48 @@ export interface ListRecordingsResponse {
 import { resolveApiPath } from "./api-base";
 
 const API_TIMEOUT_MS = 15_000;
+const inflightGetRequests = new Map<string, Promise<unknown>>();
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
+  const method = (options?.method ?? "GET").toUpperCase();
+  const url = resolveApiPath(path);
+
+  if (method === "GET" && !options?.signal) {
+    const cacheKey = url.toString();
+    const existing = inflightGetRequests.get(cacheKey);
+    if (existing) return existing as Promise<T>;
+
+    const promise = fetchApiUncached<T>(url, method, options).finally(() => {
+      if (inflightGetRequests.get(cacheKey) === promise) {
+        inflightGetRequests.delete(cacheKey);
+      }
+    });
+    inflightGetRequests.set(cacheKey, promise);
+    return promise;
+  }
+
+  return fetchApiUncached<T>(url, method, options);
+}
+
+async function fetchApiUncached<T>(
+  url: RequestInfo | URL,
+  method: string,
+  options?: RequestInit,
+): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
   try {
-    const res = await fetch(resolveApiPath(path), {
+    const headers = new Headers(options?.headers);
+    if (!headers.has("accept")) headers.set("accept", "application/json");
+    if (method !== "GET" && method !== "HEAD" && !headers.has("content-type")) {
+      headers.set("content-type", "application/json");
+    }
+
+    const res = await fetch(url, {
       ...options,
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      method,
+      headers,
       signal: options?.signal ?? controller.signal,
     });
     if (!res.ok) throw new Error(await res.text());

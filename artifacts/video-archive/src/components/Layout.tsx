@@ -304,14 +304,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen text-foreground flex flex-col font-sans">
       <AgeGate />
       <Navbar />
-      <main className="flex-1 flex flex-col relative">
+      <main className="flex-1 flex flex-col relative pattern-flow">
         {children}
       </main>
 
       <RandomButton />
 
-      <footer className="py-10 border-t border-border/40 mt-16 bg-background dark:bg-background backdrop-blur-sm relative overflow-hidden">
-        <div className="pattern-square absolute inset-0 pointer-events-none opacity-[0.12] dark:opacity-[0.25]" />
+      <footer className="py-10 border-t border-border/40 mt-16 bg-background dark:bg-background backdrop-blur-sm relative overflow-hidden section-pattern">
         <div className="container mx-auto px-4 sm:px-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
             <div className="space-y-2">

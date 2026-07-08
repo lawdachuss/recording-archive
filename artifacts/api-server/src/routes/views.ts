@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase";
+import { invalidateKey } from "../middleware/cache";
 
 const router = Router();
 
@@ -51,7 +52,10 @@ router.post("/recordings/:id/view", async (req, res) => {
       return;
     }
 
-    // Invalidate the recordings cache
+    invalidateKey(`/api/recordings/${id}`).catch((err) =>
+      req.log.error({ err, id }, "Failed to invalidate recording cache after view"),
+    );
+
     res.json({ viewers: newCount });
   } catch (err) {
     req.log.error({ err, id }, "Unexpected error recording view");

@@ -28,4 +28,4 @@ if (-not (Test-Path "env:PORT")) {
 }
 $env:BASE_PATH = '/'
 
-pnpm --filter @workspace/video-archive run dev
+corepack pnpm --filter @workspace/video-archive run dev
