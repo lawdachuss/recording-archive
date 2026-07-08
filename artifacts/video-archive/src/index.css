@@ -372,28 +372,50 @@
     animation: pulse-glow 2s ease-in-out infinite;
   }
 
-  /* ── Background orb animations ───────────────────────── */
-  @keyframes float-a {
-    0%, 100% { transform: translate(0, 0) scale(1); }
-    33%       { transform: translate(40px, -28px) scale(1.06); }
-    66%       { transform: translate(-24px, 14px) scale(0.96); }
-  }
-  @keyframes float-b {
-    0%, 100% { transform: translate(0, 0) scale(1); }
-    40%       { transform: translate(-32px, 36px) scale(1.04); }
-    80%       { transform: translate(18px, -20px) scale(0.97); }
-  }
-  @keyframes float-c {
-    0%, 100% { transform: translate(0, 0) scale(1); }
-    50%       { transform: translate(28px, 30px) scale(1.05); }
-  }
-
-  .bg-orb-a { animation: float-a 20s ease-in-out infinite; }
-  .bg-orb-b { animation: float-b 26s ease-in-out infinite; }
-  .bg-orb-c { animation: float-c 32s ease-in-out infinite; }
-
-  @media (prefers-reduced-motion: reduce) {
-    .bg-orb-a, .bg-orb-b, .bg-orb-c { animation: none; }
+  /* ── Diamond lattice background pattern ──────────────── */
+  .pattern-square {
+    background:
+      repeating-linear-gradient(
+          45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          #100f0f 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          #100f0f 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          #100f0f 0 calc(300% / 13)
+        )
+        0px 0px,
+      repeating-linear-gradient(
+          45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          #100f0f 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          #100f0f 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          #100f0f 0 calc(300% / 13)
+        )
+        32px 32px,
+      repeating-linear-gradient(
+          -45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          #100f0f 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          #100f0f 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          #100f0f 0 calc(300% / 13)
+        )
+        0px 0px,
+      repeating-linear-gradient(
+          -45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          #100f0f 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          #100f0f 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          #100f0f 0 calc(300% / 13)
+        )
+        32px 32px #1e1e1e;
+    background-size: 64px 64px;
   }
 
   .nav-underline {
