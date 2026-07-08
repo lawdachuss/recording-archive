@@ -167,7 +167,7 @@ export default function Home() {
   return (
     <Layout>
       {/* Hero */}
-      <section className="section-pattern relative border-b border-border/50 px-4 sm:px-6 py-20 md:py-28 overflow-hidden bg-background">
+      <section className="relative border-b border-border/50 px-4 sm:px-6 py-20 md:py-28 overflow-hidden bg-background">
         <div className="container mx-auto max-w-4xl text-center relative">
           <div className="mb-4 flex items-center gap-3 animate-fade-in-up" style={{ animationDelay: '0ms' }}>
             <div className="h-px flex-1 bg-border/50" />
