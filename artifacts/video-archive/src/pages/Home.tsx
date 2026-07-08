@@ -210,7 +210,7 @@ export default function Home() {
       </section>
 
       {/* Recordings — tabs */}
-      <section className="px-4 sm:px-6 py-14 relative overflow-hidden bg-card">
+      <section className="px-4 sm:px-6 py-14 relative overflow-hidden">
         <div className="container mx-auto">
           <div className="flex items-center justify-between mb-8">
             {/* Tabs */}
@@ -285,7 +285,7 @@ export default function Home() {
 
       {/* Most Viewed */}
       {mostViewed.length > 0 && (
-        <section className="border-t border-border/50 px-4 sm:px-6 py-14 relative overflow-hidden bg-background">
+        <section className="border-t border-border/50 px-4 sm:px-6 py-14 relative overflow-hidden">
           <div className="container mx-auto">
             <div className="flex items-center justify-between mb-8">
               <h2 className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold">
@@ -321,7 +321,7 @@ export default function Home() {
 
       {/* Top Performers — Circular avatars */}
       {topPerformers.length > 0 && (
-        <section className="border-t border-border/50 px-4 sm:px-6 py-14 bg-card relative overflow-hidden">
+        <section className="border-t border-border/50 px-4 sm:px-6 py-14 relative overflow-hidden">
           {/* Subtle diamond texture for featured section */}
           <div className="pattern-square absolute inset-0 pointer-events-none opacity-20" aria-hidden="true" />
           <div className="container mx-auto relative">
@@ -387,7 +387,7 @@ export default function Home() {
 
       {/* Popular Tags */}
       {Array.isArray(tags) && tags.length > 0 && (
-        <section className="border-t border-border/50 px-4 sm:px-6 py-14 relative overflow-hidden bg-background">
+        <section className="border-t border-border/50 px-4 sm:px-6 py-14 relative overflow-hidden">
           <div className="container mx-auto">
             <div className="flex items-center justify-between mb-8">
               <h2 className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold">
