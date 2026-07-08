@@ -285,7 +285,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       <RandomButton />
 
-      <footer className="py-10 border-t border-border/40 mt-16 bg-background dark:bg-background backdrop-blur-sm relative overflow-hidden section-pattern">
+      <footer className="py-10 border-t border-border/40 mt-16 bg-background dark:bg-background backdrop-blur-sm relative overflow-hidden">
         <div className="container mx-auto px-4 sm:px-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
             <div className="space-y-2">
