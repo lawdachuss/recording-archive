@@ -277,17 +277,11 @@
     contain-intrinsic-size: 200px;
   }
 
-  .pattern-flow > section,
-  .pattern-flow > div,
-  .page-section,
   .section-pattern {
     position: relative;
     isolation: isolate;
   }
 
-  .pattern-flow > section::before,
-  .pattern-flow > div::before,
-  .page-section::before,
   .section-pattern::before {
     content: "";
     position: absolute;
@@ -339,9 +333,6 @@
     mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
   }
 
-  .dark .pattern-flow > section::before,
-  .dark .pattern-flow > div::before,
-  .dark .page-section::before,
   .dark .section-pattern::before {
     background:
       repeating-linear-gradient(
@@ -388,13 +379,8 @@
     mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
   }
 
-  .pattern-flow > section:nth-of-type(2n)::before,
   .section-plain::before {
     content: none;
-  }
-
-  .pattern-flow > section:nth-of-type(2n) {
-    background-color: hsl(var(--background));
   }
 
 
