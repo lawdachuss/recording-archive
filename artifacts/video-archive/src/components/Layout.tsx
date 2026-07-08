@@ -279,7 +279,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen text-foreground flex flex-col font-sans">
       <AgeGate />
       <Navbar />
-      <main className="flex-1 flex flex-col relative pattern-flow">
+      <main className="flex-1 flex flex-col">
         {children}
       </main>
 
