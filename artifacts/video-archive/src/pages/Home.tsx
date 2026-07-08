@@ -168,6 +168,35 @@ export default function Home() {
     <Layout>
       {/* Hero */}
       <section className="relative border-b border-border/50 px-4 sm:px-6 py-20 md:py-28 overflow-hidden bg-background">
+        {/* Hero-specific background layers */}
+        {/* Top bloom — primary halo behind the title */}
+        <div
+          className="absolute inset-x-0 top-0 h-full pointer-events-none"
+          style={{
+            background: "radial-gradient(ellipse 80% 60% at 50% -10%, hsl(0 72% 51% / 0.13) 0%, transparent 100%)",
+          }}
+        />
+        {/* Bottom fade to separate from content below */}
+        <div
+          className="absolute inset-x-0 bottom-0 h-32 pointer-events-none"
+          style={{
+            background: "linear-gradient(to bottom, transparent, hsl(var(--background) / 0.7))",
+          }}
+        />
+        {/* Horizontal scan-lines for cinematic depth */}
+        <div
+          className="absolute inset-0 pointer-events-none dark:opacity-[0.03] opacity-[0.015]"
+          style={{
+            backgroundImage: "repeating-linear-gradient(0deg, hsl(0 0% 100%), hsl(0 0% 100%) 1px, transparent 1px, transparent 4px)",
+          }}
+        />
+        {/* Side vignette */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: "radial-gradient(ellipse 100% 100% at 50% 50%, transparent 50%, hsl(var(--background) / 0.6) 100%)",
+          }}
+        />
         <div className="container mx-auto max-w-4xl text-center relative">
           <div className="mb-4 flex items-center gap-3 animate-fade-in-up" style={{ animationDelay: '0ms' }}>
             <div className="h-px flex-1 bg-border/50" />
