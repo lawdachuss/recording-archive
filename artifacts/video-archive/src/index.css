@@ -292,187 +292,49 @@
       repeating-linear-gradient(
           45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          #d8d8d8 0 calc(100% / 13),
+          hsl(var(--foreground) / 0.07) 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          #d8d8d8 0 calc(200% / 13),
+          hsl(var(--foreground) / 0.07) 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          #d8d8d8 0 calc(300% / 13)
+          hsl(var(--foreground) / 0.07) 0 calc(300% / 13)
         )
         0px 0px,
       repeating-linear-gradient(
           45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          #d8d8d8 0 calc(100% / 13),
+          hsl(var(--foreground) / 0.07) 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          #d8d8d8 0 calc(200% / 13),
+          hsl(var(--foreground) / 0.07) 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          #d8d8d8 0 calc(300% / 13)
+          hsl(var(--foreground) / 0.07) 0 calc(300% / 13)
         )
         32px 32px,
       repeating-linear-gradient(
           -45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          #d8d8d8 0 calc(100% / 13),
+          hsl(var(--foreground) / 0.07) 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          #d8d8d8 0 calc(200% / 13),
+          hsl(var(--foreground) / 0.07) 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          #d8d8d8 0 calc(300% / 13)
+          hsl(var(--foreground) / 0.07) 0 calc(300% / 13)
         )
         0px 0px,
       repeating-linear-gradient(
           -45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          #d8d8d8 0 calc(100% / 13),
+          hsl(var(--foreground) / 0.07) 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          #d8d8d8 0 calc(200% / 13),
+          hsl(var(--foreground) / 0.07) 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          #d8d8d8 0 calc(300% / 13)
+          hsl(var(--foreground) / 0.07) 0 calc(300% / 13)
         )
-        32px 32px #e8e8e8;
-    background-size: 64px 64px;
-    mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
-  }
-
-  .dark .section-pattern::before {
-    background:
-      repeating-linear-gradient(
-          45deg,
-          #0000 calc(-650% / 13) calc(50% / 13),
-          #1a1a1a 0 calc(100% / 13),
-          #0000 0 calc(150% / 13),
-          #1a1a1a 0 calc(200% / 13),
-          #0000 0 calc(250% / 13),
-          #1a1a1a 0 calc(300% / 13)
-        )
-        0px 0px,
-      repeating-linear-gradient(
-          45deg,
-          #0000 calc(-650% / 13) calc(50% / 13),
-          #1a1a1a 0 calc(100% / 13),
-          #0000 0 calc(150% / 13),
-          #1a1a1a 0 calc(200% / 13),
-          #0000 0 calc(250% / 13),
-          #1a1a1a 0 calc(300% / 13)
-        )
-        32px 32px,
-      repeating-linear-gradient(
-          -45deg,
-          #0000 calc(-650% / 13) calc(50% / 13),
-          #1a1a1a 0 calc(100% / 13),
-          #0000 0 calc(150% / 13),
-          #1a1a1a 0 calc(200% / 13),
-          #0000 0 calc(250% / 13),
-          #1a1a1a 0 calc(300% / 13)
-        )
-        0px 0px,
-      repeating-linear-gradient(
-          -45deg,
-          #0000 calc(-650% / 13) calc(50% / 13),
-          #1a1a1a 0 calc(100% / 13),
-          #0000 0 calc(150% / 13),
-          #1a1a1a 0 calc(200% / 13),
-          #0000 0 calc(250% / 13),
-          #1a1a1a 0 calc(300% / 13)
-        )
-        32px 32px #1e1e1e;
+        32px 32px hsl(var(--background));
     background-size: 64px 64px;
     mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
   }
 
   .section-plain::before {
     content: none;
-  }
-
-
-
-  .bg-pattern {
-    background:
-      repeating-linear-gradient(
-          45deg,
-          #0000 calc(-650% / 13) calc(50% / 13),
-          #1a1a1a 0 calc(100% / 13),
-          #0000 0 calc(150% / 13),
-          #1a1a1a 0 calc(200% / 13),
-          #0000 0 calc(250% / 13),
-          #1a1a1a 0 calc(300% / 13)
-        )
-        0px 0px,
-      repeating-linear-gradient(
-          45deg,
-          #0000 calc(-650% / 13) calc(50% / 13),
-          #1a1a1a 0 calc(100% / 13),
-          #0000 0 calc(150% / 13),
-          #1a1a1a 0 calc(200% / 13),
-          #0000 0 calc(250% / 13),
-          #1a1a1a 0 calc(300% / 13)
-        )
-        32px 32px,
-      repeating-linear-gradient(
-          -45deg,
-          #0000 calc(-650% / 13) calc(50% / 13),
-          #1a1a1a 0 calc(100% / 13),
-          #0000 0 calc(150% / 13),
-          #1a1a1a 0 calc(200% / 13),
-          #0000 0 calc(250% / 13),
-          #1a1a1a 0 calc(300% / 13)
-        )
-        0px 0px,
-      repeating-linear-gradient(
-          -45deg,
-          #0000 calc(-650% / 13) calc(50% / 13),
-          #1a1a1a 0 calc(100% / 13),
-          #0000 0 calc(150% / 13),
-          #1a1a1a 0 calc(200% / 13),
-          #0000 0 calc(250% / 13),
-          #1a1a1a 0 calc(300% / 13)
-        )
-        32px 32px #1e1e1e;
-    background-size: 64px 64px;
-  }
-
-  .bg-pattern-light {
-    background:
-      repeating-linear-gradient(
-          45deg,
-          #0000 calc(-650% / 13) calc(50% / 13),
-          #d8d8d8 0 calc(100% / 13),
-          #0000 0 calc(150% / 13),
-          #d8d8d8 0 calc(200% / 13),
-          #0000 0 calc(250% / 13),
-          #d8d8d8 0 calc(300% / 13)
-        )
-        0px 0px,
-      repeating-linear-gradient(
-          45deg,
-          #0000 calc(-650% / 13) calc(50% / 13),
-          #d8d8d8 0 calc(100% / 13),
-          #0000 0 calc(150% / 13),
-          #d8d8d8 0 calc(200% / 13),
-          #0000 0 calc(250% / 13),
-          #d8d8d8 0 calc(300% / 13)
-        )
-        32px 32px,
-      repeating-linear-gradient(
-          -45deg,
-          #0000 calc(-650% / 13) calc(50% / 13),
-          #d8d8d8 0 calc(100% / 13),
-          #0000 0 calc(150% / 13),
-          #d8d8d8 0 calc(200% / 13),
-          #0000 0 calc(250% / 13),
-          #d8d8d8 0 calc(300% / 13)
-        )
-        0px 0px,
-      repeating-linear-gradient(
-          -45deg,
-          #0000 calc(-650% / 13) calc(50% / 13),
-          #d8d8d8 0 calc(100% / 13),
-          #0000 0 calc(150% / 13),
-          #d8d8d8 0 calc(200% / 13),
-          #0000 0 calc(250% / 13),
-          #d8d8d8 0 calc(300% / 13)
-        )
-        32px 32px #e8e8e8;
-    background-size: 64px 64px;
   }
 
   @media (prefers-reduced-motion: reduce) {
