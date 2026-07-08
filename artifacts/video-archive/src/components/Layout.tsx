@@ -277,53 +277,8 @@ export function Navbar() {
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen text-foreground flex flex-col font-sans">
-      {/* ── Global decorative background ─────────────────── */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none" aria-hidden="true">
-        {/* Ambient color orbs */}
-        <div
-          className="bg-orb-a absolute w-[700px] h-[700px] rounded-full"
-          style={{
-            top: "-180px",
-            left: "-180px",
-            background: "radial-gradient(ellipse at center, hsl(0 72% 51% / 0.09) 0%, transparent 68%)",
-            filter: "blur(60px)",
-          }}
-        />
-        <div
-          className="bg-orb-b absolute w-[550px] h-[550px] rounded-full"
-          style={{
-            top: "40%",
-            right: "-180px",
-            background: "radial-gradient(ellipse at center, hsl(0 72% 51% / 0.06) 0%, transparent 68%)",
-            filter: "blur(70px)",
-          }}
-        />
-        <div
-          className="bg-orb-c absolute w-[480px] h-[480px] rounded-full"
-          style={{
-            bottom: "8%",
-            left: "22%",
-            background: "radial-gradient(ellipse at center, hsl(0 72% 51% / 0.05) 0%, transparent 68%)",
-            filter: "blur(80px)",
-          }}
-        />
-        {/* Fine dot-grid */}
-        <div
-          className="absolute inset-0 dark:opacity-[0.035] opacity-[0.018]"
-          style={{
-            backgroundImage: "radial-gradient(circle, hsl(0 0% 55%) 1px, transparent 1px)",
-            backgroundSize: "28px 28px",
-          }}
-        />
-        {/* Film-grain noise */}
-        <div
-          className="absolute inset-0 dark:opacity-[0.04] opacity-[0.015] mix-blend-overlay"
-          style={{
-            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
-            backgroundSize: "180px 180px",
-          }}
-        />
-      </div>
+      {/* ── Global background pattern ─────────────────────── */}
+      <div className="pattern-square fixed inset-0 -z-10 pointer-events-none" aria-hidden="true" />
 
       <AgeGate />
       <Navbar />
