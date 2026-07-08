@@ -288,49 +288,94 @@
     inset: 0;
     z-index: -1;
     pointer-events: none;
+    filter: blur(0.8px);
     background:
       repeating-linear-gradient(
           45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          hsl(var(--foreground) / 0.07) 0 calc(100% / 13),
+          #00000006 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          hsl(var(--foreground) / 0.07) 0 calc(200% / 13),
+          #00000006 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          hsl(var(--foreground) / 0.07) 0 calc(300% / 13)
+          #00000006 0 calc(300% / 13)
         )
         0px 0px,
       repeating-linear-gradient(
           45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          hsl(var(--foreground) / 0.07) 0 calc(100% / 13),
+          #00000006 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          hsl(var(--foreground) / 0.07) 0 calc(200% / 13),
+          #00000006 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          hsl(var(--foreground) / 0.07) 0 calc(300% / 13)
+          #00000006 0 calc(300% / 13)
         )
         32px 32px,
       repeating-linear-gradient(
           -45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          hsl(var(--foreground) / 0.07) 0 calc(100% / 13),
+          #00000006 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          hsl(var(--foreground) / 0.07) 0 calc(200% / 13),
+          #00000006 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          hsl(var(--foreground) / 0.07) 0 calc(300% / 13)
+          #00000006 0 calc(300% / 13)
         )
         0px 0px,
       repeating-linear-gradient(
           -45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          hsl(var(--foreground) / 0.07) 0 calc(100% / 13),
+          #00000006 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          hsl(var(--foreground) / 0.07) 0 calc(200% / 13),
+          #00000006 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          hsl(var(--foreground) / 0.07) 0 calc(300% / 13)
+          #00000006 0 calc(300% / 13)
         )
         32px 32px transparent;
     background-size: 64px 64px;
-    mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
+  }
+
+  .dark .section-pattern::before {
+    background:
+      repeating-linear-gradient(
+          45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          #ffffff06 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          #ffffff06 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          #ffffff06 0 calc(300% / 13)
+        )
+        0px 0px,
+      repeating-linear-gradient(
+          45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          #ffffff06 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          #ffffff06 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          #ffffff06 0 calc(300% / 13)
+        )
+        32px 32px,
+      repeating-linear-gradient(
+          -45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          #ffffff06 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          #ffffff06 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          #ffffff06 0 calc(300% / 13)
+        )
+        0px 0px,
+      repeating-linear-gradient(
+          -45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          #ffffff06 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          #ffffff06 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          #ffffff06 0 calc(300% / 13)
+        )
+        32px 32px transparent;
+    background-size: 64px 64px;
   }
 
   .section-plain::before {
