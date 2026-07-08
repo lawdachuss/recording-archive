@@ -277,8 +277,6 @@ export function Navbar() {
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen text-foreground flex flex-col font-sans">
-      <div className="bg-pattern fixed inset-0 -z-10 pointer-events-none hidden dark:block blur-[0.8px]" />
-      <div className="bg-pattern-light fixed inset-0 -z-10 pointer-events-none dark:hidden blur-[0.8px]" />
       <AgeGate />
       <Navbar />
       <main className="flex-1 flex flex-col relative pattern-flow">
