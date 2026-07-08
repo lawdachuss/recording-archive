@@ -277,9 +277,6 @@ export function Navbar() {
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen text-foreground flex flex-col font-sans">
-      {/* ── Global background pattern ─────────────────────── */}
-      <div className="pattern-square fixed inset-0 -z-10 pointer-events-none" aria-hidden="true" />
-
       <AgeGate />
       <Navbar />
       <main className="flex-1 flex flex-col">
@@ -289,6 +286,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <RandomButton />
 
       <footer className="py-10 border-t border-border/40 mt-16 bg-background dark:bg-background backdrop-blur-sm relative overflow-hidden">
+        {/* Diamond texture — fades in from bottom edge */}
+        <div
+          className="pattern-square absolute inset-0 pointer-events-none"
+          style={{
+            opacity: 0.22,
+            maskImage: "linear-gradient(to top, black 0%, transparent 70%)",
+            WebkitMaskImage: "linear-gradient(to top, black 0%, transparent 70%)",
+          }}
+          aria-hidden="true"
+        />
         <div className="container mx-auto px-4 sm:px-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
             <div className="space-y-2">
