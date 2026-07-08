@@ -81,47 +81,7 @@
   --b-y: calc(var(--my) * -6px);
   --c-x: calc(var(--mx) * 4px);
   --c-y: calc(var(--my) * 4px);
-  --bg-pattern:
-    repeating-linear-gradient(
-        45deg,
-        #0000 calc(-650% / 13) calc(50% / 13),
-        rgba(0,0,0,0.15) 0 calc(100% / 13),
-        #0000 0 calc(150% / 13),
-        rgba(0,0,0,0.15) 0 calc(200% / 13),
-        #0000 0 calc(250% / 13),
-        rgba(0,0,0,0.15) 0 calc(300% / 13)
-      )
-      calc(0px + var(--c-x)) calc(0px + var(--c-y)),
-    repeating-linear-gradient(
-        45deg,
-        #0000 calc(-650% / 13) calc(50% / 13),
-        rgba(0,0,0,0.15) 0 calc(100% / 13),
-        #0000 0 calc(150% / 13),
-        rgba(0,0,0,0.15) 0 calc(200% / 13),
-        #0000 0 calc(250% / 13),
-        rgba(0,0,0,0.15) 0 calc(300% / 13)
-      )
-      calc(32px + var(--a-x)) calc(32px + var(--a-y)),
-    repeating-linear-gradient(
-        -45deg,
-        #0000 calc(-650% / 13) calc(50% / 13),
-        rgba(0,0,0,0.15) 0 calc(100% / 13),
-        #0000 0 calc(150% / 13),
-        rgba(0,0,0,0.15) 0 calc(200% / 13),
-        #0000 0 calc(250% / 13),
-        rgba(0,0,0,0.15) 0 calc(300% / 13)
-      )
-      calc(0px + var(--b-x)) calc(0px + var(--b-y)),
-    repeating-linear-gradient(
-        -45deg,
-        #0000 calc(-650% / 13) calc(50% / 13),
-        rgba(0,0,0,0.15) 0 calc(100% / 13),
-        #0000 0 calc(150% / 13),
-        rgba(0,0,0,0.15) 0 calc(200% / 13),
-        #0000 0 calc(250% / 13),
-        rgba(0,0,0,0.15) 0 calc(300% / 13)
-      )
-      calc(32px + var(--a-x)) calc(32px + var(--a-y)) transparent;
+ 
 
   --background: 0 0% 97%;
   --foreground: 0 0% 9%;
@@ -198,47 +158,7 @@
   --b-y: calc(var(--my) * -6px);
   --c-x: calc(var(--mx) * 4px);
   --c-y: calc(var(--my) * 4px);
-  --bg-pattern:
-    repeating-linear-gradient(
-        45deg,
-        #0000 calc(-650% / 13) calc(50% / 13),
-        rgba(255,255,255,0.12) 0 calc(100% / 13),
-        #0000 0 calc(150% / 13),
-        rgba(255,255,255,0.12) 0 calc(200% / 13),
-        #0000 0 calc(250% / 13),
-        rgba(255,255,255,0.12) 0 calc(300% / 13)
-      )
-      calc(0px + var(--c-x)) calc(0px + var(--c-y)),
-    repeating-linear-gradient(
-        45deg,
-        #0000 calc(-650% / 13) calc(50% / 13),
-        rgba(255,255,255,0.12) 0 calc(100% / 13),
-        #0000 0 calc(150% / 13),
-        rgba(255,255,255,0.12) 0 calc(200% / 13),
-        #0000 0 calc(250% / 13),
-        rgba(255,255,255,0.12) 0 calc(300% / 13)
-      )
-      calc(32px + var(--a-x)) calc(32px + var(--a-y)),
-    repeating-linear-gradient(
-        -45deg,
-        #0000 calc(-650% / 13) calc(50% / 13),
-        rgba(255,255,255,0.12) 0 calc(100% / 13),
-        #0000 0 calc(150% / 13),
-        rgba(255,255,255,0.12) 0 calc(200% / 13),
-        #0000 0 calc(250% / 13),
-        rgba(255,255,255,0.12) 0 calc(300% / 13)
-      )
-      calc(0px + var(--b-x)) calc(0px + var(--b-y)),
-    repeating-linear-gradient(
-        -45deg,
-        #0000 calc(-650% / 13) calc(50% / 13),
-        rgba(255,255,255,0.12) 0 calc(100% / 13),
-        #0000 0 calc(150% / 13),
-        rgba(255,255,255,0.12) 0 calc(200% / 13),
-        #0000 0 calc(250% / 13),
-        rgba(255,255,255,0.12) 0 calc(300% / 13)
-      )
-      calc(32px + var(--a-x)) calc(32px + var(--a-y)) transparent;
+ 
 
   --background: 0 0% 7%;
   --foreground: 0 0% 96%;
@@ -365,7 +285,7 @@
     isolation: isolate;
   }
 
-  .pattern-flow > section:nth-of-type(odd)::before,
+  .pattern-flow > section::before,
   .pattern-flow > div::before,
   .page-section::before,
   .section-pattern::before {
@@ -374,41 +294,71 @@
     inset: 0;
     z-index: -1;
     pointer-events: none;
-    opacity: var(--section-pattern-opacity, 0.5);
-    background-image:
-      radial-gradient(ellipse 65% 45% at 50% 0%, hsl(var(--primary) / 0.075), transparent 64%),
-      linear-gradient(135deg, hsl(var(--foreground) / 0.055) 1px, transparent 1px),
-      linear-gradient(45deg, hsl(var(--foreground) / 0.035) 1px, transparent 1px);
-    background-size: 100% 100%, 34px 34px, 34px 34px;
-    background-position:
-      center,
-      calc(var(--a-x, 0px) * 0.35) calc(var(--a-y, 0px) * 0.35),
-      calc(17px + var(--b-x, 0px) * 0.35) calc(17px + var(--b-y, 0px) * 0.35);
+    background:
+      repeating-linear-gradient(
+          45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          var(--pattern-color, #100f0f) 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          var(--pattern-color, #100f0f) 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          var(--pattern-color, #100f0f) 0 calc(300% / 13)
+        )
+        calc(0px + var(--c-x)) calc(0px + var(--c-y)),
+      repeating-linear-gradient(
+          45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          var(--pattern-color, #100f0f) 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          var(--pattern-color, #100f0f) 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          var(--pattern-color, #100f0f) 0 calc(300% / 13)
+        )
+        calc(32px + var(--a-x)) calc(32px + var(--a-y)),
+      repeating-linear-gradient(
+          -45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          var(--pattern-color, #100f0f) 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          var(--pattern-color, #100f0f) 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          var(--pattern-color, #100f0f) 0 calc(300% / 13)
+        )
+        calc(0px + var(--b-x)) calc(0px + var(--b-y)),
+      repeating-linear-gradient(
+          -45deg,
+          #0000 calc(-650% / 13) calc(50% / 13),
+          var(--pattern-color, #100f0f) 0 calc(100% / 13),
+          #0000 0 calc(150% / 13),
+          var(--pattern-color, #100f0f) 0 calc(200% / 13),
+          #0000 0 calc(250% / 13),
+          var(--pattern-color, #100f0f) 0 calc(300% / 13)
+        )
+        calc(32px + var(--a-x)) calc(32px + var(--a-y)) var(--pattern-bg, #1e1e1e);
+    background-size: 64px 64px;
     mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
   }
 
-  .dark .pattern-flow > section:nth-of-type(odd)::before,
+  .dark .pattern-flow > section::before,
   .dark .pattern-flow > div::before,
   .dark .page-section::before,
   .dark .section-pattern::before {
-    opacity: var(--section-pattern-opacity, 0.68);
-    background-image:
-      radial-gradient(ellipse 70% 45% at 50% 0%, hsl(var(--primary) / 0.105), transparent 66%),
-      linear-gradient(135deg, hsl(var(--foreground) / 0.07) 1px, transparent 1px),
-      linear-gradient(45deg, hsl(var(--foreground) / 0.045) 1px, transparent 1px);
+    --pattern-color: #100f0f;
+    --pattern-bg: #1e1e1e;
   }
 
-  .pattern-flow > section:nth-of-type(even)::before,
+  .pattern-flow > section:nth-of-type(2n)::before,
   .section-plain::before {
     content: none;
   }
 
-  .pattern-flow > section:nth-of-type(even) {
+  .pattern-flow > section:nth-of-type(2n) {
     background-color: hsl(var(--background));
   }
 
 
 
+  /* From Uiverse.io by denverdelamasa */
   .pattern-square {
     --mx: 0;
     --my: 0;
@@ -464,7 +414,6 @@
     background-size: 64px 64px;
     width: 100%;
     height: 100%;
-    will-change: background-position;
   }
 
   @media (prefers-reduced-motion: reduce) {

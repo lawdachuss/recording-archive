@@ -936,7 +936,7 @@ export default function VideoDetail() {
                 Recommendations
               </p>
               <p className="text-[9px] text-muted-foreground/40">
-                {user ? "Based on your watch history" : `More like this`}
+                {user ? "Based on your watch history" : "More like this"}
               </p>
             </div>
 
@@ -950,10 +950,10 @@ export default function VideoDetail() {
                   </div>
                 ))}
               </div>
-            ) : related && related.filter((r) => r.id !== id && r.username !== video?.username).length > 0 ? (
+            ) : related && related.filter((r) => r.id !== id).length > 0 ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
                 {related
-                  .filter((r) => r.id !== id && r.username !== video?.username)
+                  .filter((r) => r.id !== id)
                   .map((rec) => (
                     <VideoCard key={rec.id} recording={rec} />
                   ))}

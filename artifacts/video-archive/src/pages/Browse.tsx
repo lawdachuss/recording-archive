@@ -4,7 +4,6 @@ import {
   useMemo,
   useRef,
   useCallback,
-  useTransition,
 } from "react";
 import { useSearch, useLocation } from "wouter";
 import { keepPreviousData } from "@tanstack/react-query";
@@ -74,10 +73,6 @@ export default function Browse() {
   const searchString = useSearch();
   const [, setLocation] = useLocation();
 
-  const [page, setPage] = useState(() => {
-    const p = new URLSearchParams(searchString).get("page");
-    return p ? parseInt(p, 10) || 1 : 1;
-  });
   const [search, setSearch] = useState(
     () => new URLSearchParams(searchString).get("search") || "",
   );
@@ -98,7 +93,7 @@ export default function Browse() {
   const [showFilters, setShowFilters] = useState(false);
   const [tagSearch, setTagSearch] = useState("");
   const [pageLoading, setPageLoading] = useState(false);
-  const [, startTransition] = useTransition();
+
   // ─── Filter presets ──────────────────────────────────
   const [presetMenuOpen, setPresetMenuOpen] = useState(false);
   const [savePresetOpen, setSavePresetOpen] = useState(false);
@@ -124,17 +119,18 @@ export default function Browse() {
       .slice(0, 50);
   }, [popularTags, tagSearch, selectedTags]);
 
-  const tagsParam = selectedTags.join(",");
-
-  const recordingsParams = {
-    page,
-    limit: 40,
-    search: search || undefined,
-    tags: tagsParam || undefined,
-    gender: gender || undefined,
-    resolution: resolution || undefined,
-    sort,
-  };
+  const recordingsParams = useMemo(() => {
+    const p = new URLSearchParams(searchString);
+    return {
+      page: parseInt(p.get("page") || "1", 10),
+      limit: 40,
+      search: p.get("search") || undefined,
+      tags: parseTagList(p.get("tags") || "").join(",") || undefined,
+      gender: p.get("gender") || undefined,
+      resolution: p.get("resolution") || undefined,
+      sort: (p.get("sort") as ListRecordingsSort) || "newest",
+    };
+  }, [searchString]);
 
   const { data, isLoading, isFetching } = useListRecordings(recordingsParams, {
     query: {
@@ -149,18 +145,12 @@ export default function Browse() {
 
   const handlePageChange = (newPage: number) => {
     setPageLoading(true);
-    startTransition(() => setPage(newPage));
-    window.scrollTo({ top: 0, behavior: "auto" });
-    // Build URL from current state, not URL params — avoids stale searchString
-    const params = new URLSearchParams();
-    if (search) params.set("search", search);
-    if (selectedTags.length) params.set("tags", selectedTags.join(","));
-    if (gender) params.set("gender", gender);
-    if (resolution) params.set("resolution", resolution);
-    if (sort && sort !== "newest") params.set("sort", sort);
+    const params = new URLSearchParams(searchString);
     if (newPage > 1) params.set("page", String(newPage));
+    else params.delete("page");
     const qs = params.toString();
-    window.history.replaceState(null, "", `/browse${qs ? "?" + qs : ""}`);
+    setLocation(`/browse${qs ? "?" + qs : ""}`);
+    window.scrollTo({ top: 0, behavior: "auto" });
   };
 
   // Use isFetching (true while refetching) to clear the loading overlay
@@ -186,7 +176,6 @@ export default function Browse() {
     setGender(p.get("gender") || "");
     setResolution(p.get("resolution") || "");
     setSort((p.get("sort") as ListRecordingsSort) || "newest");
-    setPage(parseInt(p.get("page") || "1", 10));
   }, [searchString]);
 
   const pushFilters = useCallback(
@@ -211,8 +200,6 @@ export default function Browse() {
       if (next.gender) params.set("gender", next.gender);
       if (next.resolution) params.set("resolution", next.resolution);
       if (next.sort && next.sort !== "newest") params.set("sort", next.sort);
-      // Reset to page 1 when filters change
-      setPage(1);
       isInternalRef.current = true;
       setLocation(`/browse${params.toString() ? "?" + params.toString() : ""}`);
     },
@@ -651,7 +638,7 @@ export default function Browse() {
 
       <section className="px-4 sm:px-6 py-10 pt-2">
         <div className="container mx-auto">
-          {isLoading && page === 1 ? (
+          {isLoading && recordingsParams.page === 1 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8">
               {Array.from({ length: 40 }).map((_, i) => (
                 <div key={i} className="space-y-2.5 animate-pulse">
@@ -715,7 +702,7 @@ export default function Browse() {
           {data && data.total > 0 && (
             <div className="mt-12 flex flex-col items-center gap-4">
               <div className="text-xs text-muted-foreground/60 flex items-center gap-2">
-                <span className="tabular-nums">Page {page}</span>
+                <span className="tabular-nums">Page {recordingsParams.page}</span>
                 <span className="w-px h-3 bg-border/40" />
                 <span className="tabular-nums">
                   {Math.ceil(data.total / 40)} total
@@ -730,7 +717,7 @@ export default function Browse() {
                 <AppPagination
                   itemsCount={data.total}
                   itemsPerPage={40}
-                  currentPage={page}
+                  currentPage={recordingsParams.page}
                   onPageChange={handlePageChange}
                   pageRangeDisplayed={5}
                   marginPagesDisplayed={2}
