@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { Link } from "wouter";
 import type { Recording } from "@workspace/api-client-react";
 import { formatBytes, formatRelativeTime, formatViewers, formatDuration } from "@/lib/formatters";
-import { Eye, HardDrive, Film, Clock, CheckCircle } from "lucide-react";
+import { Eye, HardDrive, Clock, CheckCircle } from "lucide-react";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import { SpriteSlideshow } from "@/components/SpriteSlideshow";
 
@@ -192,10 +192,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             />
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-secondary/80 to-secondary">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center mb-2">
-                <Film className="w-4 h-4 text-primary/40" />
-              </div>
-              <span className="text-xs font-bold text-muted-foreground/30 uppercase tracking-wider">
+              <span className="text-lg font-bold text-muted-foreground/30 uppercase tracking-wider">
                 {initials}
               </span>
             </div>
@@ -293,9 +290,6 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
 
         <div className="px-0.5 space-y-1">
           <div className="flex items-center gap-1.5">
-            <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-              <Film className="w-2.5 h-2.5 text-primary/70" />
-            </div>
             <span className="text-[13px] font-semibold text-primary/90 group-hover:text-primary transition-colors truncate">
               {recording.username}
             </span>

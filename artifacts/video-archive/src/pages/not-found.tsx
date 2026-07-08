@@ -6,7 +6,7 @@ export default function NotFound() {
   return (
     <Layout>
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-32 text-center relative overflow-hidden">
-        <div className="pattern-square absolute inset-0 pointer-events-none opacity-[0.15] dark:opacity-[0.30]" />
+        <div className="pattern-square absolute inset-0 pointer-events-none" />
         <Film className="w-10 h-10 text-muted-foreground/20 mb-6" />
         <div className="text-[clamp(4rem,12vw,8rem)] font-black tracking-tighter text-foreground/[0.04] leading-none select-none mb-4">
           404
