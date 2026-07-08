@@ -278,84 +278,53 @@
   }
 
   .section-pattern {
-    background-image:
-      repeating-linear-gradient(
-          45deg,
-          #0000 calc(-650% / 13) calc(50% / 13),
-          #00000003 0 calc(100% / 13),
-          #0000 0 calc(150% / 13),
-          #00000003 0 calc(200% / 13),
-          #0000 0 calc(250% / 13),
-          #00000003 0 calc(300% / 13)
-        ),
-      repeating-linear-gradient(
-          45deg,
-          #0000 calc(-650% / 13) calc(50% / 13),
-          #00000003 0 calc(100% / 13),
-          #0000 0 calc(150% / 13),
-          #00000003 0 calc(200% / 13),
-          #0000 0 calc(250% / 13),
-          #00000003 0 calc(300% / 13)
-        ),
-      repeating-linear-gradient(
-          -45deg,
-          #0000 calc(-650% / 13) calc(50% / 13),
-          #00000003 0 calc(100% / 13),
-          #0000 0 calc(150% / 13),
-          #00000003 0 calc(200% / 13),
-          #0000 0 calc(250% / 13),
-          #00000003 0 calc(300% / 13)
-        ),
-      repeating-linear-gradient(
-          -45deg,
-          #0000 calc(-650% / 13) calc(50% / 13),
-          #00000003 0 calc(100% / 13),
-          #0000 0 calc(150% / 13),
-          #00000003 0 calc(200% / 13),
-          #0000 0 calc(250% / 13),
-          #00000003 0 calc(300% / 13)
-        );
-    background-size: 64px 64px;
-    background-position: 0px 0px, 32px 32px, 0px 0px, 32px 32px;
+    position: relative;
+    isolation: isolate;
   }
 
-  .dark .section-pattern {
+  .section-pattern::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    mix-blend-mode: overlay;
     background-image:
       repeating-linear-gradient(
           45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          #ffffff03 0 calc(100% / 13),
+          #ffffff06 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          #ffffff03 0 calc(200% / 13),
+          #ffffff06 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          #ffffff03 0 calc(300% / 13)
+          #ffffff06 0 calc(300% / 13)
         ),
       repeating-linear-gradient(
           45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          #ffffff03 0 calc(100% / 13),
+          #ffffff06 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          #ffffff03 0 calc(200% / 13),
+          #ffffff06 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          #ffffff03 0 calc(300% / 13)
+          #ffffff06 0 calc(300% / 13)
         ),
       repeating-linear-gradient(
           -45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          #ffffff03 0 calc(100% / 13),
+          #ffffff06 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          #ffffff03 0 calc(200% / 13),
+          #ffffff06 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          #ffffff03 0 calc(300% / 13)
+          #ffffff06 0 calc(300% / 13)
         ),
       repeating-linear-gradient(
           -45deg,
           #0000 calc(-650% / 13) calc(50% / 13),
-          #ffffff03 0 calc(100% / 13),
+          #ffffff06 0 calc(100% / 13),
           #0000 0 calc(150% / 13),
-          #ffffff03 0 calc(200% / 13),
+          #ffffff06 0 calc(200% / 13),
           #0000 0 calc(250% / 13),
-          #ffffff03 0 calc(300% / 13)
+          #ffffff06 0 calc(300% / 13)
         );
     background-size: 64px 64px;
     background-position: 0px 0px, 32px 32px, 0px 0px, 32px 32px;
