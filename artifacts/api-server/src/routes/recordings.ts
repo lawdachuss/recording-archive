@@ -4,7 +4,6 @@ import {
   GetRecordingParams,
   ListRelatedRecordingsQueryParams,
 } from "@workspace/api-zod";
-import { db, sql } from "@workspace/db";
 import { supabase } from "../lib/supabase";
 import { cache } from "../middleware/cache";
 
@@ -23,71 +22,53 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     const normalizedLimit = Math.min(Math.max(1, limit), 100);
     const offset = (normalizedPage - 1) * normalizedLimit;
 
-    const filters = [sql`EXISTS (SELECT 1 FROM upload_links ul WHERE ul.recording_id = r.id)`];
+    const orderCol =
+      sort === "oldest" ? "timestamp" :
+      sort === "largest" ? "filesize" :
+      sort === "popular" ? "viewers" :
+      "timestamp";
+    const ascending = sort === "oldest";
 
-    if (search?.trim()) {
-      const searchTerm = `%${search.trim()}%`;
-      filters.push(sql`(username ILIKE ${searchTerm} OR room_title ILIKE ${searchTerm} OR filename ILIKE ${searchTerm})`);
-    }
-
-    if (tags) {
-      const tagList = tags.split(",").map((tag) => tag.trim()).filter(Boolean);
-      if (tagList.length > 0) {
-        filters.push(sql`tags @> ${tagList}::text[]`);
+    // Apply shared filters to any Supabase query builder
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function applyFilters(q: any) {
+      q = q.not("links", "is", "null");
+      if (search?.trim()) {
+        const term = search.trim();
+        q = q.or(`username.ilike.%${term}%,room_title.ilike.%${term}%,filename.ilike.%${term}%`);
       }
+      if (tags) {
+        const tagList = tags.split(",").map((t: string) => t.trim()).filter(Boolean);
+        if (tagList.length > 0) q = q.contains("tags", tagList);
+      }
+      if (gender) q = q.eq("gender", gender);
+      if (username) q = q.eq("username", username);
+      if (resolution) q = q.eq("resolution", resolution);
+      return q;
     }
 
-    if (gender) filters.push(sql`gender = ${gender}`);
-    if (username) filters.push(sql`username = ${username}`);
-    if (resolution) filters.push(sql`resolution = ${resolution}`);
-
-    const whereClause = sql.join(filters, sql` AND `);
-    const orderClause =
-      sort === "oldest" ? sql`timestamp ASC` :
-      sort === "largest" ? sql`filesize DESC NULLS LAST` :
-      sort === "popular" ? sql`viewers DESC NULLS LAST` :
-      sql`timestamp DESC`;
+    const SELECT_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at,links";
 
     const [countResult, dataResult] = await Promise.all([
-      db.execute(sql`
-        SELECT COUNT(*)::int AS total
-        FROM recordings r
-        WHERE ${whereClause}
-      `),
-      db.execute(sql`
-        SELECT
-          id,
-          channel_id,
-          username,
-          filename,
-          timestamp,
-          room_title,
-          tags,
-          viewers,
-          resolution,
-          framerate,
-          filesize,
-          duration,
-          gender,
-          thumbnail_url,
-          sprite_url,
-          embed_url,
-          preview_url,
-          instance_id,
-          created_at,
-          updated_at
-        FROM recordings r
-        WHERE ${whereClause}
-        ORDER BY ${orderClause}
-        LIMIT ${normalizedLimit}
-        OFFSET ${offset}
-      `),
+      applyFilters(supabase.from("recordings_with_links").select("*", { count: "exact", head: true })),
+      applyFilters(supabase.from("recordings_with_links").select(SELECT_COLS))
+        .order(orderCol, { ascending, nullsFirst: false })
+        .range(offset, offset + normalizedLimit - 1),
     ]);
 
-    const total = Number((countResult.rows[0] as { total?: unknown } | undefined)?.total ?? 0);
+    if (dataResult.error) {
+      req.log.error({ err: dataResult.error }, "Supabase error listing recordings");
+      res.status(500).json({ error: "Failed to fetch recordings" });
+      return;
+    }
+
+    const total = countResult.count ?? 0;
+    const validLinks = (r: any) =>
+      r.links && typeof r.links === "object" && Object.keys(r.links).length > 0;
+    const rows = (dataResult.data ?? []).filter(validLinks);
 
     res.json({
-      data: dataResult.rows,
+      data: rows,
       total,
       page: normalizedPage,
       limit: normalizedLimit,
