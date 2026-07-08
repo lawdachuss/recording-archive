@@ -328,7 +328,7 @@
           #0000 0 calc(250% / 13),
           hsl(var(--foreground) / 0.07) 0 calc(300% / 13)
         )
-        32px 32px hsl(var(--background));
+        32px 32px transparent;
     background-size: 64px 64px;
     mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
   }
