@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, sql } from "@workspace/db";
-import { invalidateOnSuccess } from "../middleware/cache";
+import { cache, invalidateOnSuccess } from "../middleware/cache";
 
 interface ReactionCountRow {
   likes: number;
@@ -35,7 +35,7 @@ async function getUserReaction(recordingId: string, sessionId: string): Promise<
 
 const router = Router();
 
-router.get("/reactions", async (req, res) => {
+router.get("/reactions", cache({ ttlSeconds: 15, staleSeconds: 60, tags: ["reactions"] }), async (req, res) => {
   try {
     const { recording_id, session_id } = req.query as Record<string, string>;
     if (!recording_id) {
@@ -53,7 +53,7 @@ router.get("/reactions", async (req, res) => {
   }
 });
 
-router.post("/reactions", invalidateOnSuccess(["stats"]), async (req, res) => {
+router.post("/reactions", invalidateOnSuccess(["reactions", "stats"]), async (req, res) => {
   try {
     const { recording_id, type, session_id } = req.body as {
       recording_id: string;
@@ -106,9 +106,9 @@ router.post("/reactions", invalidateOnSuccess(["stats"]), async (req, res) => {
 });
 
 // Nested routes matching /api/recordings/:recording_id/reactions (called by frontend)
-router.get("/recordings/:recording_id/reactions", async (req, res) => {
+router.get("/recordings/:recording_id/reactions", cache({ ttlSeconds: 15, staleSeconds: 60, tags: ["reactions"] }), async (req, res) => {
   try {
-    const { recording_id } = req.params;
+    const recording_id = String(req.params.recording_id);
     const { session_id } = req.query as Record<string, string>;
 
     const counts = await getReactionCounts(recording_id);
@@ -121,9 +121,9 @@ router.get("/recordings/:recording_id/reactions", async (req, res) => {
   }
 });
 
-router.post("/recordings/:recording_id/reactions", async (req, res) => {
+router.post("/recordings/:recording_id/reactions", invalidateOnSuccess(["reactions", "stats"]), async (req, res) => {
   try {
-    const { recording_id } = req.params;
+    const recording_id = String(req.params.recording_id);
     const { type, session_id } = req.body as { type: string; session_id: string };
 
     if (!type || !session_id) {

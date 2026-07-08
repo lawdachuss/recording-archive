@@ -72,18 +72,20 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({ spriteUrl, fps = 
   // Direct DOM animation — no React state updates per frame
   useEffect(() => {
     const el = divRef.current;
-    if (!el || !layout || layout.totalFrames < 2 || !imageLoaded) return;
+    if (!el || !layout || layout.totalFrames < 2 || !imageLoaded || !active) return;
 
     const intervalMs = 1000 / fps;
     frameRef.current = 0;
     const bgUrl = `url(${spriteUrl})`;
-    const bgSize = `${layout.cols * 100}% auto`;
+    const bgSize = `${layout.cols * 100}% ${layout.rows * 100}%`;
 
     const update = () => {
       const frame = frameRef.current % layout.totalFrames;
       const col = frame % layout.cols;
       const row = Math.floor(frame / layout.cols);
-      el.style.backgroundPosition = `${-col * 100}% ${-row * 100}%`;
+      const x = layout.cols <= 1 ? 0 : (col / (layout.cols - 1)) * 100;
+      const y = layout.rows <= 1 ? 0 : (row / (layout.rows - 1)) * 100;
+      el.style.backgroundPosition = `${x}% ${y}%`;
       frameRef.current++;
     };
 
@@ -94,7 +96,7 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({ spriteUrl, fps = 
 
     const interval = setInterval(update, intervalMs);
     return () => clearInterval(interval);
-  }, [layout, spriteUrl, fps, imageLoaded]);
+  }, [layout, spriteUrl, fps, imageLoaded, active]);
 
   return (
     <div

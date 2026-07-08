@@ -65,6 +65,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   const videoRef = useRef<HTMLVideoElement>(null);
   const hoverTimerRef = useRef<number | undefined>(undefined);
   const isHoveredRef = useRef(false);
+  const warmedPreviewUrlsRef = useRef<Set<string>>(new Set());
 
   const previewUrl = useMemo(() => proxyUrl(recording.preview_url), [recording.preview_url]);
   const spriteUrl = useMemo(() => proxyUrl(recording.sprite_url), [recording.sprite_url]);
@@ -87,17 +88,39 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
         ? "sprite"
         : "none";
 
+  useEffect(() => {
+    setVideoError(false);
+  }, [previewUrl]);
+
+  const warmPreviewAsset = useCallback((url: string | null, type: "image" | "video") => {
+    if (!url || warmedPreviewUrlsRef.current.has(url)) return;
+    warmedPreviewUrlsRef.current.add(url);
+
+    if (type === "image") {
+      const image = new Image();
+      image.decoding = "async";
+      image.src = url;
+      return;
+    }
+
+    const link = document.createElement("link");
+    link.rel = "preload";
+    link.as = "video";
+    link.href = url;
+    document.head.appendChild(link);
+    window.setTimeout(() => link.remove(), 10_000);
+  }, []);
+
   const handleMouseEnter = useCallback(() => {
     isHoveredRef.current = true;
-    if (!previewBlocked) {
-      setVideoError(false);
-    }
+    if (hasPreview && !previewBlocked && !previewIsImage) warmPreviewAsset(previewUrl, "video");
+    if (hasSprite) warmPreviewAsset(spriteUrl, "image");
     hoverTimerRef.current = window.setTimeout(() => {
       if (isHoveredRef.current) {
         setIsHovered(true);
       }
     }, 80);
-  }, [previewBlocked]);
+  }, [hasPreview, hasSprite, previewBlocked, previewIsImage, previewUrl, spriteUrl, warmPreviewAsset]);
 
   const handleMouseLeave = useCallback(() => {
     isHoveredRef.current = false;
@@ -194,7 +217,8 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
                 muted
                 playsInline
                 loop
-                preload="none"
+                preload="metadata"
+                poster={staticImage ?? undefined}
                 className="absolute inset-0 w-full h-full object-cover"
                 onError={handleVideoError}
               />

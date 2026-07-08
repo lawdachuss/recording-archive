@@ -95,7 +95,7 @@ function performerExistsOnPlatform(html: string, username: string, platform: str
 
 const router = Router();
 
-router.get("/performers/lookup", async (req, res) => {
+router.get("/performers/lookup", cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["performers", "search"] }), async (req, res) => {
   try {
     const platform = (req.query.platform as string)?.toLowerCase();
     const username = (req.query.username as string)?.toLowerCase().trim();
@@ -223,7 +223,7 @@ router.get("/performers/lookup", async (req, res) => {
   }
 });
 
-router.get("/performers", cache({ ttlSeconds: 300, tags: ["performers"] }), async (req, res) => {
+router.get("/performers", cache({ ttlSeconds: 600, staleSeconds: 900, tags: ["performers", "recordings", "search"] }), async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 24));
@@ -313,7 +313,7 @@ router.get("/performers", cache({ ttlSeconds: 300, tags: ["performers"] }), asyn
   }
 });
 
-router.get("/performers/:username", cache({ ttlSeconds: 300, tags: ["performers"] }), async (req, res) => {
+router.get("/performers/:username", cache({ ttlSeconds: 900, staleSeconds: 1800, tags: ["performers", "recordings"] }), async (req, res) => {
   try {
     const parsed = GetPerformerParams.safeParse(req.params);
     if (!parsed.success) {

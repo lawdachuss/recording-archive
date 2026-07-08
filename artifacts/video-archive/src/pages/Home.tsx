@@ -167,18 +167,7 @@ export default function Home() {
   return (
     <Layout>
       {/* Hero */}
-      <section className="relative border-b border-border/50 px-4 sm:px-6 py-20 md:py-28 overflow-hidden bg-background"
-        style={{
-          backgroundImage: `
-            radial-gradient(ellipse 70% 45% at 50% 38%, hsl(var(--primary)/0.09) 0%, transparent 55%),
-            radial-gradient(circle, hsl(var(--primary)/0.06) 0.75px, transparent 0.75px)
-          `,
-          backgroundSize: '100% 100%, 24px 24px',
-          backgroundPosition: '0 0, 0 0',
-          backgroundRepeat: 'no-repeat, repeat',
-        }}
-      >
-        <div className="pattern-square absolute inset-0 pointer-events-none opacity-[0.15] dark:opacity-[0.30]" />
+      <section className="relative border-b border-border/50 px-4 sm:px-6 py-20 md:py-28 overflow-hidden bg-background">
         <div className="container mx-auto max-w-4xl text-center relative">
           <div className="mb-4 flex items-center gap-3 animate-fade-in-up" style={{ animationDelay: '0ms' }}>
             <div className="h-px flex-1 bg-border/50" />
@@ -220,7 +209,6 @@ export default function Home() {
 
       {/* Recordings — tabs */}
       <section className="px-4 sm:px-6 py-14 relative overflow-hidden">
-        <div className="pattern-square absolute inset-0 pointer-events-none opacity-[0.15] dark:opacity-[0.30]" />
         <div className="container mx-auto">
           <div className="flex items-center justify-between mb-8">
             {/* Tabs */}
@@ -296,7 +284,6 @@ export default function Home() {
       {/* Most Viewed */}
       {mostViewed.length > 0 && (
         <section className="border-t border-border/50 px-4 sm:px-6 py-14 relative overflow-hidden">
-          <div className="pattern-square absolute inset-0 pointer-events-none opacity-[0.15] dark:opacity-[0.30]" />
           <div className="container mx-auto">
             <div className="flex items-center justify-between mb-8">
               <h2 className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold">
@@ -333,7 +320,6 @@ export default function Home() {
       {/* Top Performers — Circular avatars */}
       {topPerformers.length > 0 && (
         <section className="border-t border-border/50 px-4 sm:px-6 py-14 bg-[radial-gradient(ellipse_at_center,hsl(var(--primary)/0.02)_0%,transparent_70%)] relative overflow-hidden">
-          <div className="pattern-square absolute inset-0 pointer-events-none opacity-[0.15] dark:opacity-[0.30]" />
           <div className="container mx-auto">
             <div className="flex items-center justify-between mb-8">
               <h2 className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold">
@@ -361,7 +347,6 @@ export default function Home() {
       {/* Activity feed — only for signed-in users */}
       {user && recentActivity.length > 0 && (
         <section className="border-t border-border/50 px-4 sm:px-6 py-14 bg-secondary relative overflow-hidden">
-          <div className="pattern-square absolute inset-0 pointer-events-none opacity-[0.15] dark:opacity-[0.30]" />
           <div className="container mx-auto max-w-lg">
             <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold mb-6">
               <Clock className="w-3.5 h-3.5 text-primary" />
@@ -399,7 +384,6 @@ export default function Home() {
       {/* Popular Tags */}
       {Array.isArray(tags) && tags.length > 0 && (
         <section className="border-t border-border/50 px-4 sm:px-6 py-14 relative overflow-hidden">
-          <div className="pattern-square absolute inset-0 pointer-events-none opacity-[0.15] dark:opacity-[0.30]" />
           <div className="container mx-auto">
             <div className="flex items-center justify-between mb-8">
               <h2 className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold">

@@ -4,7 +4,7 @@ import { cache } from "../middleware/cache";
 
 const router = Router();
 
-router.get("/stats", cache({ ttlSeconds: 300, tags: ["stats"] }), async (req, res) => {
+router.get("/stats", cache({ ttlSeconds: 600, staleSeconds: 1800, tags: ["stats", "recordings"] }), async (req, res) => {
   const { data, error } = await supabase
     .from("recordings_with_links")
     .select("username, tags, filesize, timestamp, links")

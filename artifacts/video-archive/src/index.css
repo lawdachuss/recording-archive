@@ -357,6 +357,56 @@
     contain-intrinsic-size: 200px;
   }
 
+  .pattern-flow > section,
+  .pattern-flow > div,
+  .page-section,
+  .section-pattern {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .pattern-flow > section:nth-of-type(odd)::before,
+  .pattern-flow > div::before,
+  .page-section::before,
+  .section-pattern::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: var(--section-pattern-opacity, 0.5);
+    background-image:
+      radial-gradient(ellipse 65% 45% at 50% 0%, hsl(var(--primary) / 0.075), transparent 64%),
+      linear-gradient(135deg, hsl(var(--foreground) / 0.055) 1px, transparent 1px),
+      linear-gradient(45deg, hsl(var(--foreground) / 0.035) 1px, transparent 1px);
+    background-size: 100% 100%, 34px 34px, 34px 34px;
+    background-position:
+      center,
+      calc(var(--a-x, 0px) * 0.35) calc(var(--a-y, 0px) * 0.35),
+      calc(17px + var(--b-x, 0px) * 0.35) calc(17px + var(--b-y, 0px) * 0.35);
+    mask-image: linear-gradient(to bottom, transparent, black 12%, black 88%, transparent);
+  }
+
+  .dark .pattern-flow > section:nth-of-type(odd)::before,
+  .dark .pattern-flow > div::before,
+  .dark .page-section::before,
+  .dark .section-pattern::before {
+    opacity: var(--section-pattern-opacity, 0.68);
+    background-image:
+      radial-gradient(ellipse 70% 45% at 50% 0%, hsl(var(--primary) / 0.105), transparent 66%),
+      linear-gradient(135deg, hsl(var(--foreground) / 0.07) 1px, transparent 1px),
+      linear-gradient(45deg, hsl(var(--foreground) / 0.045) 1px, transparent 1px);
+  }
+
+  .pattern-flow > section:nth-of-type(even)::before,
+  .section-plain::before {
+    content: none;
+  }
+
+  .pattern-flow > section:nth-of-type(even) {
+    background-color: hsl(var(--background));
+  }
+
 
 
   .pattern-square {

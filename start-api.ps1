@@ -19,4 +19,4 @@ if (Test-Path -LiteralPath $envFile) {
 $env:NODE_ENV = 'development'
 $env:THREAD_STREAM_WORKER_PATH = Join-Path -Path $scriptRoot -ChildPath "artifacts\api-server\dist\thread-stream-worker.mjs"
 
-pnpm --filter @workspace/api-server run build; if ($?) { Set-Location -LiteralPath (Join-Path -Path $scriptRoot -ChildPath "artifacts\api-server"); node --enable-source-maps ./dist/index.mjs }
+corepack pnpm --filter @workspace/api-server run build; if ($?) { Set-Location -LiteralPath (Join-Path -Path $scriptRoot -ChildPath "artifacts\api-server"); node --enable-source-maps ./dist/index.mjs }

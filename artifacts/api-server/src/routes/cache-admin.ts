@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { getRedis, isRedisConnected, getRedisStatus } from "../lib/redis";
-import { invalidateTags, invalidatePattern, purgeAllCache } from "../middleware/cache";
+import { getCacheStats, invalidateTags, invalidatePattern, purgeAllCache } from "../middleware/cache";
 import { requireRole } from "../middleware/requireRole";
 import { logger } from "../lib/logger";
 
@@ -14,7 +14,7 @@ router.get("/cache/status", ...admin, async (_req: Request, res: Response) => {
   const status = getRedisStatus();
   const connected = isRedisConnected();
 
-  let info: Record<string, unknown> = { connected, status };
+  let info: Record<string, unknown> = { connected, status, memory: getCacheStats() };
 
   if (redis && connected) {
     try {
@@ -79,12 +79,15 @@ router.post("/cache/purge", ...admin, async (_req: Request, res: Response) => {
 // DELETE /api/cache/flush — Clear all cache (use with caution)
 router.delete("/cache/flush", ...admin, async (_req: Request, res: Response) => {
   const redis = getRedis();
-  if (!redis) {
-    res.status(503).json({ error: "Redis not available" });
-    return;
-  }
 
   try {
+    const memoryResult = await purgeAllCache();
+
+    if (!redis || !isRedisConnected()) {
+      res.json({ flushed: true, keysDeleted: memoryResult.deletedKeys });
+      return;
+    }
+
     // Only delete keys matching our prefix
     let cursor = "0";
     let deleted = 0;
@@ -108,8 +111,9 @@ router.delete("/cache/flush", ...admin, async (_req: Request, res: Response) => 
       }
     } while (cursor !== "0");
 
-    logger.info({ keysDeleted: deleted }, "Cache flushed");
-    res.json({ flushed: true, keysDeleted: deleted });
+    const keysDeleted = deleted + memoryResult.deletedKeys;
+    logger.info({ keysDeleted }, "Cache flushed");
+    res.json({ flushed: true, keysDeleted });
   } catch (err) {
     logger.error({ err }, "Cache flush failed");
     res.status(500).json({ error: "Cache flush failed" });
