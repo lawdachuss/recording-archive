@@ -168,8 +168,8 @@ export default function Home() {
     <Layout>
       {/* Hero */}
       <section className="relative border-b border-border/50 px-4 sm:px-6 py-20 md:py-28 overflow-hidden">
-        {/* Diamond texture — full bleed behind hero content */}
-        <div className="pattern-square absolute inset-0 pointer-events-none opacity-55" aria-hidden="true" />
+        {/* Diamond texture */}
+        <div className="pattern-square absolute inset-0 pointer-events-none opacity-20" aria-hidden="true" />
         <div className="container mx-auto max-w-4xl text-center relative">
           <div className="mb-4 flex items-center gap-3 animate-fade-in-up" style={{ animationDelay: '0ms' }}>
             <div className="h-px flex-1 bg-border/50" />
@@ -286,7 +286,8 @@ export default function Home() {
       {/* Most Viewed */}
       {mostViewed.length > 0 && (
         <section className="border-t border-border/50 px-4 sm:px-6 py-14 relative overflow-hidden">
-          <div className="container mx-auto">
+          <div className="pattern-square absolute inset-0 pointer-events-none opacity-20" aria-hidden="true" />
+          <div className="container mx-auto relative">
             <div className="flex items-center justify-between mb-8">
               <h2 className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold">
                 <TrendingUp className="w-3.5 h-3.5 text-primary" />
@@ -322,9 +323,7 @@ export default function Home() {
       {/* Top Performers — Circular avatars */}
       {topPerformers.length > 0 && (
         <section className="border-t border-border/50 px-4 sm:px-6 py-14 relative overflow-hidden">
-          {/* Subtle diamond texture for featured section */}
-          <div className="pattern-square absolute inset-0 pointer-events-none opacity-20" aria-hidden="true" />
-          <div className="container mx-auto relative">
+          <div className="container mx-auto">
             <div className="flex items-center justify-between mb-8">
               <h2 className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold">
                 <Users className="w-3.5 h-3.5 text-primary" />
@@ -388,7 +387,8 @@ export default function Home() {
       {/* Popular Tags */}
       {Array.isArray(tags) && tags.length > 0 && (
         <section className="border-t border-border/50 px-4 sm:px-6 py-14 relative overflow-hidden">
-          <div className="container mx-auto">
+          <div className="pattern-square absolute inset-0 pointer-events-none opacity-20" aria-hidden="true" />
+          <div className="container mx-auto relative">
             <div className="flex items-center justify-between mb-8">
               <h2 className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold">
                 <Tags className="w-3.5 h-3.5 text-primary" />

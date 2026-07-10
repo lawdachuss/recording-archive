@@ -472,13 +472,14 @@
   }
 
   .dark .glass-panel {
-    background: hsl(0 0% 0% / 0.20);
-    border-bottom: 1px solid hsl(var(--border) / 0.25);
+    background: hsl(0 0% 0% / 0.08);
+    border-bottom: 1px solid hsl(var(--border) / 0.15);
   }
 
   .dark .glass-panel.scrolled {
-    background: hsl(0 0% 0% / 0.50);
-    box-shadow: 0 1px 0 hsl(var(--primary) / 0.08), 0 4px 24px hsl(0 0% 0% / 0.35);
+    background: hsl(0 0% 4% / 0.72);
+    border-bottom: 1px solid hsl(var(--border) / 0.30);
+    box-shadow: 0 1px 0 hsl(var(--primary) / 0.10), 0 4px 32px hsl(0 0% 0% / 0.45);
   }
 
   .glass-dropdown {
