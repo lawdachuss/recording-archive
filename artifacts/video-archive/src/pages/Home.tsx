@@ -170,12 +170,10 @@ export default function Home() {
       <section className="relative border-b border-border/50 px-4 sm:px-6 py-20 md:py-28 overflow-hidden">
         {/* Diamond texture */}
         <div className="pattern-square absolute inset-0 pointer-events-none opacity-20" aria-hidden="true" />
-        {/* Soft radial spotlight — lighter center, fully fades to transparent */}
+        {/* Tight radial spotlight — only behind the text block, pattern shows at all edges */}
         <div
           className="absolute inset-0 pointer-events-none"
-          style={{
-            background: "radial-gradient(ellipse 64% 72% at 50% 50%, hsl(0 0% 22%) 0%, hsl(0 0% 18%) 38%, hsl(0 0% 14% / 0.55) 65%, transparent 100%)"
-          }}
+          style={{ background: "radial-gradient(ellipse 40% 58% at 50% 50%, hsl(0 0% 21%) 0%, hsl(0 0% 18% / 0.80) 35%, hsl(0 0% 15% / 0.35) 62%, transparent 80%)" }}
           aria-hidden="true"
         />
         <div className="container mx-auto max-w-4xl text-center relative">
