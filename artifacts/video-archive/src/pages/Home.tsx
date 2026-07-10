@@ -170,6 +170,14 @@ export default function Home() {
       <section className="relative border-b border-border/50 px-4 sm:px-6 py-20 md:py-28 overflow-hidden">
         {/* Diamond texture */}
         <div className="pattern-square absolute inset-0 pointer-events-none opacity-20" aria-hidden="true" />
+        {/* Soft radial spotlight — lighter center, fully fades to transparent */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: "radial-gradient(ellipse 64% 72% at 50% 50%, hsl(0 0% 22%) 0%, hsl(0 0% 18%) 38%, hsl(0 0% 14% / 0.55) 65%, transparent 100%)"
+          }}
+          aria-hidden="true"
+        />
         <div className="container mx-auto max-w-4xl text-center relative">
           <div className="mb-4 flex items-center gap-3 animate-fade-in-up" style={{ animationDelay: '0ms' }}>
             <div className="h-px flex-1 bg-border/50" />
