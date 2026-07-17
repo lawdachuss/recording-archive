@@ -193,7 +193,7 @@ const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { perf
             <div className="absolute inset-0 transition-all duration-400 ease-out will-change-transform opacity-100 scale-100">
               <SpriteSlideshow
                 spriteUrl={spriteUrl}
-                fps={8}
+                frameMs={380}
                 className="absolute inset-0 w-full h-full"
                 active
               />
