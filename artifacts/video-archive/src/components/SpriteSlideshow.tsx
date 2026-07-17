@@ -13,7 +13,7 @@ interface SpriteLayout {
   totalFrames: number;
 }
 
-const FRAME_WIDTH_CANDIDATES = [80, 120, 160, 240, 320];
+const FRAME_WIDTH_CANDIDATES = [640, 320, 240, 160, 120, 80];
 
 function detectLayout(width: number, height: number): SpriteLayout {
   for (const fw of FRAME_WIDTH_CANDIDATES) {

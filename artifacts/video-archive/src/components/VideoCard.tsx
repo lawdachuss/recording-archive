@@ -215,7 +215,6 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
                 playsInline
                 loop
                 preload="metadata"
-                poster={staticImage ?? undefined}
                 className="absolute inset-0 w-full h-full object-cover"
                 onError={handleVideoError}
               />
