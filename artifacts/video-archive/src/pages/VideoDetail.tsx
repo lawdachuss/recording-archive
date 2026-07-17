@@ -69,6 +69,7 @@ function detectHostLabel(url: string): string {
     if (hostname.includes("streamwish")) return "Streamwish";
     if (hostname.includes("earnvids")) return "EarnVids";
     if (hostname.includes("seek") || hostname.includes("embedseek") || hostname.includes("seeks.cloud")) return "SeekStreaming";
+    if (hostname.includes("upns")) return "UPNshare";
     return hostname.replace(/^www\./, "");
   } catch {
     return "Server";
@@ -85,6 +86,9 @@ function isEmbedUrl(url: string): boolean {
     // Host-based detection for known embed-friendly providers
     // Some hosts embed via direct URL without a standard embed path
     if (hostname.includes("seek") || hostname.includes("embedseek") || hostname.includes("seeks.cloud")) {
+      return true;
+    }
+    if (hostname.includes("upns")) {
       return true;
     }
     return false;
