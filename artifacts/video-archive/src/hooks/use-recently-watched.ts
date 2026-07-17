@@ -1,13 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { userApi } from "@/lib/user-api";
 import { useAuth } from "@/contexts/AuthContext";
+import { getWatchedIds } from "@/lib/watched-storage";
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
 export function useRecentlyWatched(): Set<string> {
   const { user } = useAuth();
 
-  const { data } = useQuery({
+  const { data: serverSet } = useQuery({
     queryKey: ["user", "history"],
     queryFn: () => userApi.getHistory(),
     enabled: !!user,
@@ -27,5 +28,14 @@ export function useRecentlyWatched(): Set<string> {
     },
   });
 
-  return data ?? new Set<string>();
+  const localWatched = getWatchedIds();
+
+  // Merge local and server sets
+  if (serverSet && serverSet.size > 0) {
+    const merged = new Set(localWatched);
+    for (const id of serverSet) merged.add(id);
+    return merged;
+  }
+
+  return localWatched;
 }

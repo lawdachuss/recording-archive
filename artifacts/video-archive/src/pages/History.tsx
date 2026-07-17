@@ -8,6 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { userApi, parseCloudItem } from "@/lib/user-api";
 import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
+import { getWatchedEntries, clearWatched } from "@/lib/watched-storage";
 import { History as HistoryIcon, Trash2, Clock } from "lucide-react";
 
 function toRecording(r: ReturnType<typeof parseCloudItem>) {
@@ -39,10 +40,6 @@ export default function History() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
 
-  useEffect(() => {
-    if (!loading && !user) setLocation("/login");
-  }, [user, loading, setLocation]);
-
   const { data: cloudItems = [], isLoading } = useQuery({
     queryKey: ["user", "history"],
     queryFn: () => userApi.getHistory(),
@@ -57,12 +54,48 @@ export default function History() {
   });
 
   const handleClear = () => {
-    clearCloud.mutate();
+    if (user) {
+      clearCloud.mutate();
+    } else {
+      clearWatched();
+      queryClient.invalidateQueries({ queryKey: ["user", "local-history"] });
+    }
   };
 
-  if (!user) return null;
+  const cloudHistory = cloudItems.map(parseCloudItem);
 
-  const history = cloudItems.map(parseCloudItem);
+  const localEntries = getWatchedEntries().map((e) => ({
+    id: e.id,
+    username: e.username || "Unknown",
+    filename: e.filename || e.id,
+    room_title: null,
+    thumbnail_url: e.thumbnail_url ?? null,
+    sprite_url: null,
+    preview_url: null,
+    resolution: null,
+    timestamp: new Date(e.t).toISOString(),
+    created_at: new Date(e.t).toISOString(),
+    tags: [] as string[],
+    viewers: null,
+    framerate: null,
+    filesize: null,
+    gender: null,
+    embed_url: null,
+    instance_id: null,
+    channel_id: null,
+    updated_at: null,
+    saved_at: new Date(e.t).toISOString(),
+  }));
+
+  // Merge cloud + local, deduplicate by id, sort by most recent
+  const seen = new Set<string>();
+  const merged = [...cloudHistory, ...localEntries].filter((r) => {
+    if (seen.has(r.id)) return false;
+    seen.add(r.id);
+    return true;
+  }).sort((a, b) => new Date(b.saved_at).getTime() - new Date(a.saved_at).getTime());
+
+  const totalCount = merged.length;
 
   return (
     <Layout>
@@ -75,11 +108,11 @@ export default function History() {
             </div>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tighter">Watch History</h1>
             <p className="text-sm text-muted-foreground mt-2">
-              {history.length} recording{history.length !== 1 ? "s" : ""} watched
-              <CloudSyncIndicator compact />
+              {totalCount} recording{totalCount !== 1 ? "s" : ""} watched
+              {user && <CloudSyncIndicator compact />}
             </p>
           </div>
-          {history.length > 0 && (
+          {totalCount > 0 && (
             <button
               onClick={handleClear}
               className="inline-flex items-center gap-1.5 h-8 px-3 text-xs text-muted-foreground/50 hover:text-destructive border border-border/40 hover:border-destructive/30 rounded-lg transition-all"
@@ -90,13 +123,13 @@ export default function History() {
           )}
         </div>
 
-        {isLoading ? (
+        {isLoading && user ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
             {[...Array(10)].map((_, i) => (
               <div key={i} className="aspect-video bg-secondary/30 animate-pulse rounded-lg" />
             ))}
           </div>
-        ) : history.length === 0 ? (
+        ) : totalCount === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center border border-border/30 rounded-2xl bg-secondary/10 animate-fade-in-up">
             <div className="w-14 h-14 rounded-full bg-secondary/50 flex items-center justify-center mb-4">
               <Clock className="w-6 h-6 text-muted-foreground/30" />
@@ -111,9 +144,9 @@ export default function History() {
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-            {history.map((rec, i) => (
+            {merged.map((rec, i) => (
               <div key={rec.id} className="animate-fade-in-up" style={{ animationDelay: `${i * 25}ms` }}>
-                <VideoCard key={rec.id} recording={toRecording(rec)} isWatched={recentlyWatched.has(rec.id)} />
+                <VideoCard recording={toRecording(rec)} isWatched={recentlyWatched.has(rec.id)} />
               </div>
             ))}
           </div>
