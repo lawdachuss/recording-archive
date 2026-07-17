@@ -21,12 +21,13 @@ import { trackView } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, recordingToMeta, type CloudCollection } from "@/lib/user-api";
 import { addWatchedId } from "@/lib/watched-storage";
+import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 
 import {
   Eye, HardDrive, MonitorPlay, AlertCircle, ArrowLeft, Maximize2, Minimize2,
   Calendar, User, Tag, Clapperboard, ThumbsUp, ThumbsDown, Bookmark, Share2,
   Check, Server, Film, Download, Clock, Play, Code2, ListVideo, Shuffle,
-  FolderPlus, Plus, ChevronDown, ExternalLink, LogIn,
+  FolderPlus, Plus, ChevronDown, ExternalLink, LogIn, CheckCircle,
 } from "lucide-react";
 
 function useFullscreen(ref: React.RefObject<HTMLDivElement | null>) {
@@ -180,7 +181,7 @@ export default function VideoDetail() {
   const [newColName, setNewColName] = useState("");
   const [addedToCol, setAddedToCol] = useState<string | null>(null);
   const queryClient = useQueryClient();
-
+  const recentlyWatched = useRecentlyWatched();
 
   const { data: video, isLoading, isError } = useGetRecording(id || "", {
     query: { enabled: !!id, queryKey: getGetRecordingQueryKey(id || "") },
@@ -906,6 +907,12 @@ export default function VideoDetail() {
                             <Clapperboard className="w-4 h-4 text-muted-foreground/20" />
                           </div>
                         )}
+                        {recentlyWatched.has(rec.id) && (
+                          <div className="absolute top-1 right-1 z-10 flex items-center gap-0.5 bg-black/40 backdrop-blur-sm ring-1 ring-white/10 px-1 py-0.5 rounded-[2px] pointer-events-none">
+                            <CheckCircle className="w-2 h-2 text-green-400" />
+                            <span className="text-[7px] font-semibold text-green-300/90 uppercase tracking-wider">Watched</span>
+                          </div>
+                        )}
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20">
                           <Play className="w-4 h-4 text-white fill-white" />
                         </div>
@@ -966,7 +973,7 @@ export default function VideoDetail() {
                 {related
                   .filter((r) => r.id !== id)
                   .map((rec) => (
-                    <VideoCard key={rec.id} recording={rec} />
+                    <VideoCard key={rec.id} recording={rec} isWatched={recentlyWatched.has(rec.id)} />
                   ))}
               </div>
             ) : (
