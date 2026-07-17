@@ -82,10 +82,10 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
 
   const hoverMedia: "mp4" | "sprite" | "none" = !isHovered
     ? "none"
-    : hasPreview && !previewFailed && !previewIsImage
-      ? "mp4"
-      : hasSprite
-        ? "sprite"
+    : hasSprite
+      ? "sprite"
+      : hasPreview && !previewFailed && !previewIsImage
+        ? "mp4"
         : "none";
 
   useEffect(() => {
