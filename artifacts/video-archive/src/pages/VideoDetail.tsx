@@ -20,6 +20,7 @@ import { getSessionId } from "@/lib/session";
 import { trackView } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, recordingToMeta, type CloudCollection } from "@/lib/user-api";
+import { addWatchedId } from "@/lib/watched-storage";
 
 import {
   Eye, HardDrive, MonitorPlay, AlertCircle, ArrowLeft, Maximize2, Minimize2,
@@ -266,22 +267,28 @@ export default function VideoDetail() {
   };
 
   useEffect(() => {
-    if (!video || !user) return;
-    const meta = {
-      id: video.id,
-      username: video.username,
-      filename: video.filename,
-      room_title: video.room_title,
-      thumbnail_url: video.thumbnail_url,
-      sprite_url: video.sprite_url,
-      preview_url: video.preview_url,
-      resolution: video.resolution,
-      timestamp: video.timestamp,
-      saved_at: new Date().toISOString(),
-    };
-    userApi.addHistory(video.id, recordingToMeta(meta)).catch(() => {});
-    // Only depend on video.id — the full video object changes reference
-    // on every background refetch, causing history API spam
+    if (!video) return;
+    if (user) {
+      const meta = {
+        id: video.id,
+        username: video.username,
+        filename: video.filename,
+        room_title: video.room_title,
+        thumbnail_url: video.thumbnail_url,
+        sprite_url: video.sprite_url,
+        preview_url: video.preview_url,
+        resolution: video.resolution,
+        timestamp: video.timestamp,
+        saved_at: new Date().toISOString(),
+      };
+      userApi.addHistory(video.id, recordingToMeta(meta)).catch(() => {});
+    } else {
+      addWatchedId(video.id, {
+        username: video.username,
+        filename: video.filename,
+        thumbnail_url: video.thumbnail_url,
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [video?.id, user]);
 
