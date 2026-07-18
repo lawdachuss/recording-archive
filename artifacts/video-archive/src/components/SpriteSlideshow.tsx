@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, memo } from "react";
 interface SpriteSlideshowProps {
   spriteUrl: string;
   fps?: number;
-  // ms each sprite frame is held before advancing (matches node-2 web UI = 380ms)
+  // ms each sprite frame is held before advancing
   frameMs?: number;
   className?: string;
   active?: boolean;
@@ -35,7 +35,7 @@ function detectLayout(width: number, height: number): SpriteLayout {
   return { cols, rows, totalFrames: Math.max(cols * rows, 1) };
 }
 
-export const SpriteSlideshow = memo(function SpriteSlideshow({ spriteUrl, fps = 10, frameMs = 380, className, active = true }: SpriteSlideshowProps) {
+export const SpriteSlideshow = memo(function SpriteSlideshow({ spriteUrl, fps = 10, frameMs = 120, className, active = true }: SpriteSlideshowProps) {
   const [layout, setLayout] = useState<SpriteLayout | null>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
   const frameRef = useRef(0);

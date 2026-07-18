@@ -225,7 +225,6 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             <div className="absolute inset-0 transition-all duration-300 ease-out will-change-transform opacity-100 scale-100">
               <SpriteSlideshow
                 spriteUrl={spriteUrl!}
-                frameMs={380}
                 className="absolute inset-0 w-full h-full"
                 active
               />
