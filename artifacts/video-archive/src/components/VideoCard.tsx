@@ -4,8 +4,21 @@ import type { Recording } from "@workspace/api-client-react";
 import { formatBytes, formatRelativeTime, formatViewers, formatDuration } from "@/lib/formatters";
 import { Eye, HardDrive, Clock, CheckCircle } from "lucide-react";
 import { OptimizedImage } from "@/components/ui/optimized-image";
+import { SpriteSlideshow } from "@/components/SpriteSlideshow";
+import { useHoverPreview } from "@/hooks/use-hover-preview";
+import { cn } from "@/lib/utils";
 
-const CORS_HOSTS: string[] = ["pixhost.to", "lobfile.com"];
+const CORS_HOSTS: string[] = [
+  "pixhost.to",
+  "img2.pixhost.to",
+  "lobfile.com",
+  "files.catbox.moe",
+  "catbox.moe",
+  "i.ibb.co",
+  "ibb.co",
+  "pixeldrain.com",
+  "www.pixeldrain.com",
+];
 
 function needsProxy(url: string | null | undefined): boolean {
   if (!url) return false;
@@ -25,26 +38,13 @@ function proxyUrl(url: string | null | undefined): string | null {
   return url;
 }
 
-const BLOCKED_HOSTS: string[] = ["pixeldrain.com"];
+const BLOCKED_HOSTS: string[] = [];
 
 function isHostBlocked(url: string | null | undefined): boolean {
   if (!url) return false;
   try {
     const { hostname } = new URL(url);
     return BLOCKED_HOSTS.some((h) => hostname.includes(h));
-  } catch {
-    return false;
-  }
-}
-
-const IMAGE_PREVIEW_EXTS = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"];
-
-function isImagePreview(url: string | null | undefined): boolean {
-  if (!url) return false;
-  try {
-    const pathname = new URL(url).pathname;
-    const ext = pathname.split("?")[0].split(".").pop()?.toLowerCase();
-    return ext ? IMAGE_PREVIEW_EXTS.includes(`.${ext}`) : false;
   } catch {
     return false;
   }
@@ -60,13 +60,24 @@ interface VideoCardProps {
 
 export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemove, fetchPriority, isWatched }: VideoCardProps) {
   const thumbnailUrl = useMemo(() => proxyUrl(recording.thumbnail_url), [recording.thumbnail_url]);
+  const spriteUrl = useMemo(() => proxyUrl(recording.sprite_url), [recording.sprite_url]);
   const previewUrl = useMemo(() => proxyUrl(recording.preview_url), [recording.preview_url]);
-  const previewIsImage = useMemo(() => isImagePreview(previewUrl), [previewUrl]);
 
-  const staticImage = thumbnailUrl || (previewIsImage ? previewUrl : null);
+  const {
+    isHovered,
+    showVideo,
+    showSprite,
+    videoUrl,
+    hoverHandlers,
+    viewportRef,
+  } = useHoverPreview({ thumbnailUrl, spriteUrl, previewUrl });
+
+  const staticImage = thumbnailUrl;
   const staticImageBlocked = staticImage ? isHostBlocked(staticImage) : false;
   const hasStaticImage = !!staticImage && !staticImageBlocked;
   const initials = useMemo(() => recording.username?.slice(0, 2).toUpperCase() ?? "??", [recording.username]);
+
+  const showPreview = isHovered && (showVideo || showSprite);
 
   const showDuration = (recording.duration ?? 0) > 0;
   const showFilesize = !!recording.filesize && !showDuration;
@@ -76,22 +87,45 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     <Link
       href={`/video/${recording.id}`}
       className="group block outline-none focus-visible:ring-1 focus-visible:ring-primary rounded"
+      {...hoverHandlers}
     >
-      <div className="flex flex-col gap-2">
+      <div ref={viewportRef} className="flex flex-col gap-2">
         <div className="relative aspect-video overflow-hidden bg-secondary rounded-sm will-change-transform">
           {hasStaticImage ? (
-            <OptimizedImage
-              src={staticImage!}
-              alt={recording.username}
-              fetchPriority={fetchPriority}
-              loading={fetchPriority === "high" ? "eager" : "lazy"}
-              className="transition-all duration-500 ease-out will-change-transform scale-100"
-              containerClassName="absolute inset-0 w-full h-full"
-              fallback={
-                <div className="absolute inset-0 bg-secondary" />
-              }
-              noShimmer
-            />
+            <div className="absolute inset-0 w-full h-full">
+              <OptimizedImage
+                src={staticImage!}
+                alt={recording.username}
+                fetchPriority={fetchPriority}
+                loading={fetchPriority === "high" ? "eager" : "lazy"}
+                className={cn(
+                  "transition-opacity duration-300 ease-out",
+                  showPreview ? "opacity-0" : "opacity-100"
+                )}
+                containerClassName="absolute inset-0 w-full h-full"
+                fallback={
+                  <div className="absolute inset-0 bg-secondary" />
+                }
+                noShimmer
+              />
+
+              {showVideo && videoUrl && (
+                <video
+                  src={videoUrl}
+                  className="absolute inset-0 w-full h-full object-cover"
+                  autoPlay muted loop playsInline
+                  preload="auto"
+                />
+              )}
+
+              {showSprite && (
+                <SpriteSlideshow
+                  spriteUrl={spriteUrl!}
+                  className="absolute inset-0 w-full h-full"
+                  active={isHovered}
+                />
+              )}
+            </div>
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-secondary/80 to-secondary">
               <span className="text-lg font-bold text-muted-foreground/30 uppercase tracking-wider">
@@ -100,7 +134,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             </div>
           )}
 
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent opacity-50" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent opacity-50 pointer-events-none" />
 
           {/* Watched badge */}
           {isWatched && (
@@ -110,7 +144,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             </div>
           )}
 
-          <div className="absolute top-2 left-2 flex items-center gap-1">
+          <div className="absolute top-2 left-2 flex items-center gap-1 pointer-events-none">
             {recording.resolution && (
               <span className="text-[9px] font-bold uppercase tracking-wider text-white/90 bg-black/30 backdrop-blur-sm ring-1 ring-white/10 px-1.5 py-0.5 rounded-[2px]">
                 {recording.resolution}
@@ -123,7 +157,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             )}
           </div>
 
-          <div className="absolute bottom-2 left-2 right-2 flex items-end justify-between">
+          <div className="absolute bottom-2 left-2 right-2 flex items-end justify-between pointer-events-none">
             {showDuration ? (
               <span className="flex items-center gap-1 text-[9px] text-white/70 bg-black/30 backdrop-blur-sm ring-1 ring-white/10 px-1.5 py-0.5 rounded-[2px]">
                 <Clock className="w-2.5 h-2.5" />
