@@ -61,7 +61,7 @@ interface VideoCardProps {
 export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemove, fetchPriority, isWatched }: VideoCardProps) {
   const thumbnailUrl = useMemo(() => proxyUrl(recording.thumbnail_url), [recording.thumbnail_url]);
   const spriteUrl = useMemo(() => proxyUrl(recording.sprite_url), [recording.sprite_url]);
-  const previewUrl = useMemo(() => proxyUrl(recording.preview_url), [recording.preview_url]);
+  const previewUrl = useMemo(() => recording.preview_url ?? null, [recording.preview_url]);
 
   const {
     isHovered,
@@ -113,7 +113,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
                 <video
                   src={videoUrl}
                   className="absolute inset-0 w-full h-full object-cover"
-                  autoPlay muted loop playsInline
+                  autoPlay muted playsInline
                   preload="auto"
                 />
               )}

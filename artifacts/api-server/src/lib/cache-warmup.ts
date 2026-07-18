@@ -1,6 +1,6 @@
-import { logger } from "./logger";
-import { getRedis, isRedisConnected } from "./redis";
-import { purgeAllCache } from "../middleware/cache";
+import { logger } from "./logger.js";
+import { getRedis, isRedisConnected } from "./redis.js";
+import { purgeAllCache } from "../middleware/cache.js";
 
 // ─── Configuration ─────────────────────────────────────────────────
 // Ordered by priority — the most-visited routes are warmed first.

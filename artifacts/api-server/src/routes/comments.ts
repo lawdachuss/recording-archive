@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, sql } from "@workspace/db";
-import { cache, invalidateOnSuccess } from "../middleware/cache";
+import { cache, invalidateOnSuccess } from "../middleware/cache.js";
 
 interface CommentRow {
   id: string;

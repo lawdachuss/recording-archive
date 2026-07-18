@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { db, sql } from "@workspace/db";
-import { invalidateOnSuccess } from "../middleware/cache";
-import { requireAuth } from "../middleware/auth";
-import { requireRole } from "../middleware/requireRole";
+import { invalidateOnSuccess } from "../middleware/cache.js";
+import { requireAuth } from "../middleware/auth.js";
+import { requireRole } from "../middleware/requireRole.js";
 
 const router = Router();
 

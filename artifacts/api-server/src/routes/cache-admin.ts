@@ -1,8 +1,8 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { getRedis, isRedisConnected, getRedisStatus } from "../lib/redis";
-import { getCacheStats, invalidateTags, invalidatePattern, purgeAllCache } from "../middleware/cache";
-import { requireRole } from "../middleware/requireRole";
-import { logger } from "../lib/logger";
+import { getRedis, isRedisConnected, getRedisStatus } from "../lib/redis.js";
+import { getCacheStats, invalidateTags, invalidatePattern, purgeAllCache } from "../middleware/cache.js";
+import { requireRole } from "../middleware/requireRole.js";
+import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
 
