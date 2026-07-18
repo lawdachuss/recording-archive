@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
-import { getRedis, isRedisConnected } from "../lib/redis";
-import { logger } from "../lib/logger";
+import { getRedis, isRedisConnected } from "../lib/redis.js";
+import { logger } from "../lib/logger.js";
 
 const CACHE_PREFIX = "api:v2";
 const TAG_PREFIX = "tag:v2";

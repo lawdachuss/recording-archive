@@ -1,19 +1,19 @@
 import { Router, type IRouter } from "express";
-import healthRouter from "./health";
-import recordingsRouter from "./recordings";
-import performersRouter from "./performers";
-import tagsRouter from "./tags";
-import statsRouter from "./stats";
-import reactionsRouter from "./reactions";
-import commentsRouter from "./comments";
-import requestsRouter from "./requests";
-import userRouter from "./user";
-import cacheAdminRouter from "./cache-admin";
-import adminRouter from "./admin";
-import searchRouter from "./search";
-import mediaProxyRouter from "./media-proxy";
-import migrateAuthRouter from "./migrate-auth";
-import viewsRouter from "./views";
+import healthRouter from "./health.js";
+import recordingsRouter from "./recordings.js";
+import performersRouter from "./performers.js";
+import tagsRouter from "./tags.js";
+import statsRouter from "./stats.js";
+import reactionsRouter from "./reactions.js";
+import commentsRouter from "./comments.js";
+import requestsRouter from "./requests.js";
+import userRouter from "./user.js";
+import cacheAdminRouter from "./cache-admin.js";
+import adminRouter from "./admin.js";
+import searchRouter from "./search.js";
+import mediaProxyRouter from "./media-proxy.js";
+import migrateAuthRouter from "./migrate-auth.js";
+import viewsRouter from "./views.js";
 
 const router: IRouter = Router();
 

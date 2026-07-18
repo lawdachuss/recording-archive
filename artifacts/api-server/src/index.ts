@@ -1,8 +1,8 @@
 import "dotenv/config";
-import app from "./app";
-import { logger } from "./lib/logger";
-import { warmupCache } from "./lib/cache-warmup";
-import { runHealthCheck } from "./lib/health-check";
+import app from "./app.js";
+import { logger } from "./lib/logger.js";
+import { warmupCache } from "./lib/cache-warmup.js";
+import { runHealthCheck } from "./lib/health-check.js";
 
 const rawPort = process.env["PORT"];
 

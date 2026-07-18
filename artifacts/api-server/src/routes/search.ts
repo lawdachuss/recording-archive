@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { supabase } from "../lib/supabase";
-import { logger } from "../lib/logger";
+import { supabase } from "../lib/supabase.js";
+import { logger } from "../lib/logger.js";
 
 const router = Router();
 
@@ -23,7 +23,7 @@ interface SearchSuggestion {
  * Results are cached by the downstream cache middleware for 30s.
  */
 
-import { cache } from "../middleware/cache";
+import { cache } from "../middleware/cache.js";
 
 router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search", "recordings", "performers", "tags"] }), async (req, res) => {
   const q = String(req.query.q ?? "").trim();

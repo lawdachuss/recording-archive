@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { db, sql } from "@workspace/db";
-import { requireAuth } from "./auth";
+import { requireAuth } from "./auth.js";
 
 const ROLE_HIERARCHY = { user: 0, moderator: 1, admin: 2 } as const;
 

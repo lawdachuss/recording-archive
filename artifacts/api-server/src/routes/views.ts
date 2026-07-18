@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { supabase } from "../lib/supabase";
-import { invalidateKey } from "../middleware/cache";
+import { supabase } from "../lib/supabase.js";
+import { invalidateKey } from "../middleware/cache.js";
 
 const router = Router();
 

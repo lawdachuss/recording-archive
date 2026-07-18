@@ -54,6 +54,7 @@ router.get("/media", async (req, res) => {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       Accept: "*/*",
       "Accept-Language": "en-US,en;q=0.9",
+      Referer: "https://chuglii.in/",
     };
 
     // If the upstream is pixeldrain.com, attach the API key via HTTP Basic
@@ -73,8 +74,9 @@ router.get("/media", async (req, res) => {
     });
 
     if (!response.ok && response.status !== 206) {
-      req.log.error({ url: urlStr, status: response.status }, "Media proxy upstream error");
-      res.status(502).json({ error: "Upstream fetch failed" });
+      const body = await response.text().catch(() => "");
+      req.log.error({ url: urlStr, status: response.status, body: body.slice(0, 200) }, "Media proxy upstream error");
+      res.status(502).json({ error: "Upstream fetch failed", upstreamStatus: response.status });
       return;
     }
 

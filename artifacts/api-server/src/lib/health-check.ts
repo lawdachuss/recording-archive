@@ -1,4 +1,4 @@
-import { logger } from "./logger";
+import { logger } from "./logger.js";
 
 // ─── Configuration ─────────────────────────────────────────────────
 // Ordered by criticality. The health check runs these in parallel

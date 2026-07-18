@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { GetPerformerParams } from "@workspace/api-zod";
-import { supabase } from "../lib/supabase";
-import { cache } from "../middleware/cache";
+import { supabase } from "../lib/supabase.js";
+import { cache } from "../middleware/cache.js";
 
 const COOKIES = process.env.COOKIES ?? "";
 

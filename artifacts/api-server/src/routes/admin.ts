@@ -1,9 +1,9 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db, sql } from "@workspace/db";
-import { requireRole } from "../middleware/requireRole";
-import { getCacheStats, invalidateTags, invalidatePattern, purgeAllCache } from "../middleware/cache";
-import { getRedis, isRedisConnected, getRedisStatus } from "../lib/redis";
-import { logger } from "../lib/logger";
+import { requireRole } from "../middleware/requireRole.js";
+import { getCacheStats, invalidateTags, invalidatePattern, purgeAllCache } from "../middleware/cache.js";
+import { getRedis, isRedisConnected, getRedisStatus } from "../lib/redis.js";
+import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
 
