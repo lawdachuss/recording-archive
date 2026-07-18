@@ -1,28 +1,7 @@
-import { useState, useCallback, useMemo, memo } from "react";
+import { useMemo, memo } from "react";
 import { Link } from "wouter";
 import { OptimizedImage } from "@/components/ui/optimized-image";
-import { SpriteSlideshow } from "@/components/SpriteSlideshow";
 import { Users } from "lucide-react";
-
-const CORS_HOSTS: string[] = ["pixhost.to", "lobfile.com"];
-
-function needsProxy(url: string | null | undefined): boolean {
-  if (!url) return false;
-  try {
-    const { hostname } = new URL(url);
-    return CORS_HOSTS.some((h) => hostname.includes(h));
-  } catch {
-    return false;
-  }
-}
-
-function proxyUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  if (needsProxy(url)) {
-    return `/api/media?url=${encodeURIComponent(url)}`;
-  }
-  return url;
-}
 
 interface Performer {
   username: string;
@@ -140,28 +119,17 @@ export const PerformerCard = memo(function PerformerCard({ performer, performers
 });
 
 const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { performer: Performer; fetchPriority: "high" | "low" | "auto" }) {
-  const [isHovered, setIsHovered] = useState(false);
-
-  const spriteUrl = useMemo(() => proxyUrl(performer.sprite_url), [performer.sprite_url]);
-  const hasSprite = !!spriteUrl;
-
-  const handleMouseEnter = useCallback(() => { setIsHovered(true); }, []);
-  const handleMouseLeave = useCallback(() => { setIsHovered(false); }, []);
-
   const hasThumbnail = !!performer.latest_thumbnail;
   const initial = useMemo(() => performer.username.charAt(0).toUpperCase(), [performer.username]);
   const recCount = performer.recording_count ?? 0;
 
   return (
     <Link href={`/performers/${performer.username}`} className="group block outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg">
-      <div
-        className="relative overflow-hidden rounded-lg bg-card will-change-transform
-          transition-all duration-400 ease-out
-          group-hover:-translate-y-[2px]
-          group-hover:shadow-[0_12px_32px_-8px_hsl(var(--primary)/0.15)]
-          group-hover:shadow-black/40"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
+      <div className="relative overflow-hidden rounded-lg bg-card will-change-transform
+        transition-all duration-400 ease-out
+        group-hover:-translate-y-[2px]
+        group-hover:shadow-[0_12px_32px_-8px_hsl(var(--primary)/0.15)]
+        group-hover:shadow-black/40"
       >
         <div className="relative aspect-[3/4] overflow-hidden">
           {hasThumbnail ? (
@@ -170,10 +138,7 @@ const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { perf
               alt={performer.username}
               fetchPriority={fetchPriority}
               loading={fetchPriority === "high" ? "eager" : "lazy"}
-              className={[
-                "object-cover object-top transition-all duration-600 ease-out will-change-transform",
-                isHovered ? "scale-105" : "scale-100",
-              ].join(" ")}
+              className="object-cover object-top transition-all duration-600 ease-out will-change-transform scale-100"
               containerClassName="absolute inset-0 w-full h-full"
               fallback={<div className="absolute inset-0 bg-secondary/60" />}
               noShimmer
@@ -186,16 +151,6 @@ const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { perf
               <span className="text-sm font-bold text-muted-foreground/25 uppercase tracking-[0.15em]">
                 {initial}
               </span>
-            </div>
-          )}
-
-          {hasSprite && isHovered && (
-            <div className="absolute inset-0 transition-all duration-400 ease-out will-change-transform opacity-100 scale-100">
-              <SpriteSlideshow
-                spriteUrl={spriteUrl}
-                className="absolute inset-0 w-full h-full"
-                active
-              />
             </div>
           )}
 
@@ -219,15 +174,6 @@ const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { perf
               </span>
             </div>
           )}
-
-          <div
-            className={[
-              "absolute inset-0 rounded-lg transition-all duration-400 pointer-events-none",
-              isHovered
-                ? "ring-1 ring-primary/50 shadow-[inset_0_0_30px_rgba(0,0,0,0.2)]"
-                : "ring-0",
-            ].join(" ")}
-          />
         </div>
       </div>
     </Link>

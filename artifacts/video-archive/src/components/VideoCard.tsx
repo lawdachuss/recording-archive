@@ -1,10 +1,9 @@
-import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
+import { useMemo, memo } from "react";
 import { Link } from "wouter";
 import type { Recording } from "@workspace/api-client-react";
 import { formatBytes, formatRelativeTime, formatViewers, formatDuration } from "@/lib/formatters";
 import { Eye, HardDrive, Clock, CheckCircle } from "lucide-react";
 import { OptimizedImage } from "@/components/ui/optimized-image";
-import { SpriteSlideshow } from "@/components/SpriteSlideshow";
 
 const CORS_HOSTS: string[] = ["pixhost.to", "lobfile.com"];
 
@@ -60,93 +59,9 @@ interface VideoCardProps {
 }
 
 export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemove, fetchPriority, isWatched }: VideoCardProps) {
-  const [isHovered, setIsHovered] = useState(false);
-  const [videoError, setVideoError] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const hoverTimerRef = useRef<number | undefined>(undefined);
-  const isHoveredRef = useRef(false);
-  const warmedPreviewUrlsRef = useRef<Set<string>>(new Set());
-
-  const previewUrl = useMemo(() => proxyUrl(recording.preview_url), [recording.preview_url]);
-  const spriteUrl = useMemo(() => proxyUrl(recording.sprite_url), [recording.sprite_url]);
   const thumbnailUrl = useMemo(() => proxyUrl(recording.thumbnail_url), [recording.thumbnail_url]);
-
-  const previewBlocked = useMemo(() => isHostBlocked(previewUrl), [previewUrl]);
-  const spriteBlocked = useMemo(() => isHostBlocked(spriteUrl), [spriteUrl]);
-  const thumbnailBlocked = useMemo(() => isHostBlocked(thumbnailUrl), [thumbnailUrl]);
-
-  const previewFailed = videoError || previewBlocked;
-  const hasPreview = !!previewUrl;
-  const hasSprite = !!spriteUrl && !spriteBlocked;
+  const previewUrl = useMemo(() => proxyUrl(recording.preview_url), [recording.preview_url]);
   const previewIsImage = useMemo(() => isImagePreview(previewUrl), [previewUrl]);
-
-  const hoverMedia: "mp4" | "sprite" | "none" = !isHovered
-    ? "none"
-    : hasSprite
-      ? "sprite"
-      : hasPreview && !previewFailed && !previewIsImage
-        ? "mp4"
-        : "none";
-
-  useEffect(() => {
-    setVideoError(false);
-  }, [previewUrl]);
-
-  const warmPreviewAsset = useCallback((url: string | null, type: "image" | "video") => {
-    if (!url || warmedPreviewUrlsRef.current.has(url)) return;
-    warmedPreviewUrlsRef.current.add(url);
-
-    if (type === "image") {
-      const image = new Image();
-      image.decoding = "async";
-      image.src = url;
-      return;
-    }
-
-    const link = document.createElement("link");
-    link.rel = "preload";
-    link.as = "video";
-    link.href = url;
-    document.head.appendChild(link);
-    window.setTimeout(() => link.remove(), 10_000);
-  }, []);
-
-  const handleMouseEnter = useCallback(() => {
-    isHoveredRef.current = true;
-    if (hasPreview && !previewBlocked && !previewIsImage) warmPreviewAsset(previewUrl, "video");
-    if (hasSprite) warmPreviewAsset(spriteUrl, "image");
-    hoverTimerRef.current = window.setTimeout(() => {
-      if (isHoveredRef.current) {
-        setIsHovered(true);
-      }
-    }, 80);
-  }, [hasPreview, hasSprite, previewBlocked, previewIsImage, previewUrl, spriteUrl, warmPreviewAsset]);
-
-  const handleMouseLeave = useCallback(() => {
-    isHoveredRef.current = false;
-    if (hoverTimerRef.current !== undefined) {
-      clearTimeout(hoverTimerRef.current);
-      hoverTimerRef.current = undefined;
-    }
-    setIsHovered(false);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (hoverTimerRef.current !== undefined) {
-        clearTimeout(hoverTimerRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (hoverMedia === "mp4" && videoRef.current) {
-      const playPromise = videoRef.current.play();
-      if (playPromise) {
-        playPromise.catch(() => {});
-      }
-    }
-  }, [hoverMedia]);
 
   const staticImage = thumbnailUrl || (previewIsImage ? previewUrl : null);
   const staticImageBlocked = staticImage ? isHostBlocked(staticImage) : false;
@@ -157,22 +72,12 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   const showFilesize = !!recording.filesize && !showDuration;
   const showViewers = recording.viewers != null;
 
-  const handleVideoError = useCallback(() => {
-    setVideoError(true);
-  }, []);
-
   return (
     <Link
       href={`/video/${recording.id}`}
       className="group block outline-none focus-visible:ring-1 focus-visible:ring-primary rounded"
     >
-      <div
-        className="flex flex-col gap-2"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        onFocus={handleMouseEnter}
-        onBlur={handleMouseLeave}
-      >
+      <div className="flex flex-col gap-2">
         <div className="relative aspect-video overflow-hidden bg-secondary rounded-sm will-change-transform">
           {hasStaticImage ? (
             <OptimizedImage
@@ -180,10 +85,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               alt={recording.username}
               fetchPriority={fetchPriority}
               loading={fetchPriority === "high" ? "eager" : "lazy"}
-              className={[
-                "transition-all duration-500 ease-out will-change-transform",
-                isHovered ? "scale-[1.04]" : "scale-100",
-              ].join(" ")}
+              className="transition-all duration-500 ease-out will-change-transform scale-100"
               containerClassName="absolute inset-0 w-full h-full"
               fallback={
                 <div className="absolute inset-0 bg-secondary" />
@@ -198,47 +100,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             </div>
           )}
 
-          <div
-            className={[
-              "absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent transition-opacity duration-300 will-change-opacity",
-              isHovered ? "opacity-100" : "opacity-50",
-            ].join(" ")}
-          />
-
-          {hoverMedia === "mp4" && (
-            <div className="absolute inset-0 transition-all duration-300 ease-out will-change-transform opacity-100 scale-100">
-              <video
-                ref={videoRef}
-                key={recording.id}
-                src={previewUrl!}
-                muted
-                playsInline
-                loop
-                preload="metadata"
-                className="absolute inset-0 w-full h-full object-cover"
-                onError={handleVideoError}
-              />
-            </div>
-          )}
-
-          {hoverMedia === "sprite" && (
-            <div className="absolute inset-0 transition-all duration-300 ease-out will-change-transform opacity-100 scale-100">
-              <SpriteSlideshow
-                spriteUrl={spriteUrl!}
-                className="absolute inset-0 w-full h-full"
-                active
-              />
-            </div>
-          )}
-
-          <div
-            className={[
-              "absolute inset-0 rounded-sm transition-all duration-300 pointer-events-none",
-              isHovered
-                ? "ring-1 ring-primary/40 shadow-[inset_0_0_20px_rgba(100,100,255,0.06)]"
-                : "ring-0",
-            ].join(" ")}
-          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent opacity-50" />
 
           {/* Watched badge */}
           {isWatched && (
