@@ -10,8 +10,12 @@ export function formatBytes(bytes: number | null | undefined, decimals = 2) {
 export function formatRelativeTime(dateString: string | null | undefined) {
   if (!dateString) return '';
   const date = new Date(dateString);
+  if (isNaN(date.getTime())) return '';
   const now = new Date();
   const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  // Future or just-now dates
+  if (seconds < 0) return 'just now';
 
   let interval = seconds / 31536000;
   if (interval > 1) return Math.floor(interval) + 'y ago';
@@ -28,7 +32,7 @@ export function formatRelativeTime(dateString: string | null | undefined) {
   interval = seconds / 60;
   if (interval > 1) return Math.floor(interval) + 'm ago';
 
-  return Math.floor(seconds) + 's ago';
+  return seconds + 's ago';
 }
 
 export function formatDuration(seconds: number | null | undefined): string {

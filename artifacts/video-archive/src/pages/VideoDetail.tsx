@@ -173,7 +173,9 @@ export default function VideoDetail() {
     return sessionStorage.getItem("vplayed") === id;
   });
   const [bookmarked, setBookmarked] = useState(false);
+  const bookmarkedRef = useRef(false);
   const [watchLater, setWatchLater] = useState(false);
+  const watchLaterRef = useRef(false);
   const [copied, setCopied] = useState(false);
   const [embedCopied, setEmbedCopied] = useState(false);
   const [collectionOpen, setCollectionOpen] = useState(false);
@@ -208,7 +210,9 @@ export default function VideoDetail() {
     setCollectionOpen(false);
     setAddedToCol(null);
     setBookmarked(false);
+    bookmarkedRef.current = false;
     setWatchLater(false);
+    watchLaterRef.current = false;
     if (id && user) {
       userApi.getSaved().then((items) => {
         setBookmarked(items.some((i) => i.recording_id === id));
@@ -326,10 +330,10 @@ export default function VideoDetail() {
       { data: { recording_id: id, type, session_id: sessionId } },
       {
         onSuccess: () => {
+          // invalidateQueries marks the query stale so it refetches on next observe
           queryClient.invalidateQueries({
             queryKey: getGetReactionsQueryKey({ recording_id: id, session_id: sessionId }),
           });
-          refetchReactions();
         },
       },
     );
@@ -337,47 +341,65 @@ export default function VideoDetail() {
 
   const handleBookmark = async () => {
     if (!video || !user) return;
-    const savedRec = {
-      id: video.id,
-      username: video.username,
-      filename: video.filename,
-      room_title: video.room_title,
-      thumbnail_url: video.thumbnail_url,
-      sprite_url: video.sprite_url,
-      preview_url: video.preview_url,
-      resolution: video.resolution,
-      timestamp: video.timestamp,
-      saved_at: new Date().toISOString(),
-    };
-    if (bookmarked) {
-      await userApi.removeSaved(video.id).catch(() => {});
-      setBookmarked(false);
-    } else {
-      await userApi.addSaved(video.id, recordingToMeta(savedRec)).catch(() => {});
-      setBookmarked(true);
+    const isCurrently = bookmarkedRef.current;
+    // Optimistic toggle
+    const newState = !isCurrently;
+    bookmarkedRef.current = newState;
+    setBookmarked(newState);
+    try {
+      const savedRec = {
+        id: video.id,
+        username: video.username,
+        filename: video.filename,
+        room_title: video.room_title,
+        thumbnail_url: video.thumbnail_url,
+        sprite_url: video.sprite_url,
+        preview_url: video.preview_url,
+        resolution: video.resolution,
+        timestamp: video.timestamp,
+        saved_at: new Date().toISOString(),
+      };
+      if (isCurrently) {
+        await userApi.removeSaved(video.id);
+      } else {
+        await userApi.addSaved(video.id, recordingToMeta(savedRec));
+      }
+    } catch {
+      // Revert optimistic toggle on failure
+      bookmarkedRef.current = isCurrently;
+      setBookmarked(isCurrently);
     }
   };
 
   const handleWatchLater = async () => {
     if (!video || !user) return;
-    const savedRec = {
-      id: video.id,
-      username: video.username,
-      filename: video.filename,
-      room_title: video.room_title,
-      thumbnail_url: video.thumbnail_url,
-      sprite_url: video.sprite_url,
-      preview_url: video.preview_url,
-      resolution: video.resolution,
-      timestamp: video.timestamp,
-      saved_at: new Date().toISOString(),
-    };
-    if (watchLater) {
-      await userApi.removeWatchLater(video.id).catch(() => {});
-      setWatchLater(false);
-    } else {
-      await userApi.addWatchLater(video.id, recordingToMeta(savedRec)).catch(() => {});
-      setWatchLater(true);
+    const isCurrently = watchLaterRef.current;
+    // Optimistic toggle
+    const newState = !isCurrently;
+    watchLaterRef.current = newState;
+    setWatchLater(newState);
+    try {
+      const savedRec = {
+        id: video.id,
+        username: video.username,
+        filename: video.filename,
+        room_title: video.room_title,
+        thumbnail_url: video.thumbnail_url,
+        sprite_url: video.sprite_url,
+        preview_url: video.preview_url,
+        resolution: video.resolution,
+        timestamp: video.timestamp,
+        saved_at: new Date().toISOString(),
+      };
+      if (isCurrently) {
+        await userApi.removeWatchLater(video.id);
+      } else {
+        await userApi.addWatchLater(video.id, recordingToMeta(savedRec));
+      }
+    } catch {
+      // Revert optimistic toggle on failure
+      watchLaterRef.current = isCurrently;
+      setWatchLater(isCurrently);
     }
   };
 
