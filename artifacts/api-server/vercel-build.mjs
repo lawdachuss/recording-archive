@@ -92,7 +92,7 @@ async function main() {
       "puppeteer-core",
       "electron",
     ],
-    sourcemap: "linked",
+    sourcemap: false,
     // No esbuild-plugin-pino needed — in production (Vercel), pino has no transport
     // configured (see logger.ts), so no worker files are generated.
     // Make sure packages that are cjs only but are bundled continue to work in our esm output file

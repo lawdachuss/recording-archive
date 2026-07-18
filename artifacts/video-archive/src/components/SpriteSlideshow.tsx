@@ -74,7 +74,7 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({
   cols: explicitCols,
   rows: explicitRows,
   fps = 10,
-  frameMs = 30,
+  frameMs = 100,
   className,
   active = true,
 }: SpriteSlideshowProps) {
