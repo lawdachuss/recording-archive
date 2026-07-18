@@ -12,6 +12,9 @@ const ALLOWED_HOSTS = [
   "lobfile.com",
   "www.lobfile.com",
   "i.ibb.co",
+  "ibb.co",
+  "xhfbhgklqylmfmfjtgkq.supabase.co",
+  "setripupfosilpro.x02.me",
 ];
 
 // Pixeldrain API key — set this env var to authenticate API requests so the

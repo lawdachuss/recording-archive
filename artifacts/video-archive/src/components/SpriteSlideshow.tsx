@@ -19,14 +19,22 @@ interface SpriteLayout {
   totalFrames: number;
 }
 
+const KNOWN_LAYOUTS = new Map<string, SpriteLayout>([
+  ["2560x1440", { cols: 4, rows: 4, totalFrames: 16 }],
+  ["1920x1080", { cols: 4, rows: 4, totalFrames: 16 }],
+  ["1280x720", { cols: 4, rows: 4, totalFrames: 16 }],
+  ["640x360", { cols: 4, rows: 4, totalFrames: 16 }],
+  ["1600x900", { cols: 4, rows: 4, totalFrames: 16 }],
+]);
+
 function detectLayout(width: number, height: number): SpriteLayout {
-  // Score each possible grid layout, preferring:
-  // - Even division of width and height (no guessing, all integer math)
-  // - 16:9 frame aspect ratio (most common for video thumbnails)
-  // - Landscape orientation (cols >= rows, typical for sprite grids)
-  // - More total frames (gives a richer preview)
+  const key = `${width}x${height}`;
+  const known = KNOWN_LAYOUTS.get(key);
+  if (known) return known;
+
   let best: SpriteLayout | null = null;
   let bestScore = -1;
+  let bestFrames = 0;
 
   for (let cols = 1; cols <= 20; cols++) {
     if (width % cols !== 0) continue;
@@ -41,23 +49,23 @@ function detectLayout(width: number, height: number): SpriteLayout {
       const expectedRatio = 16 / 9;
       const ratioDiff = Math.abs(ratio - expectedRatio);
 
-      // Score: aspect ratio match (up to 100pts) + landscape bonus (10pts) + frame count (up to 20pts)
       const aspectScore = ratioDiff < 0.001 ? 100 : Math.max(0, 100 - ratioDiff * 50);
       const orientScore = cols >= rows ? 10 : 5;
-      const frameScore = Math.min(cols * rows, 20);
+      const totalFrames = cols * rows;
+      const frameScore = Math.min(totalFrames, 20);
 
       const score = aspectScore + orientScore + frameScore;
 
-      if (score > bestScore) {
+      if (score > bestScore || (score === bestScore && totalFrames < bestFrames)) {
         bestScore = score;
-        best = { cols, rows, totalFrames: cols * rows };
+        bestFrames = totalFrames;
+        best = { cols, rows, totalFrames };
       }
     }
   }
 
   if (best && bestScore > 0) return best;
 
-  // Absolute fallback: treat whole image as one frame
   return { cols: 1, rows: 1, totalFrames: 1 };
 }
 
@@ -118,6 +126,11 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({
     };
   }, [spriteUrl, explicitCols, explicitRows]);
 
+  // Reset frame counter when sprite URL changes
+  useEffect(() => {
+    frameRef.current = 0;
+  }, [spriteUrl]);
+
   // Direct DOM animation — no React state updates per frame
   useEffect(() => {
     const el = divRef.current;
@@ -141,6 +154,7 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({
     el.style.backgroundImage = bgUrl;
     el.style.backgroundSize = bgSize;
     el.style.backgroundRepeat = "no-repeat";
+    el.style.willChange = "background-position";
     update();
 
     const interval = setInterval(update, intervalMs);
@@ -153,6 +167,8 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({
       className={className}
       style={{
         opacity: active && imageLoaded ? 1 : 0,
+        transition: "opacity 200ms ease-out",
+        contain: "strict",
       }}
     />
   );

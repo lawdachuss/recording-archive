@@ -104,7 +104,7 @@ function deriveServers(
   previewUrl?: string | null,
   links?: Record<string, string> | null,
 ) {
-  const servers: { label: string; src: string; type: "iframe" | "img" | "link" }[] = [];
+  const servers: { label: string; src: string; type: "iframe" | "img" | "link" | "video" }[] = [];
   const seen = new Set<string>();
   const seenHosts = new Set<string>();
 
@@ -148,7 +148,7 @@ function deriveServers(
     if (isEmbedUrl(previewUrl)) {
       servers.push({ label: detectHostLabel(previewUrl), src: previewUrl, type: "iframe" });
     } else {
-      servers.push({ label: "Preview", src: previewUrl, type: "img" });
+      servers.push({ label: "Preview", src: previewUrl, type: "video" });
     }
   }
 
@@ -549,6 +549,17 @@ export default function VideoDetail() {
                     allowFullScreen
                     allow="autoplay; fullscreen; picture-in-picture"
                     title={video.room_title || video.filename}
+                  />
+                ) : currentServer?.type === "video" ? (
+                  <video
+                    key={currentServer.src}
+                    src={currentServer.src}
+                    className="w-full h-full object-contain"
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    controls
                   />
                 ) : currentServer?.type === "img" ? (
                   <OptimizedImage
