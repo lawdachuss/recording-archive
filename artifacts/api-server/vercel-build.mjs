@@ -10,13 +10,16 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 
 async function main() {
   await build({
-    // The Vercel entry point wraps the Express app with serverless-http
-    entryPoints: [path.resolve(dir, "../video-archive/api/index.ts")],
+    // The Vercel entry point wraps the Express app with serverless-http.
+    // The source lives in the api-server package (outside Vercel's api/ dir)
+    // to avoid path conflicts with the pre-bundled output.
+    entryPoints: [path.resolve(dir, "src/vercel-entry.ts")],
     platform: "node",
     bundle: true,
     format: "esm",
-    // Output to the root api/ directory where Vercel expects serverless functions
-    outfile: path.resolve(dir, "../../api/index.mjs"),
+    // Output to the video-archive api/ directory where Vercel expects serverless functions
+    // This must be inside the Vercel project root (artifacts/video-archive/api/index.mjs)
+    outfile: path.resolve(dir, "../video-archive/api/index.mjs"),
     logLevel: "info",
     external: [
       "*.node",
