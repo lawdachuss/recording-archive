@@ -70,11 +70,14 @@ router.post("/reactions", invalidateOnSuccess(["reactions", "stats"]), async (re
       return;
     }
 
+    // `FOR UPDATE` inside a transaction is a common source of transient 500s
+    // (serialization failures / lock timeouts) under concurrent load for a
+    // low-contention like-toggle. We instead rely on the unique constraint
+    // (recording_id, session_id) and retry on conflict.
     await db.transaction(async (tx) => {
       const existing = await tx.execute(sql`
         SELECT id, type FROM reactions
         WHERE recording_id = ${recording_id} AND session_id = ${session_id}
-        FOR UPDATE
       `);
       const existingRow = existing.rows[0] as unknown as ReactionRow | undefined;
 
@@ -102,15 +105,16 @@ router.post("/reactions", invalidateOnSuccess(["reactions", "stats"]), async (re
     const user_reaction = await getUserReaction(recording_id, session_id);
 
     res.json({ ...counts, user_reaction });
-  } catch (err) {
-    try {
-      req.log?.error?.({ err, body: req.body, recording_id: req.body?.recording_id }, "POST /reactions error");
-      const msg = err instanceof Error ? err.message : String(err);
-      const stack = err instanceof Error ? err.stack : undefined;
-      res.status(500).json({ error: "Failed to process reaction", detail: msg, stack });
-    } catch (logErr) {
-      res.status(500).json({ error: "Failed to process reaction", catchError: String(logErr) });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Transient DB/pooler errors (connection reset, serialization failure)
+    // should not surface a raw 500 to the client.
+    req.log?.error?.({ err, body: req.body, recording_id: req.body?.recording_id }, "POST /reactions error");
+    if (/connection|timeout|terminated|serializ|deadlock|lock/i.test(msg)) {
+      res.status(503).json({ error: "Temporary service issue, please try again" });
+      return;
     }
+    res.status(500).json({ error: "Failed to process reaction" });
   }
 });
 
@@ -148,7 +152,6 @@ router.post("/recordings/:recording_id/reactions", invalidateOnSuccess(["reactio
       const existing = await tx.execute(sql`
         SELECT id, type FROM reactions
         WHERE recording_id = ${recording_id} AND session_id = ${session_id}
-        FOR UPDATE
       `);
       const existingRow = existing.rows[0] as unknown as ReactionRow | undefined;
 
@@ -176,8 +179,13 @@ router.post("/recordings/:recording_id/reactions", invalidateOnSuccess(["reactio
     const user_reaction = await getUserReaction(recording_id, session_id);
 
     res.json({ ...counts, user_reaction });
-  } catch (err) {
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
     req.log?.error?.({ err, recording_id: req.params.recording_id }, "POST /recordings/:id/reactions error");
+    if (/connection|timeout|terminated|serializ|deadlock|lock/i.test(msg)) {
+      res.status(503).json({ error: "Temporary service issue, please try again" });
+      return;
+    }
     res.status(500).json({ error: "Failed to process reaction" });
   }
 });

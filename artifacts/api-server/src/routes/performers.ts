@@ -74,10 +74,29 @@ function performerExistsOnPlatform(html: string, username: string, platform: str
   }
 
   if (platform === "stripchat") {
-    if (bodyLower.includes(`"username":"${usernameLower}"`)) return true;
-    if (/class="[^"]*model-avatar[^"]*"/i.test(html)) return true;
-    if (/class="[^"]*model-card[^"]*"/i.test(html)) return true;
+    // Stripchat embeds a global JSON state that lists the logged-in viewer and
+    // recommended models, so a bare `"username":"..."` substring or a generic
+    // `model-avatar`/`model-card` class is NOT proof the requested performer
+    // owns this page. Only trust the canonical profile URL, which Stripchat
+    // sets to https://stripchat.com/{exact-username} for the real model.
+    const canonical = extractMetaContent(html, "og:url");
+    if (canonical) {
+      const normalized = canonical.replace(/\/+$/, "").toLowerCase();
+      if (normalized === `https://stripchat.com/${usernameLower}`) return true;
+    }
+    const canonicalLink = (html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i)
+      || html.match(/<link[^>]+href=["']([^"']+)["'][^>]+rel=["']canonical["']/i))?.[1];
+    if (canonicalLink) {
+      const normalized = canonicalLink.replace(/\/+$/, "").toLowerCase();
+      if (normalized === `https://stripchat.com/${usernameLower}`) return true;
+    }
   }
+
+  // NOTE: The generic fallthroughs below are unreliable for Stripchat and must
+  // NOT be used to assert existence there — Stripchat pages embed other models'
+  // usernames in og:title/og:description and "live now" listings, which produce
+  // false positives. For Stripchat the canonical-URL check above is authoritative.
+  if (platform === "stripchat") return false;
 
   const ogTitle = extractMetaContent(html, "og:title");
   if (ogTitle && ogTitle.toLowerCase().includes(usernameLower)) return true;
@@ -179,7 +198,14 @@ router.get("/performers/lookup", cache({ ttlSeconds: 120, staleSeconds: 300, tag
         return;
       }
 
-      // Page loaded without positive signals but title doesn't say "not found"
+      // Page loaded without positive signals and title doesn't say "not found".
+      // For Stripchat, absence of a canonical profile match means this isn't the
+      // performer's page (e.g. a soft-404 / landing page), so do NOT assume exists.
+      if (platform === "stripchat") {
+        result.exists = false;
+        res.json(result);
+        return;
+      }
       result.exists = true;
       req.log.warn({ username, platform, title, htmlSample: html.slice(0, 300) }, "performer-lookup: no positive signals but page loaded");
     }

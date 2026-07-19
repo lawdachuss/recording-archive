@@ -44,6 +44,30 @@ router.post("/requests", requireAuth, async (req, res) => {
 
   const validPriority = ["low", "normal", "high"].includes(priority ?? "") ? priority : "normal";
 
+  // Prevent duplicate requests: a user cannot request the same performer on the
+  // same platform more than once. If a duplicate is attempted, return the
+  // existing request instead of creating a redundant channel.
+  const dedupeKey = performer_username ? performer_username : stream_link;
+  if (dedupeKey) {
+    try {
+      const existing = await db.execute(sql`
+        SELECT id, user_id, platform, performer_username, stream_link, notes, priority, status, created_at
+        FROM requests
+        WHERE user_id = ${req.user!.id}
+          AND platform = ${platform}
+          AND COALESCE(performer_username, '') = COALESCE(${performer_username ?? null}, '')
+          AND COALESCE(stream_link, '') = COALESCE(${stream_link ?? null}, '')
+        LIMIT 1
+      `);
+      if (existing.rows.length > 0) {
+        res.status(200).json(existing.rows[0]);
+        return;
+      }
+    } catch {
+      // If the dedupe check fails, fall through to the insert attempt.
+    }
+  }
+
   const fallback = {
     id: null,
     user_id: req.user!.id,
@@ -69,9 +93,25 @@ router.post("/requests", requireAuth, async (req, res) => {
         'pending',
         NOW()
       )
+      ON CONFLICT ON CONSTRAINT idx_requests_user_platform_performer
+      DO NOTHING
       RETURNING id, user_id, platform, performer_username, stream_link, notes, priority, status, created_at
     `);
-    res.status(201).json(result.rows[0] ?? fallback);
+    if (result.rows.length > 0) {
+      res.status(201).json(result.rows[0]);
+      return;
+    }
+    // Conflict (rare race with the pre-insert dedupe check): return the existing row.
+    const existing = await db.execute(sql`
+      SELECT id, user_id, platform, performer_username, stream_link, notes, priority, status, created_at
+      FROM requests
+      WHERE user_id = ${req.user!.id}
+        AND platform = ${platform}
+        AND COALESCE(performer_username, '') = COALESCE(${performer_username ?? null}, '')
+        AND COALESCE(stream_link, '') = COALESCE(${stream_link ?? null}, '')
+      LIMIT 1
+    `);
+    res.status(200).json(existing.rows[0] ?? fallback);
   } catch {
     res.status(201).json(fallback);
   }
