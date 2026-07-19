@@ -4,7 +4,6 @@ import type { Recording } from "@workspace/api-client-react";
 import { formatBytes, formatRelativeTime, formatViewers, formatDuration } from "@/lib/formatters";
 import { Eye, HardDrive, Clock, CheckCircle } from "lucide-react";
 import { OptimizedImage } from "@/components/ui/optimized-image";
-import { SpriteSlideshow } from "@/components/SpriteSlideshow";
 import { useHoverPreview } from "@/hooks/use-hover-preview";
 import { cn } from "@/lib/utils";
 
@@ -58,44 +57,25 @@ interface VideoCardProps {
   isWatched?: boolean;
 }
 
-// Known sprite grid layouts for common hosts — avoids loading the image
-// to auto-detect dimensions, so animation starts instantly on hover.
-function getSpriteGrid(url: string | null | undefined): { cols: number; rows: number } | null {
-  if (!url) return null;
-  try {
-    const { hostname } = new URL(url);
-    if (hostname.includes("pixhost.to")) return { cols: 4, rows: 4 };
-    return null;
-  } catch {
-    return null;
-  }
-}
-
 export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemove, fetchPriority, isWatched }: VideoCardProps) {
   const thumbnailUrl = useMemo(() => proxyUrl(recording.thumbnail_url), [recording.thumbnail_url]);
-  // Sprite URLs don't need the proxy — browsers load cross-origin images for
-  // background-image and <img> without CORS. Using the direct CDN URL avoids
-  // the serverless function cold start delay, so the sprite appears instantly.
-  const spriteUrl = useMemo(() => recording.sprite_url ?? null, [recording.sprite_url]);
-  const spriteGrid = useMemo(() => getSpriteGrid(recording.sprite_url), [recording.sprite_url]);
   const previewUrl = useMemo(() => recording.preview_url ?? null, [recording.preview_url]);
 
   const {
     isHovered,
     showVideo,
-    showSprite,
     videoUrl,
     hoverHandlers,
     viewportRef,
     preloadVideoUrl,
-  } = useHoverPreview({ thumbnailUrl, spriteUrl, previewUrl });
+  } = useHoverPreview({ thumbnailUrl, previewUrl });
 
   const staticImage = thumbnailUrl;
   const staticImageBlocked = staticImage ? isHostBlocked(staticImage) : false;
   const hasStaticImage = !!staticImage && !staticImageBlocked;
   const initials = useMemo(() => recording.username?.slice(0, 2).toUpperCase() ?? "??", [recording.username]);
 
-  const showPreview = isHovered && (showVideo || showSprite);
+  const showPreview = isHovered && showVideo;
 
   const showDuration = (recording.duration ?? 0) > 0;
   const showFilesize = !!recording.filesize && !showDuration;
@@ -143,16 +123,6 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
                   className="absolute inset-0 w-full h-full object-cover"
                   autoPlay muted playsInline
                   preload="auto"
-                />
-              )}
-
-              {showSprite && (
-                <SpriteSlideshow
-                  spriteUrl={spriteUrl!}
-                  cols={spriteGrid?.cols}
-                  rows={spriteGrid?.rows}
-                  className="absolute inset-0 w-full h-full"
-                  active={isHovered}
                 />
               )}
             </div>

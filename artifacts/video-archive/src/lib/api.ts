@@ -15,7 +15,6 @@ export interface Recording {
   filesize?: number | null;
   gender?: string | null;
   thumbnail_url?: string | null;
-  sprite_url?: string | null;
   embed_url?: string | null;
   preview_url?: string | null;
   instance_id?: string | null;
@@ -28,7 +27,6 @@ export interface Performer {
   username: string;
   recording_count: number;
   latest_thumbnail?: string | null;
-  sprite_url?: string | null;
   gender?: string | null;
   latest_timestamp?: string | null;
 }
