@@ -8,21 +8,19 @@ function isConnectionConstrained(): boolean {
   return typeof conn.effectiveType === "string" && slow.includes(conn.effectiveType);
 }
 
-const preloadCache = new Map<string, HTMLImageElement | true>();
+const preloadCache = new Map<string, HTMLVideoElement | true>();
 
-function preloadAsset(url: string): void {
+function preloadVideo(url: string): void {
   if (preloadCache.has(url)) return;
-  const img = new Image();
-  img.fetchPriority = "high";
-  img.decoding = "async";
-  img.referrerPolicy = "no-referrer";
-  img.src = url;
-  preloadCache.set(url, img);
+  const v = document.createElement("video");
+  v.muted = true;
+  v.preload = "auto";
+  v.src = url;
+  preloadCache.set(url, v);
 }
 
 interface UseHoverPreviewOptions {
   thumbnailUrl: string | null | undefined;
-  spriteUrl: string | null | undefined;
   previewUrl: string | null | undefined;
   enabled?: boolean;
 }
@@ -30,7 +28,6 @@ interface UseHoverPreviewOptions {
 interface UseHoverPreviewReturn {
   isHovered: boolean;
   showVideo: boolean;
-  showSprite: boolean;
   videoUrl: string | null;
   preloadVideoUrl: string | null;
   hoverHandlers: {
@@ -44,7 +41,6 @@ interface UseHoverPreviewReturn {
 
 export function useHoverPreview({
   thumbnailUrl,
-  spriteUrl,
   previewUrl,
   enabled = true,
 }: UseHoverPreviewOptions): UseHoverPreviewReturn {
@@ -66,7 +62,7 @@ export function useHoverPreview({
           for (const entry of entries) {
             if (entry.isIntersecting && !intersectionPreloadedRef.current) {
               intersectionPreloadedRef.current = true;
-              if (spriteUrl) preloadAsset(spriteUrl);
+              if (previewUrl) preloadVideo(previewUrl);
               observer?.disconnect();
               break;
             }
@@ -76,7 +72,7 @@ export function useHoverPreview({
       );
       observer.observe(el);
     };
-  }, [enabled, spriteUrl]);
+  }, [enabled, previewUrl]);
 
   const onMouseEnter = useCallback(() => {
     if (!enabled) return;
@@ -111,14 +107,12 @@ export function useHoverPreview({
   const canPreloadVideo = !!previewUrl && !isConnectionConstrained();
   const preloadVideoUrl = canPreloadVideo ? previewUrl : null;
 
-  // Priority: video preview > sprite animation
+  // Only .mp4 preview videos are used for hover playback.
   const showVideo = isHovered && !!previewUrl;
-  const showSprite = isHovered && !previewUrl && !!spriteUrl;
 
   return {
     isHovered,
     showVideo,
-    showSprite,
     videoUrl: showVideo ? previewUrl : null,
     hoverHandlers: { onMouseEnter, onMouseLeave, onFocus, onBlur },
     viewportRef,
