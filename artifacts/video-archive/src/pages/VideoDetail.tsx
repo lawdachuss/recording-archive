@@ -17,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import { formatBytes, formatRelativeTime } from "@/lib/formatters";
 import { getSessionId } from "@/lib/session";
-import { trackView, useListRecordings } from "@/lib/api";
+import { trackView, useListRecommendations } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, recordingToMeta, type CloudCollection } from "@/lib/user-api";
 import { addWatchedId } from "@/lib/watched-storage";
@@ -193,8 +193,8 @@ export default function VideoDetail() {
     data: recData,
     isLoading: recLoading,
     isFetching: recFetching,
-  } = useListRecordings(
-    { page: recPage, limit: REC_PAGE_SIZE },
+  } = useListRecommendations(
+    { page: recPage, limit: REC_PAGE_SIZE, exclude: id },
     { enabled: !!id, placeholderData: keepPreviousData },
   );
 

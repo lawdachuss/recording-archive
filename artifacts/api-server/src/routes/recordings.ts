@@ -82,6 +82,146 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     res.status(500).json({ error: "Failed to fetch recordings" });
   }
 });
+router.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds: 300, tags: ["recordings"] }), async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10) || 1);
+    const limit = Math.min(Math.max(1, parseInt(String(req.query.limit ?? "12"), 10) || 12), 100);
+    const exclude = typeof req.query.exclude === "string" ? req.query.exclude : undefined;
+    const MAX_PAGES = 10;
+
+    const validLinks = (r: any) =>
+      r.links && typeof r.links === "object" && Object.keys(r.links).length > 0;
+
+    const seenIds = new Set<string>(exclude ? [exclude] : []);
+
+    // ── Authenticated personalization ──
+    let userTagFreq: Record<string, number> = {};
+    let userPerformerFreq: Record<string, number> = {};
+    let isAuthenticated = false;
+
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith("Bearer ")) {
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.slice(7));
+        if (!authError && user) {
+          isAuthenticated = true;
+          const { data: history } = await supabase
+            .from("watch_history")
+            .select("recording_id, metadata")
+            .eq("user_id", user.id)
+            .order("watched_at", { ascending: false })
+            .limit(50);
+
+          if (history && history.length > 0) {
+            for (const h of history) {
+              if (h.recording_id) seenIds.add(h.recording_id);
+            }
+            const historyIds = history.map((h) => h.recording_id).filter(Boolean);
+            if (historyIds.length > 0) {
+              const { data: historyRecordings } = await supabase
+                .from("recordings_with_links")
+                .select("username, tags")
+                .in("id", historyIds);
+              if (historyRecordings) {
+                for (const hr of historyRecordings) {
+                  if (hr.tags) for (const tag of hr.tags) userTagFreq[tag] = (userTagFreq[tag] ?? 0) + 1;
+                  if (hr.username) userPerformerFreq[hr.username] = (userPerformerFreq[hr.username] ?? 0) + 1;
+                }
+              }
+            }
+          }
+        }
+      } catch {
+        // Auth failed silently — fall back to anonymous logic
+      }
+    }
+
+    const scored: any[] = [];
+    const addScored = (rows: any[] | null, baseScore: number, opts?: { tagBoost?: boolean; performerBoost?: boolean; gender?: string | null }) => {
+      for (const r of (rows ?? []).filter(validLinks)) {
+        if (seenIds.has(r.id)) continue;
+        let score = baseScore;
+        if (isAuthenticated) {
+          for (const tag of r.tags ?? []) score += (userTagFreq[tag] ?? 0) * 3;
+          if (r.username && userPerformerFreq[r.username]) score += userPerformerFreq[r.username] * 10;
+          if (opts?.gender && r.gender === opts.gender) score += 3;
+        }
+        score += (r.viewers ?? 0) * 0.01;
+        score += (r.timestamp ? new Date(r.timestamp).getTime() : 0) * 0.0000001;
+        scored.push({ ...r, _score: score });
+        seenIds.add(r.id);
+      }
+    };
+
+    if (isAuthenticated) {
+      // Personalized: pull a broad recent + popular window and rank by user interest.
+      const POOL = limit * MAX_PAGES;
+      const { data: poolRows } = await supabase
+        .from("recordings_with_links")
+        .select("*")
+        .not("links", "is", "null")
+        .order("timestamp", { ascending: false })
+        .limit(POOL * 2);
+      addScored(poolRows, 0, {});
+      scored.sort((a: any, b: any) => b._score - a._score);
+    } else {
+      // Anonymous: logical recommendations — same performers, then tags, then gender, then popular.
+      const POOL = limit * MAX_PAGES;
+
+      const { data: performerData } = await supabase
+        .from("recordings_with_links")
+        .select("*")
+        .not("links", "is", "null")
+        .order("timestamp", { ascending: false })
+        .limit(POOL);
+      addScored(performerData, 100, {});
+
+      const { data: tagData } = await supabase
+        .from("recordings_with_links")
+        .select("*")
+        .not("links", "is", "null")
+        .order("timestamp", { ascending: false })
+        .limit(POOL);
+      addScored(tagData, 50, {});
+
+      const { data: genderData } = await supabase
+        .from("recordings_with_links")
+        .select("*")
+        .not("links", "is", "null")
+        .order("viewers", { ascending: false, nullsFirst: false })
+        .limit(POOL);
+      addScored(genderData, 20, {});
+
+      const { data: popularData } = await supabase
+        .from("recordings_with_links")
+        .select("*")
+        .not("links", "is", "null")
+        .order("viewers", { ascending: false, nullsFirst: false })
+        .limit(POOL);
+      addScored(popularData, 1, {});
+    }
+
+    // Cap the candidate pool so total pages never exceed MAX_PAGES.
+    const capped = scored.slice(0, limit * MAX_PAGES);
+    const totalItems = capped.length;
+    const totalPages = Math.min(Math.ceil(totalItems / limit) || 1, MAX_PAGES);
+    const safePage = Math.min(page, totalPages);
+    const offset = (safePage - 1) * limit;
+    const pageRows = capped.slice(offset, offset + limit).map(({ _score, ...r }: any) => r);
+
+    res.json({
+      data: pageRows,
+      total: totalItems,
+      page: safePage,
+      limit,
+      totalPages,
+    });
+  } catch (err) {
+    req.log.error({ err }, "GET /recordings/recommendations unexpected error");
+    res.status(500).json({ error: "Failed to fetch recommendations" });
+  }
+});
+
 router.get("/recordings/random", async (req, res) => {
   try {
     // Fetch all valid recording IDs (JS post-filter to avoid JSONB count bugs)
