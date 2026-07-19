@@ -85,10 +85,9 @@ export default function PerformerProfile() {
     );
   }
 
-  // Find the best available image across all recordings, trying thumbnail_url → sprite_url → preview_url
   const latestThumbnail = profile?.recordings?.reduce<string | null>((found, rec) => {
     if (found) return found;
-    return rec.thumbnail_url || rec.sprite_url || rec.preview_url || null;
+    return rec.thumbnail_url || rec.preview_url || null;
   }, null) ?? null;
 
   return (

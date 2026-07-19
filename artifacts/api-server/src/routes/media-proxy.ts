@@ -2,8 +2,6 @@ import { Router } from "express";
 
 // Only proxy requests to these allowed domains
 const ALLOWED_HOSTS = [
-  "pixeldrain.com",
-  "www.pixeldrain.com",
   "img2.pixhost.to",
   "pixhost.to",
   "www.pixhost.to",
@@ -16,11 +14,6 @@ const ALLOWED_HOSTS = [
   "xhfbhgklqylmfmfjtgkq.supabase.co",
   "setripupfosilpro.x02.me",
 ];
-
-// Pixeldrain API key — set this env var to authenticate API requests so the
-// proxy can bypass hotlinking restrictions (Cloudflare 403 without auth).
-// Get your key from https://pixeldrain.com/user/api_keys
-const PIXELDRAIN_API_KEY = process.env.PIXELDRAIN_API_KEY ?? "";
 
 const router = Router();
 
@@ -56,13 +49,6 @@ router.get("/media", async (req, res) => {
       "Accept-Language": "en-US,en;q=0.9",
       Referer: "https://chuglii.in/",
     };
-
-    // If the upstream is pixeldrain.com, attach the API key via HTTP Basic
-    // auth so we can bypass hotlinking restrictions.
-    if (PIXELDRAIN_API_KEY && parsed.hostname.includes("pixeldrain.com")) {
-      const encoded = Buffer.from(":" + PIXELDRAIN_API_KEY).toString("base64");
-      upstreamHeaders["Authorization"] = "Basic " + encoded;
-    }
 
     const rangeHeader = req.headers["range"];
     if (rangeHeader) {

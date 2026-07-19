@@ -17,7 +17,6 @@ function toRecording(r: ReturnType<typeof parseCloudItem>) {
     filename: r.filename,
     room_title: r.room_title ?? null,
     thumbnail_url: r.thumbnail_url ?? null,
-    sprite_url: r.sprite_url ?? null,
     preview_url: r.preview_url ?? null,
     resolution: r.resolution ?? null,
     timestamp: r.timestamp,

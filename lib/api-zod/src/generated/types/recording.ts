@@ -31,8 +31,6 @@ export interface Recording {
   /** @nullable */
   thumbnail_url?: string | null;
   /** @nullable */
-  sprite_url?: string | null;
-  /** @nullable */
   embed_url?: string | null;
   /** @nullable */
   preview_url?: string | null;

@@ -1,5 +1,13 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 
+function isConnectionConstrained(): boolean {
+  const conn = (navigator as any).connection;
+  if (!conn) return false;
+  if (conn.saveData) return true;
+  const slow = ["slow-2g", "2g", "3g"];
+  return typeof conn.effectiveType === "string" && slow.includes(conn.effectiveType);
+}
+
 const preloadCache = new Map<string, HTMLImageElement | true>();
 
 function preloadAsset(url: string): void {
@@ -24,6 +32,7 @@ interface UseHoverPreviewReturn {
   showVideo: boolean;
   showSprite: boolean;
   videoUrl: string | null;
+  preloadVideoUrl: string | null;
   hoverHandlers: {
     onMouseEnter: React.MouseEventHandler;
     onMouseLeave: React.MouseEventHandler;
@@ -41,6 +50,8 @@ export function useHoverPreview({
 }: UseHoverPreviewOptions): UseHoverPreviewReturn {
   const [isHovered, setIsHovered] = useState(false);
   const intersectionPreloadedRef = useRef(false);
+  const enterTimer = useRef<number | null>(null);
+  const intentDelay = 90;
 
   const viewportRef = useMemo<React.RefCallback<HTMLElement>>(() => {
     let observer: IntersectionObserver | null = null;
@@ -69,10 +80,15 @@ export function useHoverPreview({
 
   const onMouseEnter = useCallback(() => {
     if (!enabled) return;
-    setIsHovered(true);
-  }, [enabled]);
+    if (enterTimer.current) window.clearTimeout(enterTimer.current);
+    enterTimer.current = window.setTimeout(() => setIsHovered(true), intentDelay);
+  }, [enabled, intentDelay]);
 
   const onMouseLeave = useCallback(() => {
+    if (enterTimer.current) {
+      window.clearTimeout(enterTimer.current);
+      enterTimer.current = null;
+    }
     setIsHovered(false);
   }, []);
 
@@ -85,6 +101,16 @@ export function useHoverPreview({
     setIsHovered(false);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (enterTimer.current) window.clearTimeout(enterTimer.current);
+    };
+  }, []);
+
+  // Preload the preview VIDEO while in viewport so playback starts instantly on hover.
+  const canPreloadVideo = !!previewUrl && !isConnectionConstrained();
+  const preloadVideoUrl = canPreloadVideo ? previewUrl : null;
+
   // Priority: video preview > sprite animation
   const showVideo = isHovered && !!previewUrl;
   const showSprite = isHovered && !previewUrl && !!spriteUrl;
@@ -96,5 +122,6 @@ export function useHoverPreview({
     videoUrl: showVideo ? previewUrl : null,
     hoverHandlers: { onMouseEnter, onMouseLeave, onFocus, onBlur },
     viewportRef,
+    preloadVideoUrl,
   };
 }

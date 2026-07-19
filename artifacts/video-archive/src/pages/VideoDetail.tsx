@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { useParams, Link, useLocation } from "wouter";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
   useGetRecording,
   useListRelatedRecordings,
@@ -17,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import { formatBytes, formatRelativeTime } from "@/lib/formatters";
 import { getSessionId } from "@/lib/session";
-import { trackView } from "@/lib/api";
+import { trackView, useListRecordings } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, recordingToMeta, type CloudCollection } from "@/lib/user-api";
 import { addWatchedId } from "@/lib/watched-storage";
@@ -144,14 +144,6 @@ function deriveServers(
     }
   }
 
-  if (previewUrl && !seen.has(previewUrl)) {
-    if (isEmbedUrl(previewUrl)) {
-      servers.push({ label: detectHostLabel(previewUrl), src: previewUrl, type: "iframe" });
-    } else {
-      servers.push({ label: "Preview", src: previewUrl, type: "video" });
-    }
-  }
-
   return servers;
 }
 
@@ -182,6 +174,8 @@ export default function VideoDetail() {
   const [cloudCollections, setCloudCollections] = useState<CloudCollection[]>([]);
   const [newColName, setNewColName] = useState("");
   const [addedToCol, setAddedToCol] = useState<string | null>(null);
+  const [recPage, setRecPage] = useState(1);
+  const REC_PAGE_SIZE = 12;
   const queryClient = useQueryClient();
   const recentlyWatched = useRecentlyWatched();
 
@@ -192,6 +186,15 @@ export default function VideoDetail() {
   const { data: related, isLoading: relatedLoading } = useListRelatedRecordings(
     { id: id || "", limit: 12 },
     { query: { enabled: !!id, queryKey: getListRelatedRecordingsQueryKey({ id: id || "", limit: 12 }) } },
+  );
+
+  const {
+    data: recData,
+    isLoading: recLoading,
+    isFetching: recFetching,
+  } = useListRecordings(
+    { page: recPage, limit: REC_PAGE_SIZE },
+    { enabled: !!id, placeholderData: keepPreviousData },
   );
 
   const { data: reactions, refetch: refetchReactions } = useGetReactions(
@@ -213,6 +216,7 @@ export default function VideoDetail() {
     bookmarkedRef.current = false;
     setWatchLater(false);
     watchLaterRef.current = false;
+    setRecPage(1);
     if (id && user) {
       userApi.getSaved().then((items) => {
         setBookmarked(items.some((i) => i.recording_id === id));
@@ -991,7 +995,7 @@ export default function VideoDetail() {
               </p>
             </div>
 
-            {relatedLoading ? (
+            {recLoading ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
                 {Array.from({ length: 12 }).map((_, i) => (
                   <div key={i} className="space-y-2">
@@ -1001,14 +1005,29 @@ export default function VideoDetail() {
                   </div>
                 ))}
               </div>
-            ) : related && related.filter((r) => r.id !== id).length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-                {related
-                  .filter((r) => r.id !== id)
-                  .map((rec) => (
-                    <VideoCard key={rec.id} recording={rec} isWatched={recentlyWatched.has(rec.id)} />
-                  ))}
-              </div>
+            ) : recData && recData.data.filter((r) => r.id !== id).length > 0 ? (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                  {recData.data
+                    .filter((r) => r.id !== id)
+                    .map((rec) => (
+                      <VideoCard key={rec.id} recording={rec} isWatched={recentlyWatched.has(rec.id)} />
+                    ))}
+                </div>
+
+                {recData.page < recData.totalPages && (
+                  <div className="flex justify-center pt-2">
+                    <button
+                      onClick={() => setRecPage((p) => p + 1)}
+                      disabled={recFetching}
+                      className="inline-flex items-center gap-1.5 h-9 px-6 text-xs font-medium rounded-[2px] border border-border/50 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all disabled:opacity-50"
+                    >
+                      {recFetching ? "Loading…" : "View more"}
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </>
             ) : (
               <p className="text-xs text-muted-foreground/40">No recommendations available.</p>
             )}

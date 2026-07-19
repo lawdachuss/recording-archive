@@ -170,7 +170,10 @@ export function useGetPerformer(username: string) {
   });
 }
 
-export function useListRecordings(params: ListRecordingsParams = {}) {
+export function useListRecordings(
+  params: ListRecordingsParams = {},
+  queryOptions?: { enabled?: boolean; placeholderData?: unknown; staleTime?: number },
+) {
   const searchParams = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== "") searchParams.set(key, value.toString());
@@ -179,6 +182,8 @@ export function useListRecordings(params: ListRecordingsParams = {}) {
   return useQuery({
     queryKey: ["recordings", searchParams.toString()],
     queryFn: () => fetchApi<ListRecordingsResponse>(`/api/recordings?${searchParams}`),
+    enabled: queryOptions?.enabled ?? true,
+    placeholderData: queryOptions?.placeholderData as ListRecordingsResponse | undefined,
     ...QUERY_PRESETS.page(),
   });
 }

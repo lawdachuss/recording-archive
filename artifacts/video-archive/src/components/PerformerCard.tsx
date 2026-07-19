@@ -7,7 +7,6 @@ interface Performer {
   username: string;
   recording_count?: number;
   latest_thumbnail?: string | null;
-  sprite_url?: string | null;
   gender?: string | null;
   latest_timestamp?: string | null;
 }

@@ -87,6 +87,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     videoUrl,
     hoverHandlers,
     viewportRef,
+    preloadVideoUrl,
   } = useHoverPreview({ thumbnailUrl, spriteUrl, previewUrl });
 
   const staticImage = thumbnailUrl;
@@ -108,6 +109,16 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     >
       <div ref={viewportRef} className="flex flex-col gap-2">
         <div className="relative aspect-video overflow-hidden bg-secondary rounded-sm will-change-transform">
+
+          {preloadVideoUrl && (
+            <video
+              src={preloadVideoUrl}
+              className="hidden"
+              muted playsInline preload="auto"
+              aria-hidden
+            />
+          )}
+
           {hasStaticImage ? (
             <div className="absolute inset-0 w-full h-full">
               <OptimizedImage

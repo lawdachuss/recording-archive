@@ -27,7 +27,6 @@ function toRecording(r: ReturnType<typeof parseCloudItem>) {
     framerate: null,
     filesize: null,
     gender: null,
-    sprite_url: null,
     embed_url: null,
     preview_url: null,
     instance_id: null,
