@@ -152,6 +152,7 @@ export default function VideoDetail() {
   const [, setLocation] = useLocation();
   const sessionId = getSessionId();
   const playerRef = useRef<HTMLDivElement>(null);
+  const recSectionRef = useRef<HTMLDivElement>(null);
   const { isFullscreen, enter: enterFS, exit: exitFS } = useFullscreen(playerRef);
   const { user } = useAuth();
 
@@ -226,6 +227,13 @@ export default function VideoDetail() {
       }).catch(() => {});
     }
   }, [id, user]);
+
+  useEffect(() => {
+    if (recPage > 1 && recSectionRef.current) {
+      recSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recPage]);
 
   useEffect(() => {
     if (collectionOpen && user) {
@@ -981,7 +989,7 @@ export default function VideoDetail() {
 
         {/* ─── Bottom Recommendations ──────────────────────────── */}
         {!isLoading ? (
-          <div className="mt-10 space-y-5">
+          <div ref={recSectionRef} className="mt-10 space-y-5">
             <div className="flex flex-col gap-1">
               <p className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground font-semibold">
                 Recommendations
@@ -1011,15 +1019,55 @@ export default function VideoDetail() {
                     ))}
                 </div>
 
-                {recData.page < recData.totalPages && (
-                  <div className="flex justify-center pt-2">
+                {recData.totalPages > 1 && (
+                  <div className="flex items-center justify-center gap-1 pt-3 flex-wrap">
                     <button
-                      onClick={() => setRecPage((p) => p + 1)}
-                      disabled={recFetching}
-                      className="inline-flex items-center gap-1.5 h-9 px-6 text-xs font-medium rounded-[2px] border border-border/50 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all disabled:opacity-50"
+                      onClick={() => setRecPage((p) => Math.max(1, p - 1))}
+                      disabled={recData.page <= 1 || recFetching}
+                      aria-label="Previous page"
+                      className="inline-flex items-center justify-center w-7 h-7 text-xs rounded-[2px] border border-border/50 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      {recFetching ? "Loading…" : "View more"}
-                      <ChevronDown className="w-3.5 h-3.5" />
+                      <ChevronDown className="w-3.5 h-3.5 rotate-90" />
+                    </button>
+
+                    {Array.from({ length: recData.totalPages }, (_, i) => i + 1).map((p) => {
+                      const isCurrent = p === recData.page;
+                      const isEdge =
+                        p === 1 || p === recData.totalPages || Math.abs(p - recData.page) <= 1;
+                      if (!isEdge && p > 1 && p < recData.totalPages) {
+                        // collapse middle gaps with a single ellipsis
+                        if (p === recData.page - 2 || p === recData.page + 2) {
+                          return (
+                            <span key={p} className="px-1 text-[10px] text-muted-foreground/40">
+                              …
+                            </span>
+                          );
+                        }
+                        return null;
+                      }
+                      return (
+                        <button
+                          key={p}
+                          onClick={() => setRecPage(p)}
+                          disabled={recFetching}
+                          className={`inline-flex items-center justify-center min-w-7 h-7 px-1.5 text-xs rounded-[2px] border transition-all disabled:cursor-not-allowed ${
+                            isCurrent
+                              ? "border-primary/60 text-primary bg-primary/5"
+                              : "border-border/50 text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      );
+                    })}
+
+                    <button
+                      onClick={() => setRecPage((p) => Math.min(recData.totalPages, p + 1))}
+                      disabled={recData.page >= recData.totalPages || recFetching}
+                      aria-label="Next page"
+                      className="inline-flex items-center justify-center w-7 h-7 text-xs rounded-[2px] border border-border/50 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <ChevronDown className="w-3.5 h-3.5 -rotate-90" />
                     </button>
                   </div>
                 )}
