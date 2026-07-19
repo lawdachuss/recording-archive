@@ -49,11 +49,16 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
 
     const SELECT_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at,links";
 
+    const validLinks = (r: any) =>
+      r.links && typeof r.links === "object" && Object.keys(r.links).length > 0;
+
+    const OVERFETCH_MULTIPLIER = 4;
+
     const [countResult, dataResult] = await Promise.all([
       applyFilters(supabase.from("recordings_with_links").select("*", { count: "exact", head: true })),
       applyFilters(supabase.from("recordings_with_links").select(SELECT_COLS))
         .order(orderCol, { ascending, nullsFirst: false })
-        .range(offset, offset + normalizedLimit - 1),
+        .range(offset, offset + normalizedLimit * OVERFETCH_MULTIPLIER - 1),
     ]);
 
     if (dataResult.error) {
@@ -63,9 +68,7 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     }
 
     const total = countResult.count ?? 0;
-    const validLinks = (r: any) =>
-      r.links && typeof r.links === "object" && Object.keys(r.links).length > 0;
-    const rows = (dataResult.data ?? []).filter(validLinks);
+    const rows = (dataResult.data ?? []).filter(validLinks).slice(0, normalizedLimit);
 
     res.json({
       data: rows,

@@ -60722,6 +60722,7 @@ var ListRecordingsResponse = objectType({
     "sprite_url": stringType().nullish(),
     "embed_url": stringType().nullish(),
     "preview_url": stringType().nullish(),
+    "sprite_vtt_url": stringType().nullish(),
     "instance_id": stringType().nullish(),
     "created_at": stringType(),
     "updated_at": stringType().nullish()
@@ -60750,6 +60751,7 @@ var GetRecordingResponse = objectType({
   "sprite_url": stringType().nullish(),
   "embed_url": stringType().nullish(),
   "preview_url": stringType().nullish(),
+  "sprite_vtt_url": stringType().nullish(),
   "instance_id": stringType().nullish(),
   "created_at": stringType(),
   "updated_at": stringType().nullish()
@@ -60776,6 +60778,7 @@ var ListRelatedRecordingsResponseItem = objectType({
   "sprite_url": stringType().nullish(),
   "embed_url": stringType().nullish(),
   "preview_url": stringType().nullish(),
+  "sprite_vtt_url": stringType().nullish(),
   "instance_id": stringType().nullish(),
   "created_at": stringType(),
   "updated_at": stringType().nullish()
@@ -60813,6 +60816,7 @@ var GetPerformerResponse = objectType({
     "sprite_url": stringType().nullish(),
     "embed_url": stringType().nullish(),
     "preview_url": stringType().nullish(),
+    "sprite_vtt_url": stringType().nullish(),
     "instance_id": stringType().nullish(),
     "created_at": stringType(),
     "updated_at": stringType().nullish()
@@ -70403,10 +70407,12 @@ router2.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["re
     const offset = (normalizedPage - 1) * normalizedLimit;
     const orderCol = sort === "oldest" ? "timestamp" : sort === "largest" ? "filesize" : sort === "popular" ? "viewers" : "timestamp";
     const ascending = sort === "oldest";
-    const SELECT_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at,links";
+    const SELECT_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,sprite_vtt_url,instance_id,created_at,updated_at,links";
+    const validLinks = (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0;
+    const OVERFETCH_MULTIPLIER = 4;
     const [countResult, dataResult] = await Promise.all([
       applyFilters2(supabase.from("recordings_with_links").select("*", { count: "exact", head: true })),
-      applyFilters2(supabase.from("recordings_with_links").select(SELECT_COLS)).order(orderCol, { ascending, nullsFirst: false }).range(offset, offset + normalizedLimit - 1)
+      applyFilters2(supabase.from("recordings_with_links").select(SELECT_COLS)).order(orderCol, { ascending, nullsFirst: false }).range(offset, offset + normalizedLimit * OVERFETCH_MULTIPLIER - 1)
     ]);
     if (dataResult.error) {
       req.log.error({ err: dataResult.error }, "Supabase error listing recordings");
@@ -70414,8 +70420,7 @@ router2.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["re
       return;
     }
     const total = countResult.count ?? 0;
-    const validLinks = (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0;
-    const rows = (dataResult.data ?? []).filter(validLinks);
+    const rows = (dataResult.data ?? []).filter(validLinks).slice(0, normalizedLimit);
     res.json({
       data: rows,
       total,
@@ -89478,35 +89483,44 @@ router6.post("/reactions", invalidateOnSuccess(["reactions", "stats"]), async (r
       res.status(400).json({ error: "type must be 'like' or 'dislike'" });
       return;
     }
-    const existing = await db.execute(sql`
-      SELECT id, type FROM reactions
-      WHERE recording_id = ${recording_id} AND session_id = ${session_id}
-    `);
-    const existingRow = existing.rows[0];
-    if (existingRow) {
-      if (existingRow.type === type) {
-        await db.execute(sql`
-          DELETE FROM reactions
-          WHERE recording_id = ${recording_id} AND session_id = ${session_id}
-        `);
+    await db.transaction(async (tx) => {
+      const existing = await tx.execute(sql`
+        SELECT id, type FROM reactions
+        WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+        FOR UPDATE
+      `);
+      const existingRow = existing.rows[0];
+      if (existingRow) {
+        if (existingRow.type === type) {
+          await tx.execute(sql`
+            DELETE FROM reactions
+            WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+          `);
+        } else {
+          await tx.execute(sql`
+            UPDATE reactions SET type = ${type}
+            WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+          `);
+        }
       } else {
-        await db.execute(sql`
-          UPDATE reactions SET type = ${type}
-          WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+        await tx.execute(sql`
+          INSERT INTO reactions (recording_id, session_id, type)
+          VALUES (${recording_id}, ${session_id}, ${type})
         `);
       }
-    } else {
-      await db.execute(sql`
-        INSERT INTO reactions (recording_id, session_id, type)
-        VALUES (${recording_id}, ${session_id}, ${type})
-      `);
-    }
+    });
     const counts = await getReactionCounts(recording_id);
     const user_reaction = await getUserReaction(recording_id, session_id);
     res.json({ ...counts, user_reaction });
   } catch (err) {
-    req.log?.error?.({ err, recording_id: req.body.recording_id }, "POST /reactions error");
-    res.status(500).json({ error: "Failed to process reaction" });
+    try {
+      req.log?.error?.({ err, body: req.body, recording_id: req.body?.recording_id }, "POST /reactions error");
+      const msg = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : void 0;
+      res.status(500).json({ error: "Failed to process reaction", detail: msg, stack });
+    } catch (logErr) {
+      res.status(500).json({ error: "Failed to process reaction", catchError: String(logErr) });
+    }
   }
 });
 router6.get("/recordings/:recording_id/reactions", cache({ ttlSeconds: 15, staleSeconds: 60, tags: ["reactions"] }), async (req, res) => {
@@ -89533,29 +89547,32 @@ router6.post("/recordings/:recording_id/reactions", invalidateOnSuccess(["reacti
       res.status(400).json({ error: "type must be 'like' or 'dislike'" });
       return;
     }
-    const existing = await db.execute(sql`
-      SELECT id, type FROM reactions
-      WHERE recording_id = ${recording_id} AND session_id = ${session_id}
-    `);
-    const existingRow = existing.rows[0];
-    if (existingRow) {
-      if (existingRow.type === type) {
-        await db.execute(sql`
-          DELETE FROM reactions
-          WHERE recording_id = ${recording_id} AND session_id = ${session_id}
-        `);
+    await db.transaction(async (tx) => {
+      const existing = await tx.execute(sql`
+        SELECT id, type FROM reactions
+        WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+        FOR UPDATE
+      `);
+      const existingRow = existing.rows[0];
+      if (existingRow) {
+        if (existingRow.type === type) {
+          await tx.execute(sql`
+            DELETE FROM reactions
+            WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+          `);
+        } else {
+          await tx.execute(sql`
+            UPDATE reactions SET type = ${type}
+            WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+          `);
+        }
       } else {
-        await db.execute(sql`
-          UPDATE reactions SET type = ${type}
-          WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+        await tx.execute(sql`
+          INSERT INTO reactions (recording_id, session_id, type)
+          VALUES (${recording_id}, ${session_id}, ${type})
         `);
       }
-    } else {
-      await db.execute(sql`
-        INSERT INTO reactions (recording_id, session_id, type)
-        VALUES (${recording_id}, ${session_id}, ${type})
-      `);
-    }
+    });
     const counts = await getReactionCounts(recording_id);
     const user_reaction = await getUserReaction(recording_id, session_id);
     res.json({ ...counts, user_reaction });
@@ -90820,8 +90837,6 @@ var search_default = router12;
 // src/routes/media-proxy.ts
 var import_express13 = __toESM(require_express2(), 1);
 var ALLOWED_HOSTS = [
-  "pixeldrain.com",
-  "www.pixeldrain.com",
   "img2.pixhost.to",
   "pixhost.to",
   "www.pixhost.to",
@@ -90834,7 +90849,6 @@ var ALLOWED_HOSTS = [
   "xhfbhgklqylmfmfjtgkq.supabase.co",
   "setripupfosilpro.x02.me"
 ];
-var PIXELDRAIN_API_KEY = process.env.PIXELDRAIN_API_KEY ?? "";
 var router13 = (0, import_express13.Router)();
 router13.get("/media", async (req, res) => {
   const rawUrl = req.query.url;
@@ -90862,10 +90876,6 @@ router13.get("/media", async (req, res) => {
       "Accept-Language": "en-US,en;q=0.9",
       Referer: "https://chuglii.in/"
     };
-    if (PIXELDRAIN_API_KEY && parsed.hostname.includes("pixeldrain.com")) {
-      const encoded = Buffer.from(":" + PIXELDRAIN_API_KEY).toString("base64");
-      upstreamHeaders["Authorization"] = "Basic " + encoded;
-    }
     const rangeHeader = req.headers["range"];
     if (rangeHeader) {
       upstreamHeaders["Range"] = rangeHeader;

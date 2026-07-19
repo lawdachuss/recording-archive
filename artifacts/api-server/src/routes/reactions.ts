@@ -70,38 +70,47 @@ router.post("/reactions", invalidateOnSuccess(["reactions", "stats"]), async (re
       return;
     }
 
-    const existing = await db.execute(sql`
-      SELECT id, type FROM reactions
-      WHERE recording_id = ${recording_id} AND session_id = ${session_id}
-    `);
-    const existingRow = existing.rows[0] as unknown as ReactionRow | undefined;
+    await db.transaction(async (tx) => {
+      const existing = await tx.execute(sql`
+        SELECT id, type FROM reactions
+        WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+        FOR UPDATE
+      `);
+      const existingRow = existing.rows[0] as unknown as ReactionRow | undefined;
 
-    if (existingRow) {
-      if (existingRow.type === type) {
-        await db.execute(sql`
-          DELETE FROM reactions
-          WHERE recording_id = ${recording_id} AND session_id = ${session_id}
-        `);
+      if (existingRow) {
+        if (existingRow.type === type) {
+          await tx.execute(sql`
+            DELETE FROM reactions
+            WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+          `);
+        } else {
+          await tx.execute(sql`
+            UPDATE reactions SET type = ${type}
+            WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+          `);
+        }
       } else {
-        await db.execute(sql`
-          UPDATE reactions SET type = ${type}
-          WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+        await tx.execute(sql`
+          INSERT INTO reactions (recording_id, session_id, type)
+          VALUES (${recording_id}, ${session_id}, ${type})
         `);
       }
-    } else {
-      await db.execute(sql`
-        INSERT INTO reactions (recording_id, session_id, type)
-        VALUES (${recording_id}, ${session_id}, ${type})
-      `);
-    }
+    });
 
     const counts = await getReactionCounts(recording_id);
     const user_reaction = await getUserReaction(recording_id, session_id);
 
     res.json({ ...counts, user_reaction });
   } catch (err) {
-    req.log?.error?.({ err, recording_id: req.body.recording_id }, "POST /reactions error");
-    res.status(500).json({ error: "Failed to process reaction" });
+    try {
+      req.log?.error?.({ err, body: req.body, recording_id: req.body?.recording_id }, "POST /reactions error");
+      const msg = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : undefined;
+      res.status(500).json({ error: "Failed to process reaction", detail: msg, stack });
+    } catch (logErr) {
+      res.status(500).json({ error: "Failed to process reaction", catchError: String(logErr) });
+    }
   }
 });
 
@@ -135,30 +144,33 @@ router.post("/recordings/:recording_id/reactions", invalidateOnSuccess(["reactio
       return;
     }
 
-    const existing = await db.execute(sql`
-      SELECT id, type FROM reactions
-      WHERE recording_id = ${recording_id} AND session_id = ${session_id}
-    `);
-    const existingRow = existing.rows[0] as unknown as ReactionRow | undefined;
+    await db.transaction(async (tx) => {
+      const existing = await tx.execute(sql`
+        SELECT id, type FROM reactions
+        WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+        FOR UPDATE
+      `);
+      const existingRow = existing.rows[0] as unknown as ReactionRow | undefined;
 
-    if (existingRow) {
-      if (existingRow.type === type) {
-        await db.execute(sql`
-          DELETE FROM reactions
-          WHERE recording_id = ${recording_id} AND session_id = ${session_id}
-        `);
+      if (existingRow) {
+        if (existingRow.type === type) {
+          await tx.execute(sql`
+            DELETE FROM reactions
+            WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+          `);
+        } else {
+          await tx.execute(sql`
+            UPDATE reactions SET type = ${type}
+            WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+          `);
+        }
       } else {
-        await db.execute(sql`
-          UPDATE reactions SET type = ${type}
-          WHERE recording_id = ${recording_id} AND session_id = ${session_id}
+        await tx.execute(sql`
+          INSERT INTO reactions (recording_id, session_id, type)
+          VALUES (${recording_id}, ${session_id}, ${type})
         `);
       }
-    } else {
-      await db.execute(sql`
-        INSERT INTO reactions (recording_id, session_id, type)
-        VALUES (${recording_id}, ${session_id}, ${type})
-      `);
-    }
+    });
 
     const counts = await getReactionCounts(recording_id);
     const user_reaction = await getUserReaction(recording_id, session_id);
