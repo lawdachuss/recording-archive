@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { QUERY_PRESETS } from "./query-client";
+import { supabase } from "./supabase";
 
 export interface Recording {
   id: string;
@@ -131,6 +132,31 @@ async function fetchApiUncached<T>(
   } finally {
     clearTimeout(timer);
   }
+}
+
+export function useListRecommendations(
+  params: { page?: number; limit?: number; exclude?: string } = {},
+  queryOptions?: { enabled?: boolean; placeholderData?: unknown; staleTime?: number },
+) {
+  const searchParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== "") searchParams.set(key, value.toString());
+  });
+
+  return useQuery({
+    queryKey: ["recommendations", searchParams.toString()],
+    queryFn: async () => {
+      const headers: Record<string, string> = {};
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
+      return fetchApi<ListRecordingsResponse>(`/api/recordings/recommendations?${searchParams}`, {
+        headers,
+      });
+    },
+    enabled: queryOptions?.enabled ?? true,
+    placeholderData: queryOptions?.placeholderData as ListRecordingsResponse | undefined,
+    ...QUERY_PRESETS.page(),
+  });
 }
 
 export function useListPerformers(
