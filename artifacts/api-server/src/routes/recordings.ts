@@ -32,7 +32,11 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     // Apply shared filters to any Supabase query builder
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function applyFilters(q: any) {
+      // The recordings_with_links view uses COALESCE(json_object_agg(...), '{}'::json),
+      // so recordings with no upload links get '{}' (empty object), not NULL.
+      // Filter out both NULL and empty '{}' to only show recordings with actual links.
       q = q.not("links", "is", "null");
+      q = q.not("links", "eq", "{}");
       if (search?.trim()) {
         const term = search.trim();
         q = q.or(`username.ilike.%${term}%,room_title.ilike.%${term}%,filename.ilike.%${term}%`);
@@ -52,7 +56,9 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     const validLinks = (r: any) =>
       r.links && typeof r.links === "object" && Object.keys(r.links).length > 0;
 
-    const OVERFETCH_MULTIPLIER = 4;
+    // Overfetch heavily because the JS validLinks filter below removes rows
+    // with empty links objects (the SQL 'eq' filter may not catch all edge cases).
+    const OVERFETCH_MULTIPLIER = 10;
 
     const [countResult, dataResult] = await Promise.all([
       applyFilters(supabase.from("recordings_with_links").select("*", { count: "exact", head: true })),
