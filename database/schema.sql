@@ -452,10 +452,10 @@ CREATE OR REPLACE VIEW public.recordings_with_links
     r.instance_id,
     r.created_at,
     r.updated_at,
-    COALESCE(json_object_agg(ul.host, ul.url) FILTER (WHERE ul.host IS NOT NULL), '{}'::json) AS links
+    NULLIF(jsonb_object_agg(ul.host, ul.url) FILTER (WHERE ul.host IS NOT NULL), '{}'::jsonb)::json AS links
    FROM recordings r
      LEFT JOIN upload_links ul ON r.id = ul.recording_id
-  GROUP BY r.id;;
+   GROUP BY r.id;;
 
 -- ── Functions ────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.claim_channel(p_channel_id text, p_repo text)

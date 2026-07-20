@@ -16,10 +16,9 @@ router.get("/stats", cache({ ttlSeconds: 600, staleSeconds: 1800, tags: ["stats"
     return;
   }
 
-  // Safety net: remove empty-link rows that slipped through the DB filter
-  const rows = (data ?? []).filter(
-    (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0,
-  );
+  // The optimized view returns NULL (not '{}') for recordings without links,
+  // so the SQL `.not("links", "is", "null")` filter already excludes them.
+  const rows = data ?? [];
 
   const uniquePerformers = new Set(rows.map((r) => r.username)).size;
   const uniqueTags = new Set(rows.flatMap((r) => r.tags ?? [])).size;

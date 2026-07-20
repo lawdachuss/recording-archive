@@ -47,11 +47,8 @@ router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search"
       .limit(4);
 
     if (!perfErr && performers) {
-      const validPerformers = performers.filter(
-        (p) => p.links && typeof p.links === "object" && Object.keys(p.links).length > 0,
-      );
       const seen = new Set<string>();
-      for (const p of validPerformers) {
+      for (const p of performers) {
         if (seen.has(p.username)) continue;
         seen.add(p.username);
         const image = p.thumbnail_url || p.sprite_url || p.preview_url;
@@ -77,10 +74,7 @@ router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search"
       .limit(4);
 
     if (!recErr && recordings) {
-      const validRecordings = recordings.filter(
-        (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0,
-      );
-      for (const r of validRecordings) {
+      for (const r of recordings) {
         const title = r.room_title || r.filename;
         suggestions.push({
           type: "recording",
@@ -100,9 +94,6 @@ router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search"
       .not("links", "is", "null");
 
     if (!tagErr && tags) {
-      const validTags = tags.filter(
-        (t) => t.links && typeof t.links === "object" && Object.keys(t.links).length > 0,
-      );
       const matchedTags = new Set<string>();
       const lowerQ = q.toLowerCase();
 
