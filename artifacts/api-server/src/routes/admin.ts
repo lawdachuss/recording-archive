@@ -49,7 +49,7 @@ router.get("/admin/stats", ...admin, async (_req: Request, res: Response) => {
     count("performers", sql`
         SELECT COUNT(DISTINCT username)::int AS count
         FROM recordings_with_links
-        WHERE links IS NOT NULL AND links::text <> '{}'
+        WHERE links IS NOT NULL
       `),
   ]);
 

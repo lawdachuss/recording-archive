@@ -16,9 +16,9 @@ router.get("/tags", cache({ ttlSeconds: 900, staleSeconds: 1800, tags: ["tags", 
     return;
   }
 
-  const validRows = (data ?? []).filter(
-    (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0,
-  );
+  // The optimized view returns NULL (not '{}') for recordings without links,
+  // so the SQL `.not("links", "is", "null")` filter already excludes them.
+  const validRows = data ?? [];
 
   const tagCounts = new Map<string, number>();
 

@@ -279,10 +279,9 @@ router.get("/performers", cache({ ttlSeconds: 600, staleSeconds: 900, tags: ["pe
       return;
     }
 
-    // Post-filter: only include recordings with non-empty links
-    const validRows = (data ?? []).filter(
-      (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0,
-    );
+    // The optimized view returns NULL (not '{}') for recordings without links,
+    // so the SQL `.not("links", "is", "null")` filter already excludes them.
+    const validRows = data ?? [];
 
     const performerMap = new Map<
       string,
@@ -362,10 +361,9 @@ router.get("/performers/:username", cache({ ttlSeconds: 900, staleSeconds: 1800,
       return;
     }
 
-    // Post-filter: only include recordings with non-empty links
-    const validRecordings = (data ?? []).filter(
-      (r) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0,
-    );
+    // The optimized view returns NULL (not '{}') for recordings without links,
+    // so the SQL `.not("links", "is", "null")` filter already excludes them.
+    const validRecordings = data ?? [];
 
     // Return 404 if no recordings with valid links exist for this performer
     if (validRecordings.length === 0) {

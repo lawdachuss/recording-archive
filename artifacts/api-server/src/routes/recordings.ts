@@ -32,11 +32,7 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     // Apply shared filters to any Supabase query builder
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function applyFilters(q: any) {
-      // The recordings_with_links view uses COALESCE(json_object_agg(...), '{}'::json),
-      // so recordings with no upload links get '{}' (empty object), not NULL.
-      // Filter out both NULL and empty '{}' to only show recordings with actual links.
       q = q.not("links", "is", "null");
-      q = q.not("links", "eq", "{}");
       if (search?.trim()) {
         const term = search.trim();
         q = q.or(`username.ilike.%${term}%,room_title.ilike.%${term}%,filename.ilike.%${term}%`);
@@ -53,18 +49,14 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
 
     const SELECT_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at,links";
 
-    const validLinks = (r: any) =>
-      r.links && typeof r.links === "object" && Object.keys(r.links).length > 0;
-
-    // Overfetch heavily because the JS validLinks filter below removes rows
-    // with empty links objects (the SQL 'eq' filter may not catch all edge cases).
-    const OVERFETCH_MULTIPLIER = 10;
-
+    // The optimized recordings_with_links view returns NULL (not '{}') for
+    // recordings without upload links, so the SQL `.not("links", "is", "null")`
+    // filter is sufficient — no JS post-filter or overfetching needed.
     const [countResult, dataResult] = await Promise.all([
       applyFilters(supabase.from("recordings_with_links").select("*", { count: "exact", head: true })),
       applyFilters(supabase.from("recordings_with_links").select(SELECT_COLS))
         .order(orderCol, { ascending, nullsFirst: false })
-        .range(offset, offset + normalizedLimit * OVERFETCH_MULTIPLIER - 1),
+        .range(offset, offset + normalizedLimit - 1),
     ]);
 
     if (dataResult.error) {
@@ -74,7 +66,7 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     }
 
     const total = countResult.count ?? 0;
-    const rows = (dataResult.data ?? []).filter(validLinks).slice(0, normalizedLimit);
+    const rows = dataResult.data ?? [];
 
     res.json({
       data: rows,
@@ -95,9 +87,8 @@ router.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds: 
     const exclude = typeof req.query.exclude === "string" ? req.query.exclude : undefined;
     const MAX_PAGES = 10;
 
-    const validLinks = (r: any) =>
-      r.links && typeof r.links === "object" && Object.keys(r.links).length > 0;
-
+    // The optimized view returns NULL links for recordings without links,
+    // so the SQL `.not("links", "is", "null")` filter is sufficient.
     const seenIds = new Set<string>(exclude ? [exclude] : []);
 
     // ── Authenticated personalization ──
@@ -144,7 +135,7 @@ router.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds: 
 
     const scored: any[] = [];
     const addScored = (rows: any[] | null, baseScore: number, opts?: { tagBoost?: boolean; performerBoost?: boolean; gender?: string | null }) => {
-      for (const r of (rows ?? []).filter(validLinks)) {
+      for (const r of (rows ?? [])) {
         if (seenIds.has(r.id)) continue;
         let score = baseScore;
         if (isAuthenticated) {
@@ -230,7 +221,8 @@ router.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds: 
 
 router.get("/recordings/random", async (req, res) => {
   try {
-    // Fetch all valid recording IDs (JS post-filter to avoid JSONB count bugs)
+    // The optimized view returns NULL links for recordings without links,
+    // so the SQL `.not("links", "is", "null")` filter is sufficient.
     const { data: allRows, error: fetchError } = await supabase
       .from("recordings_with_links")
       .select("id, links")
@@ -335,9 +327,8 @@ router.get("/recordings/related", async (req, res) => {
       }
     }
 
-    const validLinks = (r: any) =>
-      r.links && typeof r.links === "object" && Object.keys(r.links).length > 0;
-
+    // The optimized view returns NULL links for recordings without links,
+    // so the SQL `.not("links", "is", "null")` filter is sufficient.
     // ── 1. Same performer recordings ──
     const { data: performerData } = await supabase
       .from("recordings_with_links")
@@ -348,7 +339,7 @@ router.get("/recordings/related", async (req, res) => {
       .order("timestamp", { ascending: false })
       .limit(limit);
 
-    const performerResults = (performerData ?? []).filter(validLinks);
+    const performerResults = performerData ?? [];
 
     // ── 2. Tag-based recordings (any overlapping tag) ──
     let tagResults: any[] = [];
@@ -364,7 +355,7 @@ router.get("/recordings/related", async (req, res) => {
         .order("timestamp", { ascending: false })
         .limit(limit * 3);
 
-      tagResults = (tagData ?? []).filter(validLinks);
+      tagResults = tagData ?? [];
 
       // Score: shared tag count + personalization weight
       tagResults = tagResults.map((r: any) => {
@@ -421,7 +412,7 @@ router.get("/recordings/related", async (req, res) => {
         .order("viewers", { ascending: false, nullsFirst: false })
         .limit(limit * 2);
 
-      for (const r of (genderData ?? []).filter(validLinks)) {
+      for (const r of (genderData ?? [])) {
         if (merged.length >= limit) break;
         if (!seen.has(r.id)) { seen.add(r.id); merged.push(r); }
       }
@@ -438,7 +429,7 @@ router.get("/recordings/related", async (req, res) => {
         .order("viewers", { ascending: false, nullsFirst: false })
         .limit(limit * 3);
 
-      for (const r of (popularData ?? []).filter(validLinks)) {
+      for (const r of (popularData ?? [])) {
         if (merged.length >= limit) break;
         if (!seen.has(r.id)) { seen.add(r.id); merged.push(r); }
       }
@@ -474,12 +465,6 @@ router.get("/recordings/:id", cache({ ttlSeconds: 600, staleSeconds: 900, tags: 
       return;
     }
     if (!data) {
-      res.status(404).json({ error: "Recording not found" });
-      return;
-    }
-
-    // Verify the recording has non-empty links
-    if (!data.links || typeof data.links !== "object" || Object.keys(data.links).length === 0) {
       res.status(404).json({ error: "Recording not found" });
       return;
     }

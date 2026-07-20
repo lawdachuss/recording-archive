@@ -4,10 +4,7 @@ const pool = new pg.Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// First remove the existing view
 await pool.query('DROP VIEW IF EXISTS recordings_with_links CASCADE');
-
-// Recreate with sprite_vtt_url included
 await pool.query(`
 CREATE VIEW recordings_with_links AS
  SELECT r.id,
@@ -31,16 +28,18 @@ CREATE VIEW recordings_with_links AS
     r.instance_id,
     r.created_at,
     r.updated_at,
-    COALESCE(json_object_agg(ul.host, ul.url) FILTER (WHERE ul.host IS NOT NULL), '{}'::json) AS links
+    NULLIF(jsonb_object_agg(ul.host, ul.url) FILTER (WHERE ul.host IS NOT NULL), '{}'::jsonb)::json AS links
    FROM recordings r
      LEFT JOIN upload_links ul ON r.id = ul.recording_id
   GROUP BY r.id;
 `);
 
-console.log('View recreated successfully');
-
-// Verify the column is now in the view
-const res = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'recordings_with_links' AND column_name = 'sprite_vtt_url'");
-console.log('sprite_vtt_url in view:', res.rows.length > 0 ? 'YES' : 'NO');
-
+const res = await pool.query(`
+  SELECT
+    COUNT(*) FILTER (WHERE links IS NULL) AS null_links,
+    COUNT(*) FILTER (WHERE links IS NOT NULL AND links::text = '{}') AS empty_links,
+    COUNT(*) FILTER (WHERE links IS NOT NULL AND links::text <> '{}') AS real_links
+  FROM recordings_with_links
+`);
+console.log('After NULLIF fix:', res.rows[0]);
 await pool.end();
