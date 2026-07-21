@@ -17,9 +17,8 @@ async function main() {
     platform: "node",
     bundle: true,
     format: "esm",
-    // Output to the video-archive api/ directory where Vercel expects serverless functions
-    // This must be inside the Vercel project root (artifacts/video-archive/api/index.mjs)
-    outfile: path.resolve(dir, "../video-archive/api/index.mjs"),
+    // Output to root api/ directory where Vercel detects serverless functions
+    outfile: path.resolve(dir, "../../api/index.mjs"),
     logLevel: "info",
     external: [
       "*.node",

@@ -15,7 +15,7 @@ import { CommentSection } from "@/components/CommentSection";
 import { VideoCard } from "@/components/VideoCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OptimizedImage } from "@/components/ui/optimized-image";
-import { formatBytes, formatRelativeTime } from "@/lib/formatters";
+import { formatBytes, formatRelativeTime, formatDuration } from "@/lib/formatters";
 import { getSessionId } from "@/lib/session";
 import { trackView, useListRecommendations } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -24,9 +24,9 @@ import { addWatchedId } from "@/lib/watched-storage";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 
 import {
-  Eye, HardDrive, MonitorPlay, AlertCircle, ArrowLeft, Maximize2, Minimize2,
-  Calendar, User, Tag, Clapperboard, ThumbsUp, ThumbsDown, Bookmark, Share2,
-  Check, Server, Film, Download, Clock, Play, Code2, ListVideo, Shuffle,
+  AlertCircle, ArrowLeft, Maximize2, Minimize2,
+  User, Clapperboard, ThumbsUp, ThumbsDown, Bookmark, Share2,
+  Check, Server, Download, Clock, Play, Code2, ListVideo, Shuffle,
   FolderPlus, Plus, ChevronDown, ExternalLink, LogIn, CheckCircle,
 } from "lucide-react";
 
@@ -193,6 +193,7 @@ export default function VideoDetail() {
     data: recData,
     isLoading: recLoading,
     isFetching: recFetching,
+    isError: recError,
   } = useListRecommendations(
     { page: recPage, limit: REC_PAGE_SIZE, exclude: id },
     { enabled: !!id, placeholderData: keepPreviousData },
@@ -335,15 +336,52 @@ export default function VideoDetail() {
   const currentServer = servers[activeServer] ?? servers[0];
 
   const handleReaction = (type: "like" | "dislike") => {
-    if (!id || !user) return;
+    if (!id) return;
+
+    const queryKey = getGetReactionsQueryKey({ recording_id: id, session_id: sessionId });
+
+    // Cancel any in-flight refetches so they don't overwrite our optimistic update
+    queryClient.cancelQueries({ queryKey });
+
+    // Snapshot previous value for rollback
+    const previousReactions = queryClient.getQueryData(queryKey);
+
+    // Optimistic update — UI responds instantly
+    queryClient.setQueryData(queryKey, (old: unknown) => {
+      const current = (old as { likes: number; dislikes: number; user_reaction?: string | null }) ?? { likes: 0, dislikes: 0, user_reaction: null };
+      const prevReaction = current.user_reaction;
+
+      if (prevReaction === type) {
+        // Toggle off
+        return {
+          ...current,
+          [type === "like" ? "likes" : "dislikes"]: Math.max(0, (current[type === "like" ? "likes" : "dislikes"] ?? 0) - 1),
+          user_reaction: null,
+        };
+      }
+
+      // Toggle on or switch
+      const result = { ...current };
+      if (prevReaction) {
+        result[prevReaction === "like" ? "likes" : "dislikes"] = Math.max(0, (result[prevReaction === "like" ? "likes" : "dislikes"] ?? 0) - 1);
+      }
+      result[type === "like" ? "likes" : "dislikes"] = (result[type === "like" ? "likes" : "dislikes"] ?? 0) + 1;
+      result.user_reaction = type;
+      return result;
+    });
+
     toggleReaction.mutate(
       { data: { recording_id: id, type, session_id: sessionId } },
       {
-        onSuccess: () => {
-          // invalidateQueries marks the query stale so it refetches on next observe
-          queryClient.invalidateQueries({
-            queryKey: getGetReactionsQueryKey({ recording_id: id, session_id: sessionId }),
-          });
+        onSuccess: (data) => {
+          // Use the exact server response to avoid race conditions
+          queryClient.setQueryData(queryKey, data);
+        },
+        onError: () => {
+          // Rollback on failure
+          if (previousReactions) {
+            queryClient.setQueryData(queryKey, previousReactions);
+          }
         },
       },
     );
@@ -621,59 +659,44 @@ export default function VideoDetail() {
               </div>
             ) : video ? (
               <div className="space-y-5">
-                {/* Title + performer */}
+                {/* Performer name — large heading */}
                 <div>
-                  <h1 className="text-base sm:text-lg font-bold tracking-tight leading-snug mb-2">
-                    {video.room_title || video.filename}
-                  </h1>
                   <Link
                     href={`/performers/${video.username}`}
-                    className="inline-flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 font-medium transition-colors"
+                    className="text-xl sm:text-2xl font-bold tracking-tight text-foreground hover:text-primary transition-colors"
                   >
-                    <User className="w-3.5 h-3.5" />
                     {video.username}
                   </Link>
                 </div>
 
-                {/* Metadata strip */}
-                <div className="flex flex-wrap gap-3 sm:gap-5 py-4 border-y border-border/40 text-xs text-muted-foreground">
+                {/* Compact metadata — pipe-separated, no icons */}
+                <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground/70">
+                  {video.timestamp && (
+                    <span>{new Date(video.timestamp).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                  )}
                   {video.viewers != null && video.viewers > 0 && (
-                    <span className="flex items-center gap-1.5">
-                      <Eye className="w-3.5 h-3.5 text-primary/60" />
-                      <strong className="text-foreground">{video.viewers.toLocaleString()}</strong>{" "}
-                      viewers
-                    </span>
+                    <><span className="text-muted-foreground/30">|</span><span>{video.viewers.toLocaleString()} views</span></>
                   )}
                   {video.resolution && (
-                    <span className="flex items-center gap-1.5">
-                      <MonitorPlay className="w-3.5 h-3.5 text-primary/60" />
-                      <strong className="text-foreground">{video.resolution}</strong>
-                    </span>
+                    <><span className="text-muted-foreground/30">|</span><span>{video.resolution}</span></>
                   )}
-                  {video.framerate && (
-                    <span className="flex items-center gap-1.5">
-                      <Film className="w-3.5 h-3.5 text-primary/60" />
-                      <strong className="text-foreground">{video.framerate}fps</strong>
-                    </span>
+                  {video.duration != null && video.duration > 0 && (
+                    <><span className="text-muted-foreground/30">|</span><span>{formatDuration(video.duration)}</span></>
                   )}
                   {video.filesize ? (
-                    <span className="flex items-center gap-1.5">
-                      <HardDrive className="w-3.5 h-3.5 text-primary/60" />
-                      <strong className="text-foreground">{formatBytes(video.filesize)}</strong>
-                    </span>
+                    <><span className="text-muted-foreground/30">|</span><span>{formatBytes(video.filesize)}</span></>
                   ) : null}
-                  {video.timestamp && (
-                    <span className="flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-primary/60" />
-                      {formatRelativeTime(video.timestamp)}
-                    </span>
-                  )}
                 </div>
+
+                {/* Room topic (if available) */}
+                {video.room_title && video.room_title !== video.username && (
+                  <p className="text-sm text-muted-foreground/50 italic leading-relaxed">
+                    {video.room_title}
+                  </p>
+                )}
 
                 {/* Action bar */}
                 <div className="flex flex-wrap items-center gap-2">
-                  {user ? (
-                    <>
                   <button
                     onClick={() => handleReaction("like")}
                     className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border transition-all ${
@@ -700,6 +723,7 @@ export default function VideoDetail() {
                     Dislike
                   </button>
 
+                  {user && (
                   <button
                     onClick={handleBookmark}
                     className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border transition-all ${
@@ -711,7 +735,9 @@ export default function VideoDetail() {
                     <Bookmark className={`w-3.5 h-3.5 ${bookmarked ? "fill-amber-500" : ""}`} />
                     {bookmarked ? "Saved" : "Save"}
                   </button>
+                  )}
 
+                  {user && (
                   <button
                     onClick={handleWatchLater}
                     className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border transition-all ${
@@ -723,8 +749,7 @@ export default function VideoDetail() {
                     <ListVideo className="w-3.5 h-3.5" />
                     {watchLater ? "Queued" : "Watch Later"}
                   </button>
-                    </>
-                  ) : null}
+                  )}
 
                   <button
                     onClick={handleShare}
@@ -839,13 +864,16 @@ export default function VideoDetail() {
                   )}
                 </div>
 
-                {/* Sign-in prompt for unauthenticated users */}
-                {!user && (
-                  <div className="flex items-center gap-2 p-3 border border-border/40 rounded-sm bg-secondary">
-                    <LogIn className="w-4 h-4 text-muted-foreground/40" />
-                    <p className="text-xs text-muted-foreground/60">
-                      <Link href="/login" className="text-primary hover:underline font-medium">Sign in</Link> to like, save, or add to collections
-                    </p>
+                {/* Tags */}
+                {video.tags && video.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {video.tags.map((tag) => (
+                      <Link key={tag} href={`/browse?tags=${encodeURIComponent(tag)}`}>
+                        <span className="inline-block px-2.5 py-1 text-[11px] border border-border/50 text-muted-foreground hover:border-primary/50 hover:text-primary hover:bg-primary/5 transition-all cursor-pointer rounded-[2px]">
+                          {tag}
+                        </span>
+                      </Link>
+                    ))}
                   </div>
                 )}
 
@@ -865,22 +893,13 @@ export default function VideoDetail() {
                   </div>
                 )}
 
-                {/* Tags */}
-                {video.tags && video.tags.length > 0 && (
-                  <div className="space-y-3">
-                    <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.25em] text-muted-foreground font-semibold">
-                      <Tag className="w-3 h-3" />
-                      Tags
+                {/* Sign-in prompt for unauthenticated users */}
+                {!user && (
+                  <div className="flex items-center gap-2 p-3 border border-border/40 rounded-sm bg-secondary">
+                    <LogIn className="w-4 h-4 text-muted-foreground/40" />
+                    <p className="text-xs text-muted-foreground/60">
+                      <Link href="/login" className="text-primary hover:underline font-medium">Sign in</Link> to like, save, or add to collections
                     </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {video.tags.map((tag) => (
-                        <Link key={tag} href={`/browse?tags=${encodeURIComponent(tag)}`}>
-                          <span className="inline-block px-2.5 py-1 text-[11px] border border-border/50 text-muted-foreground hover:border-primary/50 hover:text-primary hover:bg-primary/5 transition-all cursor-pointer rounded-[2px]">
-                            {tag}
-                          </span>
-                        </Link>
-                      ))}
-                    </div>
                   </div>
                 )}
 
@@ -1009,6 +1028,8 @@ export default function VideoDetail() {
                   </div>
                 ))}
               </div>
+            ) : recError ? (
+              <p className="text-xs text-destructive/60">Could not load recommendations.</p>
             ) : recData && recData.data.filter((r) => r.id !== id).length > 0 ? (
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">

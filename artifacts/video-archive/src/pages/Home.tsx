@@ -6,7 +6,7 @@ import {
   getListRecordingsQueryKey,
   getListTagsQueryKey,
 } from "@workspace/api-client-react";
-import { useListPerformers } from "@/lib/api";
+import { useListPerformers, useListRecommendations } from "@/lib/api";
 import { Link, useLocation } from "wouter";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
@@ -18,7 +18,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { userApi, parseCloudItem, type PerformerFollow } from "@/lib/user-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
-import { Search, ArrowRight, TrendingUp, Clock, Heart, Bookmark, ThumbsUp, Users, Tags, Clapperboard } from "lucide-react";
+import { Search, ArrowRight, TrendingUp, Sparkles, Clock, Heart, Bookmark, ThumbsUp, Users, Tags, Clapperboard } from "lucide-react";
 
 type Tab = "recent" | "popular";
 
@@ -140,18 +140,19 @@ export default function Home() {
     popularParams,
     { query: { queryKey: getListRecordingsQueryKey(popularParams), staleTime: 30_000, placeholderData: keepPreviousData } },
   );
-  const mostViewedParams = { limit: 8, sort: "popular" as const };
-  const { data: mostViewedData, isLoading: mostViewedLoading } = useListRecordings(
-    mostViewedParams,
-    { query: { queryKey: getListRecordingsQueryKey(mostViewedParams), staleTime: 30_000, placeholderData: keepPreviousData } },
+  const recentlyWatched = useRecentlyWatched();
+  const excludeIds = recentlyWatched.size > 0 ? [...recentlyWatched].join(",") : undefined;
+  const { data: recData, isLoading: recLoading, isFetching: recFetching } = useListRecommendations(
+    { limit: 8, exclude: excludeIds },
+    { enabled: true, staleTime: 0 },
   );
-  const mostViewed = mostViewedData?.data ?? [];
+  const recommendations = recData?.data ?? [];
+  const recLoadingOrFetching = recLoading || recFetching;
 
   const { data: topPerformersData } = useListPerformers(undefined, { staleTime: 30_000 });
   const topPerformers = topPerformersData?.performers ?? [];
   const { data: tags } = useListTags({ query: { queryKey: getListTagsQueryKey(), staleTime: 30_000 } });
 
-  const recentlyWatched = useRecentlyWatched();
   const recordings = tab === "recent" ? recentData?.data : popularData?.data;
   const loading = tab === "recent" ? recentLoading : popularLoading;
 
@@ -283,25 +284,27 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Most Viewed */}
-      {mostViewed.length > 0 && (
+      {/* You might like these — personalized recommendations */}
+      {recommendations.length > 0 && (
         <section className="border-t border-border/50 px-4 sm:px-6 py-14 relative overflow-hidden">
           <div className="pattern-square absolute inset-0 pointer-events-none opacity-20" aria-hidden="true" />
           <div className="container mx-auto relative">
             <div className="flex items-center justify-between mb-8">
-              <h2 className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold">
-                <TrendingUp className="w-3.5 h-3.5 text-primary" />
-                Most Viewed
-              </h2>
-              <Link
-                href="/browse?sort=popular"
-                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors group"
-              >
-                View all <ArrowRight className="w-3 h-3 transition-transform duration-200 group-hover:translate-x-0.5" />
-              </Link>
+              <div className="flex items-center gap-3">
+                <div className="w-0.5 h-8 bg-primary/60 rounded-full shrink-0" aria-hidden="true" />
+                <div>
+                  <h2 className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold">
+                    <Sparkles className="w-3.5 h-3.5 text-primary" />
+                    You might like these
+                  </h2>
+                  <p className="text-[11px] text-muted-foreground/40 mt-0.5">
+                    {user ? "Based on your activity" : "Trending now"}
+                  </p>
+                </div>
+              </div>
             </div>
 
-            {mostViewedLoading ? (
+            {recLoadingOrFetching ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-8">
                 {Array.from({ length: 8 }).map((_, i) => (
                   <VideoSkeleton key={i} />
@@ -309,7 +312,7 @@ export default function Home() {
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-8 animate-fade-in-up">
-                {mostViewed.map((rec, i) => (
+                {recommendations.map((rec, i) => (
                   <div key={rec.id}>
                     <VideoCard key={rec.id} recording={rec} fetchPriority={i < 2 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
                   </div>

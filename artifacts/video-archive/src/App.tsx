@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { Component, lazy, Suspense, useEffect } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -12,6 +12,7 @@ import { initCache } from "@/lib/cache";
 // Home is eagerly imported for instant first paint (landing page)
 // All other pages are lazy-loaded — fetched on-demand when navigated to
 import Home from "@/pages/Home";
+import RandomRedirect from "@/pages/RandomRedirect";
 const Browse = lazy(() => import("@/pages/Browse"));
 const VideoDetail = lazy(() => import("@/pages/VideoDetail"));
 const PerformersList = lazy(() => import("@/pages/PerformersList"));
@@ -20,7 +21,6 @@ const TagsPage = lazy(() => import("@/pages/TagsPage"));
 const Bookmarks = lazy(() => import("@/pages/Bookmarks"));
 const History = lazy(() => import("@/pages/History"));
 const WatchLater = lazy(() => import("@/pages/WatchLater"));
-const RandomRedirect = lazy(() => import("@/pages/RandomRedirect"));
 const Charts = lazy(() => import("@/pages/Charts"));
 const Collections = lazy(() => import("@/pages/Collections"));
 const CollectionDetail = lazy(() => import("@/pages/CollectionDetail"));
@@ -56,9 +56,32 @@ function scheduleIdleWork(task: () => void, timeout = 1_500) {
   requestIdle(task, { timeout });
 }
 
+// Catches chunk load errors (stale JS from new deployment) and recovers
+class ChunkLoadErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    if (error instanceof Error && (error.name === "ChunkLoadError" || error.message?.includes("dynamically imported"))) {
+      // Force a fresh load from the new deployment
+      window.location.reload();
+    } else {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    return this.state.hasError ? <PageLoading /> : this.props.children;
+  }
+}
+
 function Router() {
   return (
     <Suspense fallback={<PageLoading />}>
+      <ChunkLoadErrorBoundary>
       <Switch>
         <Route path="/" component={Home} />
         <Route path="/browse" component={Browse} />
@@ -108,6 +131,7 @@ function Router() {
         </Route>
         <Route component={NotFound} />
       </Switch>
+      </ChunkLoadErrorBoundary>
     </Suspense>
   );
 }
