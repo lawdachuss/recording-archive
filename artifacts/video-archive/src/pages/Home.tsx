@@ -18,7 +18,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { userApi, parseCloudItem, type PerformerFollow } from "@/lib/user-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
-import { Search, ArrowRight, TrendingUp, Sparkles, Clock, Heart, Bookmark, ThumbsUp, Users, Tags, Clapperboard } from "lucide-react";
+import { Search, ArrowRight, TrendingUp, Star, Clock, Heart, Bookmark, ThumbsUp, Users, Tags, Clapperboard } from "lucide-react";
 
 type Tab = "recent" | "popular";
 
@@ -142,12 +142,11 @@ export default function Home() {
   );
   const recentlyWatched = useRecentlyWatched();
   const excludeIds = recentlyWatched.size > 0 ? [...recentlyWatched].join(",") : undefined;
-  const { data: recData, isLoading: recLoading, isFetching: recFetching } = useListRecommendations(
+  const { data: recData, isLoading: recLoading } = useListRecommendations(
     { limit: 8, exclude: excludeIds },
-    { enabled: true, staleTime: 0 },
+    { enabled: true, placeholderData: keepPreviousData },
   );
   const recommendations = recData?.data ?? [];
-  const recLoadingOrFetching = recLoading || recFetching;
 
   const { data: topPerformersData } = useListPerformers(undefined, { staleTime: 30_000 });
   const topPerformers = topPerformersData?.performers ?? [];
@@ -285,7 +284,7 @@ export default function Home() {
       </section>
 
       {/* You might like these — personalized recommendations */}
-      {recommendations.length > 0 && (
+      {(recommendations.length > 0 || recLoading) && (
         <section className="border-t border-border/50 px-4 sm:px-6 py-14 relative overflow-hidden">
           <div className="pattern-square absolute inset-0 pointer-events-none opacity-20" aria-hidden="true" />
           <div className="container mx-auto relative">
@@ -294,7 +293,7 @@ export default function Home() {
                 <div className="w-0.5 h-8 bg-primary/60 rounded-full shrink-0" aria-hidden="true" />
                 <div>
                   <h2 className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold">
-                    <Sparkles className="w-3.5 h-3.5 text-primary" />
+                    <Star className="w-3.5 h-3.5 text-primary" />
                     You might like these
                   </h2>
                   <p className="text-[11px] text-muted-foreground/40 mt-0.5">
@@ -304,7 +303,7 @@ export default function Home() {
               </div>
             </div>
 
-            {recLoadingOrFetching ? (
+            {recLoading ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-8">
                 {Array.from({ length: 8 }).map((_, i) => (
                   <VideoSkeleton key={i} />
