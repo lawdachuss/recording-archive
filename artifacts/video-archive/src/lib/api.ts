@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import { useRef } from "react";
 import { QUERY_PRESETS } from "./query-client";
 import { supabase } from "./supabase";
 
@@ -138,10 +139,14 @@ export function useListRecommendations(
   params: { page?: number; limit?: number; exclude?: string } = {},
   queryOptions?: { enabled?: boolean; placeholderData?: unknown; staleTime?: number },
 ) {
+  // Stable per-mount seed — changes on page reload, busts React Query cache
+  const seed = useRef(Date.now());
+
   const searchParams = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== "") searchParams.set(key, value.toString());
   });
+  searchParams.set("_t", String(seed.current));
 
   return useQuery({
     queryKey: ["recommendations", searchParams.toString()],
