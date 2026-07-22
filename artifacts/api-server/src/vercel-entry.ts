@@ -2,6 +2,7 @@
 // This file is bundled into api/index.mjs by esbuild (vercel-build.mjs).
 // The source lives here (outside the Vercel api/ directory) to avoid
 // path conflicts with the pre-bundled output that Vercel deploys.
+import serverless from "serverless-http";
 import app from "./app.js";
 
-export default app;
+export default serverless(app);
