@@ -108,8 +108,53 @@ router.patch("/admin/requests/:id/status", ...admin, async (req: Request, res: R
       return;
     }
 
+    const updated = result.rows[0] as {
+      id: number;
+      user_id: string;
+      platform: string;
+      performer_username: string | null;
+      status: string;
+    };
+
     logger.info({ requestId: id, newStatus: status, adminId: req.user!.id }, "Request status updated by admin");
-    res.json(result.rows[0]);
+
+    // ── Notify the requester ───────────────────────────────────────────────
+    const statusLabels: Record<string, string> = {
+      approved: "approved ✓",
+      rejected: "rejected ✗",
+      done: "completed ✓",
+      pending: "pending",
+    };
+    const performerName = updated.performer_username ?? "a performer";
+    const newLabel = statusLabels[updated.status] ?? updated.status;
+    const message = `Your request for @${performerName} on ${updated.platform} has been ${newLabel}.`;
+
+    try {
+      const [prefRow] = (await db.execute(sql`
+        SELECT enabled FROM user_notification_preferences
+        WHERE user_id = ${updated.user_id} AND notification_type = 'request_status'
+        LIMIT 1
+      `)).rows;
+      const enabled = prefRow ? prefRow.enabled : true; // default: enabled
+      if (enabled) {
+        await db.execute(sql`
+          INSERT INTO user_notifications (user_id, type, message, related_id, is_read, created_at)
+          VALUES (
+            ${updated.user_id},
+            'request_status',
+            ${message},
+            ${String(updated.id)},
+            false,
+            NOW()
+          )
+        `);
+      }
+    } catch (notifErr) {
+      // Non-critical — don't fail the whole request if notification insert fails
+      req.log?.error?.({ err: notifErr, requestId: id }, "Failed to create notification for request status change");
+    }
+
+    res.json(updated);
   } catch (err) {
     req.log?.error?.({ err }, "PATCH /admin/requests/:id/status error");
     res.status(500).json({ error: "Failed to update status" });

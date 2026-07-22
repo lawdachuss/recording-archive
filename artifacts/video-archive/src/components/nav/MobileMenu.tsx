@@ -7,6 +7,7 @@ const LIBRARY_LINKS = [
   { href: "/collections", label: "Collections", icon: FolderOpen },
   { href: "/watch-later", label: "Watch Later", icon: Clock },
   { href: "/history", label: "History", icon: History },
+  { href: "/my-requests", label: "My Requests", icon: Send },
   { href: "/following", label: "Following", icon: Heart },
 ] as const;
 

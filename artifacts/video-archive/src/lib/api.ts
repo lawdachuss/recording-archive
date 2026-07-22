@@ -288,8 +288,59 @@ export function usePerformerLookup(platform: string, username: string) {
       return fetchApi<PerformerLookupResult>(`/api/performers/lookup?${params}`);
     },
     enabled: !!platform && username.length >= 2,
-    staleTime: 5 * 60_000,
-    retry: false,
+    // Short staleTime so re-checking a performer re-fetches from server.
+    // The server-side cache (Redis) still protects against repeated fetches to Stripchat.
+    staleTime: 30_000,
+    gcTime: 60_000,
+    retry: 1,
+    retryDelay: 1000,
+  });
+}
+
+export interface UserRequest {
+  id: number;
+  user_id: string;
+  platform: string;
+  performer_username: string | null;
+  stream_link: string | null;
+  notes: string | null;
+  priority: string;
+  status: string;
+  created_at: string;
+}
+
+export function useMyRequests(queryOptions?: { enabled?: boolean }) {
+  const seed = useRef(Date.now());
+  return useQuery({
+    queryKey: ["my-requests", seed.current],
+    queryFn: async () => {
+      const { supabase } = await import("@/lib/supabase");
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: Record<string, string> = {};
+      if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
+      return fetchApi<UserRequest[]>("/api/requests", { headers });
+    },
+    enabled: queryOptions?.enabled ?? true,
+    staleTime: 10_000,
+  });
+}
+
+export function useDeleteRequest() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const { supabase } = await import("@/lib/supabase");
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      return fetchApi<{ ok: boolean }>(`/api/requests/${id}`, {
+        method: "DELETE",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["my-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["requests"] });
+    },
   });
 }
 

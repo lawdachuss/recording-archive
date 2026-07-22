@@ -174,6 +174,29 @@ export const userApi = {
     apiFetch<UserNotification[]>("/api/user/notifications"),
   markAllRead: () =>
     apiFetch("/api/user/notifications/read-all", { method: "PUT" }),
+  markAsRead: (id: number) =>
+    apiFetch(`/api/user/notifications/${id}/read`, { method: "PUT" }),
+  markAsReadBatch: (ids: number[]) =>
+    apiFetch("/api/user/notifications/read-batch", {
+      method: "PUT",
+      body: JSON.stringify({ ids }),
+    }),
   deleteNotification: (id: number) =>
     apiFetch(`/api/user/notifications/${id}`, { method: "DELETE" }),
+
+  getNotificationPreferences: () =>
+    apiFetch<{ type: string; enabled: boolean; email_enabled: boolean }[]>("/api/user/notification-preferences"),
+  updateNotificationPreferences: (preferences: { type: string; enabled: boolean; email_enabled?: boolean }[]) =>
+    apiFetch("/api/user/notification-preferences", {
+      method: "PUT",
+      body: JSON.stringify({ preferences }),
+    }),
+
+  getSoundPreferences: () =>
+    apiFetch<{ sound_enabled: boolean; vibration_enabled: boolean }>("/api/user/sound-preferences"),
+  updateSoundPreferences: (data: { sound_enabled?: boolean; vibration_enabled?: boolean }) =>
+    apiFetch("/api/user/sound-preferences", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
 };

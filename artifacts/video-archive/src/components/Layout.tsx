@@ -319,6 +319,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <Link href="/charts" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/charts")}>Charts</Link>
               <Link href="/collections" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/collections")}>Collections</Link>
               <Link href="/request" className="hover:text-muted-foreground transition-colors">Request</Link>
+              <Link href="/my-requests" className="hover:text-muted-foreground transition-colors">My Requests</Link>
               <Link href="/bookmarks" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/bookmarks")}>Bookmarks</Link>
               <Link href="/watch-later" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/watch-later")}>Watch Later</Link>
               <Link href="/history" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/history")}>History</Link>

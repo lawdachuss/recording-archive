@@ -1,19 +1,24 @@
 import { useState, useEffect, useRef } from "react";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import Stepper, { Step } from "@/components/Stepper";
 import { PerformerDetailsCard, PerformerLookupLoading, PerformerLookupNotFound, PerformerLookupError } from "@/components/PerformerDetailsCard";
-import { usePerformerLookup, useCreateRequest, type PerformerLookupResult } from "@/lib/api";
+import { usePerformerLookup, useCreateRequest, useDeleteRequest, type PerformerLookupResult, type UserRequest } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { Layout } from "@/components/Layout";
 import { toast } from "@/hooks/use-toast";
-import { Film, Sparkles, CheckCircle } from "lucide-react";
+import { Film, Sparkles, CheckCircle, Loader2, ArrowLeft, Trash2, XCircle } from "lucide-react";
+import { formatRelativeTime } from "@/lib/formatters";
+import { resolveApiPath } from "@/lib/api-base";
+import { STATUS_LABEL_DETAIL, getStatusConfig, type StatusKey } from "@/lib/request-constants";
 
 type Platform = "chaturbate" | "stripchat" | null;
 
 export default function RequestPage() {
   const { user } = useAuth();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+  const viewId = new URLSearchParams(location.includes("?") ? location.split("?")[1] : "").get("id");
   const [step, setStep] = useState(1);
   const [platform, setPlatform] = useState<Platform>(null);
   const [username, setUsername] = useState("");
@@ -24,6 +29,24 @@ export default function RequestPage() {
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
+  // ── Fetch user's requests (for ?id= view) ────────────────────────────────
+  const { data: myRequests = [], isLoading: loadingRequests } = useQuery<UserRequest[]>({
+    queryKey: ["my-requests"],
+    queryFn: async () => {
+      const { supabase } = await import("@/lib/supabase");
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: Record<string, string> = {};
+      if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
+      const res = await fetch(resolveApiPath("/api/requests"), { headers });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!viewId && !!user,
+    staleTime: 10_000,
+  });
+
+  const viewedRequest = viewId ? myRequests.find((r) => String(r.id) === viewId) : null;
+
   const {
     data: lookupData,
     isFetching: lookupLoading,
@@ -33,6 +56,7 @@ export default function RequestPage() {
   } = usePerformerLookup(platform ?? "", debouncedUsername);
 
   const createRequest = useCreateRequest();
+  const deleteRequest = useDeleteRequest();
 
   useEffect(() => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
@@ -91,6 +115,128 @@ export default function RequestPage() {
       <Layout>
         <div className="min-h-[60vh] flex items-center justify-center">
           <p className="text-muted-foreground">Please sign in to submit a request.</p>
+        </div>
+      </Layout>
+    );
+  }
+
+  // ── Request detail view (navigated from notification) ────────────────────
+  if (viewId) {
+    if (loadingRequests) {
+      return (
+        <Layout>
+          <div className="min-h-[60vh] flex items-center justify-center">
+            <Loader2 className="w-6 h-6 text-primary/60 animate-spin" />
+          </div>
+        </Layout>
+      );
+    }
+
+    if (viewedRequest) {
+      const statusCfg = getStatusConfig(viewedRequest.status);
+      const StatusIcon = statusCfg.icon;
+      const performerName = viewedRequest.performer_username ?? "a performer";
+
+      return (
+        <Layout>
+          <div className="min-h-[60vh] flex items-center justify-center px-4 py-12">
+            <div className="w-full max-w-md">
+              <Link
+                href="/request"
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-6"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                Back to new request
+              </Link>
+
+              <div className="rounded-lg border border-border/30 bg-card overflow-hidden">
+                <div className="p-5 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${statusCfg.color.replace("text-", "bg-")}/10`}>
+                      <StatusIcon className={`w-5 h-5 ${statusCfg.color}`} />
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Request Status</p>
+                      <p className={`text-base font-bold ${statusCfg.color}`}>{STATUS_LABEL_DETAIL[viewedRequest.status as StatusKey] ?? statusCfg.label}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Platform</p>
+                      <p className="text-foreground font-medium capitalize">{viewedRequest.platform}</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Performer</p>
+                      <p className="text-foreground font-medium">@{performerName}</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Priority</p>
+                      <p className="text-foreground font-medium capitalize">{viewedRequest.priority}</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Submitted</p>
+                      <p className="text-foreground font-medium">{formatRelativeTime(viewedRequest.created_at)}</p>
+                    </div>
+                  </div>
+
+                  {viewedRequest.notes && (
+                    <div>
+                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-1">Notes</p>
+                      <p className="text-xs text-muted-foreground/80 bg-secondary/50 rounded-sm px-3 py-2">{viewedRequest.notes}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-center gap-3">
+                {viewedRequest.status === "pending" && (
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`Delete request for @${viewedRequest.performer_username ?? "this performer"}?`)) return;
+                      try {
+                        await deleteRequest.mutateAsync(viewedRequest.id);
+                        toast({ title: "Deleted", description: "Request has been deleted." });
+                        setLocation("/my-requests");
+                      } catch {
+                        toast({ title: "Error", description: "Failed to delete request.", variant: "destructive" });
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-xs border border-destructive/30 text-destructive hover:border-destructive/60 rounded-sm transition-colors"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    Delete request
+                  </button>
+                )}
+                <Link
+                  href="/request"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs border border-primary/30 text-primary hover:border-primary/60 rounded-sm transition-colors"
+                >
+                  Submit a new request
+                </Link>
+              </div>
+            </div>
+          </div>
+        </Layout>
+      );
+    }
+
+    // Request ID specified but not found
+    return (
+      <Layout>
+        <div className="min-h-[60vh] flex items-center justify-center px-4">
+          <div className="text-center max-w-sm">
+            <XCircle className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+            <h2 className="text-lg font-bold text-foreground mb-1">Request not found</h2>
+            <p className="text-xs text-muted-foreground mb-6">This request could not be found or may have been deleted.</p>
+            <Link
+              href="/request"
+              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              <ArrowLeft className="w-3 h-3" />
+              Back to requests
+            </Link>
+          </div>
         </div>
       </Layout>
     );

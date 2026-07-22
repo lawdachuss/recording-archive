@@ -409,9 +409,18 @@ router.get("/recordings/related", async (req, res) => {
       .eq("id", id)
       .single();
 
-    if (recError || !recording) {
+    if (recError) {
+      // PGRST116 = rows not found — return empty related set, not 500
+      if (recError.code === 'PGRST116') {
+        res.json([]);
+        return;
+      }
       req.log.error({ err: recError, id }, "Failed to fetch source recording");
       res.status(500).json({ error: "Failed to fetch related recordings" });
+      return;
+    }
+    if (!recording) {
+      res.json([]);
       return;
     }
 
@@ -591,6 +600,13 @@ router.get("/recordings/:id", cache({ ttlSeconds: 600, staleSeconds: 900, tags: 
 
     const { id } = parsed.data;
 
+    // Validate UUID format — PostgreSQL throws a type error for non-UUID strings
+    // that isn't PGRST116, so catch it here to return a clean 404.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      res.status(404).json({ error: "Recording not found" });
+      return;
+    }
+
     const { data, error } = await supabase
       .from("recordings_with_links")
       .select("*")
@@ -599,6 +615,11 @@ router.get("/recordings/:id", cache({ ttlSeconds: 600, staleSeconds: 900, tags: 
       .single();
 
     if (error) {
+      // PGRST116 = rows not found — treat as 404, not 500
+      if (error.code === 'PGRST116') {
+        res.status(404).json({ error: "Recording not found" });
+        return;
+      }
       req.log.error({ err: error, id }, "Supabase error fetching recording");
       res.status(500).json({ error: "Failed to fetch recording" });
       return;
