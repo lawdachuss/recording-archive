@@ -23,9 +23,18 @@ async function fetchWithCookies(url: string): Promise<string | null> {
   }
 }
 
-function extractMetaContent(html: string, property: string): string | null {
-  const regex = new RegExp(`<meta\\s+property=["']${property}["']\\s+content=["']([^"']*)["']`, "i");
-  const match = html.match(regex);
+function extractMetaContent(html: string, propertyOrName: string): string | null {
+  // Try <meta property="og:..." content="..."> first
+  const propRegex = new RegExp(`<meta\\s+property=["']${propertyOrName}["']\\s+content=["']([^"']*)["']`, "i");
+  let match = html.match(propRegex);
+  if (match) return match[1];
+  // Fallback: <meta name="..." content="...">
+  const nameRegex = new RegExp(`<meta\\s+name=["']${propertyOrName}["']\\s+content=["']([^"']*)["']`, "i");
+  match = html.match(nameRegex);
+  if (match) return match[1];
+  // Fallback: <meta content="..." property="..."> (reversed attributes)
+  const revRegex = new RegExp(`<meta\\s+content=["']([^"']*)["']\\s+property=["']${propertyOrName}["']`, "i");
+  match = html.match(revRegex);
   return match ? match[1] : null;
 }
 
@@ -79,16 +88,44 @@ function performerExistsOnPlatform(html: string, username: string, platform: str
     // `model-avatar`/`model-card` class is NOT proof the requested performer
     // owns this page. Only trust the canonical profile URL, which Stripchat
     // sets to https://stripchat.com/{exact-username} for the real model.
+    //
+    // We try multiple patterns to handle different Stripchat page formats:
+    const expectedUrls = [
+      `https://stripchat.com/${usernameLower}`,
+      `https://www.stripchat.com/${usernameLower}`,
+    ];
+
+    // 1. Check og:url meta tag
     const canonical = extractMetaContent(html, "og:url");
     if (canonical) {
       const normalized = canonical.replace(/\/+$/, "").toLowerCase();
-      if (normalized === `https://stripchat.com/${usernameLower}`) return true;
+      if (expectedUrls.some((u) => normalized === u)) return true;
     }
+
+    // 2. Check <link rel="canonical">
     const canonicalLink = (html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i)
       || html.match(/<link[^>]+href=["']([^"']+)["'][^>]+rel=["']canonical["']/i))?.[1];
     if (canonicalLink) {
       const normalized = canonicalLink.replace(/\/+$/, "").toLowerCase();
-      if (normalized === `https://stripchat.com/${usernameLower}`) return true;
+      if (expectedUrls.some((u) => normalized === u)) return true;
+    }
+
+    // 3. Check data attributes that Stripchat uses on model profile pages
+    // Stripchat often embeds profile-specific data attributes on the model page
+    if (bodyLower.includes(`data-model-username="${usernameLower}"`)) return true;
+    if (bodyLower.includes(`data-username="${usernameLower}"`)) return true;
+    if (bodyLower.includes(`data-profile="${usernameLower}"`)) return true;
+
+    // 4. Check for profile links pointing to this exact username
+    const profileLinkRegex = new RegExp(`href=["']https://stripchat\.com/${usernameLower}(?:/|"|')`, "i");
+    if (profileLinkRegex.test(html)) return true;
+
+    // 5. Check twitter:site or og:site_name with matching username
+    const twitterSite = extractMetaContent(html, "twitter:site");
+    if (twitterSite && twitterSite.toLowerCase().includes(usernameLower)) {
+      // Only trust if it also has performer-specific og:image
+      const ogImage = extractMetaContent(html, "og:image");
+      if (ogImage && !ogImage.includes("default") && !ogImage.includes("logo")) return true;
     }
   }
 

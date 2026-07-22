@@ -4,8 +4,16 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, type UserNotification } from "@/lib/user-api";
-import { Bell, X, CheckCheck } from "lucide-react";
+import { useRealtimeNotifications } from "@/hooks/use-realtime-notifications";
+import { useNotificationSound } from "@/hooks/use-notification-sound";
+import { toast } from "@/hooks/use-toast";
+import { getSoundEnabled, getVibrationEnabled } from "@/lib/sound-prefs";
+import { Bell, X, CheckCheck, ExternalLink } from "lucide-react";
 import { formatRelativeTime } from "@/lib/formatters";
+
+function isRequestNotification(type: string): boolean {
+  return type === "request_status" || type === "request_submitted";
+}
 
 export function NotificationBell() {
   const { user } = useAuth();
@@ -13,19 +21,40 @@ export function NotificationBell() {
   const ref = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
+  // Real-time subscription — replaces the old 30-second polling
+  useRealtimeNotifications(user?.id);
+
   const { data: notifications = [] } = useQuery({
     queryKey: ["user", "notifications"],
     queryFn: () => userApi.getNotifications(),
     enabled: !!user,
-    refetchInterval: (query) => {
-      // Stop polling when the tab is hidden — saves CPU/network
-      if (document.hidden) return false;
-      return 30_000;
-    },
+    // No refetchInterval needed — Realtime pushes changes instantly
   });
+
+  // Play sound + vibrate + show toast when a new notification arrives
+  useNotificationSound(
+    notifications,
+    !!user,
+    (n) => {
+      toast({
+        title: "New Notification",
+        description: n.message || "A new notification arrived.",
+        duration: 4000,
+      });
+    },
+    {
+      sound: getSoundEnabled(),
+      vibration: getVibrationEnabled(),
+    },
+  );
 
   const markAllRead = useTrackedMutation({
     mutationFn: () => userApi.markAllRead(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "notifications"] }),
+  });
+
+  const markOneRead = useTrackedMutation({
+    mutationFn: (id: number) => userApi.markAsRead(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "notifications"] }),
   });
 
@@ -96,9 +125,24 @@ export function NotificationBell() {
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-foreground leading-relaxed">{n.message}</p>
-                    <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-                      {formatRelativeTime(n.created_at)}
-                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="text-[10px] text-muted-foreground/60">
+                        {formatRelativeTime(n.created_at)}
+                      </p>
+                      {isRequestNotification(n.type) && n.related_id && (
+                        <Link
+                          href={`/request?id=${n.related_id}`}
+                          onClick={() => {
+                            setOpen(false);
+                            if (!n.is_read) markOneRead.mutate(n.id);
+                          }}
+                          className="inline-flex items-center gap-0.5 text-[10px] text-primary hover:text-primary/80 hover:underline transition-colors"
+                        >
+                          View request
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </Link>
+                      )}
+                    </div>
                   </div>
                   <button
                     onClick={() => deleteOne.mutate(n.id)}

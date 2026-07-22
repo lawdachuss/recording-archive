@@ -15,21 +15,40 @@ router.get("/user/resolve-username", async (req, res) => {
       return;
     }
 
-    const { data: email, error } = await supabase.rpc("resolve_username", {
-      p_username: username,
-    });
+    // 1. Check user_profiles table first — this is the primary username store.
+    //    Usernames are stored here when a user signs up or updates their profile.
+    try {
+      const { data: profile } = await supabase
+        .from("user_profiles")
+        .select("email")
+        .ilike("username", username)
+        .limit(1)
+        .single();
 
-    if (error) {
-      req.log?.error?.({ err: error }, "Supabase error resolving username");
-      res.status(500).json({ error: "Internal server error" });
-      return;
+      if (profile?.email) {
+        res.json({ email: profile.email });
+        return;
+      }
+    } catch {
+      // Fall through to fallback methods
     }
 
-    if (!email) {
-      res.status(404).json({ error: "Username not found" });
-      return;
+    // 2. Fallback: try the resolve_username RPC (checks auth.users raw_user_meta_data)
+    try {
+      const { data: email, error: rpcError } = await supabase.rpc("resolve_username", {
+        p_username: username,
+      });
+
+      if (!rpcError && email) {
+        res.json({ email });
+        return;
+      }
+    } catch {
+      // Fall through to not found
     }
-    res.json({ email });
+
+    // 3. Not found via any method
+    res.status(404).json({ error: "Username not found" });
   } catch (err) {
     req.log?.error?.({ err }, "GET /user/resolve-username unexpected error");
     res.status(500).json({ error: "Internal server error" });
@@ -693,6 +712,201 @@ router.put("/user/notifications/read-all", async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     req.log.error({ err }, "PUT /user/notifications/read-all unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/user/notifications/read-batch", async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { ids } = req.body as { ids?: number[] };
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      res.status(400).json({ error: "ids array required" });
+      return;
+    }
+
+    const { error } = await req.supabase!
+      .from("user_notifications")
+      .update({ is_read: true })
+      .eq("user_id", userId)
+      .in("id", ids);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error marking notifications read (batch)");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "PUT /user/notifications/read-batch unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/user/notifications/:id/read", async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { error } = await req.supabase!
+      .from("user_notifications")
+      .update({ is_read: true })
+      .eq("id", req.params.id)
+      .eq("user_id", userId);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error marking notification read");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "PUT /user/notifications/:id/read unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── Sound & Vibration Preferences (global, stored on user_profiles) ────
+
+router.get("/user/sound-preferences", async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { data, error } = await req.supabase!
+      .from("user_profiles")
+      .select("sound_enabled, vibration_enabled")
+      .eq("user_id", userId)
+      .single();
+
+    if (error && error.code !== "PGRST116") {
+      req.log.error({ err: error }, "Supabase error fetching sound preferences");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+
+    res.json({
+      sound_enabled: data?.sound_enabled ?? true,
+      vibration_enabled: data?.vibration_enabled ?? true,
+    });
+  } catch (err) {
+    req.log.error({ err }, "GET /user/sound-preferences unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/user/sound-preferences", async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { sound_enabled, vibration_enabled } = req.body as {
+      sound_enabled?: boolean;
+      vibration_enabled?: boolean;
+    };
+
+    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (sound_enabled !== undefined) updates.sound_enabled = sound_enabled;
+    if (vibration_enabled !== undefined) updates.vibration_enabled = vibration_enabled;
+
+    const { error } = await req.supabase!
+      .from("user_profiles")
+      .upsert({ user_id: userId, ...updates });
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error updating sound preferences");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "PUT /user/sound-preferences unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── Notification Preferences ────────────────────────────────────────────
+
+const NOTIFICATION_TYPES = ["request_submitted", "request_status", "recording_available"];
+
+router.get("/user/notification-preferences", async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { data, error } = await req.supabase!
+      .from("user_notification_preferences")
+      .select("notification_type, enabled, email_enabled")
+      .eq("user_id", userId);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error fetching notification preferences");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+
+    // Merge with defaults: any type not in DB is enabled (in-app) and disabled (email) by default
+    const enabledMap = new Map<string, boolean>();
+    const emailMap = new Map<string, boolean>();
+    for (const t of NOTIFICATION_TYPES) {
+      enabledMap.set(t, true);
+      emailMap.set(t, false);
+    }
+    for (const row of data ?? []) {
+      enabledMap.set(row.notification_type, row.enabled);
+      emailMap.set(row.notification_type, row.email_enabled ?? false);
+    }
+
+    res.json(
+      NOTIFICATION_TYPES.map((type) => ({
+        type,
+        enabled: enabledMap.get(type) ?? true,
+        email_enabled: emailMap.get(type) ?? false,
+      }))
+    );
+  } catch (err) {
+    req.log.error({ err }, "GET /user/notification-preferences unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/user/notification-preferences", async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { preferences } = req.body as {
+      preferences: { type: string; enabled: boolean; email_enabled?: boolean }[];
+    };
+
+    if (!Array.isArray(preferences)) {
+      res.status(400).json({ error: "preferences array required" });
+      return;
+    }
+
+    // Validate types
+    for (const p of preferences) {
+      if (!NOTIFICATION_TYPES.includes(p.type)) {
+        res.status(400).json({ error: `Invalid notification type: ${p.type}` });
+        return;
+      }
+    }
+
+    // Upsert each preference
+    for (const p of preferences) {
+      const { error } = await req.supabase!.from("user_notification_preferences").upsert(
+        {
+          user_id: userId,
+          notification_type: p.type,
+          enabled: p.enabled,
+          email_enabled: p.email_enabled ?? false,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id, notification_type" }
+      );
+
+      if (error) {
+        req.log.error({ err: error }, "Supabase error upserting notification preference");
+        res.status(500).json({ error: "Internal server error" });
+        return;
+      }
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "PUT /user/notification-preferences unexpected error");
     res.status(500).json({ error: "Internal server error" });
   }
 });

@@ -47,6 +47,12 @@ router.post("/requests", requireAuth, async (req, res) => {
   // Prevent duplicate requests: a user cannot request the same performer on the
   // same platform more than once. If a duplicate is attempted, return the
   // existing request instead of creating a redundant channel.
+  //
+  // NOTE: The database has a UNIQUE INDEX (not a named CONSTRAINT) on
+  // (user_id, platform, COALESCE(performer_username,''), COALESCE(stream_link,'')),
+  // so we cannot use ON CONFLICT ON CONSTRAINT. Instead we rely on the pre-insert
+  // dedupe check + the UNIQUE INDEX to catch race conditions, with a fallback
+  // that looks up the existing row in the error path.
   const dedupeKey = performer_username ? performer_username : stream_link;
   if (dedupeKey) {
     try {
@@ -68,19 +74,9 @@ router.post("/requests", requireAuth, async (req, res) => {
     }
   }
 
-  const fallback = {
-    id: null,
-    user_id: req.user!.id,
-    platform,
-    performer_username: performer_username ?? null,
-    stream_link: stream_link ?? null,
-    notes: notes ?? null,
-    priority: validPriority,
-    status: "pending",
-    created_at: new Date().toISOString(),
-  };
-
   try {
+    // Simple INSERT without ON CONFLICT — the unique index handles duplicate
+    // rejection, and we catch unique-violation errors in the catch block below.
     const result = await db.execute(sql`
       INSERT INTO requests (user_id, platform, performer_username, stream_link, notes, priority, status, created_at)
       VALUES (
@@ -93,27 +89,103 @@ router.post("/requests", requireAuth, async (req, res) => {
         'pending',
         NOW()
       )
-      ON CONFLICT ON CONSTRAINT idx_requests_user_platform_performer
-      DO NOTHING
       RETURNING id, user_id, platform, performer_username, stream_link, notes, priority, status, created_at
     `);
-    if (result.rows.length > 0) {
-      res.status(201).json(result.rows[0]);
+
+    const created = result.rows[0] as {
+      id: number;
+      user_id: string;
+      platform: string;
+      performer_username: string | null;
+    };
+
+    // Create a confirmation notification for the requester (if enabled)
+    try {
+      const [prefRow] = (await db.execute(sql`
+        SELECT enabled FROM user_notification_preferences
+        WHERE user_id = ${created.user_id} AND notification_type = 'request_submitted'
+        LIMIT 1
+      `)).rows;
+      const enabled = prefRow ? prefRow.enabled : true; // default: enabled
+      if (enabled) {
+        const performerName = created.performer_username ?? "a performer";
+        const message = `Your request for @${performerName} on ${created.platform} has been submitted and is pending review.`;
+        await db.execute(sql`
+          INSERT INTO user_notifications (user_id, type, message, related_id, is_read, created_at)
+          VALUES (
+            ${created.user_id},
+            'request_submitted',
+            ${message},
+            ${String(created.id)},
+            false,
+            NOW()
+          )
+        `);
+      }
+    } catch {
+      // Non-critical — don't fail the request if notification insert fails
+    }
+
+    res.status(201).json(created);
+  } catch {
+    // Catch: unique-violation from the index, or any other error.
+    // Return the existing row if this was a duplicate.
+    try {
+      const existing = await db.execute(sql`
+        SELECT id, user_id, platform, performer_username, stream_link, notes, priority, status, created_at
+        FROM requests
+        WHERE user_id = ${req.user!.id}
+          AND platform = ${platform}
+          AND COALESCE(performer_username, '') = COALESCE(${performer_username ?? null}, '')
+          AND COALESCE(stream_link, '') = COALESCE(${stream_link ?? null}, '')
+        LIMIT 1
+      `);
+      if (existing.rows.length > 0) {
+        res.status(200).json(existing.rows[0]);
+        return;
+      }
+    } catch {
+      // Fallback lookup also failed — return a proper error.
+    }
+    res.status(500).json({ error: "Failed to submit request. Please try again." });
+  }
+});
+
+router.delete("/requests/:id", requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(String(req.params.id), 10);
+    if (isNaN(id)) {
+      res.status(400).json({ error: "Invalid request ID" });
       return;
     }
-    // Conflict (rare race with the pre-insert dedupe check): return the existing row.
-    const existing = await db.execute(sql`
-      SELECT id, user_id, platform, performer_username, stream_link, notes, priority, status, created_at
-      FROM requests
-      WHERE user_id = ${req.user!.id}
-        AND platform = ${platform}
-        AND COALESCE(performer_username, '') = COALESCE(${performer_username ?? null}, '')
-        AND COALESCE(stream_link, '') = COALESCE(${stream_link ?? null}, '')
-      LIMIT 1
+
+    const result = await db.execute(sql`
+      DELETE FROM requests
+      WHERE id = ${id}
+        AND user_id = ${req.user!.id}
+      RETURNING id
     `);
-    res.status(200).json(existing.rows[0] ?? fallback);
+
+    if (!result.rows.length) {
+      res.status(404).json({ error: "Request not found or not yours to delete" });
+      return;
+    }
+
+    // Also clean up related notifications
+    try {
+      await db.execute(sql`
+        DELETE FROM user_notifications
+        WHERE user_id = ${req.user!.id}
+          AND related_id = ${String(id)}
+          AND (type = 'request_status' OR type = 'request_submitted')
+      `);
+    } catch {
+      // Non-critical — don't fail the request if notification cleanup fails
+    }
+
+    res.json({ ok: true });
   } catch {
-    res.status(201).json(fallback);
+    res.status(500).json({ error: "Failed to delete request" });
   }
 });
 

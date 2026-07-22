@@ -6,7 +6,11 @@ import path from "path";
 const env = loadEnv("development", process.cwd(), "");
 const rawPort = env.FRONTEND_PORT || env.PORT;
 const port = rawPort ? Number(rawPort) : 3000;
-const basePath = env.BASE_PATH || "/";
+// Use VITE_BASE_PATH first, then fall back to BASE_PATH (only if it looks valid),
+// otherwise default to "/". Git Bash sets BASE_PATH to a Git install path which
+// breaks routing, so we must validate it.
+const rawBase = env.VITE_BASE_PATH || env.BASE_PATH || "/";
+const basePath = rawBase.startsWith("/") && !rawBase.includes(" ") ? rawBase : "/";
 
 async function getPlugins() {
   const plugins = [

@@ -638,24 +638,25 @@ CREATE OR REPLACE FUNCTION public.resolve_username(p_username text)
 AS $function$
 DECLARE
   v_email TEXT;
-  v_our_id TEXT := '042f11b1-8b0a-4c12-b6cb-091b33e6d64f';
 BEGIN
+  -- First check user_profiles table (the primary username store)
+  SELECT up.email INTO v_email
+  FROM public.user_profiles up
+  WHERE LOWER(up.username) = LOWER(p_username)
+  LIMIT 1;
+  
+  IF v_email IS NOT NULL THEN
+    RETURN v_email;
+  END IF;
+  
+  -- Fallback: check auth.users raw_user_meta_data
   SELECT au.email INTO v_email
   FROM auth.users au
-    WHERE au.id = v_our_id::uuid
-    AND (
-      au.raw_user_meta_data->>'display_name' ILIKE p_username
-      OR au.raw_user_meta_data->>'username' ILIKE p_username
-    )
+  WHERE 
+    LOWER(au.raw_user_meta_data->>'display_name') = LOWER(p_username)
+    OR LOWER(au.raw_user_meta_data->>'username') = LOWER(p_username)
   LIMIT 1;
-  IF v_email IS NULL THEN
-    SELECT au.email INTO v_email
-    FROM auth.users au
-    WHERE
-      au.raw_user_meta_data->>'display_name' ILIKE p_username
-      OR au.raw_user_meta_data->>'username' ILIKE p_username
-    LIMIT 1;
-  END IF;
+  
   RETURN v_email;
 END;
 $function$
@@ -721,12 +722,63 @@ END;
 $function$
 ;
 
+-- ── Function: Notify users when a new upload link makes a recording available ──
+CREATE OR REPLACE FUNCTION public.notify_requesters_on_upload()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_username text;
+BEGIN
+  -- Get the performer username from the associated recording
+  SELECT r.username INTO v_username
+  FROM public.recordings r
+  WHERE r.id = NEW.recording_id;
+
+  -- Skip if recording not found or no username
+  IF v_username IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  -- Notify all users with pending or approved requests for this performer,
+  -- but only if they haven't disabled 'recording_available' notifications.
+  -- Uses a NOT EXISTS check to avoid duplicate notifications for the same
+  -- recording (upload_links can have multiple hosts per recording).
+  INSERT INTO public.user_notifications (user_id, type, message, related_id, is_read, created_at)
+  SELECT
+    rq.user_id,
+    'recording_available',
+    'A new recording of @' || rq.performer_username || ' on ' || rq.platform || ' is now available in the archive!',
+    NEW.recording_id::text,
+    false,
+    NOW()
+  FROM public.requests rq
+  LEFT JOIN public.user_notification_preferences unp
+    ON unp.user_id = rq.user_id
+    AND unp.notification_type = 'recording_available'
+  WHERE rq.performer_username IS NOT NULL
+    AND LOWER(rq.performer_username) = LOWER(v_username)
+    AND rq.status IN ('pending', 'approved')
+    AND (unp.enabled IS NULL OR unp.enabled = true)
+    AND NOT EXISTS (
+      SELECT 1 FROM public.user_notifications un
+      WHERE un.user_id = rq.user_id
+        AND un.type = 'recording_available'
+        AND un.related_id = NEW.recording_id::text
+    );
+
+  RETURN NEW;
+END;
+$function$;
+
 -- ── Triggers ─────────────────────────────────────────────
 CREATE TRIGGER update_channels_updated_at BEFORE UPDATE ON public.channels FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_recordings_updated_at BEFORE UPDATE ON public.recordings FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_app_settings_updated_at BEFORE UPDATE ON public.app_settings FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_nodes_updated_at BEFORE UPDATE ON public.nodes FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_channel_assignments_updated_at BEFORE UPDATE ON public.channel_assignments FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER trigger_notify_requesters_on_upload AFTER INSERT ON public.upload_links FOR EACH ROW EXECUTE FUNCTION notify_requesters_on_upload();
 
 -- ── Missing policies (RLS without policies fix) ───────
 CREATE POLICY "Allow all operations on comment_likes" ON "comment_likes" AS PERMISSIVE USING (true) WITH CHECK (true);

@@ -22,6 +22,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { userApi, recordingToMeta, type CloudCollection } from "@/lib/user-api";
 import { addWatchedId } from "@/lib/watched-storage";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
+import { proxyUrl } from "@/lib/proxy-url";
 
 import {
   AlertCircle, ArrowLeft, Maximize2, Minimize2,
@@ -316,9 +317,11 @@ export default function VideoDetail() {
 
   useEffect(() => {
     if (!video?.thumbnail_url) return;
+    const proxiedUrl = proxyUrl(video.thumbnail_url);
+    if (!proxiedUrl) return;
     const img = new Image();
     img.fetchPriority = "high";
-    img.src = video.thumbnail_url;
+    img.src = proxiedUrl;
   }, [video?.thumbnail_url]);
 
   useEffect(() => {
@@ -543,7 +546,7 @@ export default function VideoDetail() {
                     >
                     {video.thumbnail_url ? (
                       <OptimizedImage
-                        src={video.thumbnail_url}
+                        src={proxyUrl(video.thumbnail_url)!}
                         alt={video.username}
                         className="w-full h-full object-cover"
                         containerClassName="w-full h-full"
@@ -621,7 +624,7 @@ export default function VideoDetail() {
                   />
                 ) : video.thumbnail_url ? (
                   <OptimizedImage
-                    src={video.thumbnail_url}
+                    src={proxyUrl(video.thumbnail_url)!}
                     alt={video.filename}
                     className="w-full h-full object-contain"
                     containerClassName="w-full h-full"
@@ -951,7 +954,7 @@ export default function VideoDetail() {
                       <div className="w-28 aspect-video shrink-0 overflow-hidden bg-secondary rounded-[2px] relative">
                         {rec.thumbnail_url ? (
                           <OptimizedImage
-                            src={rec.thumbnail_url}
+                            src={proxyUrl(rec.thumbnail_url)!}
                             alt={rec.username}
                             fetchPriority={i < 2 ? "high" : undefined}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"

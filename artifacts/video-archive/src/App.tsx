@@ -33,6 +33,7 @@ const Settings = lazy(() => import("@/pages/Settings"));
 const Following = lazy(() => import("@/pages/Following"));
 const Notifications = lazy(() => import("@/pages/Notifications"));
 const RequestPage = lazy(() => import("@/pages/RequestPage"));
+const MyRequests = lazy(() => import("@/pages/MyRequests"));
 
 const NotFound = lazy(() => import("@/pages/not-found"));
 
@@ -125,6 +126,9 @@ function Router() {
         </Route>
         <Route path="/notifications">
           <ProtectedRoute><Notifications /></ProtectedRoute>
+        </Route>
+        <Route path="/my-requests">
+          <ProtectedRoute><MyRequests /></ProtectedRoute>
         </Route>
         <Route path="/request">
           <ProtectedRoute><RequestPage /></ProtectedRoute>

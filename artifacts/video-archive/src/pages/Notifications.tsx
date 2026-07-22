@@ -5,13 +5,21 @@ import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, type UserNotification } from "@/lib/user-api";
+import { useRealtimeNotifications } from "@/hooks/use-realtime-notifications";
 import { formatRelativeTime } from "@/lib/formatters";
-import { Bell, BellOff, CheckCheck, X, Trash2 } from "lucide-react";
+import { Bell, BellOff, CheckCheck, X, Trash2, ExternalLink } from "lucide-react";
+
+function isRequestNotification(type: string): boolean {
+  return type === "request_status" || type === "request_submitted";
+}
 
 export default function Notifications() {
   const { user, loading } = useAuth();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
+
+  // Real-time subscription — keeps the list fresh without polling
+  useRealtimeNotifications(user?.id);
 
   useEffect(() => {
     if (!loading && !user) setLocation("/login");
@@ -33,6 +41,14 @@ export default function Notifications() {
     mutationFn: (id: number) => userApi.deleteNotification(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "notifications"] }),
   });
+
+  // Auto-mark notifications as read when the user views this page
+  useEffect(() => {
+    const unreadCount = notifications.filter((n: UserNotification) => !n.is_read).length;
+    if (unreadCount > 0 && !markAll.isPending) {
+      markAll.mutate();
+    }
+  }, [notifications.length > 0]);
 
   if (!user) return null;
 
@@ -93,9 +109,24 @@ export default function Notifications() {
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-foreground leading-relaxed">{n.message}</p>
-                  <p className="text-[11px] text-muted-foreground/60 mt-0.5">
-                    {formatRelativeTime(n.created_at)}
-                  </p>
+                  <div className="flex items-center gap-3 mt-1">
+                    <p className="text-[11px] text-muted-foreground/60">
+                      {formatRelativeTime(n.created_at)}
+                    </p>
+                    {isRequestNotification(n.type) && n.related_id && (
+                      <a
+                        href={`/request?id=${n.related_id}`}
+                        className="inline-flex items-center gap-0.5 text-[11px] text-primary hover:text-primary/80 hover:underline transition-colors"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setLocation(`/request?id=${n.related_id}`);
+                        }}
+                      >
+                        View request
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                  </div>
                 </div>
                 <button
                   onClick={() => deleteOne.mutate(n.id)}

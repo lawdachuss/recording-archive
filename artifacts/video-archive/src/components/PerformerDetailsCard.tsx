@@ -1,5 +1,6 @@
 import { ExternalLink, Users, Eye, Calendar, Film, CheckCircle, XCircle, Loader2 } from "lucide-react";
 import { type PerformerLookupResult } from "@/lib/api";
+import { proxyUrl } from "@/lib/proxy-url";
 
 function formatRelativeTime(timestamp: string): string {
   const diff = Date.now() - new Date(timestamp).getTime();
@@ -12,17 +13,6 @@ function formatRelativeTime(timestamp: string): string {
   if (days < 30) return `${days}d ago`;
   const months = Math.floor(days / 30);
   return `${months}mo ago`;
-}
-
-function proxyUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  try {
-    const { hostname } = new URL(url);
-    if (["pixhost.to", "lobfile.com"].some((h) => hostname.includes(h))) {
-      return `/api/media?url=${encodeURIComponent(url)}`;
-    }
-  } catch {}
-  return url;
 }
 
 interface LoadingStateProps {
