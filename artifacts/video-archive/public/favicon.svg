@@ -1,23 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <defs>
-    <linearGradient id="vault-glow" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#ef4444"/>
-      <stop offset="100%" stop-color="#dc2626"/>
-    </linearGradient>
-  </defs>
-  <!-- Vault / hexagon shape -->
-  <path d="M32 4 L56 16 L56 48 L32 60 L8 48 L8 16 Z" 
+  <!-- Dark rounded square — visible on any browser tab background -->
+  <rect width="64" height="64" rx="14" fill="#0a0a0a"/>
+  <!-- Hexagonal vault outline (subtle) -->
+  <path d="M32 10 L50 19.5 L50 44.5 L32 54 L14 44.5 L14 19.5 Z" 
         fill="none" 
-        stroke="url(#vault-glow)" 
-        stroke-width="3" 
-        stroke-linejoin="round"/>
-  <!-- Stylized "V" letterform -->
-  <path d="M22 40 L32 20 L42 40" 
-        fill="none" 
-        stroke="url(#vault-glow)" 
-        stroke-width="5" 
-        stroke-linecap="round" 
-        stroke-linejoin="round"/>
-  <!-- Accent dot - subtle glow node -->
-  <circle cx="32" cy="14" r="2.5" fill="url(#vault-glow)" opacity="0.6"/>
+        stroke="#dc2626" 
+        stroke-width="2" 
+        stroke-linejoin="round"
+        opacity="0.35"/>
+  <!-- Bold filled "V" letterform - clearly reads as V at any size -->
+  <path d="M20 46 L32 22 L44 46 L38 46 L32 32 L26 46 Z" 
+        fill="#dc2626"/>
 </svg>
