@@ -1,0 +1,17 @@
+{
+  "name": "VAULT — Private Recording Archive",
+  "short_name": "VAULT",
+  "description": "Private adult recording archive. Browse, search, and explore recordings by performer, tag, and resolution.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#dc2626",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
