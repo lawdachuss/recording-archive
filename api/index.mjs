@@ -47,825 +47,6 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/finish.js
-var require_finish = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/finish.js"(exports, module) {
-    "use strict";
-    module.exports = async function finish(item, transform2, ...details) {
-      await new Promise((resolve, reject) => {
-        if (item.finished || item.complete) {
-          resolve();
-          return;
-        }
-        let finished = false;
-        function done(err) {
-          if (finished) {
-            return;
-          }
-          finished = true;
-          item.removeListener("error", done);
-          item.removeListener("end", done);
-          item.removeListener("finish", done);
-          if (err) {
-            reject(err);
-          } else {
-            resolve();
-          }
-        }
-        item.once("error", done);
-        item.once("end", done);
-        item.once("finish", done);
-      });
-      if (typeof transform2 === "function") {
-        await transform2(item, ...details);
-      } else if (typeof transform2 === "object" && transform2 !== null) {
-        Object.assign(item, transform2);
-      }
-      return item;
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/response.js
-var require_response = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/response.js"(exports, module) {
-    "use strict";
-    var http = __require("http");
-    var headerEnd = "\r\n\r\n";
-    var BODY = /* @__PURE__ */ Symbol();
-    var HEADERS = /* @__PURE__ */ Symbol();
-    function getString(data) {
-      if (Buffer.isBuffer(data)) {
-        return data.toString("utf8");
-      } else if (typeof data === "string") {
-        return data;
-      } else {
-        throw new Error(`response.write() of unexpected type: ${typeof data}`);
-      }
-    }
-    function addData(stream, data) {
-      if (Buffer.isBuffer(data) || typeof data === "string" || data instanceof Uint8Array) {
-        stream[BODY].push(Buffer.from(data));
-      } else {
-        throw new Error(`response.write() of unexpected type: ${typeof data}`);
-      }
-    }
-    module.exports = class ServerlessResponse extends http.ServerResponse {
-      static from(res) {
-        const response = new ServerlessResponse(res);
-        response.statusCode = res.statusCode;
-        response[HEADERS] = res.headers;
-        response[BODY] = [Buffer.from(res.body)];
-        response.end();
-        return response;
-      }
-      static body(res) {
-        return Buffer.concat(res[BODY]);
-      }
-      static headers(res) {
-        const headers = typeof res.getHeaders === "function" ? res.getHeaders() : res._headers;
-        return Object.assign(headers, res[HEADERS]);
-      }
-      get headers() {
-        return this[HEADERS];
-      }
-      setHeader(key, value) {
-        if (this._wroteHeader) {
-          this[HEADERS][key] = value;
-        } else {
-          super.setHeader(key, value);
-        }
-      }
-      writeHead(statusCode, reason, obj) {
-        const headers = typeof reason === "string" ? obj : reason;
-        for (const name in headers) {
-          this.setHeader(name, headers[name]);
-          if (!this._wroteHeader) {
-            break;
-          }
-        }
-        super.writeHead(statusCode, reason, obj);
-      }
-      constructor({ method }) {
-        super({ method });
-        this[BODY] = [];
-        this[HEADERS] = {};
-        this.useChunkedEncodingByDefault = false;
-        this.chunkedEncoding = false;
-        this._header = "";
-        this.assignSocket({
-          _writableState: {},
-          writable: true,
-          on: Function.prototype,
-          removeListener: Function.prototype,
-          destroy: Function.prototype,
-          cork: Function.prototype,
-          uncork: Function.prototype,
-          write: (data, encoding, cb) => {
-            if (typeof encoding === "function") {
-              cb = encoding;
-              encoding = null;
-            }
-            if (this._header === "" || this._wroteHeader) {
-              addData(this, data);
-            } else {
-              const string4 = getString(data);
-              const index = string4.indexOf(headerEnd);
-              if (index !== -1) {
-                const remainder = string4.slice(index + headerEnd.length);
-                if (remainder) {
-                  addData(this, remainder);
-                }
-                this._wroteHeader = true;
-              }
-            }
-            if (typeof cb === "function") {
-              cb();
-            }
-            return true;
-          }
-        });
-      }
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/framework/get-framework.js
-var require_get_framework = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/framework/get-framework.js"(exports, module) {
-    "use strict";
-    var http = __require("http");
-    var Response2 = require_response();
-    function common(cb) {
-      return (request) => {
-        const response = new Response2(request);
-        cb(request, response);
-        return response;
-      };
-    }
-    module.exports = function getFramework(app2) {
-      if (app2 instanceof http.Server) {
-        return (request) => {
-          const response = new Response2(request);
-          app2.emit("request", request, response);
-          return response;
-        };
-      }
-      if (typeof app2.callback === "function") {
-        return common(app2.callback());
-      }
-      if (typeof app2.handle === "function") {
-        return common((request, response) => {
-          app2.handle(request, response);
-        });
-      }
-      if (typeof app2.handler === "function") {
-        return common((request, response) => {
-          app2.handler(request, response);
-        });
-      }
-      if (typeof app2._onRequest === "function") {
-        return common((request, response) => {
-          app2._onRequest(request, response);
-        });
-      }
-      if (typeof app2 === "function") {
-        return common(app2);
-      }
-      if (app2.router && typeof app2.router.route == "function") {
-        return common((req, res) => {
-          const { url: url2, method, headers, body } = req;
-          app2.router.route({ url: url2, method, headers, body }, res);
-        });
-      }
-      if (app2._core && typeof app2._core._dispatch === "function") {
-        return common(app2._core._dispatch({
-          app: app2
-        }));
-      }
-      if (typeof app2.inject === "function") {
-        return async (request) => {
-          const { method, url: url2, headers, body } = request;
-          const res = await app2.inject({ method, url: url2, headers, payload: body });
-          return Response2.from(res);
-        };
-      }
-      if (typeof app2.main === "function") {
-        return common(app2.main);
-      }
-      throw new Error("Unsupported framework");
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/clean-up-event.js
-var require_clean_up_event = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/clean-up-event.js"(exports, module) {
-    "use strict";
-    function removeBasePath(path = "/", basePath) {
-      if (basePath) {
-        const basePathIndex = path.indexOf(basePath);
-        if (basePathIndex > -1) {
-          return path.substr(basePathIndex + basePath.length) || "/";
-        }
-      }
-      return path;
-    }
-    function isString(value) {
-      return typeof value === "string" || value instanceof String;
-    }
-    function specialDecodeURIComponent(value) {
-      if (!isString(value)) {
-        return value;
-      }
-      let decoded;
-      try {
-        decoded = decodeURIComponent(value.replace(/[+]/g, "%20"));
-      } catch (err) {
-        decoded = value.replace(/[+]/g, "%20");
-      }
-      return decoded;
-    }
-    function recursiveURLDecode(value) {
-      if (isString(value)) {
-        return specialDecodeURIComponent(value);
-      } else if (Array.isArray(value)) {
-        const decodedArray = [];
-        for (let index in value) {
-          decodedArray.push(recursiveURLDecode(value[index]));
-        }
-        return decodedArray;
-      } else if (value instanceof Object) {
-        const decodedObject = {};
-        for (let key of Object.keys(value)) {
-          decodedObject[specialDecodeURIComponent(key)] = recursiveURLDecode(value[key]);
-        }
-        return decodedObject;
-      }
-      return value;
-    }
-    module.exports = function cleanupEvent(evt, options) {
-      const event = evt || {};
-      event.requestContext = event.requestContext || {};
-      event.body = event.body || "";
-      event.headers = event.headers || {};
-      if ("elb" in event.requestContext) {
-        if (event.multiValueQueryStringParameters) {
-          event.multiValueQueryStringParameters = recursiveURLDecode(event.multiValueQueryStringParameters);
-        }
-        if (event.queryStringParameters) {
-          event.queryStringParameters = recursiveURLDecode(event.queryStringParameters);
-        }
-      }
-      if (event.version === "2.0") {
-        event.requestContext.authorizer = event.requestContext.authorizer || {};
-        event.requestContext.http.method = event.requestContext.http.method || "GET";
-        event.rawPath = removeBasePath(event.requestPath || event.rawPath, options.basePath);
-      } else {
-        event.requestContext.identity = event.requestContext.identity || {};
-        event.httpMethod = event.httpMethod || "GET";
-        event.path = removeBasePath(event.requestPath || event.path, options.basePath);
-      }
-      return event;
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/request.js
-var require_request = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/request.js"(exports, module) {
-    "use strict";
-    var http = __require("http");
-    var { PassThrough } = __require("stream");
-    module.exports = class ServerlessRequest extends http.IncomingMessage {
-      constructor({ method, url: url2, headers, body, remoteAddress }) {
-        const socket = new PassThrough();
-        socket.encrypted = true;
-        socket.remoteAddress = remoteAddress;
-        socket.address = () => ({ port: 443 });
-        super(socket);
-        if (typeof headers["content-length"] === "undefined") {
-          headers["content-length"] = Buffer.byteLength(body);
-        }
-        Object.assign(this, {
-          ip: remoteAddress,
-          complete: true,
-          httpVersion: "1.1",
-          httpVersionMajor: "1",
-          httpVersionMinor: "1",
-          method,
-          headers,
-          body,
-          url: url2
-        });
-        this._read = () => {
-          if (typeof body !== "undefined" && body !== null) {
-            this.push(body);
-          }
-          this.push(null);
-        };
-        if (!body || Buffer.byteLength(body) === 0) {
-          setImmediate(() => this.emit("end"));
-        }
-      }
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/create-request.js
-var require_create_request = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/create-request.js"(exports, module) {
-    "use strict";
-    var URL2 = __require("url");
-    var Request = require_request();
-    function requestMethod(event) {
-      if (event.version === "2.0") {
-        return event.requestContext.http.method;
-      }
-      return event.httpMethod;
-    }
-    function requestRemoteAddress(event) {
-      if (event.version === "2.0") {
-        return event.requestContext.http.sourceIp;
-      }
-      return event.requestContext.identity.sourceIp;
-    }
-    function requestHeaders(event) {
-      const initialHeader = event.version === "2.0" && Array.isArray(event.cookies) ? { cookie: event.cookies.join("; ") } : {};
-      if (event.multiValueHeaders) {
-        Object.keys(event.multiValueHeaders).reduce((headers, key) => {
-          headers[key.toLowerCase()] = event.multiValueHeaders[key].join(", ");
-          return headers;
-        }, initialHeader);
-      }
-      return Object.keys(event.headers).reduce((headers, key) => {
-        headers[key.toLowerCase()] = event.headers[key];
-        return headers;
-      }, initialHeader);
-    }
-    function requestBody(event) {
-      const type = typeof event.body;
-      if (Buffer.isBuffer(event.body)) {
-        return event.body;
-      } else if (type === "string") {
-        return Buffer.from(event.body, event.isBase64Encoded ? "base64" : "utf8");
-      } else if (type === "object") {
-        return Buffer.from(JSON.stringify(event.body));
-      }
-      throw new Error(`Unexpected event.body type: ${typeof event.body}`);
-    }
-    function requestUrl(event) {
-      if (event.version === "2.0") {
-        return URL2.format({
-          pathname: event.rawPath,
-          search: event.rawQueryString
-        });
-      }
-      const query = event.multiValueQueryStringParameters || {};
-      if (event.queryStringParameters) {
-        Object.keys(event.queryStringParameters).forEach((key) => {
-          if (Array.isArray(query[key])) {
-            if (!query[key].includes(event.queryStringParameters[key])) {
-              query[key].push(event.queryStringParameters[key]);
-            }
-          } else {
-            query[key] = [event.queryStringParameters[key]];
-          }
-        });
-      }
-      return URL2.format({
-        pathname: event.path,
-        query
-      });
-    }
-    module.exports = (event, context, options) => {
-      const method = requestMethod(event);
-      const remoteAddress = requestRemoteAddress(event);
-      const headers = requestHeaders(event);
-      const body = requestBody(event);
-      const url2 = requestUrl(event);
-      if (typeof options.requestId === "string" && options.requestId.length > 0) {
-        const header = options.requestId.toLowerCase();
-        const requestId = headers[header] || event.requestContext.requestId;
-        if (requestId) {
-          headers[header] = requestId;
-        }
-      }
-      const req = new Request({
-        method,
-        headers,
-        body,
-        remoteAddress,
-        url: url2
-      });
-      req.requestContext = event.requestContext;
-      req.apiGateway = {
-        event,
-        context
-      };
-      return req;
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/is-binary.js
-var require_is_binary = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/is-binary.js"(exports, module) {
-    "use strict";
-    var BINARY_ENCODINGS = ["gzip", "deflate", "br"];
-    var BINARY_CONTENT_TYPES = (process.env.BINARY_CONTENT_TYPES || "").split(",");
-    function isBinaryEncoding(headers) {
-      const contentEncoding = headers["content-encoding"];
-      if (typeof contentEncoding === "string") {
-        return contentEncoding.split(",").some(
-          (value) => BINARY_ENCODINGS.some((binaryEncoding) => value.indexOf(binaryEncoding) !== -1)
-        );
-      }
-    }
-    function isBinaryContent(headers, options) {
-      const contentTypes = [].concat(
-        options.binary ? options.binary : BINARY_CONTENT_TYPES
-      ).map(
-        (candidate) => new RegExp(`^${candidate.replace(/\*/g, ".*")}$`)
-      );
-      const contentType = (headers["content-type"] || "").split(";")[0];
-      return !!contentType && contentTypes.some((candidate) => candidate.test(contentType));
-    }
-    module.exports = function isBinary(headers, options) {
-      if (options.binary === false) {
-        return false;
-      }
-      if (options.binary === true) {
-        return true;
-      }
-      if (typeof options.binary === "function") {
-        return options.binary(headers);
-      }
-      return isBinaryEncoding(headers) || isBinaryContent(headers, options);
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/sanitize-headers.js
-var require_sanitize_headers = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/sanitize-headers.js"(exports, module) {
-    "use strict";
-    module.exports = function sanitizeHeaders(headers) {
-      return Object.keys(headers).reduce((memo, key) => {
-        const value = headers[key];
-        if (Array.isArray(value)) {
-          memo.multiValueHeaders[key] = value;
-          if (key.toLowerCase() !== "set-cookie") {
-            memo.headers[key] = value.join(", ");
-          }
-        } else {
-          memo.headers[key] = value == null ? "" : value.toString();
-        }
-        return memo;
-      }, {
-        headers: {},
-        multiValueHeaders: {}
-      });
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/get-event-type.js
-var require_get_event_type = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/get-event-type.js"(exports, module) {
-    var HTTP_API_V1 = "HTTP_API_V1";
-    var HTTP_API_V2 = "HTTP_API_V2";
-    var ALB = "ALB";
-    var LAMBDA_EVENT_TYPES = {
-      HTTP_API_V1,
-      HTTP_API_V2,
-      ALB
-    };
-    var getEventType = (event) => {
-      if (event.requestContext && event.requestContext.elb) {
-        return ALB;
-      } else if (event.version === "2.0") {
-        return HTTP_API_V2;
-      } else {
-        return HTTP_API_V1;
-      }
-    };
-    module.exports = {
-      getEventType,
-      LAMBDA_EVENT_TYPES
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/format-response.js
-var require_format_response = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/format-response.js"(exports, module) {
-    "use strict";
-    var isBinary = require_is_binary();
-    var Response2 = require_response();
-    var sanitizeHeaders = require_sanitize_headers();
-    var { getEventType, LAMBDA_EVENT_TYPES } = require_get_event_type();
-    var combineHeaders = (headers, multiValueHeaders) => {
-      return Object.entries(headers).reduce((memo, [key, value]) => {
-        if (multiValueHeaders[key]) {
-          memo[key].push(value);
-        } else {
-          memo[key] = [value];
-        }
-        return memo;
-      }, multiValueHeaders);
-    };
-    module.exports = (event, response, options) => {
-      const eventType = getEventType(event);
-      const { statusCode } = response;
-      const { headers, multiValueHeaders } = sanitizeHeaders(Response2.headers(response));
-      let cookies = [];
-      if (multiValueHeaders["set-cookie"]) {
-        cookies = multiValueHeaders["set-cookie"];
-      }
-      const isBase64Encoded = isBinary(headers, options);
-      const encoding = isBase64Encoded ? "base64" : "utf8";
-      let body = Response2.body(response).toString(encoding);
-      if (headers["transfer-encoding"] === "chunked" || response.chunkedEncoding) {
-        const raw = Response2.body(response).toString().split("\r\n");
-        const parsed = [];
-        for (let i = 0; i < raw.length; i += 2) {
-          const size = parseInt(raw[i], 16);
-          const value = raw[i + 1];
-          if (value) {
-            parsed.push(value.substring(0, size));
-          }
-        }
-        body = parsed.join("");
-      }
-      if (eventType === LAMBDA_EVENT_TYPES.ALB) {
-        const albResponse = { statusCode, isBase64Encoded, body };
-        if (event.multiValueHeaders) {
-          albResponse.multiValueHeaders = combineHeaders(headers, multiValueHeaders);
-        } else {
-          albResponse.headers = headers;
-        }
-        return albResponse;
-      }
-      if (eventType === LAMBDA_EVENT_TYPES.HTTP_API_V2) {
-        return { statusCode, isBase64Encoded, body, headers, cookies };
-      }
-      return { statusCode, isBase64Encoded, body, headers, multiValueHeaders };
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/index.js
-var require_aws = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/aws/index.js"(exports, module) {
-    var cleanUpEvent = require_clean_up_event();
-    var createRequest = require_create_request();
-    var formatResponse = require_format_response();
-    module.exports = (options) => {
-      return (getResponse) => async (event_, context = {}) => {
-        const event = cleanUpEvent(event_, options);
-        const request = createRequest(event, context, options);
-        const response = await getResponse(request, event, context);
-        return formatResponse(event, response, options);
-      };
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/clean-up-request.js
-var require_clean_up_request = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/clean-up-request.js"(exports, module) {
-    "use strict";
-    function getUrl({ requestPath, url: url2 }) {
-      if (requestPath) {
-        return requestPath;
-      }
-      return typeof url2 === "string" ? url2 : "/";
-    }
-    function getRequestContext(request) {
-      const requestContext = {};
-      requestContext.identity = {};
-      const forwardedIp = request.headers["x-forwarded-for"];
-      const clientIp = request.headers["client-ip"];
-      const ip = forwardedIp ? forwardedIp : clientIp ? clientIp : "";
-      if (ip) {
-        requestContext.identity.sourceIp = ip.split(":")[0];
-      }
-      return requestContext;
-    }
-    module.exports = function cleanupRequest(req, options) {
-      const request = req || {};
-      request.requestContext = getRequestContext(req);
-      request.method = request.method || "GET";
-      request.url = getUrl(request);
-      request.body = request.body || "";
-      request.headers = request.headers || {};
-      if (options.basePath) {
-        const basePathIndex = request.url.indexOf(options.basePath);
-        if (basePathIndex > -1) {
-          request.url = request.url.substr(basePathIndex + options.basePath.length);
-        }
-      }
-      return request;
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/create-request.js
-var require_create_request2 = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/create-request.js"(exports, module) {
-    "use strict";
-    var url2 = __require("url");
-    var Request = require_request();
-    function requestHeaders(request) {
-      return Object.keys(request.headers).reduce((headers, key) => {
-        headers[key.toLowerCase()] = request.headers[key];
-        return headers;
-      }, {});
-    }
-    function requestBody(request) {
-      const type = typeof request.rawBody;
-      if (Buffer.isBuffer(request.rawBody)) {
-        return request.rawBody;
-      } else if (type === "string") {
-        return Buffer.from(request.rawBody, "utf8");
-      } else if (type === "object") {
-        return Buffer.from(JSON.stringify(request.rawBody));
-      }
-      throw new Error(`Unexpected request.body type: ${typeof request.rawBody}`);
-    }
-    module.exports = (request) => {
-      const method = request.method;
-      const query = request.query;
-      const headers = requestHeaders(request);
-      const body = requestBody(request);
-      const req = new Request({
-        method,
-        headers,
-        body,
-        url: url2.format({
-          pathname: request.url,
-          query
-        })
-      });
-      req.requestContext = request.requestContext;
-      return req;
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/is-binary.js
-var require_is_binary2 = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/is-binary.js"(exports, module) {
-    "use strict";
-    var BINARY_ENCODINGS = ["gzip", "deflate", "br"];
-    var BINARY_CONTENT_TYPES = (process.env.BINARY_CONTENT_TYPES || "").split(",");
-    function isBinaryEncoding(headers) {
-      const contentEncoding = headers["content-encoding"];
-      if (typeof contentEncoding === "string") {
-        return contentEncoding.split(",").some(
-          (value) => BINARY_ENCODINGS.some((binaryEncoding) => value.indexOf(binaryEncoding) !== -1)
-        );
-      }
-    }
-    function isBinaryContent(headers, options) {
-      const contentTypes = [].concat(
-        options.binary ? options.binary : BINARY_CONTENT_TYPES
-      ).map(
-        (candidate) => new RegExp(`^${candidate.replace(/\*/g, ".*")}$`)
-      );
-      const contentType = (headers["content-type"] || "").split(";")[0];
-      return !!contentType && contentTypes.some((candidate) => candidate.test(contentType));
-    }
-    module.exports = function isBinary(headers, options) {
-      if (options.binary === false) {
-        return false;
-      }
-      if (options.binary === true) {
-        return true;
-      }
-      if (typeof options.binary === "function") {
-        return options.binary(headers);
-      }
-      return isBinaryEncoding(headers) || isBinaryContent(headers, options);
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/set-cookie.json
-var require_set_cookie = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/set-cookie.json"(exports, module) {
-    module.exports = { variations: ["set-cookie", "Set-cookie", "sEt-cookie", "SEt-cookie", "seT-cookie", "SeT-cookie", "sET-cookie", "SET-cookie", "set-Cookie", "Set-Cookie", "sEt-Cookie", "SEt-Cookie", "seT-Cookie", "SeT-Cookie", "sET-Cookie", "SET-Cookie", "set-cOokie", "Set-cOokie", "sEt-cOokie", "SEt-cOokie", "seT-cOokie", "SeT-cOokie", "sET-cOokie", "SET-cOokie", "set-COokie", "Set-COokie", "sEt-COokie", "SEt-COokie", "seT-COokie", "SeT-COokie", "sET-COokie", "SET-COokie", "set-coOkie", "Set-coOkie", "sEt-coOkie", "SEt-coOkie", "seT-coOkie", "SeT-coOkie", "sET-coOkie", "SET-coOkie", "set-CoOkie", "Set-CoOkie", "sEt-CoOkie", "SEt-CoOkie", "seT-CoOkie", "SeT-CoOkie", "sET-CoOkie", "SET-CoOkie", "set-cOOkie", "Set-cOOkie", "sEt-cOOkie", "SEt-cOOkie", "seT-cOOkie", "SeT-cOOkie", "sET-cOOkie", "SET-cOOkie", "set-COOkie", "Set-COOkie", "sEt-COOkie", "SEt-COOkie", "seT-COOkie", "SeT-COOkie", "sET-COOkie", "SET-COOkie", "set-cooKie", "Set-cooKie", "sEt-cooKie", "SEt-cooKie", "seT-cooKie", "SeT-cooKie", "sET-cooKie", "SET-cooKie", "set-CooKie", "Set-CooKie", "sEt-CooKie", "SEt-CooKie", "seT-CooKie", "SeT-CooKie", "sET-CooKie", "SET-CooKie", "set-cOoKie", "Set-cOoKie", "sEt-cOoKie", "SEt-cOoKie", "seT-cOoKie", "SeT-cOoKie", "sET-cOoKie", "SET-cOoKie", "set-COoKie", "Set-COoKie", "sEt-COoKie", "SEt-COoKie", "seT-COoKie", "SeT-COoKie", "sET-COoKie", "SET-COoKie", "set-coOKie", "Set-coOKie", "sEt-coOKie", "SEt-coOKie", "seT-coOKie", "SeT-coOKie", "sET-coOKie", "SET-coOKie", "set-CoOKie", "Set-CoOKie", "sEt-CoOKie", "SEt-CoOKie", "seT-CoOKie", "SeT-CoOKie", "sET-CoOKie", "SET-CoOKie", "set-cOOKie", "Set-cOOKie", "sEt-cOOKie", "SEt-cOOKie", "seT-cOOKie", "SeT-cOOKie", "sET-cOOKie", "SET-cOOKie", "set-COOKie", "Set-COOKie", "sEt-COOKie", "SEt-COOKie", "seT-COOKie", "SeT-COOKie", "sET-COOKie", "SET-COOKie", "set-cookIe", "Set-cookIe", "sEt-cookIe", "SEt-cookIe", "seT-cookIe", "SeT-cookIe", "sET-cookIe", "SET-cookIe", "set-CookIe", "Set-CookIe", "sEt-CookIe", "SEt-CookIe", "seT-CookIe", "SeT-CookIe", "sET-CookIe", "SET-CookIe", "set-cOokIe", "Set-cOokIe", "sEt-cOokIe", "SEt-cOokIe", "seT-cOokIe", "SeT-cOokIe", "sET-cOokIe", "SET-cOokIe", "set-COokIe", "Set-COokIe", "sEt-COokIe", "SEt-COokIe", "seT-COokIe", "SeT-COokIe", "sET-COokIe", "SET-COokIe", "set-coOkIe", "Set-coOkIe", "sEt-coOkIe", "SEt-coOkIe", "seT-coOkIe", "SeT-coOkIe", "sET-coOkIe", "SET-coOkIe", "set-CoOkIe", "Set-CoOkIe", "sEt-CoOkIe", "SEt-CoOkIe", "seT-CoOkIe", "SeT-CoOkIe", "sET-CoOkIe", "SET-CoOkIe", "set-cOOkIe", "Set-cOOkIe", "sEt-cOOkIe", "SEt-cOOkIe", "seT-cOOkIe", "SeT-cOOkIe", "sET-cOOkIe", "SET-cOOkIe", "set-COOkIe", "Set-COOkIe", "sEt-COOkIe", "SEt-COOkIe", "seT-COOkIe", "SeT-COOkIe", "sET-COOkIe", "SET-COOkIe", "set-cooKIe", "Set-cooKIe", "sEt-cooKIe", "SEt-cooKIe", "seT-cooKIe", "SeT-cooKIe", "sET-cooKIe", "SET-cooKIe", "set-CooKIe", "Set-CooKIe", "sEt-CooKIe", "SEt-CooKIe", "seT-CooKIe", "SeT-CooKIe", "sET-CooKIe", "SET-CooKIe", "set-cOoKIe", "Set-cOoKIe", "sEt-cOoKIe", "SEt-cOoKIe", "seT-cOoKIe", "SeT-cOoKIe", "sET-cOoKIe", "SET-cOoKIe", "set-COoKIe", "Set-COoKIe", "sEt-COoKIe", "SEt-COoKIe", "seT-COoKIe", "SeT-COoKIe", "sET-COoKIe", "SET-COoKIe", "set-coOKIe", "Set-coOKIe", "sEt-coOKIe", "SEt-coOKIe", "seT-coOKIe", "SeT-coOKIe", "sET-coOKIe", "SET-coOKIe", "set-CoOKIe", "Set-CoOKIe", "sEt-CoOKIe", "SEt-CoOKIe", "seT-CoOKIe", "SeT-CoOKIe", "sET-CoOKIe", "SET-CoOKIe", "set-cOOKIe", "Set-cOOKIe", "sEt-cOOKIe", "SEt-cOOKIe", "seT-cOOKIe", "SeT-cOOKIe", "sET-cOOKIe", "SET-cOOKIe", "set-COOKIe", "Set-COOKIe", "sEt-COOKIe", "SEt-COOKIe", "seT-COOKIe", "SeT-COOKIe", "sET-COOKIe", "SET-COOKIe", "set-cookiE", "Set-cookiE", "sEt-cookiE", "SEt-cookiE", "seT-cookiE", "SeT-cookiE", "sET-cookiE", "SET-cookiE", "set-CookiE", "Set-CookiE", "sEt-CookiE", "SEt-CookiE", "seT-CookiE", "SeT-CookiE", "sET-CookiE", "SET-CookiE", "set-cOokiE", "Set-cOokiE", "sEt-cOokiE", "SEt-cOokiE", "seT-cOokiE", "SeT-cOokiE", "sET-cOokiE", "SET-cOokiE", "set-COokiE", "Set-COokiE", "sEt-COokiE", "SEt-COokiE", "seT-COokiE", "SeT-COokiE", "sET-COokiE", "SET-COokiE", "set-coOkiE", "Set-coOkiE", "sEt-coOkiE", "SEt-coOkiE", "seT-coOkiE", "SeT-coOkiE", "sET-coOkiE", "SET-coOkiE", "set-CoOkiE", "Set-CoOkiE", "sEt-CoOkiE", "SEt-CoOkiE", "seT-CoOkiE", "SeT-CoOkiE", "sET-CoOkiE", "SET-CoOkiE", "set-cOOkiE", "Set-cOOkiE", "sEt-cOOkiE", "SEt-cOOkiE", "seT-cOOkiE", "SeT-cOOkiE", "sET-cOOkiE", "SET-cOOkiE", "set-COOkiE", "Set-COOkiE", "sEt-COOkiE", "SEt-COOkiE", "seT-COOkiE", "SeT-COOkiE", "sET-COOkiE", "SET-COOkiE", "set-cooKiE", "Set-cooKiE", "sEt-cooKiE", "SEt-cooKiE", "seT-cooKiE", "SeT-cooKiE", "sET-cooKiE", "SET-cooKiE", "set-CooKiE", "Set-CooKiE", "sEt-CooKiE", "SEt-CooKiE", "seT-CooKiE", "SeT-CooKiE", "sET-CooKiE", "SET-CooKiE", "set-cOoKiE", "Set-cOoKiE", "sEt-cOoKiE", "SEt-cOoKiE", "seT-cOoKiE", "SeT-cOoKiE", "sET-cOoKiE", "SET-cOoKiE", "set-COoKiE", "Set-COoKiE", "sEt-COoKiE", "SEt-COoKiE", "seT-COoKiE", "SeT-COoKiE", "sET-COoKiE", "SET-COoKiE", "set-coOKiE", "Set-coOKiE", "sEt-coOKiE", "SEt-coOKiE", "seT-coOKiE", "SeT-coOKiE", "sET-coOKiE", "SET-coOKiE", "set-CoOKiE", "Set-CoOKiE", "sEt-CoOKiE", "SEt-CoOKiE", "seT-CoOKiE", "SeT-CoOKiE", "sET-CoOKiE", "SET-CoOKiE", "set-cOOKiE", "Set-cOOKiE", "sEt-cOOKiE", "SEt-cOOKiE", "seT-cOOKiE", "SeT-cOOKiE", "sET-cOOKiE", "SET-cOOKiE", "set-COOKiE", "Set-COOKiE", "sEt-COOKiE", "SEt-COOKiE", "seT-COOKiE", "SeT-COOKiE", "sET-COOKiE", "SET-COOKiE", "set-cookIE", "Set-cookIE", "sEt-cookIE", "SEt-cookIE", "seT-cookIE", "SeT-cookIE", "sET-cookIE", "SET-cookIE", "set-CookIE", "Set-CookIE", "sEt-CookIE", "SEt-CookIE", "seT-CookIE", "SeT-CookIE", "sET-CookIE", "SET-CookIE", "set-cOokIE", "Set-cOokIE", "sEt-cOokIE", "SEt-cOokIE", "seT-cOokIE", "SeT-cOokIE", "sET-cOokIE", "SET-cOokIE", "set-COokIE", "Set-COokIE", "sEt-COokIE", "SEt-COokIE", "seT-COokIE", "SeT-COokIE", "sET-COokIE", "SET-COokIE", "set-coOkIE", "Set-coOkIE", "sEt-coOkIE", "SEt-coOkIE", "seT-coOkIE", "SeT-coOkIE", "sET-coOkIE", "SET-coOkIE", "set-CoOkIE", "Set-CoOkIE", "sEt-CoOkIE", "SEt-CoOkIE", "seT-CoOkIE", "SeT-CoOkIE", "sET-CoOkIE", "SET-CoOkIE", "set-cOOkIE", "Set-cOOkIE", "sEt-cOOkIE", "SEt-cOOkIE", "seT-cOOkIE", "SeT-cOOkIE", "sET-cOOkIE", "SET-cOOkIE", "set-COOkIE", "Set-COOkIE", "sEt-COOkIE", "SEt-COOkIE", "seT-COOkIE", "SeT-COOkIE", "sET-COOkIE", "SET-COOkIE", "set-cooKIE", "Set-cooKIE", "sEt-cooKIE", "SEt-cooKIE", "seT-cooKIE", "SeT-cooKIE", "sET-cooKIE", "SET-cooKIE", "set-CooKIE", "Set-CooKIE", "sEt-CooKIE", "SEt-CooKIE", "seT-CooKIE", "SeT-CooKIE", "sET-CooKIE", "SET-CooKIE", "set-cOoKIE", "Set-cOoKIE", "sEt-cOoKIE", "SEt-cOoKIE", "seT-cOoKIE", "SeT-cOoKIE", "sET-cOoKIE", "SET-cOoKIE", "set-COoKIE", "Set-COoKIE", "sEt-COoKIE", "SEt-COoKIE", "seT-COoKIE", "SeT-COoKIE", "sET-COoKIE", "SET-COoKIE", "set-coOKIE", "Set-coOKIE", "sEt-coOKIE", "SEt-coOKIE", "seT-coOKIE", "SeT-coOKIE", "sET-coOKIE", "SET-coOKIE", "set-CoOKIE", "Set-CoOKIE", "sEt-CoOKIE", "SEt-CoOKIE", "seT-CoOKIE", "SeT-CoOKIE", "sET-CoOKIE", "SET-CoOKIE", "set-cOOKIE", "Set-cOOKIE", "sEt-cOOKIE", "SEt-cOOKIE", "seT-cOOKIE", "SeT-cOOKIE", "sET-cOOKIE", "SET-cOOKIE", "set-COOKIE", "Set-COOKIE", "sEt-COOKIE", "SEt-COOKIE", "seT-COOKIE", "SeT-COOKIE", "sET-COOKIE", "SET-COOKIE"] };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/sanitize-headers.js
-var require_sanitize_headers2 = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/sanitize-headers.js"(exports, module) {
-    "use strict";
-    var setCookieVariations = require_set_cookie().variations;
-    module.exports = function sanitizeHeaders(headers) {
-      return Object.keys(headers).reduce((memo, key) => {
-        const value = headers[key];
-        if (Array.isArray(value)) {
-          if (key.toLowerCase() === "set-cookie") {
-            value.forEach((cookie, i) => {
-              memo[setCookieVariations[i]] = cookie;
-            });
-          } else {
-            memo[key] = value.join(", ");
-          }
-        } else {
-          memo[key] = value == null ? "" : value.toString();
-        }
-        return memo;
-      }, {});
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/format-response.js
-var require_format_response2 = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/format-response.js"(exports, module) {
-    var isBinary = require_is_binary2();
-    var Response2 = require_response();
-    var sanitizeHeaders = require_sanitize_headers2();
-    module.exports = (response, options) => {
-      const { statusCode } = response;
-      const headers = sanitizeHeaders(Response2.headers(response));
-      if (headers["transfer-encoding"] === "chunked" || response.chunkedEncoding) {
-        throw new Error("chunked encoding not supported");
-      }
-      const isBase64Encoded = isBinary(headers, options);
-      const encoding = isBase64Encoded ? "base64" : "utf8";
-      const body = Response2.body(response).toString(encoding);
-      return { status: statusCode, headers, isBase64Encoded, body };
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/index.js
-var require_azure = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/azure/index.js"(exports, module) {
-    var cleanupRequest = require_clean_up_request();
-    var createRequest = require_create_request2();
-    var formatResponse = require_format_response2();
-    module.exports = (options) => {
-      return (getResponse) => async (context, req) => {
-        const event = cleanupRequest(req, options);
-        const request = createRequest(event, options);
-        const response = await getResponse(request, context, event);
-        context.log(response);
-        return formatResponse(response, options);
-      };
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/get-provider.js
-var require_get_provider = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/lib/provider/get-provider.js"(exports, module) {
-    var aws = require_aws();
-    var azure = require_azure();
-    var providers = {
-      aws,
-      azure
-    };
-    module.exports = function getProvider(options) {
-      const { provider = "aws" } = options;
-      if (provider in providers) {
-        return providers[provider](options);
-      }
-      throw new Error(`Unsupported provider ${provider}`);
-    };
-  }
-});
-
-// ../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/serverless-http.js
-var require_serverless_http = __commonJS({
-  "../../node_modules/.pnpm/serverless-http@4.0.0/node_modules/serverless-http/serverless-http.js"(exports, module) {
-    "use strict";
-    var finish = require_finish();
-    var getFramework = require_get_framework();
-    var getProvider = require_get_provider();
-    var defaultOptions = {
-      requestId: "x-request-id"
-    };
-    module.exports = function(app2, opts) {
-      const options = Object.assign({}, defaultOptions, opts);
-      const framework = getFramework(app2);
-      const provider = getProvider(options);
-      return provider(async (request, ...context) => {
-        await finish(request, options.request, ...context);
-        const response = await framework(request);
-        await finish(response, options.response, ...context);
-        response.emit("close");
-        return response;
-      });
-    };
-  }
-});
-
 // ../../node_modules/.pnpm/ms@2.1.3/node_modules/ms/index.js
 var require_ms = __commonJS({
   "../../node_modules/.pnpm/ms@2.1.3/node_modules/ms/index.js"(exports, module) {
@@ -21713,7 +20894,7 @@ var require_application = __commonJS({
     var finalhandler = require_finalhandler();
     var debug = require_src()("express:application");
     var View2 = require_view();
-    var http = __require("node:http");
+    var http2 = __require("node:http");
     var methods = require_utils3().methods;
     var compileETag = require_utils3().compileETag;
     var compileQueryParser = require_utils3().compileQueryParser;
@@ -21946,7 +21127,7 @@ var require_application = __commonJS({
       tryRender(view, renderOptions, done);
     };
     app2.listen = function listen() {
-      var server = http.createServer(this);
+      var server = http2.createServer(this);
       var args = slice.call(arguments);
       if (typeof args[args.length - 1] === "function") {
         var done = args[args.length - 1] = once(args[args.length - 1]);
@@ -22715,18 +21896,18 @@ var require_range_parser = __commonJS({
 });
 
 // ../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/request.js
-var require_request2 = __commonJS({
+var require_request = __commonJS({
   "../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/request.js"(exports, module) {
     "use strict";
     var accepts = require_accepts();
     var isIP = __require("node:net").isIP;
     var typeis = require_type_is();
-    var http = __require("node:http");
+    var http2 = __require("node:http");
     var fresh = require_fresh();
     var parseRange = require_range_parser();
     var parse3 = require_parseurl();
     var proxyaddr = require_proxy_addr();
-    var req = Object.create(http.IncomingMessage.prototype);
+    var req = Object.create(http2.IncomingMessage.prototype);
     module.exports = req;
     req.get = req.header = function header(name) {
       if (!name) {
@@ -23812,7 +22993,7 @@ var require_vary = __commonJS({
 });
 
 // ../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/response.js
-var require_response2 = __commonJS({
+var require_response = __commonJS({
   "../../node_modules/.pnpm/express@5.2.1/node_modules/express/lib/response.js"(exports, module) {
     "use strict";
     var contentDisposition = require_content_disposition();
@@ -23820,7 +23001,7 @@ var require_response2 = __commonJS({
     var deprecate = require_depd()("express");
     var encodeUrl = require_encodeurl();
     var escapeHtml = require_escape_html();
-    var http = __require("node:http");
+    var http2 = __require("node:http");
     var onFinished = require_on_finished();
     var mime = require_mime_types();
     var path = __require("node:path");
@@ -23836,7 +23017,7 @@ var require_response2 = __commonJS({
     var resolve = path.resolve;
     var vary = require_vary();
     var { Buffer: Buffer2 } = __require("node:buffer");
-    var res = Object.create(http.ServerResponse.prototype);
+    var res = Object.create(http2.ServerResponse.prototype);
     module.exports = res;
     res.status = function status(code) {
       if (!Number.isInteger(code)) {
@@ -24394,8 +23575,8 @@ var require_express = __commonJS({
     var mixin = require_merge_descriptors();
     var proto = require_application();
     var Router17 = require_router();
-    var req = require_request2();
-    var res = require_response2();
+    var req = require_request();
+    var res = require_response();
     exports = module.exports = createApplication;
     function createApplication() {
       var app2 = function(req2, res2, next) {
@@ -57610,9 +56791,6 @@ var require_lib6 = __commonJS({
   }
 });
 
-// src/vercel-entry.ts
-var import_serverless_http = __toESM(require_serverless_http(), 1);
-
 // src/app.ts
 var import_express17 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
@@ -71468,6 +70646,10 @@ router2.get("/recordings/related", async (req, res) => {
       return;
     }
     const { id, limit = 8 } = parsed.data;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      res.json([]);
+      return;
+    }
     const { data: recording, error: recError } = await supabase.from("recordings_with_links").select("username, tags, gender").not("links", "is", "null").eq("id", id).single();
     if (recError) {
       if (recError.code === "PGRST116") {
@@ -92131,6 +91313,13 @@ var search_default = router12;
 
 // src/routes/media-proxy.ts
 var import_express13 = __toESM(require_express2(), 1);
+import https from "node:https";
+import http from "node:http";
+import { Resolver } from "node:dns/promises";
+import { Readable } from "node:stream";
+var CONNECTION_TIMEOUT_MS = 2e4;
+var MAX_RETRIES = 3;
+var BASE_RETRY_DELAY_MS = 500;
 var ALLOWED_HOSTS = [
   "img2.pixhost.to",
   "pixhost.to",
@@ -92141,10 +91330,182 @@ var ALLOWED_HOSTS = [
   "www.lobfile.com",
   "i.ibb.co",
   "ibb.co",
+  "pixeldrain.com",
+  "www.pixeldrain.com",
   "xhfbhgklqylmfmfjtgkq.supabase.co",
   "setripupfosilpro.x02.me"
 ];
+var FALLBACK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="%23f3f4f6"/>
+  <rect x="260" y="140" width="120" height="80" rx="8" fill="%23d1d5db" stroke="%239ca3af" stroke-width="2"/>
+  <path d="M300 180L340 160v40z" fill="%239ca3af"/>
+  <circle cx="285" cy="170" r="5" fill="%239ca3af"/>
+  <text x="320" y="260" text-anchor="middle" fill="%239ca3af" font-family="system-ui,sans-serif" font-size="14">Image unavailable</text>
+</svg>`;
+var FALLBACK_SVG_BUFFER = Buffer.from(FALLBACK_SVG);
+var FAILURE_CACHE_TTL_MS = 10 * 60 * 1e3;
+var FAILURE_CACHE_MAX_SIZE = 500;
+var failureCache = /* @__PURE__ */ new Map();
+function isCachedFailure(url2) {
+  const cached2 = failureCache.get(url2);
+  if (!cached2) return false;
+  if (Date.now() - cached2 > FAILURE_CACHE_TTL_MS) {
+    failureCache.delete(url2);
+    return false;
+  }
+  return true;
+}
+function markCachedFailure(url2) {
+  if (failureCache.size >= FAILURE_CACHE_MAX_SIZE) {
+    const oldestKey = failureCache.keys().next().value;
+    if (oldestKey !== void 0) failureCache.delete(oldestKey);
+  }
+  failureCache.set(url2, Date.now());
+}
 var router13 = (0, import_express13.Router)();
+var DNS_SERVERS = ["8.8.8.8", "1.1.1.1", "9.9.9.9", "208.67.222.222"];
+var customResolver = new Resolver();
+customResolver.setServers(DNS_SERVERS);
+async function resolveHostname(hostname2) {
+  try {
+    const addresses = await customResolver.resolve4(hostname2);
+    if (addresses?.[0]) return addresses[0];
+  } catch {
+  }
+  try {
+    const addresses = await customResolver.resolve6(hostname2);
+    return addresses?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+function incomingToResponse(msg) {
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(msg.headers)) {
+    if (value === void 0) continue;
+    if (Array.isArray(value)) {
+      for (const v of value) headers.append(key, v);
+    } else {
+      headers.set(key, value);
+    }
+  }
+  const status = msg.statusCode ?? 502;
+  const body = status === 204 || status === 304 ? null : Readable.toWeb(msg);
+  return new Response(body, {
+    status,
+    statusText: msg.statusMessage ?? "",
+    headers
+  });
+}
+async function fetchWithTimeout(urlStr, headers, timeoutMs) {
+  const parsedUrl = new URL(urlStr);
+  const protocol = parsedUrl.protocol === "https:" ? https : http;
+  const resolvedIp = await resolveHostname(parsedUrl.hostname);
+  if (resolvedIp) {
+    return new Promise((resolve, reject) => {
+      const options = {
+        hostname: resolvedIp,
+        port: parsedUrl.port || (protocol === https ? 443 : 80),
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: "GET",
+        headers: {
+          ...headers,
+          Host: parsedUrl.hostname
+        },
+        servername: parsedUrl.hostname,
+        lookup: (_host, _opts, cb) => {
+          cb(null, resolvedIp, 4);
+        },
+        timeout: timeoutMs
+      };
+      const req = protocol.request(options, (res) => {
+        resolve(incomingToResponse(res));
+      });
+      req.on("error", (err) => {
+        reject(err);
+      });
+      req.on("timeout", () => {
+        req.destroy();
+        reject(new Error("Timeout"));
+      });
+      req.end();
+    });
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(urlStr, {
+      headers,
+      signal: controller.signal
+    });
+    return response;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function fetchWithRetry(url2, headers, log) {
+  if (isCachedFailure(url2)) {
+    log.warn({ url: url2 }, "Media proxy skipping cached failure");
+    return null;
+  }
+  for (let attempt = 1; attempt <= 1 + MAX_RETRIES; attempt++) {
+    const isFirst = attempt === 1;
+    const timeoutMs = CONNECTION_TIMEOUT_MS * (isFirst ? 1 : 1.5);
+    try {
+      const response = await fetchWithTimeout(url2, headers, timeoutMs);
+      if (response.status >= 500 && response.status < 600 && attempt <= MAX_RETRIES) {
+        const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200;
+        log.warn({ url: url2, status: response.status, attempt }, "Media proxy upstream 5xx, retrying");
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+      return response;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      if (attempt <= MAX_RETRIES) {
+        const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200;
+        log.warn({ url: url2, attempt, err: errorMessage }, "Media proxy fetch failed, retrying");
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+    }
+  }
+  markCachedFailure(url2);
+  return null;
+}
+function streamResponse(upstreamRes, res, log) {
+  const contentType = upstreamRes.headers.get("content-type");
+  if (contentType) res.setHeader("Content-Type", contentType);
+  const contentLength = upstreamRes.headers.get("content-length");
+  if (contentLength) res.setHeader("Content-Length", contentLength);
+  const contentRange = upstreamRes.headers.get("content-range");
+  if (contentRange) res.setHeader("Content-Range", contentRange);
+  const acceptRanges = upstreamRes.headers.get("accept-ranges");
+  if (acceptRanges) res.setHeader("Accept-Ranges", acceptRanges);
+  if (upstreamRes.status === 206) {
+    res.status(206);
+  }
+  res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+  if (upstreamRes.body) {
+    const reader = upstreamRes.body.getReader();
+    const pump = async () => {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          res.end();
+          return;
+        }
+        res.write(value);
+      }
+    };
+    pump().catch((err) => {
+      log.error({ err }, "Media proxy stream error");
+      if (!res.headersSent) res.status(500).end();
+    });
+  } else {
+    upstreamRes.text().then((text2) => res.send(text2));
+  }
+}
 router13.get("/media", async (req, res) => {
   const rawUrl = req.query.url;
   if (!rawUrl) {
@@ -92164,61 +91525,47 @@ router13.get("/media", async (req, res) => {
     res.status(403).json({ error: "Domain not allowed" });
     return;
   }
+  const upstreamHeaders = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    Accept: "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    Referer: "https://chuglii.in/"
+  };
+  const rangeHeader = req.headers["range"];
+  if (rangeHeader) {
+    upstreamHeaders["Range"] = rangeHeader;
+  }
   try {
-    const upstreamHeaders = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      Accept: "*/*",
-      "Accept-Language": "en-US,en;q=0.9",
-      Referer: "https://chuglii.in/"
-    };
-    const rangeHeader = req.headers["range"];
-    if (rangeHeader) {
-      upstreamHeaders["Range"] = rangeHeader;
-    }
-    const response = await fetch(urlStr, {
-      headers: upstreamHeaders
-    });
-    if (!response.ok && response.status !== 206) {
-      const body = await response.text().catch(() => "");
-      req.log.error({ url: urlStr, status: response.status, body: body.slice(0, 200) }, "Media proxy upstream error");
-      res.status(502).json({ error: "Upstream fetch failed", upstreamStatus: response.status });
+    const response = await fetchWithRetry(urlStr, upstreamHeaders, req.log);
+    if (!response) {
+      req.log.warn({ url: urlStr }, "Media proxy returning fallback SVG \u2014 all retries exhausted");
+      res.setHeader("Content-Type", "image/svg+xml");
+      res.setHeader("Cache-Control", "public, max-age=300");
+      res.setHeader("X-Fallback", "true");
+      res.status(200).send(FALLBACK_SVG_BUFFER);
       return;
     }
-    const contentType = response.headers.get("content-type");
-    if (contentType) res.setHeader("Content-Type", contentType);
-    const contentLength = response.headers.get("content-length");
-    if (contentLength) res.setHeader("Content-Length", contentLength);
-    const contentRange = response.headers.get("content-range");
-    if (contentRange) res.setHeader("Content-Range", contentRange);
-    const acceptRanges = response.headers.get("accept-ranges");
-    if (acceptRanges) res.setHeader("Accept-Ranges", acceptRanges);
-    if (response.status === 206) {
-      res.status(206);
+    if (!response.ok && response.status !== 206) {
+      const body = await response.text().catch(() => "");
+      req.log.warn({ url: urlStr, status: response.status, body: body.slice(0, 200) }, "Media proxy upstream error, returning fallback SVG");
+      markCachedFailure(urlStr);
+      res.setHeader("Content-Type", "image/svg+xml");
+      res.setHeader("Cache-Control", "public, max-age=300");
+      res.setHeader("X-Fallback", "true");
+      res.status(200).send(FALLBACK_SVG_BUFFER);
+      return;
     }
-    res.setHeader("Cache-Control", "public, max-age=86400, immutable");
-    if (response.body) {
-      const reader = response.body.getReader();
-      const pump = async () => {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            res.end();
-            return;
-          }
-          res.write(value);
-        }
-      };
-      pump().catch((err) => {
-        req.log.error({ err }, "Media proxy stream error");
-        if (!res.headersSent) res.status(500).end();
-      });
-    } else {
-      const text2 = await response.text();
-      res.send(text2);
-    }
+    streamResponse(response, res, req.log);
   } catch (err) {
-    req.log.error({ err }, "Media proxy fetch error");
-    if (!res.headersSent) res.status(502).json({ error: "Upstream fetch failed" });
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    req.log.error({ err, url: urlStr }, "Media proxy fetch error, returning fallback SVG");
+    if (!res.headersSent) {
+      markCachedFailure(urlStr);
+      res.setHeader("Content-Type", "image/svg+xml");
+      res.setHeader("Cache-Control", "public, max-age=300");
+      res.setHeader("X-Fallback", "true");
+      res.status(200).send(FALLBACK_SVG_BUFFER);
+    }
   }
 });
 var media_proxy_default = router13;
@@ -92482,7 +91829,7 @@ app.use((err, _req, res, _next) => {
 var app_default = app;
 
 // src/vercel-entry.ts
-var vercel_entry_default = (0, import_serverless_http.default)(app_default);
+var vercel_entry_default = app_default;
 export {
   vercel_entry_default as default
 };
