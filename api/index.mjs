@@ -54756,8 +54756,8 @@ var require_stream = __commonJS({
     };
     function getNodejsStreamFuncs() {
       function getStream2(ssl) {
-        const net = __require("net");
-        return new net.Socket();
+        const net2 = __require("net");
+        return new net2.Socket();
       }
       function getSecureStream2(options) {
         const tls = __require("tls");
@@ -54879,8 +54879,8 @@ var require_connection = __commonJS({
               options.key = self2.ssl.key;
             }
           }
-          const net = __require("net");
-          if (net.isIP && net.isIP(host) === 0) {
+          const net2 = __require("net");
+          if (net2.isIP && net2.isIP(host) === 0) {
             options.servername = host;
           }
           try {
@@ -69918,6 +69918,19 @@ function createUserClient(token) {
     }
   });
 }
+async function fetchAll(build, pageSize = 1e3) {
+  const all = [];
+  let start = 0;
+  for (; ; ) {
+    const { data, error: error40 } = await build(start, start + pageSize - 1);
+    if (error40) return { data: null, error: error40 };
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < pageSize) break;
+    start += pageSize;
+  }
+  return { data: all, error: null };
+}
 
 // src/middleware/cache.ts
 import { createHash } from "node:crypto";
@@ -70997,18 +71010,22 @@ router3.get("/performers", cache({ ttlSeconds: 600, staleSeconds: 900, tags: ["p
     const search = req.query.search || "";
     const gender = req.query.gender || "";
     const sort = req.query.sort || "count";
-    let query = supabase.from("recordings_with_links").select("username, gender, thumbnail_url, sprite_url, preview_url, timestamp, links").not("links", "is", "null").order("timestamp", { ascending: false });
-    if (search) query = query.ilike("username", `%${search}%`);
-    if (gender) query = query.eq("gender", gender);
-    const FETCH_LIMIT = 5e4;
-    query = query.limit(FETCH_LIMIT);
-    const { data, error: error40 } = await query;
+    const { data: allRows, error: error40 } = await fetchAll(
+      (start2, end) => supabase.from("recordings_with_links").select("username, gender, thumbnail_url, sprite_url, preview_url, timestamp, links").not("links", "is", "null").order("timestamp", { ascending: false }).range(start2, end)
+    );
     if (error40) {
       req.log.error({ err: error40 }, "Supabase error listing performers");
       res.status(500).json({ error: "Failed to fetch performers" });
       return;
     }
-    const validRows = data ?? [];
+    let validRows = allRows ?? [];
+    if (search) {
+      const lower = search.toLowerCase();
+      validRows = validRows.filter((r) => r.username.toLowerCase().includes(lower));
+    }
+    if (gender) {
+      validRows = validRows.filter((r) => r.gender === gender);
+    }
     const performerMap = /* @__PURE__ */ new Map();
     for (const row of validRows) {
       const existing = performerMap.get(row.username);
@@ -71085,7 +71102,9 @@ var performers_default = router3;
 var import_express4 = __toESM(require_express2(), 1);
 var router4 = (0, import_express4.Router)();
 router4.get("/tags", cache({ ttlSeconds: 900, staleSeconds: 1800, tags: ["tags", "recordings", "search"] }), async (req, res) => {
-  const { data, error: error40 } = await supabase.from("recordings_with_links").select("tags, links").not("links", "is", "null");
+  const { data, error: error40 } = await fetchAll(
+    (start, end) => supabase.from("recordings_with_links").select("tags, links").not("links", "is", "null").range(start, end)
+  );
   if (error40) {
     req.log.error({ err: error40 }, "Supabase error listing tags");
     res.status(500).json({ error: "Failed to fetch tags" });
@@ -71109,7 +71128,9 @@ var tags_default = router4;
 var import_express5 = __toESM(require_express2(), 1);
 var router5 = (0, import_express5.Router)();
 router5.get("/stats", cache({ ttlSeconds: 600, staleSeconds: 1800, tags: ["stats", "recordings"] }), async (req, res) => {
-  const { data, error: error40 } = await supabase.from("recordings_with_links").select("username, tags, filesize, timestamp, links").not("links", "is", "null");
+  const { data, error: error40 } = await fetchAll(
+    (start, end) => supabase.from("recordings_with_links").select("username, tags, filesize, timestamp, links").not("links", "is", "null").range(start, end)
+  );
   if (error40) {
     req.log.error({ err: error40 }, "Supabase error fetching stats");
     res.status(500).json({ error: "Failed to fetch stats" });
@@ -91283,25 +91304,32 @@ router12.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["searc
         });
       }
     }
-    const { data: tags, error: tagErr } = await supabase.from("recordings_with_links").select("tags, links").not("links", "is", "null");
-    if (!tagErr && tags) {
+    {
       const matchedTags = /* @__PURE__ */ new Set();
       const lowerQ = q.toLowerCase();
-      for (const row of tags) {
-        if (matchedTags.size >= 4) break;
-        if (!row.tags) continue;
-        for (const tag of row.tags) {
-          if (matchedTags.size >= 4) break;
-          if (tag?.toLowerCase().includes(lowerQ) && !matchedTags.has(tag)) {
-            matchedTags.add(tag);
-            suggestions.push({
-              type: "tag",
-              label: tag,
-              subtitle: "Tag",
-              href: `/browse?tags=${encodeURIComponent(tag)}`
-            });
+      const TAG_PAGE = 1e3;
+      let offset = 0;
+      while (matchedTags.size < 4) {
+        const { data: tagPage, error: tagErr } = await supabase.from("recordings_with_links").select("tags").not("links", "is", "null").range(offset, offset + TAG_PAGE - 1);
+        if (tagErr || !tagPage || tagPage.length === 0) break;
+        for (const row of tagPage) {
+          if (!row.tags) continue;
+          for (const tag of row.tags) {
+            if (matchedTags.size >= 4) break;
+            if (tag?.toLowerCase().includes(lowerQ) && !matchedTags.has(tag)) {
+              matchedTags.add(tag);
+              suggestions.push({
+                type: "tag",
+                label: tag,
+                subtitle: "Tag",
+                href: `/browse?tags=${encodeURIComponent(tag)}`
+              });
+            }
           }
+          if (matchedTags.size >= 4) break;
         }
+        if (tagPage.length < TAG_PAGE) break;
+        offset += TAG_PAGE;
       }
     }
   } catch (err) {
@@ -91315,26 +91343,53 @@ var search_default = router12;
 var import_express13 = __toESM(require_express2(), 1);
 import https from "node:https";
 import http from "node:http";
-import { Resolver } from "node:dns/promises";
+import { Resolver, lookup as systemLookup } from "node:dns/promises";
+import net from "node:net";
 import { Readable } from "node:stream";
 var CONNECTION_TIMEOUT_MS = 2e4;
 var MAX_RETRIES = 3;
 var BASE_RETRY_DELAY_MS = 500;
-var ALLOWED_HOSTS = [
-  "img2.pixhost.to",
-  "pixhost.to",
-  "www.pixhost.to",
-  "files.catbox.moe",
-  "catbox.moe",
-  "lobfile.com",
-  "www.lobfile.com",
-  "i.ibb.co",
-  "ibb.co",
-  "pixeldrain.com",
-  "www.pixeldrain.com",
-  "xhfbhgklqylmfmfjtgkq.supabase.co",
-  "setripupfosilpro.x02.me"
-];
+var HOST_MAX_CONCURRENT = 5;
+var HOST_START_INTERVAL_MS = 70;
+var hostGates = /* @__PURE__ */ new Map();
+function getHostGate(host) {
+  let gate = hostGates.get(host);
+  if (!gate) {
+    gate = { active: 0, lastStart: 0, waiters: [], timer: null };
+    hostGates.set(host, gate);
+  }
+  return gate;
+}
+function releaseHostGate(gate) {
+  gate.active--;
+  scheduleHostGate(gate);
+}
+function scheduleHostGate(gate) {
+  if (gate.timer) return;
+  const tryStart = () => {
+    gate.timer = null;
+    if (gate.waiters.length === 0 || gate.active >= HOST_MAX_CONCURRENT) return;
+    const now = Date.now();
+    const wait = Math.max(0, gate.lastStart + HOST_START_INTERVAL_MS - now);
+    if (wait > 0) {
+      gate.timer = setTimeout(tryStart, wait);
+      return;
+    }
+    gate.lastStart = now;
+    gate.active++;
+    const next = gate.waiters.shift();
+    next?.();
+    if (gate.waiters.length) gate.timer = setTimeout(tryStart, HOST_START_INTERVAL_MS);
+  };
+  gate.timer = setTimeout(tryStart, 0);
+}
+function acquireHostGate(host) {
+  const gate = getHostGate(host);
+  return new Promise((resolve) => {
+    gate.waiters.push(() => resolve(() => releaseHostGate(gate)));
+    scheduleHostGate(gate);
+  });
+}
 var FALLBACK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
   <rect width="640" height="360" fill="%23f3f4f6"/>
   <rect x="260" y="140" width="120" height="80" rx="8" fill="%23d1d5db" stroke="%239ca3af" stroke-width="2"/>
@@ -91379,6 +91434,71 @@ async function resolveHostname(hostname2) {
     return null;
   }
 }
+function ipv4ToInt(ip) {
+  return ip.split(".").reduce((acc, octet) => (acc << 8) + Number(octet), 0) >>> 0;
+}
+function isPrivateIpv4(ip) {
+  const n = ipv4ToInt(ip);
+  const inRange = (start, count) => {
+    const s = ipv4ToInt(start);
+    return n >= s && n < s + count;
+  };
+  return inRange("0.0.0.0", 16777216) || // 0.0.0.0/8 "this network"
+  inRange("10.0.0.0", 16777216) || // 10.0.0.0/8 private
+  inRange("100.64.0.0", 4194304) || // 100.64.0.0/10 CGNAT
+  inRange("127.0.0.0", 16777216) || // 127.0.0.0/8 loopback
+  inRange("169.254.0.0", 65536) || // 169.254.0.0/16 link-local (metadata)
+  inRange("172.16.0.0", 1048576) || // 172.16.0.0/12 private
+  inRange("192.168.0.0", 65536) || // 192.168.0.0/16 private
+  inRange("192.0.0.0", 256) || // 192.0.0.0/24 IETF assignments
+  inRange("192.0.2.0", 256) || // 192.0.2.0/24 TEST-NET-1
+  inRange("198.18.0.0", 131072) || // 198.18.0.0/15 benchmarking
+  inRange("198.51.100.0", 256) || // 198.51.100.0/24 TEST-NET-2
+  inRange("203.0.113.0", 256) || // 203.0.113.0/24 TEST-NET-3
+  inRange("224.0.0.0", 268435456) || // 224.0.0.0/4 multicast
+  inRange("240.0.0.0", 268435456) || // 240.0.0.0/4 reserved
+  inRange("255.255.255.255", 1);
+}
+function ipv6ToBigInt(ip) {
+  if (ip.includes(".")) {
+    const v4 = ip.split(":").pop() ?? "";
+    const [a, b, c, d] = v4.split(".").map(Number);
+    const hex = ((a << 24) + (b << 16) + (c << 8) + d >>> 0).toString(16).padStart(8, "0");
+    ip = ip.slice(0, ip.lastIndexOf(":") + 1) + hex;
+  }
+  let groups;
+  const doubleColon = ip.indexOf("::");
+  if (doubleColon !== -1) {
+    const left = ip.slice(0, doubleColon).split(":").filter(Boolean);
+    const right = ip.slice(doubleColon + 2).split(":").filter(Boolean);
+    const missing = 8 - left.length - right.length;
+    groups = [...left, ...Array(missing).fill("0"), ...right];
+  } else {
+    groups = ip.split(":");
+  }
+  let result = 0n;
+  for (const group of groups) {
+    result = (result << 16n) + BigInt(parseInt(group || "0", 16));
+  }
+  return result;
+}
+function isPrivateIpv6(ip) {
+  const value = ipv6ToBigInt(ip);
+  const inRange = (start, count) => value >= start && value < start + count;
+  return inRange(0n, 1n) || // ::/128 unspecified
+  inRange(1n, 1n) || // ::1/128 loopback
+  inRange(0xffffffffn, 0x100000000n) || // ::ffff:0:0/96 IPv4-mapped (block all)
+  inRange(BigInt(64512) << 96n, BigInt(512) << 96n) || // fc00::/7 ULA
+  inRange(BigInt(65152) << 96n, BigInt(1024) << 96n) || // fe80::/10 link-local
+  inRange(BigInt(65280) << 96n, BigInt(256) << 96n) || // ff00::/8 multicast
+  inRange(BigInt(8193) << 112n, BigInt(65536) << 96n);
+}
+function isPrivateIp(ip) {
+  const kind = net.isIP(ip);
+  if (kind === 4) return isPrivateIpv4(ip);
+  if (kind === 6) return isPrivateIpv6(ip);
+  return true;
+}
 function incomingToResponse(msg) {
   const headers = new Headers();
   for (const [key, value] of Object.entries(msg.headers)) {
@@ -91400,48 +91520,62 @@ function incomingToResponse(msg) {
 async function fetchWithTimeout(urlStr, headers, timeoutMs) {
   const parsedUrl = new URL(urlStr);
   const protocol = parsedUrl.protocol === "https:" ? https : http;
-  const resolvedIp = await resolveHostname(parsedUrl.hostname);
+  let resolvedIp = await resolveHostname(parsedUrl.hostname);
+  let family = 4;
   if (resolvedIp) {
-    return new Promise((resolve, reject) => {
-      const options = {
-        hostname: resolvedIp,
-        port: parsedUrl.port || (protocol === https ? 443 : 80),
-        path: parsedUrl.pathname + parsedUrl.search,
-        method: "GET",
-        headers: {
-          ...headers,
-          Host: parsedUrl.hostname
-        },
-        servername: parsedUrl.hostname,
-        lookup: (_host, _opts, cb) => {
-          cb(null, resolvedIp, 4);
-        },
-        timeout: timeoutMs
-      };
-      const req = protocol.request(options, (res) => {
-        resolve(incomingToResponse(res));
-      });
-      req.on("error", (err) => {
-        reject(err);
-      });
-      req.on("timeout", () => {
-        req.destroy();
-        reject(new Error("Timeout"));
-      });
-      req.end();
-    });
+    if (isPrivateIp(resolvedIp)) {
+      throw new Error(`Blocked: private/reserved IP (${resolvedIp})`);
+    }
+    try {
+      return await directConnect(protocol, parsedUrl, headers, resolvedIp, family, timeoutMs);
+    } catch (err) {
+      if (!(err instanceof Error)) throw err;
+      const msg = err.message.toLowerCase();
+      const isNetworkErr = msg.includes("timeout") || msg.includes("econn") || msg.includes("enetunreach") || msg.includes("eai_again") || msg.includes("certificate") || msg.includes("tlsv1");
+      if (!isNetworkErr) throw err;
+    }
   }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(urlStr, {
-      headers,
-      signal: controller.signal
-    });
-    return response;
-  } finally {
-    clearTimeout(timer);
+    const result = await systemLookup(parsedUrl.hostname);
+    const systemIp = result.address;
+    const systemFamily = result.family ?? 4;
+    if (isPrivateIp(systemIp)) {
+      throw new Error(`Blocked: private/reserved IP (${systemIp})`);
+    }
+    return await directConnect(protocol, parsedUrl, headers, systemIp, systemFamily, timeoutMs);
+  } catch {
+    throw new Error("DNS resolution failed or blocked");
   }
+}
+function directConnect(protocol, parsedUrl, headers, resolvedIp, family, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: resolvedIp,
+      port: parsedUrl.port || (protocol === https ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: "GET",
+      headers: {
+        ...headers,
+        Host: parsedUrl.hostname
+      },
+      servername: parsedUrl.hostname,
+      lookup: (_host, _opts, cb) => {
+        cb(null, resolvedIp, family);
+      },
+      timeout: timeoutMs
+    };
+    const req = protocol.request(options, (res) => {
+      resolve(incomingToResponse(res));
+    });
+    req.on("error", (err) => {
+      reject(err);
+    });
+    req.on("timeout", () => {
+      req.destroy();
+      reject(new Error("Timeout"));
+    });
+    req.end();
+  });
 }
 async function fetchWithRetry(url2, headers, log) {
   if (isCachedFailure(url2)) {
@@ -91458,6 +91592,16 @@ async function fetchWithRetry(url2, headers, log) {
         log.warn({ url: url2, status: response.status, attempt }, "Media proxy upstream 5xx, retrying");
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
+      }
+      if (response.status === 200 && response.headers.get("content-length") === "0") {
+        if (attempt <= MAX_RETRIES) {
+          log.warn({ url: url2, attempt }, "Media proxy upstream empty 200, retrying");
+          const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+        markCachedFailure(url2);
+        return null;
       }
       return response;
     } catch (err) {
@@ -91482,10 +91626,18 @@ function streamResponse(upstreamRes, res, log) {
   if (contentRange) res.setHeader("Content-Range", contentRange);
   const acceptRanges = upstreamRes.headers.get("accept-ranges");
   if (acceptRanges) res.setHeader("Accept-Ranges", acceptRanges);
-  if (upstreamRes.status === 206) {
+  const isPartial = upstreamRes.status === 206 || !!contentRange;
+  if (isPartial) {
     res.status(206);
   }
-  res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+  if (isPartial) {
+    res.setHeader("Cache-Control", "no-store");
+  } else {
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400, immutable"
+    );
+  }
   if (upstreamRes.body) {
     const reader = upstreamRes.body.getReader();
     const pump = async () => {
@@ -91515,29 +91667,43 @@ router13.get("/media", async (req, res) => {
   let urlStr;
   try {
     urlStr = decodeURIComponent(rawUrl);
-    new URL(urlStr);
+    const parsedUrl = new URL(urlStr);
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      res.status(400).json({ error: "Only http(s) URLs are supported" });
+      return;
+    }
   } catch {
     res.status(400).json({ error: "Invalid URL" });
-    return;
-  }
-  const parsed = new URL(urlStr);
-  if (!ALLOWED_HOSTS.includes(parsed.hostname)) {
-    res.status(403).json({ error: "Domain not allowed" });
     return;
   }
   const upstreamHeaders = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     Accept: "*/*",
-    "Accept-Language": "en-US,en;q=0.9",
-    Referer: "https://chuglii.in/"
+    "Accept-Language": "en-US,en;q=0.9"
   };
+  const NO_REFERER_HOSTS = [
+    "catbox.moe",
+    "files.catbox.moe",
+    "litter.catbox.moe",
+    "files.litterbox.catbox.moe"
+  ];
+  const upstreamHostname = new URL(urlStr).hostname;
+  if (!NO_REFERER_HOSTS.some((h) => upstreamHostname === h || upstreamHostname.endsWith(`.${h}`))) {
+    upstreamHeaders["Referer"] = "https://chuglii.in/";
+  }
   const rangeHeader = req.headers["range"];
   if (rangeHeader) {
     upstreamHeaders["Range"] = rangeHeader;
   }
+  const release = rangeHeader ? null : await acquireHostGate(upstreamHostname);
   try {
     const response = await fetchWithRetry(urlStr, upstreamHeaders, req.log);
+    const isVideoRequest = !!rangeHeader;
     if (!response) {
+      if (isVideoRequest) {
+        res.status(502).end();
+        return;
+      }
       req.log.warn({ url: urlStr }, "Media proxy returning fallback SVG \u2014 all retries exhausted");
       res.setHeader("Content-Type", "image/svg+xml");
       res.setHeader("Cache-Control", "public, max-age=300");
@@ -91546,6 +91712,15 @@ router13.get("/media", async (req, res) => {
       return;
     }
     if (!response.ok && response.status !== 206) {
+      if (isVideoRequest) {
+        const body2 = await response.arrayBuffer();
+        res.status(response.status);
+        for (const [k, v] of response.headers.entries()) {
+          if (k.toLowerCase() === "content-type") res.setHeader("Content-Type", v);
+        }
+        res.send(Buffer.from(body2));
+        return;
+      }
       const body = await response.text().catch(() => "");
       req.log.warn({ url: urlStr, status: response.status, body: body.slice(0, 200) }, "Media proxy upstream error, returning fallback SVG");
       markCachedFailure(urlStr);
@@ -91566,6 +91741,8 @@ router13.get("/media", async (req, res) => {
       res.setHeader("X-Fallback", "true");
       res.status(200).send(FALLBACK_SVG_BUFFER);
     }
+  } finally {
+    release?.();
   }
 });
 var media_proxy_default = router13;

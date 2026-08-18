@@ -34,7 +34,9 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     function applyFilters(q: any) {
       q = q.not("links", "is", "null");
       if (search?.trim()) {
-        const term = search.trim();
+        // Escape PostgreSQL LIKE wildcards so user input like "100%" is
+        // matched literally rather than treated as a percent wildcard.
+        const term = search.trim().replace(/%/g, "\\%").replace(/_/g, "\\_");
         q = q.or(`username.ilike.%${term}%,room_title.ilike.%${term}%,filename.ilike.%${term}%`);
       }
       if (tags) {
@@ -400,6 +402,13 @@ router.get("/recordings/related", async (req, res) => {
     }
 
     const { id, limit = 8 } = parsed.data;
+
+    // Validate UUID format — PostgreSQL throws a type error for non-UUID strings
+    // that isn't PGRST116, so catch it here to return a clean empty result.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+      res.json([]);
+      return;
+    }
 
     // ── Fetch source recording ──
     const { data: recording, error: recError } = await supabase

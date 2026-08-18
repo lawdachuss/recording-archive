@@ -22,6 +22,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { userApi, recordingToMeta, type CloudCollection } from "@/lib/user-api";
 import { addWatchedId } from "@/lib/watched-storage";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
+import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { proxyUrl } from "@/lib/proxy-url";
 
 import {
@@ -205,6 +206,9 @@ export default function VideoDetail() {
     { query: { enabled: !!id, queryKey: getGetReactionsQueryKey({ recording_id: id || "", session_id: sessionId }) } },
   );
 
+  usePreloadRecordings(related);
+  usePreloadRecordings(recData?.data);
+
   const toggleReaction = useToggleReaction();
 
   useEffect(() => {
@@ -294,6 +298,7 @@ export default function VideoDetail() {
         room_title: video.room_title,
         thumbnail_url: video.thumbnail_url,
         preview_url: video.preview_url,
+        sprite_url: video.sprite_url,
         resolution: video.resolution,
         timestamp: video.timestamp,
         saved_at: new Date().toISOString(),
@@ -337,6 +342,8 @@ export default function VideoDetail() {
 
   const servers = deriveServers(video?.embed_url, video?.preview_url, video?.links);
   const currentServer = servers[activeServer] ?? servers[0];
+
+  const posterUrl = video?.sprite_url || video?.thumbnail_url;
 
   const handleReaction = (type: "like" | "dislike") => {
     if (!id) return;
@@ -405,6 +412,7 @@ export default function VideoDetail() {
         room_title: video.room_title,
         thumbnail_url: video.thumbnail_url,
         preview_url: video.preview_url,
+        sprite_url: video.sprite_url,
         resolution: video.resolution,
         timestamp: video.timestamp,
         saved_at: new Date().toISOString(),
@@ -436,6 +444,7 @@ export default function VideoDetail() {
         room_title: video.room_title,
         thumbnail_url: video.thumbnail_url,
         preview_url: video.preview_url,
+        sprite_url: video.sprite_url,
         resolution: video.resolution,
         timestamp: video.timestamp,
         saved_at: new Date().toISOString(),
@@ -544,9 +553,9 @@ export default function VideoDetail() {
                       }}
                       aria-label="Play video"
                     >
-                    {video.thumbnail_url ? (
+                    {proxyUrl(posterUrl) ? (
                       <OptimizedImage
-                        src={proxyUrl(video.thumbnail_url)!}
+                        src={proxyUrl(posterUrl)!}
                         alt={video.username}
                         className="w-full h-full object-cover"
                         containerClassName="w-full h-full"
@@ -622,9 +631,9 @@ export default function VideoDetail() {
                       </div>
                     }
                   />
-                ) : video.thumbnail_url ? (
+                ) : proxyUrl(posterUrl) ? (
                   <OptimizedImage
-                    src={proxyUrl(video.thumbnail_url)!}
+                    src={proxyUrl(posterUrl)!}
                     alt={video.filename}
                     className="w-full h-full object-contain"
                     containerClassName="w-full h-full"
@@ -952,7 +961,7 @@ export default function VideoDetail() {
                   .map((rec, i) => (
                     <Link key={rec.id} href={`/video/${rec.id}`} className="group flex gap-3 outline-none">
                       <div className="w-28 aspect-video shrink-0 overflow-hidden bg-secondary rounded-[2px] relative">
-                        {rec.thumbnail_url ? (
+                        {proxyUrl(rec.thumbnail_url) ? (
                           <OptimizedImage
                             src={proxyUrl(rec.thumbnail_url)!}
                             alt={rec.username}

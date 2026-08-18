@@ -1,7 +1,8 @@
 import { Router } from "express";
 import https from "node:https";
 import http from "node:http";
-import { Resolver } from "node:dns/promises";
+import { Resolver, lookup as systemLookup } from "node:dns/promises";
+import net from "node:net";
 import { Readable } from "node:stream";
 
 // ─── Configuration ────────────────────────────────────────────────
@@ -10,22 +11,70 @@ const CONNECTION_TIMEOUT_MS = 20_000;
 const MAX_RETRIES = 3;
 const BASE_RETRY_DELAY_MS = 500;
 
-// Only proxy requests to these allowed domains
-const ALLOWED_HOSTS = [
-  "img2.pixhost.to",
-  "pixhost.to",
-  "www.pixhost.to",
-  "files.catbox.moe",
-  "catbox.moe",
-  "lobfile.com",
-  "www.lobfile.com",
-  "i.ibb.co",
-  "ibb.co",
-  "pixeldrain.com",
-  "www.pixeldrain.com",
-  "xhfbhgklqylmfmfjtgkq.supabase.co",
-  "setripupfosilpro.x02.me",
-];
+// ─── Per-host upstream worker pool ────────────────────────────────────
+// The browser may ask for a whole page of thumbnails at once; if each request
+// opened its own upstream connection, hosts like pixhost would see a burst and
+// rate-limit (429) or drop HTTP/2 streams. Instead every upstream fetch goes
+// through a per-host gate: at most HOST_MAX_CONCURRENT in flight, with a small
+// minimum gap between connection starts. Clients hit OUR origin as fast as they
+// want (HTTP/2 multiplexed, cached immutable); pixhost only ever sees a smooth,
+// parallel-but-bounded stream.
+const HOST_MAX_CONCURRENT = 5;
+const HOST_START_INTERVAL_MS = 70;
+
+interface HostGate {
+  active: number;
+  lastStart: number;
+  waiters: Array<() => void>;
+  timer: NodeJS.Timeout | null;
+}
+
+const hostGates = new Map<string, HostGate>();
+
+function getHostGate(host: string): HostGate {
+  let gate = hostGates.get(host);
+  if (!gate) {
+    gate = { active: 0, lastStart: 0, waiters: [], timer: null };
+    hostGates.set(host, gate);
+  }
+  return gate;
+}
+
+function releaseHostGate(gate: HostGate): void {
+  gate.active--;
+  scheduleHostGate(gate);
+}
+
+function scheduleHostGate(gate: HostGate): void {
+  if (gate.timer) return;
+  const tryStart = () => {
+    gate.timer = null;
+    if (gate.waiters.length === 0 || gate.active >= HOST_MAX_CONCURRENT) return;
+    const now = Date.now();
+    const wait = Math.max(0, gate.lastStart + HOST_START_INTERVAL_MS - now);
+    if (wait > 0) {
+      gate.timer = setTimeout(tryStart, wait);
+      return;
+    }
+    gate.lastStart = now;
+    gate.active++;
+    const next = gate.waiters.shift();
+    next?.();
+    if (gate.waiters.length) gate.timer = setTimeout(tryStart, HOST_START_INTERVAL_MS);
+  };
+  gate.timer = setTimeout(tryStart, 0);
+}
+
+/** Resolve once this host has a free upstream slot. Returns a release fn. */
+function acquireHostGate(host: string): Promise<() => void> {
+  const gate = getHostGate(host);
+  return new Promise((resolve) => {
+    gate.waiters.push(() => resolve(() => releaseHostGate(gate)));
+    scheduleHostGate(gate);
+  });
+}
+
+// ─── Failure cache ────────────────────────────────────────────────
 
 /**
  * Small placeholder SVG that we return as a graceful fallback when upstream
@@ -102,6 +151,89 @@ async function resolveHostname(hostname: string): Promise<string | null> {
   }
 }
 
+// ─── SSRF guard ──────────────────────────────────────────────────
+// We proxy arbitrary hosts now, so reject any address that resolves to a
+// private / loopback / link-local / reserved range. This prevents the
+// deployed server from being used to reach internal network resources.
+
+function ipv4ToInt(ip: string): number {
+  return ip.split(".").reduce((acc, octet) => (acc << 8) + Number(octet), 0) >>> 0;
+}
+
+function isPrivateIpv4(ip: string): boolean {
+  const n = ipv4ToInt(ip);
+  const inRange = (start: string, count: number): boolean => {
+    const s = ipv4ToInt(start);
+    return n >= s && n < s + count;
+  };
+  return (
+    inRange("0.0.0.0", 0x01000000) || // 0.0.0.0/8 "this network"
+    inRange("10.0.0.0", 0x01000000) || // 10.0.0.0/8 private
+    inRange("100.64.0.0", 0x00400000) || // 100.64.0.0/10 CGNAT
+    inRange("127.0.0.0", 0x01000000) || // 127.0.0.0/8 loopback
+    inRange("169.254.0.0", 0x00010000) || // 169.254.0.0/16 link-local (metadata)
+    inRange("172.16.0.0", 0x00100000) || // 172.16.0.0/12 private
+    inRange("192.168.0.0", 0x00010000) || // 192.168.0.0/16 private
+    inRange("192.0.0.0", 0x00000100) || // 192.0.0.0/24 IETF assignments
+    inRange("192.0.2.0", 0x00000100) || // 192.0.2.0/24 TEST-NET-1
+    inRange("198.18.0.0", 0x00020000) || // 198.18.0.0/15 benchmarking
+    inRange("198.51.100.0", 0x00000100) || // 198.51.100.0/24 TEST-NET-2
+    inRange("203.0.113.0", 0x00000100) || // 203.0.113.0/24 TEST-NET-3
+    inRange("224.0.0.0", 0x10000000) || // 224.0.0.0/4 multicast
+    inRange("240.0.0.0", 0x10000000) || // 240.0.0.0/4 reserved
+    inRange("255.255.255.255", 0x00000001) // broadcast
+  );
+}
+
+function ipv6ToBigInt(ip: string): bigint {
+  // Normalize IPv4-mapped addresses like ::ffff:192.168.0.1 to hex groups
+  if (ip.includes(".")) {
+    const v4 = ip.split(":").pop() ?? "";
+    const [a, b, c, d] = v4.split(".").map(Number);
+    const hex = (((a << 24) + (b << 16) + (c << 8) + d) >>> 0).toString(16).padStart(8, "0");
+    ip = ip.slice(0, ip.lastIndexOf(":") + 1) + hex;
+  }
+
+  let groups: string[];
+  const doubleColon = ip.indexOf("::");
+  if (doubleColon !== -1) {
+    const left = ip.slice(0, doubleColon).split(":").filter(Boolean);
+    const right = ip.slice(doubleColon + 2).split(":").filter(Boolean);
+    const missing = 8 - left.length - right.length;
+    groups = [...left, ...Array(missing).fill("0"), ...right];
+  } else {
+    groups = ip.split(":");
+  }
+
+  let result = 0n;
+  for (const group of groups) {
+    result = (result << 16n) + BigInt(parseInt(group || "0", 16));
+  }
+  return result;
+}
+
+function isPrivateIpv6(ip: string): boolean {
+  const value = ipv6ToBigInt(ip);
+  const inRange = (start: bigint, count: bigint): boolean =>
+    value >= start && value < start + count;
+  return (
+    inRange(0n, 1n) || // ::/128 unspecified
+    inRange(1n, 1n) || // ::1/128 loopback
+    inRange(0xffffffffn, 0x100000000n) || // ::ffff:0:0/96 IPv4-mapped (block all)
+    inRange(BigInt(0xfc00) << 96n, BigInt(0x0200) << 96n) || // fc00::/7 ULA
+    inRange(BigInt(0xfe80) << 96n, BigInt(0x0400) << 96n) || // fe80::/10 link-local
+    inRange(BigInt(0xff00) << 96n, BigInt(0x0100) << 96n) || // ff00::/8 multicast
+    inRange(BigInt(0x2001) << 112n, BigInt(0x10000) << 96n) // 2001:db8::/32 documentation
+  );
+}
+
+function isPrivateIp(ip: string): boolean {
+  const kind = net.isIP(ip);
+  if (kind === 4) return isPrivateIpv4(ip);
+  if (kind === 6) return isPrivateIpv6(ip);
+  return true; // not a valid IP — treat as blocked
+}
+
 /**
  * Convert a Node.js http.IncomingMessage to a web Response object.
  * This lets the existing streamResponse function work with both
@@ -131,10 +263,10 @@ function incomingToResponse(msg: http.IncomingMessage): Response {
 }
 
 /**
- * Fetch a URL with optional custom DNS resolution.
- * Uses `https.get()` with a custom `lookup` when DNS is pre-resolved,
- * bypassing system DNS for that connection. Falls back to regular
- * `fetch()` when custom DNS resolution fails.
+ * Fetch a URL with SSRF protection.
+ * Tries custom DNS + direct connect first, then falls back to system fetch
+ * with system DNS lookup + IP check. This ensures maximum compatibility
+ * with CDNs that do geo-IP or edge selection.
  */
 async function fetchWithTimeout(
   urlStr: string,
@@ -144,59 +276,91 @@ async function fetchWithTimeout(
   const parsedUrl = new URL(urlStr);
   const protocol = parsedUrl.protocol === "https:" ? https : http;
 
-  // Try to resolve the hostname with our custom DNS resolver first
-  const resolvedIp = await resolveHostname(parsedUrl.hostname);
+  // ---- Attempt 1: Custom DNS resolver + direct IP connect ----
+  let resolvedIp = await resolveHostname(parsedUrl.hostname);
+  let family = 4;
 
   if (resolvedIp) {
-    // Custom DNS resolved the hostname — use https.get() with the resolved IP
-    // and set Host header + servername for proper TLS SNI.
-    return new Promise<Response>((resolve, reject) => {
-      const options: https.RequestOptions = {
-        hostname: resolvedIp,
-        port: parsedUrl.port || (protocol === https ? 443 : 80),
-        path: parsedUrl.pathname + parsedUrl.search,
-        method: "GET",
-        headers: {
-          ...headers,
-          Host: parsedUrl.hostname,
-        },
-        servername: parsedUrl.hostname,
-        lookup: (_host: string, _opts: any, cb: (err: Error | null, ip: string, family: number) => void) => {
-          cb(null, resolvedIp, 4);
-        },
-        timeout: timeoutMs,
-      };
+    if (isPrivateIp(resolvedIp)) {
+      throw new Error(`Blocked: private/reserved IP (${resolvedIp})`);
+    }
 
-      const req = protocol.request(options, (res: http.IncomingMessage) => {
-        resolve(incomingToResponse(res));
-      });
-
-      req.on("error", (err: Error) => {
-        reject(err);
-      });
-
-      req.on("timeout", () => {
-        req.destroy();
-        reject(new Error("Timeout"));
-      });
-
-      req.end();
-    });
+    try {
+      return await directConnect(protocol, parsedUrl, headers, resolvedIp, family, timeoutMs);
+    } catch (err) {
+      // Network-level failure (timeout, connection refused, TLS error, etc.)
+      // Fall through to Attempt 2. HTTP errors (4xx/5xx) are not thrown here
+      // because directConnect resolves the promise with the Response.
+      if (!(err instanceof Error)) throw err;
+      const msg = err.message.toLowerCase();
+      const isNetworkErr = msg.includes("timeout") || msg.includes("econn") || msg.includes("enetunreach") || msg.includes("eai_again") || msg.includes("certificate") || msg.includes("tlsv1");
+      if (!isNetworkErr) throw err;
+      // fall through
+    }
   }
 
-  // Fallback: use regular fetch() with system DNS
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
+  // ---- Attempt 2: System DNS lookup + IP check, then regular fetch ----
   try {
-    const response = await fetch(urlStr, {
-      headers,
-      signal: controller.signal,
-    });
-    return response;
-  } finally {
-    clearTimeout(timer);
+    const result = await systemLookup(parsedUrl.hostname);
+    const systemIp = result.address;
+    const systemFamily = result.family ?? 4;
+
+    if (isPrivateIp(systemIp)) {
+      throw new Error(`Blocked: private/reserved IP (${systemIp})`);
+    }
+
+    // Use fetch() with the system-resolved IP via a custom lookup.
+    // We can't easily inject a custom lookup into fetch(), so we use
+    // the directConnect method which gives us full control.
+    return await directConnect(protocol, parsedUrl, headers, systemIp, systemFamily, timeoutMs);
+  } catch {
+    throw new Error("DNS resolution failed or blocked");
   }
+}
+
+/**
+ * Low-level HTTP(S) request to a pre-resolved IP with Host header + SNI.
+ */
+function directConnect(
+  protocol: typeof http | typeof https,
+  parsedUrl: URL,
+  headers: Record<string, string>,
+  resolvedIp: string,
+  family: number,
+  timeoutMs: number,
+): Promise<Response> {
+  return new Promise<Response>((resolve, reject) => {
+    const options: https.RequestOptions = {
+      hostname: resolvedIp,
+      port: parsedUrl.port || (protocol === https ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: "GET",
+      headers: {
+        ...headers,
+        Host: parsedUrl.hostname,
+      },
+      servername: parsedUrl.hostname,
+      lookup: (_host: string, _opts: any, cb: (err: Error | null, ip: string, fam: number) => void) => {
+        cb(null, resolvedIp, family);
+      },
+      timeout: timeoutMs,
+    };
+
+    const req = protocol.request(options, (res: http.IncomingMessage) => {
+      resolve(incomingToResponse(res));
+    });
+
+    req.on("error", (err: Error) => {
+      reject(err);
+    });
+
+    req.on("timeout", () => {
+      req.destroy();
+      reject(new Error("Timeout"));
+    });
+
+    req.end();
+  });
 }
 
 /**
@@ -227,6 +391,20 @@ async function fetchWithRetry(
         log.warn({ url, status: response.status, attempt }, "Media proxy upstream 5xx, retrying");
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
+      }
+
+      // catbox throttles hotlinking clients by answering 200 with an empty
+      // body (Content-Length: 0). Streaming that through would render a blank
+      // image / silent video, so treat it as a retryable failure instead.
+      if (response.status === 200 && response.headers.get("content-length") === "0") {
+        if (attempt <= MAX_RETRIES) {
+          log.warn({ url, attempt }, "Media proxy upstream empty 200, retrying");
+          const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+        markCachedFailure(url);
+        return null;
       }
 
       // For any other status (including 4xx), return immediately — retry won't help
@@ -267,13 +445,32 @@ function streamResponse(upstreamRes: Response, res: any, log: any): void {
   const acceptRanges = upstreamRes.headers.get("accept-ranges");
   if (acceptRanges) res.setHeader("Accept-Ranges", acceptRanges);
 
+  const isPartial = upstreamRes.status === 206 || !!contentRange;
+
   // Forward the correct status for partial content
-  if (upstreamRes.status === 206) {
+  if (isPartial) {
     res.status(206);
   }
 
-  // Cache aggressively — previews/sprite sheets are immutable
-  res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+  if (isPartial) {
+    // Video byte-range responses: never cache at the browser or CDN edge.
+    // Recordings can be re-encoded under the same URL, and immutable range
+    // caching breaks seeking/playhead. The service worker still handles
+    // re-use of already-downloaded video independently of these headers.
+    res.setHeader("Cache-Control", "no-store");
+  } else {
+    // Full images: cache aggressively — previews/sprite sheets are immutable
+    // per URL. max-age caches in the browser; s-maxage + stale-while-revalidate
+    // make Vercel's CDN hold the response at the edge, so once a pixhost asset
+    // has been fetched it is served from the nearest edge POP in ~10ms instead
+    // of re-invoking this function (and re-fetching the upstream) every time.
+    // This is how Chaturbate-style media sites stay fast: origin hit once,
+    // edge + browser + service worker cache everything after.
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400, immutable",
+    );
+  }
 
   // Stream the response body
   if (upstreamRes.body) {
@@ -305,17 +502,17 @@ router.get("/media", async (req, res) => {
   }
 
   let urlStr: string;
+  let parsedUrl: URL;
   try {
     urlStr = decodeURIComponent(rawUrl);
-    new URL(urlStr); // validate
+    parsedUrl = new URL(urlStr); // validate
+    // Only proxy http(s) URLs
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      res.status(400).json({ error: "Only http(s) URLs are supported" });
+      return;
+    }
   } catch {
     res.status(400).json({ error: "Invalid URL" });
-    return;
-  }
-
-  const parsed = new URL(urlStr);
-  if (!ALLOWED_HOSTS.includes(parsed.hostname)) {
-    res.status(403).json({ error: "Domain not allowed" });
     return;
   }
 
@@ -326,20 +523,43 @@ router.get("/media", async (req, res) => {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     Accept: "*/*",
     "Accept-Language": "en-US,en;q=0.9",
-    Referer: "https://chuglii.in/",
   };
+
+  // catbox (and its subdomains) reject any third-party Referer — they drop
+  // the connection or answer 200 with an empty body. Omit the Referer for
+  // those hosts so their previews/thumbnails actually come through.
+  const NO_REFERER_HOSTS = [
+    "catbox.moe",
+    "files.catbox.moe",
+    "litter.catbox.moe",
+    "files.litterbox.catbox.moe",
+  ];
+  const upstreamHostname = parsedUrl.hostname;
+  if (!NO_REFERER_HOSTS.some((h) => upstreamHostname === h || upstreamHostname.endsWith(`.${h}`))) {
+    upstreamHeaders["Referer"] = "https://chuglii.in/";
+  }
 
   const rangeHeader = req.headers["range"];
   if (rangeHeader) {
     upstreamHeaders["Range"] = rangeHeader;
   }
 
+  // Video / Range requests are the player itself — don't queue them behind
+  // thumbnail fetches, playback must start immediately.
+  const release = rangeHeader ? null : await acquireHostGate(upstreamHostname);
   try {
     const response = await fetchWithRetry(urlStr, upstreamHeaders, req.log);
 
+    const isVideoRequest = !!rangeHeader;
+
     if (!response) {
-      // All retries exhausted — return a placeholder SVG instead of an error
-      // so the browser doesn't log a 502 to the console.
+      if (isVideoRequest) {
+        // For video/Range requests, don't return fallback SVG —
+        // let the browser handle the error (e.g., show broken video icon).
+        res.status(502).end();
+        return;
+      }
+      // Images: return placeholder SVG so console stays clean.
       req.log.warn({ url: urlStr }, "Media proxy returning fallback SVG — all retries exhausted");
       res.setHeader("Content-Type", "image/svg+xml");
       res.setHeader("Cache-Control", "public, max-age=300");
@@ -349,6 +569,18 @@ router.get("/media", async (req, res) => {
     }
 
     if (!response.ok && response.status !== 206) {
+      if (isVideoRequest) {
+        // For video, forward the actual error status + body.
+        // Browsers need proper error codes for <video> to show fallback.
+        const body = await response.arrayBuffer();
+        res.status(response.status);
+        for (const [k, v] of response.headers.entries()) {
+          if (k.toLowerCase() === "content-type") res.setHeader("Content-Type", v);
+        }
+        res.send(Buffer.from(body));
+        return;
+      }
+      // Images: return placeholder SVG for any upstream error.
       const body = await response.text().catch(() => "");
       req.log.warn({ url: urlStr, status: response.status, body: body.slice(0, 200) }, "Media proxy upstream error, returning fallback SVG");
       markCachedFailure(urlStr);
@@ -370,6 +602,8 @@ router.get("/media", async (req, res) => {
       res.setHeader("X-Fallback", "true");
       res.status(200).send(FALLBACK_SVG_BUFFER);
     }
+  } finally {
+    release?.();
   }
 });
 

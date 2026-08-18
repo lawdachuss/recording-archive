@@ -10,7 +10,7 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 
 async function main() {
   await build({
-    // The Vercel entry point wraps the Express app with serverless-http.
+    // Vercel's Node.js runtime natively supports Express apps exported as default.
     // The source lives in the api-server package (outside Vercel's api/ dir)
     // to avoid path conflicts with the pre-bundled output.
     entryPoints: [path.resolve(dir, "src/vercel-entry.ts")],

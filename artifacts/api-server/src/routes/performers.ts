@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { GetPerformerParams } from "@workspace/api-zod";
-import { supabase } from "../lib/supabase.js";
+import { supabase, fetchAll } from "../lib/supabase.js";
 import { cache } from "../middleware/cache.js";
 
 const COOKIES = process.env.COOKIES ?? "";
@@ -294,21 +294,17 @@ router.get("/performers", cache({ ttlSeconds: 600, staleSeconds: 900, tags: ["pe
     const gender = (req.query.gender as string) || "";
     const sort = (req.query.sort as string) || "count";
 
-    let query = supabase
-      .from("recordings_with_links")
-      .select("username, gender, thumbnail_url, sprite_url, preview_url, timestamp, links")
-      .not("links", "is", "null")
-      .order("timestamp", { ascending: false });
-
-    if (search) query = query.ilike("username", `%${search}%`);
-    if (gender) query = query.eq("gender", gender);
-
-    // Fetch a generous window of raw rows to capture enough unique performers
-    // after grouping. Without a performer-specific table, we must over-fetch.
-    const FETCH_LIMIT = 50_000;
-    query = query.limit(FETCH_LIMIT);
-
-    const { data, error } = await query;
+    // Fetch ALL rows with pagination — PostgREST caps a single request at
+    // 1,000 rows, so the old `.limit(50_000)` silently returned only 1,000,
+    // cutting off performers whose latest recording was beyond that window.
+    const { data: allRows, error } = await fetchAll((start, end) =>
+      supabase
+        .from("recordings_with_links")
+        .select("username, gender, thumbnail_url, sprite_url, preview_url, timestamp, links")
+        .not("links", "is", "null")
+        .order("timestamp", { ascending: false })
+        .range(start, end),
+    );
 
     if (error) {
       req.log.error({ err: error }, "Supabase error listing performers");
@@ -318,7 +314,17 @@ router.get("/performers", cache({ ttlSeconds: 600, staleSeconds: 900, tags: ["pe
 
     // The optimized view returns NULL (not '{}') for recordings without links,
     // so the SQL `.not("links", "is", "null")` filter already excludes them.
-    const validRows = data ?? [];
+    let validRows = allRows ?? [];
+
+    // Apply optional filters after fetchAll — these are cheap JS-side filters
+    // and avoid complicating the paginated query builder.
+    if (search) {
+      const lower = search.toLowerCase();
+      validRows = validRows.filter((r) => r.username.toLowerCase().includes(lower));
+    }
+    if (gender) {
+      validRows = validRows.filter((r) => r.gender === gender);
+    }
 
     const performerMap = new Map<
       string,

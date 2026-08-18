@@ -1,7 +1,7 @@
 const SERVICE_KEY = "***REMOVED***";
 
 async function trySql(query) {
-  const url = "https://alcwxntejivcqlurudts.supabase.co/sql";
+  const url = "https://supabase.chuglii.in";
   const res = await fetch(url, {
     method: "POST",
     headers: {

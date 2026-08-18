@@ -10,8 +10,10 @@ import { OptimizedImage } from "@/components/ui/optimized-image";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, type PerformerFollow } from "@/lib/user-api";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
+import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { AlertCircle, ArrowLeft, Heart, LogIn, Users, Film } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { proxyUrl } from "@/lib/proxy-url";
 
 export default function PerformerProfile() {
   const { username } = useParams<{ username: string }>();
@@ -37,6 +39,8 @@ export default function PerformerProfile() {
   const isFollowing = follows.some(
     (f: PerformerFollow) => f.performer_username === username,
   );
+
+  usePreloadRecordings(profile?.recordings);
 
   const follow = useTrackedMutation({
     mutationFn: () => userApi.addFollow(username!),
@@ -87,7 +91,7 @@ export default function PerformerProfile() {
 
   const latestThumbnail = profile?.recordings?.reduce<string | null>((found, rec) => {
     if (found) return found;
-    return rec.thumbnail_url || rec.preview_url || null;
+    return proxyUrl(rec.thumbnail_url || rec.preview_url || null);
   }, null) ?? null;
 
   return (

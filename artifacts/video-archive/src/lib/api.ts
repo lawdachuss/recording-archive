@@ -19,6 +19,7 @@ export interface Recording {
   thumbnail_url?: string | null;
   embed_url?: string | null;
   preview_url?: string | null;
+  sprite_url?: string | null;
   instance_id?: string | null;
   created_at: string;
   updated_at?: string | null;
@@ -29,6 +30,7 @@ export interface Performer {
   username: string;
   recording_count: number;
   latest_thumbnail?: string | null;
+  sprite_url?: string | null;
   gender?: string | null;
   latest_timestamp?: string | null;
 }
@@ -310,9 +312,8 @@ export interface UserRequest {
 }
 
 export function useMyRequests(queryOptions?: { enabled?: boolean }) {
-  const seed = useRef(Date.now());
   return useQuery({
-    queryKey: ["my-requests", seed.current],
+    queryKey: ["my-requests"],
     queryFn: async () => {
       const { supabase } = await import("@/lib/supabase");
       const { data: { session } } = await supabase.auth.getSession();
@@ -391,11 +392,21 @@ export function useListRelatedRecordings(id: string, limit = 8) {
   });
 }
 
-export function useGetReactions(id: string) {
-  return useQuery({
-    queryKey: ["reactions", id],
-    queryFn: () => fetchApi<{ likes: number; dislikes: number; user_reaction?: string | null }>(`/api/recordings/${id}/reactions`),
-    enabled: !!id,
+export function useGetReactions(
+  params: { recording_id: string; session_id?: string },
+  queryOptions?: { query?: { enabled?: boolean; queryKey?: unknown[] } },
+) {
+  const { recording_id, session_id } = params;
+  const qs = session_id ? `?session_id=${encodeURIComponent(session_id)}` : "";
+  return useQuery<{
+    likes: number;
+    dislikes: number;
+    user_reaction?: string | null;
+  }>({
+    queryKey: queryOptions?.query?.queryKey ?? ["reactions", recording_id, session_id],
+    queryFn: () =>
+      fetchApi(`/api/recordings/${recording_id}/reactions${qs}`),
+    enabled: queryOptions?.query?.enabled ?? !!recording_id,
     ...QUERY_PRESETS.search(), // reactions change fast
   });
 }
@@ -403,14 +414,29 @@ export function useGetReactions(id: string) {
 export function useToggleReaction() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, type }: { id: string; type: "like" | "dislike" }) =>
-      fetchApi<{ likes: number; dislikes: number; user_reaction: string }>(`/api/recordings/${id}/reactions`, {
+    mutationFn: (vars: {
+      data: {
+        recording_id: string;
+        type: "like" | "dislike";
+        session_id: string;
+      };
+    }) =>
+      fetchApi<{
+        likes: number;
+        dislikes: number;
+        user_reaction: string;
+      }>(`/api/recordings/${vars.data.recording_id}/reactions`, {
         method: "POST",
-        body: JSON.stringify({ type }),
+        body: JSON.stringify({
+          type: vars.data.type,
+          session_id: vars.data.session_id,
+        }),
       }),
-    onSuccess: (_, { id }) => {
-      queryClient.invalidateQueries({ queryKey: ["reactions", id] });
-      queryClient.invalidateQueries({ queryKey: ["recording", id] });
+    onSuccess: (_, vars) => {
+      const rid = vars.data.recording_id;
+      const sid = vars.data.session_id;
+      queryClient.invalidateQueries({ queryKey: ["reactions", rid, sid] });
+      queryClient.invalidateQueries({ queryKey: ["recording", rid] });
     },
   });
 }
@@ -423,8 +449,11 @@ export function getListRelatedRecordingsQueryKey(id: string, limit = 8) {
   return ["recordings", "related", id, limit];
 }
 
-export function getGetReactionsQueryKey(id: string) {
-  return ["reactions", id];
+export function getGetReactionsQueryKey(
+  params: string | { recording_id: string; session_id?: string },
+) {
+  if (typeof params === "string") return ["reactions", params];
+  return ["reactions", params.recording_id, params.session_id];
 }
 
 export interface Comment {
@@ -447,6 +476,7 @@ export interface ListCommentsParams {
   page?: number;
   limit?: number;
   sort?: ListCommentsSort;
+  session_id?: string;
 }
 
 export function useListComments(params: ListCommentsParams) {
@@ -455,6 +485,7 @@ export function useListComments(params: ListCommentsParams) {
   if (params.page) searchParams.set("page", params.page.toString());
   if (params.limit) searchParams.set("limit", params.limit.toString());
   if (params.sort) searchParams.set("sort", params.sort);
+  if (params.session_id) searchParams.set("session_id", params.session_id);
 
   return useQuery<{ data: Comment[]; total: number; page: number; limit: number; totalPages: number }>({
     queryKey: ["comments", searchParams.toString()],
@@ -466,13 +497,22 @@ export function useListComments(params: ListCommentsParams) {
 export function useCreateComment() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { recording_id: string; content: string; parent_id?: string }) =>
+    mutationFn: (vars: {
+      data: {
+        recording_id: string;
+        author?: string;
+        content: string;
+        session_id: string;
+      };
+    }) =>
       fetchApi<Comment>("/api/comments", {
         method: "POST",
-        body: JSON.stringify(data),
+        body: JSON.stringify(vars.data),
       }),
     onSuccess: (_, vars) => {
-      queryClient.invalidateQueries({ queryKey: ["comments", `recording_id=${vars.recording_id}`] });
+      queryClient.invalidateQueries({
+        queryKey: ["comments", `recording_id=${vars.data.recording_id}`],
+      });
     },
   });
 }
@@ -480,13 +520,21 @@ export function useCreateComment() {
 export function useCreateReply() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { recording_id: string; parent_id: string; content: string }) =>
-      fetchApi<Comment>("/api/comments", {
+    mutationFn: (vars: {
+      commentId: string | number;
+      data: {
+        author?: string;
+        content: string;
+        session_id: string;
+      };
+    }) =>
+      fetchApi<Comment>(`/api/comments/${vars.commentId}/replies`, {
         method: "POST",
-        body: JSON.stringify(data),
+        body: JSON.stringify(vars.data),
       }),
-    onSuccess: (_, vars) => {
-      queryClient.invalidateQueries({ queryKey: ["comments", `recording_id=${vars.recording_id}`] });
+    onSuccess: () => {
+      // Parent component decides which query to invalidate
+      // (the reply endpoint doesn't expose recording_id directly)
     },
   });
 }
@@ -494,13 +542,24 @@ export function useCreateReply() {
 export function useToggleCommentLike() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, type }: { id: string; type: "like" | "dislike" }) =>
-      fetchApi<{ likes: number; dislikes: number; user_reaction: string }>(`/api/comments/${id}/reactions`, {
-        method: "POST",
-        body: JSON.stringify({ type }),
-      }),
-    onSuccess: (_, { id }) => {
-      queryClient.invalidateQueries({ queryKey: ["comments", id] });
+    mutationFn: (vars: {
+      commentId: string | number;
+      data: {
+        session_id: string;
+      };
+    }) =>
+      fetchApi<{ likes: number; liked: boolean }>(
+        `/api/comments/${vars.commentId}/like`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            session_id: vars.data.session_id,
+          }),
+        },
+      ),
+    onSuccess: () => {
+      // Parent component decides which query to invalidate
+      // (we don't have recording_id here)
     },
   });
 }
@@ -511,6 +570,7 @@ export function getListCommentsQueryKey(params: ListCommentsParams) {
   if (params.page) searchParams.set("page", params.page.toString());
   if (params.limit) searchParams.set("limit", params.limit.toString());
   if (params.sort) searchParams.set("sort", params.sort);
+  if (params.session_id) searchParams.set("session_id", params.session_id);
   return ["comments", searchParams.toString()];
 }
 
