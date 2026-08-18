@@ -32,9 +32,11 @@ export function useRealtimeNotifications(userId: string | null | undefined) {
         },
       )
       .subscribe((status) => {
-        if (status !== "SUBSCRIBED") {
+        // Suppress the initial "SUBSCRIBING" status — it's transient and expected.
+        // Only warn on terminal error states.
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           console.warn(
-            `[realtime] notification subscription status: ${status}. ` +
+            `[realtime] notification subscription failed: ${status}. ` +
             "Ensure Realtime is enabled on the user_notifications table " +
             "in the Supabase dashboard (Database > Replication).",
           );

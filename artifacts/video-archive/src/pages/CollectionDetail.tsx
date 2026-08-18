@@ -11,6 +11,7 @@ import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { ArrowLeft, Film, Pencil, Check, X, Trash2, ListVideo } from "lucide-react";
 import { formatRelativeTime } from "@/lib/formatters";
+import { proxyUrl } from "@/lib/proxy-url";
 
 function toRecording(r: ReturnType<typeof parseCloudItem>) {
   return {
@@ -19,6 +20,7 @@ function toRecording(r: ReturnType<typeof parseCloudItem>) {
     filename: r.filename,
     room_title: r.room_title ?? null,
     thumbnail_url: r.thumbnail_url ?? null,
+    sprite_url: r.sprite_url ?? null,
     resolution: r.resolution ?? null,
     timestamp: r.timestamp,
     created_at: r.saved_at,
@@ -28,7 +30,7 @@ function toRecording(r: ReturnType<typeof parseCloudItem>) {
     filesize: null,
     gender: null,
     embed_url: null,
-    preview_url: null,
+    preview_url: r.preview_url ?? null,
     instance_id: null,
     updated_at: null,
     channel_id: null,
@@ -111,7 +113,7 @@ export default function CollectionDetail() {
     const first = items[0];
     if (first?.metadata) {
       try {
-        return JSON.parse(first.metadata).thumbnail_url;
+        return proxyUrl(JSON.parse(first.metadata).thumbnail_url);
       } catch {
         return null;
       }

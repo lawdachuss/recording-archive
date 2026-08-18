@@ -1,12 +1,17 @@
 import { useMemo, memo } from "react";
 import { Link } from "wouter";
 import { OptimizedImage } from "@/components/ui/optimized-image";
+import { SpriteSlideshow } from "@/components/SpriteSlideshow";
+import { useHoverPreview } from "@/hooks/use-hover-preview";
+import { getSpriteGrid } from "@/lib/sprite-grid";
 import { Users } from "lucide-react";
+import { proxyUrl } from "@/lib/proxy-url";
 
 interface Performer {
   username: string;
   recording_count?: number;
   latest_thumbnail?: string | null;
+  sprite_url?: string | null;
   gender?: string | null;
   latest_timestamp?: string | null;
 }
@@ -28,6 +33,34 @@ function formatCount(n: number): string {
     return `${k}k`;
   }
   return String(n);
+}
+
+// Sprite hover layer for performer cards. Sprites are the same framed previews
+// used on recording cards; performers expose their latest recording's sprite
+// at runtime, so hovering a portrait card plays the frames instead of a static
+// thumbnail. Preloads the sprite ~2 viewports early via useHoverPreview.
+function SpriteHover({ performer }: { performer: Performer }) {
+  const spriteUrl = performer.sprite_url ? proxyUrl(performer.sprite_url) : null;
+  const { isHovered, hoverHandlers, viewportRef } = useHoverPreview({
+    thumbnailUrl: performer.latest_thumbnail,
+    previewUrl: null,
+    spriteUrl,
+  });
+  const grid = useMemo(() => getSpriteGrid(performer.sprite_url), [performer.sprite_url]);
+  if (!spriteUrl) return null;
+  return (
+    <>
+      <div ref={viewportRef} className="absolute inset-0 z-20" {...hoverHandlers} />
+      {isHovered && (
+        <SpriteSlideshow
+          spriteUrl={spriteUrl}
+          cols={grid?.cols}
+          rows={grid?.rows}
+          className="absolute inset-0 z-30 w-full h-full object-cover"
+        />
+      )}
+    </>
+  );
 }
 
 function GroupCards({ performers }: { performers: Performer[] }) {
@@ -73,9 +106,9 @@ function CircleCard({ performer, fetchPriority }: { performer: Performer; fetchP
       <div className="flex flex-col items-center gap-2.5">
         <div className="relative w-[72px] h-[72px] sm:w-[82px] sm:h-[82px]">
           <div className="w-full h-full rounded-full overflow-hidden ring-2 ring-border/40 group-hover:ring-primary/50 transition-all duration-300 shadow-sm group-hover:shadow-md group-hover:shadow-primary/10">
-            {performer.latest_thumbnail ? (
+            {proxyUrl(performer.latest_thumbnail) ? (
               <OptimizedImage
-                src={performer.latest_thumbnail}
+                src={proxyUrl(performer.latest_thumbnail)!}
                 alt={performer.username}
                 fetchPriority={fetchPriority}
                 loading={fetchPriority === "high" ? "eager" : "lazy"}
@@ -118,7 +151,7 @@ export const PerformerCard = memo(function PerformerCard({ performer, performers
 });
 
 const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { performer: Performer; fetchPriority: "high" | "low" | "auto" }) {
-  const hasThumbnail = !!performer.latest_thumbnail;
+  const hasThumbnail = !!proxyUrl(performer.latest_thumbnail);
   const initial = useMemo(() => performer.username.charAt(0).toUpperCase(), [performer.username]);
   const recCount = performer.recording_count ?? 0;
 
@@ -133,7 +166,7 @@ const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { perf
         <div className="relative aspect-[3/4] overflow-hidden">
           {hasThumbnail ? (
             <OptimizedImage
-              src={performer.latest_thumbnail!}
+              src={proxyUrl(performer.latest_thumbnail!)!}
               alt={performer.username}
               fetchPriority={fetchPriority}
               loading={fetchPriority === "high" ? "eager" : "lazy"}
@@ -152,6 +185,8 @@ const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { perf
               </span>
             </div>
           )}
+
+          <SpriteHover performer={performer} />
 
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent pt-14 pb-3 px-3">
             <p className="text-[13px] font-bold text-white leading-tight drop-shadow-[0_1px_4px_rgba(0,0,0,0.6)] truncate">

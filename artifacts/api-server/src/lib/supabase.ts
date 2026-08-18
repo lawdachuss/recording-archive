@@ -31,3 +31,27 @@ export function createUserClient(token: string): SupabaseClient {
     },
   });
 }
+
+/**
+ * Fetch every row of a query, paginating past PostgREST's default
+ * 1,000-row cap. The `build` callback receives the inclusive range
+ * (start, end) for the current page and must return a `.range()`
+ * supabase-js query builder. Returns the same `{ data, error }` shape
+ * as a normal supabase-js call so callers can keep their error handling.
+ */
+export async function fetchAll<T>(
+  build: (start: number, end: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+  pageSize = 1000,
+): Promise<{ data: T[] | null; error: unknown }> {
+  const all: T[] = [];
+  let start = 0;
+  for (;;) {
+    const { data, error } = await build(start, start + pageSize - 1);
+    if (error) return { data: null, error };
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < pageSize) break;
+    start += pageSize;
+  }
+  return { data: all, error: null };
+}

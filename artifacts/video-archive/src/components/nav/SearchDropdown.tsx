@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { addRecentSearch, getRecentSearches, clearRecentSearches } from "@/lib/bookmarks";
 import { useSearchSuggestions, useListTags, useListPerformers, type SearchSuggestion } from "@/lib/api";
+import { proxyUrl } from "@/lib/proxy-url";
 
 interface SearchDropdownProps {
   /** Controlled: whether the search bar is expanded */
@@ -390,7 +391,7 @@ function renderPredictions({
                 {suggestion.image_url ? (
                   <div className="w-8 h-8 rounded shrink-0 overflow-hidden bg-secondary">
                     <img
-                      src={suggestion.image_url}
+                      src={proxyUrl(suggestion.image_url) ?? ""}
                       alt=""
                       className="w-full h-full object-cover"
                       loading="lazy"

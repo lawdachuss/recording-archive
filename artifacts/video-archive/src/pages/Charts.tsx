@@ -8,6 +8,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import { formatBytes } from "@/lib/formatters";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
+import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
+import { proxyUrl } from "@/lib/proxy-url";
 import { TrendingUp, Users, HardDrive, Film, Trophy, Star, Flame, Clapperboard } from "lucide-react";
 
 type ChartTab = "popular" | "largest" | "performers";
@@ -51,6 +53,8 @@ export default function Charts() {
 
   const recordings = tab === "popular" ? popularData?.data : largestData?.data;
   const loading = tab === "popular" ? popularLoading : largestLoading;
+
+  usePreloadRecordings(recordings);
 
   return (
     <Layout>
@@ -151,9 +155,9 @@ export default function Charts() {
                         >
                           {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i + 1}
                         </div>
-                        {p.latest_thumbnail ? (
+                        {proxyUrl(p.latest_thumbnail) ? (
                           <OptimizedImage
-                            src={p.latest_thumbnail}
+                            src={proxyUrl(p.latest_thumbnail)!}
                             alt={p.username}
                             className="w-10 h-10 object-cover rounded-lg shrink-0"
                             containerClassName="w-10 h-10 rounded-lg shrink-0"

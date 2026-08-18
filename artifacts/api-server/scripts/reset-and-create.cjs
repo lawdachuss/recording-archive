@@ -19,8 +19,9 @@ async function main() {
   });
 
   const USERNAME = "lawdachuss";
-  const PASSWORD = "BASUDEVK";
-  const EMAIL = "lawdachuss@admin.local";
+  const PASSWORD = process.env.ADMIN_PASSWORD || "BASUDEVK";
+  // Use a valid, deliverable-looking email — Supabase rejects fake TLDs like .local.
+  const EMAIL = process.env.ADMIN_EMAIL || "lawdachuss@chuglii.in";
 
   try {
     // Step 1: Get existing auth user IDs before deleting
@@ -65,22 +66,26 @@ async function main() {
 
     await pool.end();
 
-    // Step 4: Create new user via Supabase Auth API
-    const supabaseUrl = process.env.SUPABASE_URL || "https://xhfbhgklqylmfmfjtgkq.supabase.co";
-    const anonKey = process.env.SUPABASE_ANON_KEY || "";
+    // Step 4: Create new user via Supabase Admin API (service role) —
+    // email_confirm:true bypasses email verification so the account is
+    // immediately usable (the old .local address was rejected by Supabase).
+    const supabaseUrl = process.env.SUPABASE_URL || "https://supabase.chuglii.in";
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_API_KEY || "";
 
-    console.log("\nCreating new account via Supabase Auth...");
+    console.log("\nCreating new account via Supabase Admin API...");
 
-    const response = await fetch(supabaseUrl + "/auth/v1/signup", {
+    const response = await fetch(supabaseUrl + "/auth/v1/admin/users", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "apikey": anonKey,
+        "apikey": serviceKey,
+        "Authorization": "Bearer " + serviceKey,
       },
       body: JSON.stringify({
         email: EMAIL,
         password: PASSWORD,
-        data: {
+        email_confirm: true,
+        user_metadata: {
           display_name: USERNAME,
           username: USERNAME,
         },
@@ -90,14 +95,14 @@ async function main() {
     const result = await response.json();
     console.log("Signup response:", JSON.stringify(result, null, 2));
 
-    if (result.error) {
-      console.error("Signup failed:", result.error_description || result.error);
+    if (result.error || result.code) {
+      console.error("Signup failed:", result.msg || result.error_description || result.error);
       process.exit(1);
     }
 
     // Step 5: If user was created, make them admin
-    if (result.user || result.id) {
-      const userId = (result.user || result).id;
+    if (result.id) {
+      const userId = result.id;
       console.log("New user ID:", userId);
 
       // Reconnect to DB to set admin role
@@ -130,11 +135,7 @@ async function main() {
       console.log("Email:    " + EMAIL);
       console.log("Password: " + PASSWORD);
       console.log("Role:     admin");
-      if (result.user && !result.user.email_confirmed_at) {
-        console.log("\nIMPORTANT: Check if email confirmation is needed.");
-        console.log("If sign-in fails, check your Supabase dashboard to disable");
-        console.log("email confirmation or manually confirm this user.");
-      }
+      console.log("email_confirmed:", result.email_confirmed_at ? "yes" : "no");
     }
 
   } catch (err) {

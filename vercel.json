@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pnpm --filter @workspace/api-server run vercel-build && cd artifacts/video-archive && pnpm exec vite build",
+  "buildCommand": "NODE_OPTIONS=--max-old-space-size=5632 pnpm --filter @workspace/api-server run vercel-build && cd artifacts/video-archive && NODE_OPTIONS=--max-old-space-size=5632 pnpm exec vite build",
   "outputDirectory": "artifacts/video-archive/dist",
   "framework": "vite",
   "installCommand": "pnpm install --ignore-scripts",
@@ -26,6 +26,7 @@
   ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/assets/(.*)", "destination": "/assets/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

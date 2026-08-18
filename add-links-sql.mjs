@@ -1,7 +1,7 @@
-const SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFsY3d4bnRlaml2Y3FsdXJ1ZHRzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDE1MzYyNywiZXhwIjoyMDk1NzI5NjI3fQ.7Yb2xJsJ5VXU3lv-cQrDqNSo0LHAB8V2fjtMtwEwd00";
+const SERVICE_KEY = "eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSIsICJpc3MiOiAic3VwYWJhc2UiLCAiaWF0IjogMTcwMDAwMDAwMCwgImV4cCI6IDIwMTUzNjAwMDB9.UTDwoY0L6W6nllK7FvssoFLp3qvAx60PijJyL9XHyXQ";
 
 async function trySql(query) {
-  const url = "https://alcwxntejivcqlurudts.supabase.co/sql";
+  const url = "https://supabase.chuglii.in";
   const res = await fetch(url, {
     method: "POST",
     headers: {

@@ -87,31 +87,44 @@ router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search"
     }
 
     // 3. Tag suggestions (tag name matches, up to 4)
-    // We query recordings for distinct tags matching the query
-    const { data: tags, error: tagErr } = await supabase
-      .from("recordings_with_links")
-      .select("tags, links")
-      .not("links", "is", "null");
-
-    if (!tagErr && tags) {
+    // Tags are stored as a PostgreSQL array on each recording row, so we
+    // paginate through recordings until we collect 4 matching distinct tags.
+    // This avoids fetching the entire table — we stop as soon as we have enough.
+    {
       const matchedTags = new Set<string>();
       const lowerQ = q.toLowerCase();
+      const TAG_PAGE = 1000;
+      let offset = 0;
 
-      for (const row of tags) {
-        if (matchedTags.size >= 4) break;
-        if (!row.tags) continue;
-        for (const tag of row.tags) {
-          if (matchedTags.size >= 4) break;
-          if (tag?.toLowerCase().includes(lowerQ) && !matchedTags.has(tag)) {
-            matchedTags.add(tag);
-            suggestions.push({
-              type: "tag",
-              label: tag,
-              subtitle: "Tag",
-              href: `/browse?tags=${encodeURIComponent(tag)}`,
-            });
+      while (matchedTags.size < 4) {
+        const { data: tagPage, error: tagErr } = await supabase
+          .from("recordings_with_links")
+          .select("tags")
+          .not("links", "is", "null")
+          .range(offset, offset + TAG_PAGE - 1);
+
+        if (tagErr || !tagPage || tagPage.length === 0) break;
+
+        for (const row of tagPage) {
+          if (!row.tags) continue;
+          for (const tag of row.tags) {
+            if (matchedTags.size >= 4) break;
+            if (tag?.toLowerCase().includes(lowerQ) && !matchedTags.has(tag)) {
+              matchedTags.add(tag);
+              suggestions.push({
+                type: "tag",
+                label: tag,
+                subtitle: "Tag",
+                href: `/browse?tags=${encodeURIComponent(tag)}`,
+              });
+            }
           }
+          if (matchedTags.size >= 4) break;
         }
+
+        // If we got fewer rows than the page size, we've exhausted the table
+        if (tagPage.length < TAG_PAGE) break;
+        offset += TAG_PAGE;
       }
     }
   } catch (err) {

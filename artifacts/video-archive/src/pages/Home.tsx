@@ -18,6 +18,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { userApi, parseCloudItem, type PerformerFollow } from "@/lib/user-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
+import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { Search, ArrowRight, TrendingUp, Star, Clock, Heart, Bookmark, ThumbsUp, Users, Tags, Clapperboard } from "lucide-react";
 
 type Tab = "recent" | "popular";
@@ -154,6 +155,9 @@ export default function Home() {
 
   const recordings = tab === "recent" ? recentData?.data : popularData?.data;
   const loading = tab === "recent" ? recentLoading : popularLoading;
+
+  usePreloadRecordings(recordings);
+  usePreloadRecordings(recommendations);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

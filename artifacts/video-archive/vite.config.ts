@@ -50,6 +50,11 @@ export default defineConfig(async () => ({
     outDir: path.resolve(import.meta.dirname, "dist"),
     emptyOutDir: true,
     rollupOptions: {
+      // Keep peak memory low on Vercel's 2-core/8 GB build machines: fewer
+      // parallel file ops + no persistent cache means Rollup holds fewer
+      // module sources in memory at once.
+      maxParallelFileOps: 2,
+      cache: false,
       output: {
         manualChunks(id) {
           if (

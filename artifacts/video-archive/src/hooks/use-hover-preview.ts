@@ -1,4 +1,14 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from "react";
+import {
+  isVideoCandidate,
+  isAnimatedImageUrl,
+  preloadPreviewMedia,
+  preloadAnimatedImage,
+} from "@/lib/preload-preview";
+import { preloadSprite } from "@/lib/preload-sprite";
+
+const DEBUG = false;
+function dlog(...args: any[]) { if (DEBUG) console.log("[HoverPreview]", ...args); }
 
 function isConnectionConstrained(): boolean {
   const conn = (navigator as any).connection;
@@ -8,27 +18,40 @@ function isConnectionConstrained(): boolean {
   return typeof conn.effectiveType === "string" && slow.includes(conn.effectiveType);
 }
 
-const preloadCache = new Map<string, HTMLVideoElement | true>();
-
-function preloadVideo(url: string): void {
-  if (preloadCache.has(url)) return;
-  const v = document.createElement("video");
-  v.muted = true;
-  v.preload = "auto";
-  v.src = url;
-  preloadCache.set(url, v);
+/**
+ * Preview URLs reach this hook already routed through the media proxy
+ * (`/api/media?url=<encoded>`), which would defeat extension-based type
+ * detection. Unwrap the real upstream URL when present so detection stays
+ * correct even if the upstream URL carries its own query string.
+ */
+function getInspectUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.pathname.startsWith("/api/media")) {
+      const inner = parsed.searchParams.get("url");
+      if (inner) return inner;
+    }
+  } catch {
+    // Not parseable — fall through to the raw string.
+  }
+  return url;
 }
 
 interface UseHoverPreviewOptions {
   thumbnailUrl: string | null | undefined;
   previewUrl: string | null | undefined;
+  /** Sprite sheet URL — preloaded so the frame-by-frame fallback is instant */
+  spriteUrl?: string | null;
   enabled?: boolean;
 }
 
 interface UseHoverPreviewReturn {
   isHovered: boolean;
   showVideo: boolean;
+  showAnimatedImage: boolean;
   videoUrl: string | null;
+  animatedImageUrl: string | null;
   preloadVideoUrl: string | null;
   hoverHandlers: {
     onMouseEnter: React.MouseEventHandler;
@@ -42,12 +65,18 @@ interface UseHoverPreviewReturn {
 export function useHoverPreview({
   thumbnailUrl,
   previewUrl,
+  spriteUrl,
   enabled = true,
 }: UseHoverPreviewOptions): UseHoverPreviewReturn {
+  dlog("init", { thumbnailUrl, previewUrl, enabled });
   const [isHovered, setIsHovered] = useState(false);
   const intersectionPreloadedRef = useRef(false);
   const enterTimer = useRef<number | null>(null);
   const intentDelay = 90;
+
+  // The URL used for type detection (unwrapped from the proxy), while loading
+  // still uses the proxied `previewUrl`.
+  const inspectUrl = getInspectUrl(previewUrl);
 
   const viewportRef = useMemo<React.RefCallback<HTMLElement>>(() => {
     let observer: IntersectionObserver | null = null;
@@ -57,30 +86,44 @@ export function useHoverPreview({
         observer = null;
       }
       if (!el || !enabled || intersectionPreloadedRef.current) return;
+      dlog("viewportRef attached", { el });
       observer = new IntersectionObserver(
         (entries) => {
           for (const entry of entries) {
             if (entry.isIntersecting && !intersectionPreloadedRef.current) {
               intersectionPreloadedRef.current = true;
-              if (previewUrl) preloadVideo(previewUrl);
+              if (previewUrl) {
+                // The real animated preview is the primary hover experience —
+                // buffer it (including .webp-labeled MP4s) so playback starts
+                // instantly. Sprites are only warmed for recordings that have
+                // no preview to show.
+                preloadPreviewMedia(previewUrl);
+              } else if (spriteUrl) {
+                preloadSprite(spriteUrl);
+              }
               observer?.disconnect();
               break;
             }
           }
         },
-        { rootMargin: "200px" }
+        { rootMargin: "2000px" } // start warming sprites ~2 viewports before the card is hovered
       );
       observer.observe(el);
     };
-  }, [enabled, previewUrl]);
+  }, [enabled, previewUrl, spriteUrl]);
 
   const onMouseEnter = useCallback(() => {
+    dlog("onMouseEnter");
     if (!enabled) return;
     if (enterTimer.current) window.clearTimeout(enterTimer.current);
-    enterTimer.current = window.setTimeout(() => setIsHovered(true), intentDelay);
+    enterTimer.current = window.setTimeout(() => {
+      dlog("hover timeout -> setIsHovered(true)");
+      setIsHovered(true);
+    }, intentDelay);
   }, [enabled, intentDelay]);
 
   const onMouseLeave = useCallback(() => {
+    dlog("onMouseLeave");
     if (enterTimer.current) {
       window.clearTimeout(enterTimer.current);
       enterTimer.current = null;
@@ -89,11 +132,13 @@ export function useHoverPreview({
   }, []);
 
   const onFocus = useCallback(() => {
+    dlog("onFocus");
     if (!enabled) return;
     setIsHovered(true);
   }, [enabled]);
 
   const onBlur = useCallback(() => {
+    dlog("onBlur");
     setIsHovered(false);
   }, []);
 
@@ -104,18 +149,25 @@ export function useHoverPreview({
   }, []);
 
   // Preload the preview VIDEO while in viewport so playback starts instantly on hover.
-  const canPreloadVideo = !!previewUrl && !isConnectionConstrained();
+  const canPreloadVideo = !!previewUrl && isVideoCandidate(inspectUrl) && !isConnectionConstrained();
   const preloadVideoUrl = canPreloadVideo ? previewUrl : null;
 
-  // Only .mp4 preview videos are used for hover playback.
-  const showVideo = isHovered && !!previewUrl;
+  // Determine preview type: video, animated WebP, or none. .webp is treated as
+  // a video candidate first (see isVideoCandidate); VideoCard falls back to
+  // <img> when the video cannot play.
+  const isPreviewVideo = isVideoCandidate(inspectUrl);
+  const isAnimatedImage = isAnimatedImageUrl(inspectUrl);
+  const showVideo = isHovered && isPreviewVideo;
+  const showAnimatedImage = isHovered && isAnimatedImage;
 
   return {
     isHovered,
     showVideo,
-    videoUrl: showVideo ? previewUrl : null,
+    showAnimatedImage,
+    videoUrl: (showVideo ? previewUrl : null) ?? null,
+    animatedImageUrl: (showAnimatedImage ? previewUrl : null) ?? null,
     hoverHandlers: { onMouseEnter, onMouseLeave, onFocus, onBlur },
     viewportRef,
-    preloadVideoUrl,
+    preloadVideoUrl: preloadVideoUrl ?? null,
   };
 }

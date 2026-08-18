@@ -528,3 +528,22 @@
     background: hsl(0 0% 100% / 0.06);
   }
 }
+
+/* ── Hover-preview loading bar (Uiverse.io by mrhyddenn) ────────────
+   Width is driven in real time by the video's buffered progress (VideoCard),
+   so it reflects the actual fetch while hovering. */
+.progress-loader {
+  width: 100%;
+  background: rgba(236, 236, 238, 0.253);
+  height: 3px;
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.progress-loader .progress {
+  width: 0%;
+  height: 3px;
+  border-radius: 7px;
+  background: rgb(255, 255, 255);
+  transition: width 0.3s ease;
+}

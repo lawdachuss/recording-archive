@@ -90,7 +90,7 @@ interface PerformerDetailsCardProps {
 export function PerformerDetailsCard({ data }: PerformerDetailsCardProps) {
   const platformColor = data.platform === "chaturbate" ? "bg-emerald-500/10 text-emerald-400" : "bg-violet-500/10 text-violet-400";
   const platformLabel = data.platform === "chaturbate" ? "Chaturbate" : "Stripchat";
-  const thumbnail = data.avatar_url || proxyUrl(data.archive_thumbnail);
+  const thumbnail = proxyUrl(data.avatar_url) || proxyUrl(data.archive_thumbnail);
 
   return (
     <div className="rounded-lg border border-border/30 bg-card overflow-hidden">

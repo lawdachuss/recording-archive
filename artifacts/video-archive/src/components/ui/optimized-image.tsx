@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef, memo } from "react";
 import { cn } from "@/lib/utils";
+import { proxyUrl } from "@/lib/proxy-url";
 
 interface OptimizedImageProps {
   src: string;
@@ -12,6 +13,34 @@ interface OptimizedImageProps {
   noShimmer?: boolean;
 }
 
+/**
+ * Default placeholder rendered when the image fails to load and no custom
+ * fallback is provided. Shows a subtle image icon on a muted background.
+ */
+function DefaultFallback() {
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-secondary/60">
+      <svg
+        className="w-8 h-8 text-muted-foreground/25"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+        <circle cx="8.5" cy="8.5" r="1.5" />
+        <polyline points="21 15 16 10 5 21" />
+      </svg>
+      <span className="text-[9px] font-medium tracking-wider uppercase text-muted-foreground/20">
+        No image
+      </span>
+    </div>
+  );
+}
+
 export const OptimizedImage = memo(function OptimizedImage({
   src,
   alt,
@@ -22,18 +51,20 @@ export const OptimizedImage = memo(function OptimizedImage({
   loading,
   noShimmer = false,
 }: OptimizedImageProps) {
+  // Route the image through the media proxy unless it's local / already proxied.
+  const resolvedSrc = proxyUrl(src) ?? src;
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
-  const prevSrcRef = useRef(src);
+  const prevSrcRef = useRef(resolvedSrc);
 
   // Reset state when src changes (handles list re-ordering / prop changes)
   useEffect(() => {
-    if (src !== prevSrcRef.current) {
+    if (resolvedSrc !== prevSrcRef.current) {
       setLoaded(false);
       setError(false);
-      prevSrcRef.current = src;
+      prevSrcRef.current = resolvedSrc;
     }
-  }, [src]);
+  }, [resolvedSrc]);
 
   const onLoad = useCallback(() => {
     setLoaded(true);
@@ -45,14 +76,15 @@ export const OptimizedImage = memo(function OptimizedImage({
   }, []);
 
   if (error) {
-    return fallback ?? null;
+    return fallback ?? <DefaultFallback />;
   }
 
   return (
     <div className={cn("relative overflow-hidden bg-secondary", containerClassName)}>
       <img
-        src={src}
+        src={resolvedSrc}
         alt={alt}
+        referrerPolicy="no-referrer"
         loading={loading ?? (fetchPriority === "high" ? "eager" : "lazy")}
         decoding="async"
         fetchPriority={fetchPriority}

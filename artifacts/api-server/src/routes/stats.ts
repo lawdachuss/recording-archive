@@ -1,14 +1,18 @@
 import { Router } from "express";
-import { supabase } from "../lib/supabase.js";
+import { supabase, fetchAll } from "../lib/supabase.js";
 import { cache } from "../middleware/cache.js";
 
 const router = Router();
 
 router.get("/stats", cache({ ttlSeconds: 600, staleSeconds: 1800, tags: ["stats", "recordings"] }), async (req, res) => {
-  const { data, error } = await supabase
-    .from("recordings_with_links")
-    .select("username, tags, filesize, timestamp, links")
-    .not("links", "is", "null");
+  // Fetch all rows in pages — PostgREST caps a single request at 1,000 rows.
+  const { data, error } = await fetchAll((start, end) =>
+    supabase
+      .from("recordings_with_links")
+      .select("username, tags, filesize, timestamp, links")
+      .not("links", "is", "null")
+      .range(start, end),
+  );
 
   if (error) {
     req.log.error({ err: error }, "Supabase error fetching stats");

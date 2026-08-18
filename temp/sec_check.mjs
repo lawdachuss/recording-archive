@@ -1,5 +1,5 @@
 import pg from "pg";
-const p = new pg.Pool({ connectionString: "postgresql://postgres.rvbuzyljrwsxfxijotdf:Basudevkr123@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres", ssl: { rejectUnauthorized: false } });
+const p = new pg.Pool({ connectionString: "postgresql://postgres:Basudevkr123@db.dydfzytjwhrqozuiexbb.supabase.co:5432/postgres", ssl: { rejectUnauthorized: false } });
 (async () => {
   // 1. Tables with RLS disabled
   const rls = await p.query(`

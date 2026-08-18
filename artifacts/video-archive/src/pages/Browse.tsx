@@ -6,18 +6,24 @@ import {
   useCallback,
 } from "react";
 import { useSearch, useLocation } from "wouter";
-import { keepPreviousData } from "@tanstack/react-query";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import {
   useListRecordings,
   useListTags,
+  listRecordings,
   getListRecordingsQueryKey,
   getListTagsQueryKey,
   ListRecordingsSort,
+  type RecordingListResponse,
 } from "@workspace/api-client-react";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
+import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
+import { preloadPreviewMedia } from "@/lib/preload-preview";
+import { preloadRecordingAssets } from "@/lib/preload-sprite";
+import { proxyUrl } from "@/lib/proxy-url";
 import {
   Search,
   X,
@@ -95,6 +101,8 @@ export default function Browse() {
   const [pageLoading, setPageLoading] = useState(false);
 
   // ─── Filter presets ──────────────────────────────────
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
   const [presetMenuOpen, setPresetMenuOpen] = useState(false);
   const [savePresetOpen, setSavePresetOpen] = useState(false);
   const [presetName, setPresetName] = useState("");
@@ -142,6 +150,98 @@ export default function Browse() {
 
   const recentlyWatched = useRecentlyWatched();
   const recordings = data?.data ?? [];
+
+  // ─── Current-page media preload ───────────────────────────────────────
+  // Sprites + thumbnails + reachable previews are the hover/grid media, so
+  // warm ALL of them on this page during idle (dedup'd + bounded concurrency
+  // in preloadRecordingAssets) — hovering any card later is instant instead of
+  // waiting for a fresh fetch.
+  usePreloadRecordings(recordings);
+
+  // ─── Next-page prefetch (data + previews) ─────────────────────────
+  // When the user scrolls toward the bottom of the list, prefetch the next
+  // page of recordings into the React Query cache and warm the preview clips
+  // so navigating (or hovering) is instant.
+  const queryClient = useQueryClient();
+  const prefetchedForRef = useRef("");
+
+  const prefetchNextPage = useCallback(() => {
+    if (!data) return;
+    // A partial page means there is no next page (also covers stale
+    // keepPreviousData totals during filter changes).
+    if (data.data.length < recordingsParams.limit) return;
+    const next = recordingsParams.page + 1;
+    if (next > Math.ceil(data.total / recordingsParams.limit)) return;
+
+    const nextParams = { ...recordingsParams, page: next };
+    const queryKey = getListRecordingsQueryKey(nextParams);
+    // One-shot guard keyed by the query (auto-resets on filter/page changes).
+    const guardKey = JSON.stringify(queryKey);
+    if (prefetchedForRef.current === guardKey) return;
+    // Already fetched (e.g. visited before or restored from cache) — nothing to do.
+    if (queryClient.getQueryData(queryKey) !== undefined) return;
+
+    prefetchedForRef.current = guardKey;
+    queryClient
+      .prefetchQuery({
+        queryKey,
+        queryFn: () => listRecordings(nextParams),
+        staleTime: 5 * 60_000,
+      })
+      .then(() => {
+        // Skipped if a newer prefetch superseded this one (e.g. filters
+        // changed while the request was in flight).
+        if (prefetchedForRef.current !== guardKey) return;
+        // prefetchQuery resolves with void — read the prefetched page from cache.
+        const nextData = queryClient.getQueryData<RecordingListResponse>(queryKey);
+        const recs = nextData?.data;
+        if (!recs?.length) return;
+        // Warm sprites + thumbnails for the WHOLE next page — small, proxy-free
+        // pixhost images and the primary hover/grid media — so hover and
+        // rendering are instant right after navigating.
+        preloadRecordingAssets(recs, { concurrency: 6, chunkSize: 12 });
+        // Seed the preview clips for the first row(s) still via <video>/<img>.
+        // Preload fewer on constrained connections.
+        const conn = (navigator as any).connection;
+        const constrained = !!(
+          conn &&
+          (conn.saveData ||
+            (typeof conn.effectiveType === "string" &&
+              ["slow-2g", "2g", "3g"].includes(conn.effectiveType)))
+        );
+        recs.slice(0, constrained ? 4 : 12).forEach((rec) =>
+          preloadPreviewMedia(proxyUrl(rec.preview_url ?? null)),
+        );
+      })
+      .catch(() => {
+        // Prefetch is best-effort — ignore failures.
+      });
+  }, [data, recordingsParams, queryClient]);
+
+  const prefetchNextPageRef = useRef(prefetchNextPage);
+  useEffect(() => {
+    prefetchNextPageRef.current = prefetchNextPage;
+  }, [prefetchNextPage]);
+
+  // Observe a sentinel near the bottom of the grid; fire the prefetch when it
+  // approaches the viewport (1200px early) so the next page is ready before
+  // the user reaches the pagination.
+  const hasRecordings = recordings.length > 0;
+  useEffect(() => {
+    if (!hasRecordings) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) prefetchNextPageRef.current();
+        }
+      },
+      { rootMargin: "1200px 0px" },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [hasRecordings]);
 
   const handlePageChange = (newPage: number) => {
     setPageLoading(true);
@@ -676,6 +776,9 @@ export default function Browse() {
                   </div>
                 )}
               </div>
+
+              {/* Scroll sentinel — triggers prefetch of the next page. */}
+              <div ref={sentinelRef} aria-hidden className="h-px w-full" />
             </>
           ) : (
             <div className="py-24 sm:py-32 text-center border border-border/30 rounded-2xl bg-secondary/10">

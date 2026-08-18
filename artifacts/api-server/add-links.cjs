@@ -5,7 +5,7 @@ const pg = require("C:\\Users\\basud\\OneDrive\\Desktop\\frontend\\node_modules\
 const { Pool } = pg;
 
 const pool = new Pool({
-  connectionString: "postgresql://postgres:8tondElcK9iSmTxx@db.alcwxntejivcqlurudts.supabase.co:5432/postgres",
+  connectionString: "postgresql://postgres:Basudevkr123@db.dydfzytjwhrqozuiexbb.supabase.co:5432/postgres",
   ssl: { rejectUnauthorized: false },
   connectionTimeoutMillis: 15000,
 });
