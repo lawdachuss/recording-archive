@@ -10,6 +10,7 @@ import { Readable } from "node:stream";
 const CONNECTION_TIMEOUT_MS = 20_000;
 const MAX_RETRIES = 3;
 const BASE_RETRY_DELAY_MS = 500;
+const MAX_REDIRECTS = 5;
 
 // ─── Per-host upstream worker pool ────────────────────────────────────
 // The browser may ask for a whole page of thumbnails at once; if each request
@@ -383,7 +384,25 @@ async function fetchWithRetry(
     const timeoutMs = CONNECTION_TIMEOUT_MS * (isFirst ? 1 : 1.5);
 
     try {
-      const response = await fetchWithTimeout(url, headers, timeoutMs);
+      let response = await fetchWithTimeout(url, headers, timeoutMs);
+
+      // Follow redirects (3xx with Location header)
+      let redirectCount = 0;
+      while (redirectCount < MAX_REDIRECTS && response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location");
+        if (!location) break;
+        let redirectUrl: string;
+        try {
+          redirectUrl = new URL(location, url).toString();
+        } catch {
+          break;
+        }
+        // Follow with no referer for the redirect target
+        const redirectHeaders = { ...headers };
+        delete redirectHeaders["Referer"];
+        response = await fetchWithTimeout(redirectUrl, redirectHeaders, timeoutMs);
+        redirectCount++;
+      }
 
       // Retry on 5xx — they may be transient
       if (response.status >= 500 && response.status < 600 && attempt <= MAX_RETRIES) {
