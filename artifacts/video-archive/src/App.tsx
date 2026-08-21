@@ -10,7 +10,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { createQueryClient, restoreQueryCache, persistQueryCache } from "@/lib/query-client";
 import { initCache } from "@/lib/cache";
 import { listRecordings } from "@workspace/api-client-react";
-import { preloadRecordingSprites } from "@/lib/preload-sprite";
+import { preloadRecordingAssets } from "@/lib/preload-sprite";
 
 // Home is eagerly imported for instant first paint (landing page)
 // All other pages are lazy-loaded — fetched on-demand when navigated to
@@ -68,8 +68,10 @@ function scheduleIdleWork(task: () => void, timeout = 1_500) {
 // downloads — those resume whenever there is idle time.
 const SPRITE_WARM_MARKER = "sprite.warmUntil";
 const SPRITE_WARM_MS = 6 * 60 * 60 * 1000; // re-paginate at most every 6h
-const SPRITE_WARM_MAX_PAGES = 10; // newest 1000 recordings — conservative to avoid saturating slow connections
-const SPRITE_WARM_DELAY_MS = 20_000; // never compete with first paint / page preloads
+const SPRITE_WARM_MAX_PAGES = 50; // newest 5000 recordings — covers most of the catalog
+const SPRITE_WARM_DELAY_MS = 3_000; // start 3s after first paint
+const SPRITE_WARM_PAGE_GAP_MS = 500; // 500ms between pages (was 4s)
+const SPRITE_WARM_PAGE_SIZE = 100;
 
 function isWarmConnectionConstrained(): boolean {
   const conn = (navigator as any).connection;
@@ -105,19 +107,18 @@ async function warmSpriteCatalog(): Promise<void> {
     page++;
     const recs = records.data ?? [];
     if (recs.length) {
-      // Sprites only — the pages that render these cards will fetch their own
-      // thumbnails through the DOM, so pre-downloading them here would just
-      // duplicate server traffic.
-      preloadRecordingSprites(recs);
+      // Preload thumbnails + sprites + reachable previews for this page.
+      // The service worker / HTTP cache stores them so future visits are instant.
+      preloadRecordingAssets(recs);
     }
-    if (recs.length >= 100) {
-      scheduleIdleWork(warmNextPage, 4_000);
+    if (recs.length >= SPRITE_WARM_PAGE_SIZE) {
+      scheduleIdleWork(warmNextPage, SPRITE_WARM_PAGE_GAP_MS);
     } else {
       complete();
     }
   };
 
-  scheduleIdleWork(warmNextPage, 2_000);
+  scheduleIdleWork(warmNextPage, SPRITE_WARM_PAGE_GAP_MS);
 }
 
 // Global error boundary — catches chunk load errors (auto-reload) and
