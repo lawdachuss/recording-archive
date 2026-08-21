@@ -73,10 +73,12 @@ export default defineConfig(async () => ({
           }
           if (
             id.includes("/node_modules/lucide-react/") ||
-            id.includes("/node_modules/framer-motion/") ||
             id.includes("/node_modules/@radix-ui/")
           ) {
             return "ui";
+          }
+          if (id.includes("/node_modules/framer-motion/")) {
+            return "motion";
           }
           if (id.includes("/node_modules/@tanstack/react-query/")) {
             return "data";

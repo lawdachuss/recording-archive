@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { useRef } from "react";
 import { QUERY_PRESETS } from "./query-client";
-import { supabase } from "./supabase";
+import { getSupabase } from "./supabase";
 
 export interface Recording {
   id: string;
@@ -155,7 +155,8 @@ export function useListRecommendations(
     queryKey: ["recommendations", searchParams.toString()],
     queryFn: async () => {
       const headers: Record<string, string> = {};
-      const { data: { session } } = await supabase.auth.getSession();
+      const sb = await getSupabase();
+      const { data: { session } } = await sb.auth.getSession();
       if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
       return fetchApi<ListRecordingsResponse>(`/api/recordings/recommendations?${searchParams}`, {
         headers,
@@ -164,6 +165,7 @@ export function useListRecommendations(
     enabled: queryOptions?.enabled ?? true,
     placeholderData: queryOptions?.placeholderData as ListRecordingsResponse | undefined,
     ...QUERY_PRESETS.page(),
+    ...(queryOptions?.staleTime !== undefined ? { staleTime: queryOptions.staleTime } : {}),
   });
 }
 
@@ -217,6 +219,7 @@ export function useListRecordings(
     enabled: queryOptions?.enabled ?? true,
     placeholderData: queryOptions?.placeholderData as ListRecordingsResponse | undefined,
     ...QUERY_PRESETS.page(),
+    ...(queryOptions?.staleTime !== undefined ? { staleTime: queryOptions.staleTime } : {}),
   });
 }
 
@@ -316,8 +319,8 @@ export function useMyRequests(queryOptions?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ["my-requests"],
     queryFn: async () => {
-      const { supabase } = await import("@/lib/supabase");
-      const { data: { session } } = await supabase.auth.getSession();
+      const sb = await getSupabase();
+      const { data: { session } } = await sb.auth.getSession();
       const headers: Record<string, string> = {};
       if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
       return fetchApi<UserRequest[]>("/api/requests", { headers });
@@ -331,8 +334,8 @@ export function useDeleteRequest() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: number) => {
-      const { supabase } = await import("@/lib/supabase");
-      const { data: { session } } = await supabase.auth.getSession();
+      const sb = await getSupabase();
+      const { data: { session } } = await sb.auth.getSession();
       const token = session?.access_token;
       return fetchApi<{ ok: boolean }>(`/api/requests/${id}`, {
         method: "DELETE",
@@ -356,8 +359,8 @@ export function useCreateRequest() {
       notes?: string;
       priority?: string;
     }) => {
-      const { supabase } = await import("@/lib/supabase");
-      const { data: { session } } = await supabase.auth.getSession();
+      const sb = await getSupabase();
+      const { data: { session } } = await sb.auth.getSession();
       const token = session?.access_token;
       return fetchApi<{ id: string }>("/api/requests", {
         method: "POST",

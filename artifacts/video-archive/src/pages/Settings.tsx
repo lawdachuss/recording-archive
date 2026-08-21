@@ -4,7 +4,7 @@ import { Layout } from "@/components/Layout";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, type UserProfile } from "@/lib/user-api";
 import { getSoundEnabled, getVibrationEnabled, fetchSoundPreferences, saveSoundPreferences } from "@/lib/sound-prefs";
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 import {
   Settings as SettingsIcon, User, Lock, Save, AlertCircle, CheckCircle2,
   Bell, BellOff, Mail, Volume2, Smartphone,
@@ -107,7 +107,8 @@ export default function Settings() {
     }
     setPwSaving(true);
     setPwMsg(null);
-    const { error } = await supabase.auth.updateUser({ password: newPw });
+    const sb = await getSupabase();
+    const { error } = await sb.auth.updateUser({ password: newPw });
     setPwSaving(false);
     if (error) {
       setPwMsg({ ok: false, text: error.message });

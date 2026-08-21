@@ -1,19 +1,21 @@
 import { useEffect } from "react";
 import { useLocation } from "wouter";
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 
 export default function AuthCallback() {
   const [, setLocation] = useLocation();
 
   useEffect(() => {
-    supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY") {
-        setLocation("/settings");
-      } else if (event === "SIGNED_IN") {
-        setLocation("/");
-      } else {
-        setLocation("/login");
-      }
+    getSupabase().then((sb) => {
+      sb.auth.onAuthStateChange((event) => {
+        if (event === "PASSWORD_RECOVERY") {
+          setLocation("/settings");
+        } else if (event === "SIGNED_IN") {
+          setLocation("/");
+        } else {
+          setLocation("/login");
+        }
+      });
     });
   }, [setLocation]);
 

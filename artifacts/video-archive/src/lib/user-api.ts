@@ -1,11 +1,12 @@
-import { supabase } from "./supabase";
+import { getSupabase } from "./supabase";
 import { resolveApiPath } from "./api-base";
 import type { SavedRecording } from "./bookmarks";
 
 async function authHeaders(): Promise<Record<string, string>> {
+  const sb = await getSupabase();
   const {
     data: { session },
-  } = await supabase.auth.getSession();
+  } = await sb.auth.getSession();
   if (!session?.access_token) return {};
   return { Authorization: `Bearer ${session.access_token}` };
 }

@@ -198,7 +198,7 @@ export default function VideoDetail() {
     isError: recError,
   } = useListRecommendations(
     { page: recPage, limit: REC_PAGE_SIZE, exclude: id },
-    { enabled: !!id, placeholderData: keepPreviousData },
+    { enabled: !!id, placeholderData: keepPreviousData, staleTime: 30_000 },
   );
 
   const { data: reactions, refetch: refetchReactions } = useGetReactions(

@@ -145,7 +145,7 @@ export default function Home() {
   const excludeIds = recentlyWatched.size > 0 ? [...recentlyWatched].join(",") : undefined;
   const { data: recData, isLoading: recLoading } = useListRecommendations(
     { limit: 8, exclude: excludeIds },
-    { enabled: true, placeholderData: keepPreviousData },
+    { enabled: true, placeholderData: keepPreviousData, staleTime: 30_000 },
   );
   const recommendations = recData?.data ?? [];
 

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 import { resolveApiPath } from "@/lib/api-base";
 
 interface AuthContextType {
@@ -63,39 +63,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<"user" | "moderator" | "admin" | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.access_token) {
-        setRole(null);
-        fetchRole(session.access_token).then(setRole);
-        applyPendingUsername(session.access_token);
-      }
-      setLoading(false);
+    let unsub: (() => void) | null = null;
+    getSupabase().then((sb) => {
+      sb.auth.getSession().then(({ data: { session } }) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        if (session?.access_token) {
+          setRole(null);
+          fetchRole(session.access_token).then(setRole);
+          applyPendingUsername(session.access_token);
+        }
+        setLoading(false);
+      });
+
+      const {
+        data: { subscription },
+      } = sb.auth.onAuthStateChange((_event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        if (session?.access_token) {
+          setRole(null);
+          fetchRole(session.access_token).then(setRole);
+          applyPendingUsername(session.access_token);
+        } else {
+          setRole(null);
+        }
+      });
+      unsub = () => subscription.unsubscribe();
     });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.access_token) {
-        setRole(null);
-        fetchRole(session.access_token).then(setRole);
-        applyPendingUsername(session.access_token);
-      } else {
-        setRole(null);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    return () => { unsub?.(); };
   }, []);
 
   const signIn = async (
     email: string,
     password: string,
   ): Promise<{ error?: string }> => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const sb = await getSupabase();
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
     if (data.session?.access_token) {
       setSession(data.session);
@@ -112,7 +117,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     password: string,
     username?: string,
   ): Promise<{ error?: string; needsVerification?: boolean }> => {
-    const { data, error } = await supabase.auth.signUp({
+    const sb = await getSupabase();
+    const { data, error } = await sb.auth.signUp({
       email,
       password,
       options: { data: { display_name: username, username } },
@@ -138,14 +144,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    const sb = await getSupabase();
+    await sb.auth.signOut();
     setSession(null);
     setUser(null);
     setRole(null);
   };
 
   const resetPassword = async (email: string): Promise<{ error?: string }> => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const sb = await getSupabase();
+    const { error } = await sb.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/auth/callback`,
     });
     if (error) return { error: error.message };

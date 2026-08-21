@@ -1,5 +1,6 @@
-import { Component, lazy, Suspense, useEffect } from "react";
+import { Component, lazy, Suspense, useEffect, type ErrorInfo, type ReactNode } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
+import { AlertCircle, RefreshCw } from "lucide-react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -67,7 +68,7 @@ function scheduleIdleWork(task: () => void, timeout = 1_500) {
 // downloads — those resume whenever there is idle time.
 const SPRITE_WARM_MARKER = "sprite.warmUntil";
 const SPRITE_WARM_MS = 6 * 60 * 60 * 1000; // re-paginate at most every 6h
-const SPRITE_WARM_MAX_PAGES = 20; // newest 2000 recordings; catalog can grow, guard runaway
+const SPRITE_WARM_MAX_PAGES = 10; // newest 1000 recordings — conservative to avoid saturating slow connections
 const SPRITE_WARM_DELAY_MS = 20_000; // never compete with first paint / page preloads
 
 function isWarmConnectionConstrained(): boolean {
@@ -119,32 +120,65 @@ async function warmSpriteCatalog(): Promise<void> {
   scheduleIdleWork(warmNextPage, 2_000);
 }
 
-// Catches chunk load errors (stale JS from new deployment) and recovers
-class ChunkLoadErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean }> {
-  state = { hasError: false };
+// Global error boundary — catches chunk load errors (auto-reload) and
+// rendering errors (shows a friendly recovery UI instead of white-screen).
+class GlobalErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
+  state = { hasError: false, error: null as Error | null };
 
-  static getDerivedStateFromError() {
-    return { hasError: true };
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
   }
 
-  componentDidCatch(error: unknown) {
-    if (error instanceof Error && (error.name === "ChunkLoadError" || error.message?.includes("dynamically imported"))) {
-      // Force a fresh load from the new deployment
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    // Chunk load errors from stale deployments — auto-reload silently
+    if (error.name === "ChunkLoadError" || error.message?.includes("dynamically imported")) {
       window.location.reload();
-    } else {
-      this.setState({ hasError: false });
+      return;
     }
+    console.error("[GlobalErrorBoundary]", error, info.componentStack);
   }
+
+  handleReset = () => {
+    this.setState({ hasError: false, error: null });
+  };
 
   render() {
-    return this.state.hasError ? <PageLoading /> : this.props.children;
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center px-4">
+        <div className="w-full max-w-sm text-center">
+          <div className="w-14 h-14 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="w-6 h-6 text-destructive/60" />
+          </div>
+          <h2 className="text-lg font-bold mb-2">Something went wrong</h2>
+          <p className="text-sm text-muted-foreground mb-6">
+            An unexpected error occurred. Try reloading the page.
+          </p>
+          <div className="flex gap-2 justify-center">
+            <button
+              onClick={this.handleReset}
+              className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-medium border border-border/50 text-muted-foreground hover:text-foreground hover:border-border rounded-lg transition-colors"
+            >
+              Try again
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-semibold border border-primary/30 text-primary hover:border-primary/60 rounded-lg transition-colors"
+            >
+              <RefreshCw className="w-3 h-3" />
+              Reload page
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 }
 
 function Router() {
   return (
     <Suspense fallback={<PageLoading />}>
-      <ChunkLoadErrorBoundary>
+      <GlobalErrorBoundary>
       <Switch>
         <Route path="/" component={Home} />
         <Route path="/browse" component={Browse} />
@@ -197,7 +231,7 @@ function Router() {
         </Route>
         <Route component={NotFound} />
       </Switch>
-      </ChunkLoadErrorBoundary>
+      </GlobalErrorBoundary>
     </Suspense>
   );
 }
