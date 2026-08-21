@@ -5,7 +5,7 @@ import {
   ListRelatedRecordingsQueryParams,
 } from "@workspace/api-zod";
 import { supabase } from "../lib/supabase.js";
-import { db, sql } from "@workspace/db";
+import { db, sql, pool } from "@workspace/db";
 import { cache } from "../middleware/cache.js";
 
 const router = Router();
@@ -23,70 +23,77 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     const normalizedLimit = Math.min(Math.max(1, limit), 100);
     const offset = (normalizedPage - 1) * normalizedLimit;
 
-    // Use raw SQL instead of Supabase client because the recordings_with_links
-    // view uses GROUP BY with jsonb_object_agg, which causes PostgREST to
-    // serialize text[] columns (like tags) as null. Raw SQL handles this
-    // correctly and also enables proper tag filtering with @> operator.
-    const conditions = [sql`r.links IS NOT NULL`];
+    // Use pool.query() directly instead of Supabase client because:
+    // 1. PostgREST serializes text[] tags as null through the grouped view
+    // 2. Drizzle's parameterized queries can't cast JS arrays to text[]
+    // Pool.query() handles PostgreSQL arrays natively.
+    const conditions: string[] = ["r.links IS NOT NULL"];
+    const values: any[] = [];
+    let paramIdx = 1;
 
     if (search?.trim()) {
-      const term = search.trim();
-      const like = `%${term}%`;
-      conditions.push(sql`
-        (LOWER(r.username) LIKE ${like} OR
-         LOWER(r.room_title) LIKE ${like} OR
-         LOWER(r.filename) LIKE ${like})
-      `);
+      conditions.push(`(
+        LOWER(r.username) LIKE $${paramIdx} OR
+        LOWER(r.room_title) LIKE $${paramIdx} OR
+        LOWER(r.filename) LIKE $${paramIdx}
+      )`);
+      values.push(`%${search.trim().toLowerCase()}%`);
+      paramIdx++;
     }
 
     if (tags) {
       const tagList = tags.split(",").map((t: string) => t.trim()).filter(Boolean);
       if (tagList.length > 0) {
-        // Use unnest to check if any of the tags match. This works reliably
-        // with drizzle's parameterized queries for text[] columns.
-        conditions.push(sql`EXISTS (SELECT 1 FROM unnest(r.tags) AS tag WHERE tag = ANY(${tagList}))`);
+        const ph = tagList.map((_, i) => `$${paramIdx + i}`).join(",");
+        conditions.push(`EXISTS (SELECT 1 FROM unnest(r.tags) AS t WHERE t IN (${ph}))`);
+        values.push(...tagList);
+        paramIdx += tagList.length;
       }
     }
 
     if (gender) {
-      conditions.push(sql`r.gender = ${gender}`);
+      conditions.push(`r.gender = $${paramIdx}`);
+      values.push(gender);
+      paramIdx++;
     }
 
     if (username) {
-      conditions.push(sql`r.username = ${username}`);
+      conditions.push(`r.username = $${paramIdx}`);
+      values.push(username);
+      paramIdx++;
     }
 
     if (resolution) {
-      conditions.push(sql`r.resolution = ${resolution}`);
+      conditions.push(`r.resolution = $${paramIdx}`);
+      values.push(resolution);
+      paramIdx++;
     }
 
-    const whereClause = sql.join(conditions, sql` AND `);
+    const whereSql = conditions.join(" AND ");
+        const orderCol =
+      sort === "oldest" ? 'r."timestamp"' :
+      sort === "largest" ? "r.filesize" :
+      sort === "popular" ? "r.viewers" :
+      'r."timestamp"';
+    const orderDir = sort === "oldest" ? "ASC" : "DESC";
 
-    const orderCol =
-      sort === "oldest" ? sql`r."timestamp"` :
-      sort === "largest" ? sql`r.filesize` :
-      sort === "popular" ? sql`r.viewers` :
-      sql`r."timestamp"`;
-    const orderDir = sort === "oldest" ? sql`ASC` : sql`DESC`;
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM recordings_with_links r WHERE ${whereSql}`,
+      values,
+    );
+    const total = Number(countResult.rows[0]?.count ?? 0);
 
-    const countResult = await db.execute(sql`
-      SELECT COUNT(*)::int AS count
-      FROM recordings_with_links r
-      WHERE ${whereClause}
-    `);
-
-    const total = (countResult.rows[0] as any)?.count ?? 0;
-
-    const dataResult = await db.execute(sql`
-      SELECT r.id, r.channel_id, r.username, r.filename, r."timestamp", r.room_title,
-             r.tags, r.viewers, r.resolution, r.framerate, r.filesize, r.duration,
-             r.gender, r.thumbnail_url, r.sprite_url, r.embed_url, r.preview_url,
-             r.instance_id, r.created_at, r.updated_at
-      FROM recordings_with_links r
-      WHERE ${whereClause}
-      ORDER BY ${orderCol} ${orderDir} NULLS LAST
-      LIMIT ${normalizedLimit} OFFSET ${offset}
-    `);
+    const dataResult = await pool.query(
+      `SELECT r.id, r.channel_id, r.username, r.filename, r."timestamp", r.room_title,
+              r.tags, r.viewers, r.resolution, r.framerate, r.filesize, r.duration,
+              r.gender, r.thumbnail_url, r.sprite_url, r.embed_url, r.preview_url,
+              r.instance_id, r.created_at, r.updated_at
+       FROM recordings_with_links r
+       WHERE ${whereSql}
+       ORDER BY ${orderCol} ${orderDir} NULLS LAST
+       LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
+      [...values, normalizedLimit, offset],
+    );
 
     res.json({
       data: dataResult.rows,
