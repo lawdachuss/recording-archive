@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { db, sql, pool } from "@workspace/db";
+import { db, sql } from "@workspace/db";
+import { supabase } from "../lib/supabase.js";
 import { logger } from "../lib/logger.js";
 
 const router = Router();
@@ -33,61 +34,60 @@ router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search"
     return;
   }
 
-  const query = `%${q.toLowerCase()}%`;
   const suggestions: SearchSuggestion[] = [];
 
   try {
     // 1. Performer suggestions (username matches, up to 4)
-    // Use pool.query() because PostgREST can't properly query recordings_with_links
-    const perfResult = await pool.query(
-      `SELECT DISTINCT ON (username) username, thumbnail_url, sprite_url, preview_url
-       FROM recordings_with_links
-       WHERE links IS NOT NULL AND LOWER(username) LIKE $1
-       ORDER BY username, "timestamp" DESC
-       LIMIT 4`,
-      [query],
-    );
+    // Use Supabase client — reads from supabase.chuglii.in (current data)
+    const { data: performers } = await supabase
+      .from("recordings_with_links")
+      .select("username, thumbnail_url, sprite_url, preview_url, links")
+      .not("links", "is", "null")
+      .ilike("username", `%${q}%`)
+      .order("timestamp", { ascending: false })
+      .limit(4);
 
-    const seenPerf = new Set<string>();
-    for (const p of perfResult.rows) {
-      if (seenPerf.has(p.username)) continue;
-      seenPerf.add(p.username);
-      const image = p.thumbnail_url || p.sprite_url || p.preview_url;
-      suggestions.push({
-        type: "performer",
-        label: p.username,
-        subtitle: "Performer",
-        image_url: image,
-        href: `/performers/${encodeURIComponent(p.username)}`,
-      });
+    if (performers) {
+      const seen = new Set<string>();
+      for (const p of performers) {
+        if (seen.has(p.username)) continue;
+        seen.add(p.username);
+        const image = p.thumbnail_url || p.sprite_url || p.preview_url;
+        suggestions.push({
+          type: "performer",
+          label: p.username,
+          subtitle: "Performer",
+          image_url: image,
+          href: `/performers/${encodeURIComponent(p.username)}`,
+        });
+      }
     }
 
     // 2. Recording suggestions (username, title, or filename matches, up to 4)
-    const recResult = await pool.query(
-      `SELECT id, username, room_title, filename, thumbnail_url
-       FROM recordings_with_links
-       WHERE links IS NOT NULL
-         AND (LOWER(username) LIKE $1 OR LOWER(room_title) LIKE $1 OR LOWER(filename) LIKE $1)
-       ORDER BY "timestamp" DESC
-       LIMIT 4`,
-      [query],
-    );
+    const { data: recordings } = await supabase
+      .from("recordings_with_links")
+      .select("id, username, room_title, filename, thumbnail_url, links")
+      .not("links", "is", "null")
+      .or(
+        `username.ilike.%${q}%,room_title.ilike.%${q}%,filename.ilike.%${q}%`,
+      )
+      .order("timestamp", { ascending: false })
+      .limit(4);
 
-    for (const r of recResult.rows) {
-      const title = r.room_title || r.filename;
-      suggestions.push({
-        type: "recording",
-        label: title?.length > 60 ? title.slice(0, 57) + "\u2026" : title ?? "Untitled",
-        subtitle: r.username,
-        image_url: r.thumbnail_url,
-        href: `/video/${r.id}`,
-      });
+    if (recordings) {
+      for (const r of recordings) {
+        const title = r.room_title || r.filename;
+        suggestions.push({
+          type: "recording",
+          label: title?.length > 60 ? title.slice(0, 57) + "\u2026" : title ?? "Untitled",
+          subtitle: r.username,
+          image_url: r.thumbnail_url,
+          href: `/video/${r.id}`,
+        });
+      }
     }
 
-    // 3. Tag suggestions (tag name matches, up to 4)
-    // Use SQL unnest() to expand PostgreSQL text[] tags into individual rows,
-    // then GROUP BY and match — runs entirely in the database instead of
-    // paginating through thousands of rows client-side.
+    // 3. Tag suggestions — use db.execute (cloud pooler has tags populated)
     {
       try {
         const lowerQ = q.toLowerCase();
