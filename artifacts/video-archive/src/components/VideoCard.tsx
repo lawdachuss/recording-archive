@@ -30,6 +30,17 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   const spriteUrl = useMemo(() => proxyUrl(recording.sprite_url), [recording.sprite_url]);
   const spriteGrid = useMemo(() => getSpriteGrid(recording.sprite_url), [recording.sprite_url]);
 
+  // Disable hover previews on slow connections — they saturate the
+  // bandwidth and make the grid feel unresponsive. Users see static
+  // thumbnails and click to watch full videos.
+  const isSlowConnection = useMemo(() => {
+    try {
+      const conn = (navigator as any).connection;
+      if (conn && (conn.saveData || (typeof conn.effectiveType === 'string' && ['slow-2g', '2g', '3g'].includes(conn.effectiveType)))) return true;
+    } catch {}
+    return false;
+  }, []);
+
   const {
     isHovered,
     showVideo,
@@ -39,7 +50,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     hoverHandlers,
     viewportRef,
     preloadVideoUrl,
-  } = useHoverPreview({ thumbnailUrl, previewUrl, spriteUrl });
+  } = useHoverPreview({ thumbnailUrl, previewUrl, spriteUrl, enabled: !isSlowConnection });
 
   const staticImage = thumbnailUrl;
   const hasStaticImage = !!staticImage;
@@ -173,7 +184,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
       <div ref={viewportRef} className="flex flex-col gap-2">
         <div className="relative aspect-video overflow-hidden bg-secondary rounded-sm will-change-transform">
 
-          {usePreviewChain && preloadVideoUrl && (
+          {usePreviewChain && preloadVideoUrl && !isSlowConnection && (
             <video
               src={preloadVideoUrl}
               className="hidden"

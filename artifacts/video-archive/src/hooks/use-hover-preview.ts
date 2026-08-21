@@ -145,6 +145,8 @@ export function useHoverPreview({
   }, []);
 
   // Preload the preview VIDEO while in viewport so playback starts instantly on hover.
+  // Skip entirely on slow connections — the bandwidth is needed for the grid,
+  // not speculative video preloads that may never be watched.
   const canPreloadVideo = !!previewUrl && isVideoCandidate(inspectUrl) && !isConnectionConstrained();
   const preloadVideoUrl = canPreloadVideo ? previewUrl : null;
 
