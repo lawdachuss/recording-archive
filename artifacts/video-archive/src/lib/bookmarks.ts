@@ -7,6 +7,7 @@ export interface SavedRecording {
   preview_url?: string | null;
   sprite_url?: string | null;
   resolution?: string | null;
+  duration?: number | null;
   timestamp: string;
   saved_at: string;
 }

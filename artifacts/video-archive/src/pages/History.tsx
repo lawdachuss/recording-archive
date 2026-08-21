@@ -1,42 +1,19 @@
-import { useEffect } from "react";
+
 import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
 import { useAuth } from "@/contexts/AuthContext";
-import { userApi, parseCloudItem } from "@/lib/user-api";
+import { userApi, parseCloudItem, cloudItemToRecording } from "@/lib/user-api";
 import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { getWatchedEntries, clearWatched } from "@/lib/watched-storage";
 import { History as HistoryIcon, Trash2, Clock } from "lucide-react";
 
-function toRecording(r: ReturnType<typeof parseCloudItem>) {
-  return {
-    id: r.id,
-    username: r.username,
-    filename: r.filename,
-    room_title: r.room_title ?? null,
-    thumbnail_url: r.thumbnail_url ?? null,
-    preview_url: r.preview_url ?? null,
-    sprite_url: r.sprite_url ?? null,
-    resolution: r.resolution ?? null,
-    timestamp: r.timestamp,
-    created_at: r.saved_at,
-    tags: [] as string[],
-    viewers: null,
-    framerate: null,
-    filesize: null,
-    gender: null,
-    embed_url: null,
-    instance_id: null,
-    channel_id: null,
-    updated_at: null,
-  };
-}
 
 export default function History() {
-  const { user, loading } = useAuth();
+  const { user } = useAuth();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
 
@@ -145,7 +122,7 @@ export default function History() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
             {merged.map((rec, i) => (
               <div key={rec.id} className="animate-fade-in-up" style={{ animationDelay: `${i * 25}ms` }}>
-                <VideoCard recording={toRecording(rec)} isWatched={recentlyWatched.has(rec.id)} />
+                <VideoCard recording={cloudItemToRecording(rec)} isWatched={recentlyWatched.has(rec.id)} />
               </div>
             ))}
           </div>

@@ -9,6 +9,10 @@ const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|webp|gif|avif|svg)(\?|$)/i;
 const MEDIA_EXTENSIONS = /\.(jpg|jpeg|png|webp|gif|avif|svg|mp4|webm|mov)(\?|$)/i;
 const CACHEABLE_IMAGE_TYPES = /^(image\/|video\/|application\/octet-stream$)/i;
 
+// Serve cached images instantly for 30s without any network request.
+// This makes hover previews and grid thumbnails instant on repeat page loads.
+const REVALIDATE_TTL_MS = 30_000;
+
 self.addEventListener("install", () => {
   self.skipWaiting();
 });
@@ -29,12 +33,26 @@ async function trimCache(cache) {
   const keys = await cache.keys();
   if (keys.length <= IMAGE_MAX_ENTRIES) return;
 
-  await Promise.all(keys.slice(0, keys.length - IMAGE_MAX_ENTRIES).map((request) => cache.delete(request)));
+  // Delete oldest entries first — keys() returns insertion order
+  const toDelete = keys.slice(0, keys.length - IMAGE_MAX_ENTRIES);
+  for (const request of toDelete) {
+    await cache.delete(request);
+  }
 }
 
 async function staleWhileRevalidate(request) {
   const cache = await caches.open(IMAGE_CACHE);
   const cached = await cache.match(request);
+
+  // If we have a cached copy and it's less than REVALIDATE_TTL_MS old,
+  // serve it immediately without any network request. This makes hover
+  // previews and grid thumbnails instant on repeat visits.
+  if (cached) {
+    const cachedAt = cached.headers.get("sw-cached-at");
+    if (cachedAt && Date.now() - Number(cachedAt) < REVALIDATE_TTL_MS) {
+      return cached;
+    }
+  }
 
   try {
     // cache: "no-cache" revalidates against the origin (cheap 304 when the
@@ -49,7 +67,14 @@ async function staleWhileRevalidate(request) {
       // failed upstream loads, which would fail the request itself.
       const contentType = response.headers.get("content-type") || "";
       if (response.ok && CACHEABLE_IMAGE_TYPES.test(contentType)) {
-        cache.put(request, response.clone()).catch(() => {
+        // Tag the cached response with timestamp for TTL-based freshness
+        const taggedResponse = new Response(response.clone().body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: new Headers(response.headers),
+        });
+        taggedResponse.headers.set("sw-cached-at", String(Date.now()));
+        cache.put(request, taggedResponse).catch(() => {
           /* cache writes are best-effort — never fail the request */
         });
       }

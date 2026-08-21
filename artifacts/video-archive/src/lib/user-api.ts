@@ -90,6 +90,36 @@ export function recordingToMeta(rec: SavedRecording): string {
   return JSON.stringify(rec);
 }
 
+/**
+ * Convert a parsed cloud item (from saved/history/watch-later) into the
+ * Recording shape expected by VideoCard. Used in History, Bookmarks, and
+ * WatchLater pages — extracted here to avoid duplication.
+ */
+export function cloudItemToRecording(r: ReturnType<typeof parseCloudItem>) {
+  return {
+    id: r.id,
+    username: r.username,
+    filename: r.filename,
+    room_title: r.room_title ?? null,
+    thumbnail_url: r.thumbnail_url ?? null,
+    preview_url: r.preview_url ?? null,
+    sprite_url: r.sprite_url ?? null,
+    resolution: r.resolution ?? null,
+    duration: r.duration ?? null,
+    timestamp: r.timestamp,
+    created_at: r.saved_at,
+    tags: [] as string[],
+    viewers: null,
+    framerate: null,
+    filesize: null,
+    gender: null,
+    embed_url: null,
+    instance_id: null,
+    channel_id: null,
+    updated_at: null,
+  };
+}
+
 export const userApi = {
   getProfile: () => apiFetch<UserProfile>("/api/user/profile"),
   updateProfile: (data: Partial<UserProfile>) =>
@@ -110,6 +140,7 @@ export const userApi = {
     apiFetch(`/api/user/saved/${encodeURIComponent(recording_id)}`, {
       method: "DELETE",
     }),
+  clearSaved: () => apiFetch("/api/user/saved", { method: "DELETE" }),
 
   getHistory: () => apiFetch<CloudItem[]>("/api/user/history"),
   addHistory: (recording_id: string, metadata: string) =>
@@ -183,6 +214,8 @@ export const userApi = {
     }),
   deleteNotification: (id: number) =>
     apiFetch(`/api/user/notifications/${id}`, { method: "DELETE" }),
+  clearNotifications: () =>
+    apiFetch("/api/user/notifications", { method: "DELETE" }),
 
   getNotificationPreferences: () =>
     apiFetch<{ type: string; enabled: boolean; email_enabled: boolean }[]>("/api/user/notification-preferences"),

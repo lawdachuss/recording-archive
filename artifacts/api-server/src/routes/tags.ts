@@ -1,44 +1,32 @@
 import { Router } from "express";
-import { supabase, fetchAll } from "../lib/supabase.js";
+import { db, sql } from "@workspace/db";
 import { cache } from "../middleware/cache.js";
 
 const router = Router();
 
 router.get("/tags", cache({ ttlSeconds: 900, staleSeconds: 1800, tags: ["tags", "recordings", "search"] }), async (req, res) => {
-  // Fetch all rows in pages — PostgREST caps a single request at 1,000 rows.
-  const { data, error } = await fetchAll((start, end) =>
-    supabase
-      .from("recordings_with_links")
-      .select("tags, links")
-      .not("links", "is", "null")
-      .range(start, end),
-  );
+  try {
+    // Use SQL aggregation instead of loading all rows into memory.
+    // Tags may be stored as jsonb or text[] — use jsonb_array_elements_text
+    // which works for both jsonb arrays and text arrays cast to jsonb.
+    const result = await db.execute(sql`
+      SELECT tag, COUNT(*)::int AS count
+      FROM (
+        SELECT unnest(tags) AS tag
+        FROM recordings_with_links
+        WHERE links IS NOT NULL AND tags IS NOT NULL
+      ) sub
+      WHERE tag IS NOT NULL AND tag != ''
+      GROUP BY tag
+      ORDER BY count DESC
+    `);
 
-  if (error) {
-    req.log.error({ err: error }, "Supabase error listing tags");
+    const tags = result.rows.map((r: any) => ({ tag: r.tag as string, count: r.count as number }));
+    res.json(tags);
+  } catch (err) {
+    req.log.error({ err }, "GET /tags unexpected error");
     res.status(500).json({ error: "Failed to fetch tags" });
-    return;
   }
-
-  // The optimized view returns NULL (not '{}') for recordings without links,
-  // so the SQL `.not("links", "is", "null")` filter already excludes them.
-  const validRows = data ?? [];
-
-  const tagCounts = new Map<string, number>();
-
-  for (const row of validRows) {
-    for (const tag of row.tags ?? []) {
-      if (tag && tag.trim()) {
-        tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
-      }
-    }
-  }
-
-  const result = Array.from(tagCounts.entries())
-    .map(([tag, count]) => ({ tag, count }))
-    .sort((a, b) => b.count - a.count);
-
-  res.json(result);
 });
 
 export default router;

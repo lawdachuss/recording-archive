@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
@@ -40,7 +40,17 @@ export default function PerformerProfile() {
     (f: PerformerFollow) => f.performer_username === username,
   );
 
-  usePreloadRecordings(profile?.recordings);
+  // Paginate recordings client-side from the full list
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 40;
+  const allRecordings = profile?.recordings ?? [];
+  const totalPages = Math.ceil(allRecordings.length / PAGE_SIZE);
+  const pagedRecordings = useMemo(
+    () => allRecordings.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [allRecordings, page],
+  );
+
+  usePreloadRecordings(pagedRecordings);
 
   const follow = useTrackedMutation({
     mutationFn: () => userApi.addFollow(username!),
@@ -207,13 +217,37 @@ export default function PerformerProfile() {
             ))}
           </div>
         ) : profile?.recordings && profile.recordings.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8">
-            {profile.recordings.map((rec, i) => (
-              <div key={rec.id} className="animate-fade-in-up" style={{ animationDelay: `${i * 30}ms` }}>
-                <VideoCard recording={rec} fetchPriority={i < 2 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8">
+              {pagedRecordings.map((rec, i) => (
+                <div key={rec.id} className="animate-fade-in-up" style={{ animationDelay: `${i * 30}ms` }}>
+                  <VideoCard recording={rec} fetchPriority={i < 2 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
+                </div>
+              ))}
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 mt-10">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                  className="h-8 px-3 text-xs font-medium border border-border/50 text-muted-foreground hover:border-primary/40 hover:text-foreground rounded-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  ← Prev
+                </button>
+                <span className="text-xs text-muted-foreground/60 tabular-nums">
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                  className="h-8 px-3 text-xs font-medium border border-border/50 text-muted-foreground hover:border-primary/40 hover:text-foreground rounded-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Next →
+                </button>
               </div>
-            ))}
-          </div>
+            )}
+          </>
         ) : (
           <div className="py-24 text-center border border-border/30 rounded-2xl bg-secondary/10 animate-fade-in-up">
             <div className="w-14 h-14 rounded-full bg-secondary/50 flex items-center justify-center mx-auto mb-4">

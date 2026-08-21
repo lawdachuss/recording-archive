@@ -11,7 +11,7 @@
  */
 
 import { QueryClient, onlineManager } from "@tanstack/react-query";
-import { cacheGetSync, cacheSet, apiCacheKey, CACHE_TTL } from "./cache";
+import { cacheGetSync, cacheSet, CACHE_TTL } from "./cache";
 
 const PERSIST_KEY = "vault-rq-cache";
 const PERSIST_TTL = 2 * 60 * 60_000; // persist cache snapshot for 2h — instant restore on reloads

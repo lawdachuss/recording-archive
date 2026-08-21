@@ -113,7 +113,7 @@ router.put("/user/profile", async (req, res) => {
     if (display_name !== undefined) updates.display_name = display_name;
     if (avatar_url !== undefined) updates.avatar_url = avatar_url;
     if (bio !== undefined) updates.bio = bio;
-    if (username !== undefined) updates.username = username.trim().toLowerCase();
+    if (username != null && typeof username === "string") updates.username = username.trim().toLowerCase();
 
     const { data, error } = await req.supabase!
       .from("user_profiles")
@@ -215,6 +215,26 @@ router.delete("/user/saved/:recordingId", async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     req.log.error({ err }, "DELETE /user/saved/:recordingId unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/user/saved", async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { error } = await req.supabase!
+      .from("saved_videos")
+      .delete()
+      .eq("user_id", userId);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error clearing saved videos");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "DELETE /user/saved unexpected error");
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -928,6 +948,27 @@ router.delete("/user/notifications/:id", async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     req.log.error({ err }, "DELETE /user/notifications/:id unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Bulk delete all notifications for the current user
+router.delete("/user/notifications", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { error } = await req.supabase!
+      .from("user_notifications")
+      .delete()
+      .eq("user_id", userId);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error clearing notifications");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "DELETE /user/notifications unexpected error");
     res.status(500).json({ error: "Internal server error" });
   }
 });

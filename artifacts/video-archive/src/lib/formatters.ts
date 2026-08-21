@@ -36,10 +36,11 @@ export function formatRelativeTime(dateString: string | null | undefined) {
 }
 
 export function formatDuration(seconds: number | null | undefined): string {
-  if (!seconds) return '';
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
+  if (seconds == null || !Number.isFinite(seconds)) return '';
+  const abs = Math.max(0, seconds);
+  const h = Math.floor(abs / 3600);
+  const m = Math.floor((abs % 3600) / 60);
+  const s = Math.floor(abs % 60);
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   return `${m}:${String(s).padStart(2, '0')}`;
 }

@@ -4,9 +4,26 @@ import { useEffect, useRef } from "react";
  * Generates a short two-tone notification chime using the Web Audio API.
  * No audio files needed — the sound is synthesized on the fly.
  */
-function playNotificationSound() {
+let sharedCtx: AudioContext | null = null;
+
+function getAudioContext(): AudioContext | null {
   try {
-    const ctx = new AudioContext();
+    if (!sharedCtx || sharedCtx.state === "closed") {
+      sharedCtx = new AudioContext();
+    } else if (sharedCtx.state === "suspended") {
+      sharedCtx.resume();
+    }
+    return sharedCtx;
+  } catch {
+    return null;
+  }
+}
+
+function playNotificationSound() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  try {
     const gain = ctx.createGain();
     gain.connect(ctx.destination);
     gain.gain.setValueAtTime(0.08, ctx.currentTime); // Quiet & subtle
@@ -27,9 +44,6 @@ function playNotificationSound() {
     osc2.connect(gain);
     osc2.start(ctx.currentTime + 0.12);
     osc2.stop(ctx.currentTime + 0.35);
-
-    // Clean up the context after the sound finishes
-    setTimeout(() => ctx.close(), 500);
   } catch {
     // Web Audio API not available — silently skip
   }

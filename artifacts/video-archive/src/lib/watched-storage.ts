@@ -9,6 +9,8 @@ interface Entry {
   thumbnail_url?: string | null;
 }
 
+export const WATCHED_CHANGED_EVENT = "vault-watched-changed";
+
 export function addWatchedId(id: string, meta?: { username?: string; filename?: string; thumbnail_url?: string | null }): void {
   try {
     const raw = localStorage.getItem(KEY);
@@ -17,6 +19,8 @@ export function addWatchedId(id: string, meta?: { username?: string; filename?: 
     filtered.push({ id, t: Date.now(), ...meta });
     const cutoff = Date.now() - TTL;
     localStorage.setItem(KEY, JSON.stringify(filtered.filter((e) => e.t > cutoff)));
+    // Notify React components (useRecentlyWatched) that the watched set changed
+    window.dispatchEvent(new CustomEvent(WATCHED_CHANGED_EVENT));
   } catch {}
 }
 
@@ -47,5 +51,6 @@ export function getWatchedEntries(): Entry[] {
 export function clearWatched(): void {
   try {
     localStorage.removeItem(KEY);
+    window.dispatchEvent(new CustomEvent(WATCHED_CHANGED_EVENT));
   } catch {}
 }

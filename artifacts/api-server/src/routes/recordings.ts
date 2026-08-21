@@ -5,6 +5,7 @@ import {
   ListRelatedRecordingsQueryParams,
 } from "@workspace/api-zod";
 import { supabase } from "../lib/supabase.js";
+import { db, sql } from "@workspace/db";
 import { cache } from "../middleware/cache.js";
 
 const router = Router();
@@ -49,7 +50,10 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
       return q;
     }
 
-    const SELECT_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at,links";
+    // Omit `links` from the list response — it contains full video URLs per
+    // server and is the largest field by far. The grid only needs thumbnails
+    // and metadata; links are fetched individually on /recordings/:id.
+    const SELECT_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at";
 
     // The optimized recordings_with_links view returns NULL (not '{}') for
     // recordings without upload links, so the SQL `.not("links", "is", "null")`
@@ -82,13 +86,15 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     res.status(500).json({ error: "Failed to fetch recordings" });
   }
 });
-router.get("/recordings/recommendations", async (req, res) => {
+router.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds: 120, tags: ["recordings"] }), async (req, res) => {
   try {
     const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10) || 1);
     const limit = Math.min(Math.max(1, parseInt(String(req.query.limit ?? "12"), 10) || 12), 100);
     const excludeRaw = typeof req.query.exclude === "string" ? req.query.exclude : "";
     const exclude = excludeRaw.split(",").map(s => s.trim()).filter(Boolean);
-    const MAX_PAGES = 10;
+    // Max pool size for scoring — cap at 1000 to keep response times reasonable
+    // while allowing pagination to grow with the database.
+    const MAX_POOL = 1000;
 
     const seenIds = new Set<string>(exclude);
 
@@ -290,10 +296,13 @@ router.get("/recordings/recommendations", async (req, res) => {
 
     if (isAuthenticated) {
       // Personalized: pull a broad recent window and rank by user interest.
-      const POOL = limit * MAX_PAGES;
+      // Pool scales with the requested page to ensure enough items for deep
+      // pagination, capped at MAX_POOL to keep response times reasonable.
+      const neededItems = page * limit;
+      const POOL = Math.min(Math.max(neededItems * 4, limit * 10), MAX_POOL);
       const { data: poolRows } = await supabase
         .from("recordings_with_links")
-        .select("*")
+        .select("id,username,tags,gender,timestamp,viewers,thumbnail_url,sprite_url,preview_url")
         .not("links", "is", "null")
         .order("timestamp", { ascending: false })
         .limit(POOL * 2);
@@ -301,48 +310,31 @@ router.get("/recordings/recommendations", async (req, res) => {
       scored.sort((a: any, b: any) => b._score - a._score);
     } else {
       // Anonymous: diverse parallel queries
-      const POOL = limit * MAX_PAGES;
+      // Pool scales with the requested page to ensure enough items for deep
+      // pagination, capped at MAX_POOL to keep response times reasonable.
+      const neededItems = page * limit;
+      const POOL = Math.min(Math.max(neededItems * 4, limit * 10), MAX_POOL);
 
-      const [newestResult, tagDiverseResult, popularResult, categoryResult] = await Promise.all([
+      const [newestResult, popularResult] = await Promise.all([
         // Newest recordings (high base score)
-        supabase.from("recordings_with_links").select("*").not("links", "is", "null").order("timestamp", { ascending: false }).limit(POOL),
-
-        // Tag-diverse: sample from different tags for variety
-        supabase.from("recordings_with_links").select("*").not("links", "is", "null").order("viewers", { ascending: false, nullsFirst: false }).limit(POOL),
+        supabase.from("recordings_with_links").select("id,username,tags,gender,timestamp,viewers").not("links", "is", "null").order("timestamp", { ascending: false }).limit(POOL),
 
         // Most viewed (popular)
-        supabase.from("recordings_with_links").select("*").not("links", "is", "null").order("viewers", { ascending: false, nullsFirst: false }).limit(POOL),
-
-        // Recent popular mix
-        supabase.from("recordings_with_links").select("*").not("links", "is", "null").order("timestamp", { ascending: false }).limit(POOL),
+        supabase.from("recordings_with_links").select("id,username,tags,gender,timestamp,viewers").not("links", "is", "null").order("viewers", { ascending: false, nullsFirst: false }).limit(POOL),
       ]);
 
-      // Reduce tag-diverse set to at most 1 per tag for variety
-      const tagDiverseRows = tagDiverseResult.data ?? [];
-      const seenTags = new Set<string>();
-      const dedupedTagRows: any[] = [];
-      for (const r of tagDiverseRows) {
-        const tagKey = (r.tags ?? []).slice(0, 2).sort().join(",");
-        if (!seenTags.has(tagKey)) {
-          seenTags.add(tagKey);
-          dedupedTagRows.push(r);
-        }
-        if (dedupedTagRows.length >= POOL) break;
-      }
-
       addScored(newestResult.data, 80);
-      addScored(dedupedTagRows, 50);
       addScored(popularResult.data, 20);
-      addScored(categoryResult.data, 1);
 
       scored.sort((a: any, b: any) => b._score - a._score);
     }
 
-    // Apply diversity re-ranking: max 2 per performer per page
-    const diversified = diversify(scored, limit * MAX_PAGES, 2);
+    // Apply diversity re-ranking: max 2 per performer, return all scored items
+    // so totalPages grows dynamically with the database size.
+    const diversified = diversify(scored, scored.length, 2);
 
     const totalItems = diversified.length;
-    const totalPages = Math.min(Math.ceil(totalItems / limit) || 1, MAX_PAGES);
+    const totalPages = Math.ceil(totalItems / limit) || 1;
     const safePage = Math.min(page, totalPages);
     const offset = (safePage - 1) * limit;
     const pageRows = diversified.slice(offset, offset + limit).map(({ _score, ...r }: any) => r);
@@ -360,40 +352,57 @@ router.get("/recordings/recommendations", async (req, res) => {
   }
 });
 
-router.get("/recordings/random", async (req, res) => {
+router.get("/recordings/random", cache({ ttlSeconds: 30, staleSeconds: 60, tags: ["recordings"] }), async (req, res) => {
   try {
-    // The optimized view returns NULL links for recordings without links,
-    // so the SQL `.not("links", "is", "null")` filter is sufficient.
-    const { data: allRows, error: fetchError } = await supabase
-      .from("recordings_with_links")
-      .select("id, links")
-      .not("links", "is", "null");
+    // Optional exclude list: comma-separated recording IDs to skip
+    // (e.g. already-viewed videos from the client).
+    const excludeRaw = typeof req.query.exclude === "string" ? req.query.exclude : "";
+    const excludeIds = excludeRaw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 200);
 
-    if (fetchError) {
-      req.log.error({ err: fetchError }, "Supabase error getting recordings for random");
-      res.status(500).json({ error: "Failed to get random recording" });
+    // Single SQL query with ORDER BY RANDOM() LIMIT 1 — the DB handles
+    // random sampling natively, avoiding the count+fetch pattern.
+    const excludeFilter = excludeIds.length > 0
+      ? sql`AND id != ANY(${excludeIds}::text[])`
+      : sql``;
+
+    const result = await db.execute(sql`
+      SELECT id FROM recordings_with_links
+      WHERE links IS NOT NULL ${excludeFilter}
+      ORDER BY RANDOM()
+      LIMIT 1
+    `);
+
+    if (result.rows.length === 0 && excludeIds.length > 0) {
+      // All excluded — retry without exclusions
+      const fallback = await db.execute(sql`
+        SELECT id FROM recordings_with_links
+        WHERE links IS NOT NULL
+        ORDER BY RANDOM()
+        LIMIT 1
+      `);
+      if (fallback.rows.length > 0) {
+        res.json({ id: fallback.rows[0].id });
+        return;
+      }
+    }
+
+    if (result.rows.length > 0) {
+      res.json({ id: result.rows[0].id });
       return;
     }
 
-    const validIds = (allRows ?? [])
-      .filter((r: any) => r.links && typeof r.links === "object" && Object.keys(r.links).length > 0)
-      .map((r: any) => r.id);
-
-    if (validIds.length === 0) {
-      req.log.error("No recordings with valid links found");
-      res.status(500).json({ error: "Failed to get random recording" });
-      return;
-    }
-
-    const randomId = validIds[Math.floor(Math.random() * validIds.length)];
-    res.json({ id: randomId });
+    res.status(404).json({ error: "No recordings found" });
   } catch (err) {
     req.log.error({ err }, "GET /recordings/random unexpected error");
     res.status(500).json({ error: "Failed to get random recording" });
   }
 });
 
-router.get("/recordings/related", async (req, res) => {
+router.get("/recordings/related", cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["recordings"] }), async (req, res) => {
   try {
     const parsed = ListRelatedRecordingsQueryParams.safeParse(req.query);
     if (!parsed.success) {
@@ -486,10 +495,12 @@ router.get("/recordings/related", async (req, res) => {
 
     // The optimized view returns NULL links for recordings without links,
     // so the SQL `.not("links", "is", "null")` filter is sufficient.
+    const RELATED_COLS = "id,username,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,preview_url";
+
     // ── 1. Same performer recordings ──
     const { data: performerData } = await supabase
       .from("recordings_with_links")
-      .select("*")
+      .select(RELATED_COLS)
       .not("links", "is", "null")
       .neq("id", id)
       .eq("username", recording.username)
@@ -502,13 +513,16 @@ router.get("/recordings/related", async (req, res) => {
     let tagResults: any[] = [];
     if (recording.tags && recording.tags.length > 0) {
       const sourceTags = new Set(recording.tags);
+      // Use overlapping() which properly handles array containment
+      // instead of filter("tags", "?|") which requires manual array literal
+      // construction that breaks on tags containing commas or special chars.
       const { data: tagData } = await supabase
         .from("recordings_with_links")
-        .select("*")
+        .select(RELATED_COLS)
         .not("links", "is", "null")
         .neq("id", id)
         .neq("username", recording.username)
-        .filter("tags", "?|", `{${recording.tags.join(",")}}`)
+        .overlaps("tags", recording.tags)
         .order("timestamp", { ascending: false })
         .limit(limit * 3);
 
@@ -561,7 +575,7 @@ router.get("/recordings/related", async (req, res) => {
     if (merged.length < limit && recording.gender) {
       const { data: genderData } = await supabase
         .from("recordings_with_links")
-        .select("*")
+        .select(RELATED_COLS)
         .not("links", "is", "null")
         .neq("id", id)
         .neq("username", recording.username)
@@ -579,7 +593,7 @@ router.get("/recordings/related", async (req, res) => {
     if (merged.length < limit) {
       const { data: popularData } = await supabase
         .from("recordings_with_links")
-        .select("*")
+        .select(RELATED_COLS)
         .not("links", "is", "null")
         .neq("id", id)
         .neq("username", recording.username)

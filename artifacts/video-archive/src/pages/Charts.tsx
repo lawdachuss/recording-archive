@@ -30,18 +30,18 @@ export default function Charts() {
   const popularParams = { limit: 24, sort: "popular" as const };
   const { data: popularData, isLoading: popularLoading } = useListRecordings(
     popularParams,
-    { query: { queryKey: getListRecordingsQueryKey(popularParams), staleTime: 0 } },
+    { query: { queryKey: getListRecordingsQueryKey(popularParams), staleTime: 60_000 } },
   );
 
   const largestParams = { limit: 24, sort: "largest" as const };
   const { data: largestData, isLoading: largestLoading } = useListRecordings(
     largestParams,
-    { query: { queryKey: getListRecordingsQueryKey(largestParams), staleTime: 0 } },
+    { query: { queryKey: getListRecordingsQueryKey(largestParams), staleTime: 60_000 } },
   );
 
-  const { data: performersData, isLoading: performersLoading } = useListPerformers(undefined, { staleTime: 0 });
+  const { data: performersData, isLoading: performersLoading } = useListPerformers(undefined, { staleTime: 60_000 });
   const performers = performersData?.performers ?? [];
-  const { data: stats } = useGetStats({ query: { queryKey: getGetStatsQueryKey(), staleTime: 0 } });
+  const { data: stats } = useGetStats({ query: { queryKey: getGetStatsQueryKey(), staleTime: 60_000 } });
 
   const tabs: { id: ChartTab; label: string; Icon: typeof TrendingUp }[] = [
     { id: "popular", label: "Most Popular", Icon: Flame },
@@ -135,7 +135,7 @@ export default function Charts() {
                     Performers will appear here once recordings are archived.
                   </p>
                 </div>
-              ) : performers.slice(0, 50).sort((a, b) => b.recording_count - a.recording_count)
+              )              : performers.slice(0, 50)
                   .map((p, i) => (
                     <Link key={p.username} href={`/performers/${p.username}`}>
                       <div
