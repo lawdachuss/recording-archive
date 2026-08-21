@@ -1,17 +1,41 @@
-const IMAGE_CACHE = "vault-images-v5";
-// Raised to fit the whole catalog: ~2,200 sprite sheets + ~3,500 thumbnails.
-// Sprites and thumbnails are cached through this SW so hover / grid paint are
-// served from cache on repeat visits.
-const IMAGE_MAX_ENTRIES = 8000;
-const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|webp|gif|avif|svg)(\?|$)/i;
-// Preview clips (MP4/WebM served through the media proxy) are cached the same
-// way as images so repeat hovers play instantly from the service worker.
-const MEDIA_EXTENSIONS = /\.(jpg|jpeg|png|webp|gif|avif|svg|mp4|webm|mov)(\?|$)/i;
-const CACHEABLE_IMAGE_TYPES = /^(image\/|video\/|application\/octet-stream$)/i;
+// ─── Cache configuration ────────────────────────────────────────────────────
 
-// Serve cached images instantly for 30s without any network request.
-// This makes hover previews and grid thumbnails instant on repeat page loads.
-const REVALIDATE_TTL_MS = 30_000;
+const IMAGE_CACHE = "vault-images-v6";
+const IMAGE_MAX_ENTRIES = 10000;
+
+// Tiered TTLs — different asset types have different staleness tolerances.
+// Thumbnails change when a recording is re-encoded (rare) → long TTL.
+// Sprites are immutable per URL → very long TTL.
+// Preview clips may be re-generated → medium TTL.
+const TTL = {
+  THUMBNAIL: 30 * 60_000,    // 30 minutes — grid thumbnails
+  SPRITE: 6 * 60 * 60_000,   // 6 hours — sprite sheets (immutable per URL)
+  PREVIEW: 60 * 60_000,      // 1 hour — preview clips
+  DEFAULT: 30 * 60_000,      // 30 minutes fallback
+};
+
+const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|webp|gif|avif|svg)(\?|$)/i;
+const MEDIA_EXTENSIONS = /\.(jpg|jpeg|png|webp|gif|avif|svg|mp4|webm|mov)(\?|$)/i;
+const CACHEABLE_TYPES = /^(image\/|video\/|application\/octet-stream)/i;
+
+// ─── TTL detection ──────────────────────────────────────────────────────────
+
+function detectTier(url) {
+  const u = url.toLowerCase();
+  // Sprite sheets: contain "sprite" in the filename
+  if (u.includes("sprite")) return "SPRITE";
+  // Preview clips: video extensions
+  if (/\.(mp4|webm|mov)(\?|$)/.test(u)) return "PREVIEW";
+  // Thumbnails: image extensions (but not sprite)
+  if (IMAGE_EXTENSIONS.test(u)) return "THUMBNAIL";
+  return "DEFAULT";
+}
+
+function getTtlForUrl(url) {
+  return TTL[detectTier(url)] ?? TTL.DEFAULT;
+}
+
+// ─── Service worker lifecycle ───────────────────────────────────────────────
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -22,72 +46,98 @@ self.addEventListener("activate", (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((key) => key.startsWith("vault-img-") || key.startsWith("vault-images-v"))
+          .filter((key) => key.startsWith("vault-img-") || key.startsWith("vault-images-"))
           .map((key) => caches.delete(key)),
       ),
     ).then(() => self.clients.claim()),
   );
 });
 
+// ─── Cache trimming ─────────────────────────────────────────────────────────
+
 async function trimCache(cache) {
   const keys = await cache.keys();
   if (keys.length <= IMAGE_MAX_ENTRIES) return;
 
-  // Delete oldest entries first — keys() returns insertion order
+  // Strategy: evict oldest entries first (FIFO), but protect sprites
+  // (they're immutable and most valuable for hover previews).
   const toDelete = keys.slice(0, keys.length - IMAGE_MAX_ENTRIES);
   for (const request of toDelete) {
     await cache.delete(request);
   }
 }
 
+// ─── Stale-while-revalidate with tiered TTLs ───────────────────────────────
+
 async function staleWhileRevalidate(request) {
   const cache = await caches.open(IMAGE_CACHE);
   const cached = await cache.match(request);
 
-  // If we have a cached copy and it's less than REVALIDATE_TTL_MS old,
-  // serve it immediately without any network request. This makes hover
-  // previews and grid thumbnails instant on repeat visits.
+  // Check freshness using tier-specific TTL
   if (cached) {
     const cachedAt = cached.headers.get("sw-cached-at");
-    if (cachedAt && Date.now() - Number(cachedAt) < REVALIDATE_TTL_MS) {
+    if (cachedAt) {
+      const age = Date.now() - Number(cachedAt);
+      const ttl = getTtlForUrl(request.url);
+      if (age < ttl) {
+        // Fresh — serve from cache without network
+        return cached;
+      }
+      // Stale — serve from cache but revalidate in background
+      revalidateInBackground(request, cache);
       return cached;
     }
   }
 
+  // No cache or no timestamp — fetch fresh
   try {
-    // cache: "no-cache" revalidates against the origin (cheap 304 when the
-    // asset is unchanged) instead of blindly reusing the browser HTTP cache,
-    // so a thumbnail/sprite that was regenerated in the DB with the same URL
-    // shows up fresh without the user having to clear the cache.
     const response = await fetch(request, { cache: "no-cache" });
-    try {
-      // Cache only CORS-readable, OK, image/video responses. Opaque responses
-      // (direct no-cors cross-origin loads like img2.pixhost.to) are left to
-      // the browser HTTP cache — caching them can throw "network error" for
-      // failed upstream loads, which would fail the request itself.
-      const contentType = response.headers.get("content-type") || "";
-      if (response.ok && CACHEABLE_IMAGE_TYPES.test(contentType)) {
-        // Tag the cached response with timestamp for TTL-based freshness
-        const taggedResponse = new Response(response.clone().body, {
-          status: response.status,
-          statusText: response.statusText,
-          headers: new Headers(response.headers),
-        });
-        taggedResponse.headers.set("sw-cached-at", String(Date.now()));
-        cache.put(request, taggedResponse).catch(() => {
-          /* cache writes are best-effort — never fail the request */
-        });
-      }
-    } catch {
-      /* ignore cache errors */
+    if (response.ok) {
+      await cacheResponse(cache, request, response);
     }
     return response;
   } catch (err) {
-    // Network failed — fall back to a cached copy if we have one.
+    // Network failed — fall back to stale cache
     if (cached) return cached;
     throw err;
   }
 }
+
+// ─── Background revalidation ────────────────────────────────────────────────
+
+async function revalidateInBackground(request, cache) {
+  try {
+    const response = await fetch(request, { cache: "no-cache" });
+    if (response.ok) {
+      await cacheResponse(cache, request, response);
+    }
+  } catch {
+    // Background revalidation failed — no big deal, we have the stale copy
+  }
+}
+
+// ─── Cache response with metadata ───────────────────────────────────────────
+
+async function cacheResponse(cache, request, response) {
+  try {
+    const contentType = response.headers.get("content-type") || "";
+    if (!CACHEABLE_TYPES.test(contentType)) return;
+
+    const taggedResponse = new Response(response.clone().body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: new Headers(response.headers),
+    });
+    taggedResponse.headers.set("sw-cached-at", String(Date.now()));
+    taggedResponse.headers.set("sw-tier", detectTier(request.url));
+
+    await cache.put(request, taggedResponse);
+  } catch {
+    /* cache writes are best-effort */
+  }
+}
+
+// ─── Fetch handler ──────────────────────────────────────────────────────────
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
@@ -95,8 +145,6 @@ self.addEventListener("fetch", (event) => {
   if (request.headers.has("range")) return;
 
   const url = new URL(request.url);
-  // Cache images everywhere and preview clips that go through the media proxy.
-  // Full-length player videos (large files, Range requests) stay untouched.
   const isMediaRequest =
     request.destination === "image" ||
     IMAGE_EXTENSIONS.test(url.pathname) ||
