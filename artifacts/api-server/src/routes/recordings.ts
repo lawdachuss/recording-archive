@@ -23,59 +23,71 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     const normalizedLimit = Math.min(Math.max(1, limit), 100);
     const offset = (normalizedPage - 1) * normalizedLimit;
 
+    // Use raw SQL instead of Supabase client because the recordings_with_links
+    // view uses GROUP BY with jsonb_object_agg, which causes PostgREST to
+    // serialize text[] columns (like tags) as null. Raw SQL handles this
+    // correctly and also enables proper tag filtering with @> operator.
+    const conditions = [sql`r.links IS NOT NULL`];
+
+    if (search?.trim()) {
+      const term = search.trim();
+      const like = `%${term}%`;
+      conditions.push(sql`
+        (LOWER(r.username) LIKE ${like} OR
+         LOWER(r.room_title) LIKE ${like} OR
+         LOWER(r.filename) LIKE ${like})
+      `);
+    }
+
+    if (tags) {
+      const tagList = tags.split(",").map((t: string) => t.trim()).filter(Boolean);
+      if (tagList.length > 0) {
+        conditions.push(sql`r.tags @> ${tagList}::text[]`);
+      }
+    }
+
+    if (gender) {
+      conditions.push(sql`r.gender = ${gender}`);
+    }
+
+    if (username) {
+      conditions.push(sql`r.username = ${username}`);
+    }
+
+    if (resolution) {
+      conditions.push(sql`r.resolution = ${resolution}`);
+    }
+
+    const whereClause = sql.join(conditions, sql` AND `);
+
     const orderCol =
-      sort === "oldest" ? "timestamp" :
-      sort === "largest" ? "filesize" :
-      sort === "popular" ? "viewers" :
-      "timestamp";
-    const ascending = sort === "oldest";
+      sort === "oldest" ? sql`r."timestamp"` :
+      sort === "largest" ? sql`r.filesize` :
+      sort === "popular" ? sql`r.viewers` :
+      sql`r."timestamp"`;
+    const orderDir = sort === "oldest" ? sql`ASC` : sql`DESC`;
 
-    // Apply shared filters to any Supabase query builder
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function applyFilters(q: any) {
-      q = q.not("links", "is", "null");
-      if (search?.trim()) {
-        // Escape PostgreSQL LIKE wildcards so user input like "100%" is
-        // matched literally rather than treated as a percent wildcard.
-        const term = search.trim().replace(/%/g, "\\%").replace(/_/g, "\\_");
-        q = q.or(`username.ilike.%${term}%,room_title.ilike.%${term}%,filename.ilike.%${term}%`);
-      }
-      if (tags) {
-        const tagList = tags.split(",").map((t: string) => t.trim()).filter(Boolean);
-        if (tagList.length > 0) q = q.contains("tags", tagList);
-      }
-      if (gender) q = q.eq("gender", gender);
-      if (username) q = q.eq("username", username);
-      if (resolution) q = q.eq("resolution", resolution);
-      return q;
-    }
+    const countResult = await db.execute(sql`
+      SELECT COUNT(*)::int AS count
+      FROM recordings_with_links r
+      WHERE ${whereClause}
+    `);
 
-    // Omit `links` from the list response — it contains full video URLs per
-    // server and is the largest field by far. The grid only needs thumbnails
-    // and metadata; links are fetched individually on /recordings/:id.
-    const SELECT_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at";
+    const total = (countResult.rows[0] as any)?.count ?? 0;
 
-    // The optimized recordings_with_links view returns NULL (not '{}') for
-    // recordings without upload links, so the SQL `.not("links", "is", "null")`
-    // filter is sufficient — no JS post-filter or overfetching needed.
-    const [countResult, dataResult] = await Promise.all([
-      applyFilters(supabase.from("recordings_with_links").select("*", { count: "exact", head: true })),
-      applyFilters(supabase.from("recordings_with_links").select(SELECT_COLS))
-        .order(orderCol, { ascending, nullsFirst: false })
-        .range(offset, offset + normalizedLimit - 1),
-    ]);
-
-    if (dataResult.error) {
-      req.log.error({ err: dataResult.error }, "Supabase error listing recordings");
-      res.status(500).json({ error: "Failed to fetch recordings" });
-      return;
-    }
-
-    const total = countResult.count ?? 0;
-    const rows = dataResult.data ?? [];
+    const dataResult = await db.execute(sql`
+      SELECT r.id, r.channel_id, r.username, r.filename, r."timestamp", r.room_title,
+             r.tags, r.viewers, r.resolution, r.framerate, r.filesize, r.duration,
+             r.gender, r.thumbnail_url, r.sprite_url, r.embed_url, r.preview_url,
+             r.instance_id, r.created_at, r.updated_at
+      FROM recordings_with_links r
+      WHERE ${whereClause}
+      ORDER BY ${orderCol} ${orderDir} NULLS LAST
+      LIMIT ${normalizedLimit} OFFSET ${offset}
+    `);
 
     res.json({
-      data: rows,
+      data: dataResult.rows,
       total,
       page: normalizedPage,
       limit: normalizedLimit,

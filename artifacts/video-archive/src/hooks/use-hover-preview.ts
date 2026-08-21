@@ -93,10 +93,6 @@ export function useHoverPreview({
             if (entry.isIntersecting && !intersectionPreloadedRef.current) {
               intersectionPreloadedRef.current = true;
               if (previewUrl) {
-                // The real animated preview is the primary hover experience —
-                // buffer it (including .webp-labeled MP4s) so playback starts
-                // instantly. Sprites are only warmed for recordings that have
-                // no preview to show.
                 preloadPreviewMedia(previewUrl);
               } else if (spriteUrl) {
                 preloadSprite(spriteUrl);
@@ -106,7 +102,7 @@ export function useHoverPreview({
             }
           }
         },
-        { rootMargin: "2000px" } // start warming sprites ~2 viewports before the card is hovered
+        { rootMargin: isConnectionConstrained() ? "200px" : "800px" }
       );
       observer.observe(el);
     };
