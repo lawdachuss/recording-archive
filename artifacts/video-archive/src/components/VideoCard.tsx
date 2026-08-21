@@ -14,7 +14,7 @@ import { getSpriteGrid } from "@/lib/sprite-grid";
 // treat the source as unreachable and fall back (files.catbox.moe consistently
 // times out for minutes on this network; the browser would otherwise leave the
 // request hanging and never engage the sprite/static fallback).
-const PREVIEW_TIMEOUT_MS = 6000;
+const PREVIEW_TIMEOUT_MS = 3000;
 
 interface VideoCardProps {
   recording: Recording;
@@ -78,12 +78,12 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
 
   // The hover <video> unmounts when the pointer leaves, so re-entering must
   // go through the ready gate again (loading bar over thumbnail, never black).
+  // Sprite ready state is NOT reset — the sprite stays in browser cache so
+  // the next hover is instant (no re-download needed).
   useEffect(() => {
     if (!isHovered) {
       setPreviewReady(false);
       setBufferProgress(0);
-      setSpriteReady(false);
-      setSpriteFailed(false);
     }
   }, [isHovered]);
 
@@ -134,15 +134,12 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   const spriteAvailable = !!spriteUrl;
   const previewAvailable = !!previewUrl;
 
-  // The real animated preview is the primary hover experience whenever one
-  // exists (most recordings have one; historically catbox previews were
-  // unreachable, which is why the sprite sheet was made primary — those host
-  // issues are now the exception, not the rule). The sprite sheet is only a
-  // fallback: used when a recording has no preview at all, or the preview has
-  // been exhausted (mediaFail === "all" — the 6s fail-fast timer fired or the
-  // <video>/<img> chain errored).
+  // Sprite is ALWAYS the instant hover effect — it appears immediately when
+  // the pointer enters. The preview video/image loads on top as a bonus if
+  // it's available and hasn't failed. This gives instant visual feedback
+  // instead of waiting 6s for a slow catbox preview to time out.
   const usePreviewChain = previewAvailable && mediaFail !== "all";
-  const useSprite = spriteAvailable && !spriteFailed && (!previewAvailable || mediaFail === "all");
+  const useSprite = spriteAvailable && !spriteFailed;
 
   const showVideoEl = usePreviewChain && showVideo && mediaFail === "none";
   const showImgFallback = usePreviewChain && showAnimatedImage && mediaFail === "video";
@@ -151,14 +148,16 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
 
   const showSprite = isHovered && useSprite;
 
-  // The thumbnail stays visible until the preview itself has frames. For the
-  // <img> fallback the thumbnail also stays put until onLoad flips previewReady
-  // (the img renders above it), so there is never an empty frame. The sprite
-  // sheet keeps the thumbnail underneath until it has painted (spriteReady).
+  // The sprite is the primary hover effect — hide the static thumbnail as
+  // soon as the sprite has painted. Preview video/image layers on top of the
+  // sprite (not the thumbnail) for a seamless crossfade.
   const hideStatic =
     (showSprite && spriteReady) || (showPreview && !restoreStatic && previewReady);
+  // Only show loading bar when the preview video is trying to load AND the
+  // sprite hasn't painted yet. If the sprite is already showing, the user
+  // has instant feedback — no loading bar needed.
   const showLoadingBar =
-    usePreviewChain && showPreview && mediaFail === "none" && !previewReady;
+    usePreviewChain && showPreview && mediaFail === "none" && !previewReady && !(showSprite && spriteReady);
 
   // Fail-fast timer: unmount the hanging <video> / <img> after the timeout and
   // mark the preview failed, so the sprite/static fallback engages in seconds
