@@ -9,8 +9,7 @@ import { SyncStatusProvider } from "@/contexts/SyncStatusContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { createQueryClient, restoreQueryCache, persistQueryCache } from "@/lib/query-client";
 import { initCache } from "@/lib/cache";
-import { listRecordings } from "@workspace/api-client-react";
-import { preloadRecordingAssets } from "@/lib/preload-sprite";
+import { startCatalogWarmup, onWarmProgress, getWarmProgress } from "@/lib/catalog-warmer";
 
 // Home is eagerly imported for instant first paint (landing page)
 // All other pages are lazy-loaded — fetched on-demand when navigated to
@@ -60,66 +59,7 @@ function scheduleIdleWork(task: () => void, timeout = 1_500) {
   requestIdle(task, { timeout });
 }
 
-// ─── Progressive sprite-catalog warmup ─────────────────────────────────────
-// Sprites are the primary hover preview. After first paint we page through the
-// catalog in idle slots and preload each page's sprites (bounded concurrency,
-// idle-scheduled) so the service worker / HTTP cache fills toward the whole
-// catalog. The "warmed" marker only gates re-paging the API, not the sprite
-// downloads — those resume whenever there is idle time.
-const SPRITE_WARM_MARKER = "sprite.warmUntil";
-const SPRITE_WARM_MS = 6 * 60 * 60 * 1000; // re-paginate at most every 6h
-const SPRITE_WARM_MAX_PAGES = 50; // newest 5000 recordings — covers most of the catalog
-const SPRITE_WARM_DELAY_MS = 3_000; // start 3s after first paint
-const SPRITE_WARM_PAGE_GAP_MS = 500; // 500ms between pages (was 4s)
-const SPRITE_WARM_PAGE_SIZE = 100;
-
-function isWarmConnectionConstrained(): boolean {
-  const conn = (navigator as any).connection;
-  if (!conn) return false;
-  if (conn.saveData) return true;
-  const slow = ["slow-2g", "2g", "3g"];
-  return typeof conn.effectiveType === "string" && slow.includes(conn.effectiveType);
-}
-
-async function warmSpriteCatalog(): Promise<void> {
-  if (typeof window === "undefined") return;
-  if (isWarmConnectionConstrained()) return;
-  const last = Number(localStorage.getItem(SPRITE_WARM_MARKER) || 0);
-  if (Date.now() - last < SPRITE_WARM_MS) return;
-
-  let page = 1;
-  const complete = () => {
-    try {
-      localStorage.setItem(SPRITE_WARM_MARKER, String(Date.now()));
-    } catch {
-      /* storage may be unavailable — non-fatal */
-    }
-  };
-
-  const warmNextPage = async () => {
-    if (page > SPRITE_WARM_MAX_PAGES) return complete();
-    let records;
-    try {
-      records = await listRecordings({ page, limit: 100, sort: "newest" });
-    } catch {
-      return; // API hiccup — stop quietly, retried next visit
-    }
-    page++;
-    const recs = records.data ?? [];
-    if (recs.length) {
-      // Preload thumbnails + sprites + reachable previews for this page.
-      // The service worker / HTTP cache stores them so future visits are instant.
-      preloadRecordingAssets(recs);
-    }
-    if (recs.length >= SPRITE_WARM_PAGE_SIZE) {
-      scheduleIdleWork(warmNextPage, SPRITE_WARM_PAGE_GAP_MS);
-    } else {
-      complete();
-    }
-  };
-
-  scheduleIdleWork(warmNextPage, SPRITE_WARM_PAGE_GAP_MS);
-}
+// Catalog warmup is handled by catalog-warmer.ts (see App useEffect below).
 
 // Global error boundary — catches chunk load errors (auto-reload) and
 // rendering errors (shows a friendly recovery UI instead of white-screen).
@@ -244,11 +184,11 @@ function App() {
       restoreQueryCache(queryClient);
     });
 
-    // Catalog sprite warmup runs well after first paint so it never competes
-    // with the page's own thumbnails/preloads for bandwidth.
+    // Catalog warmup: starts 2s after first paint, fetches pages in parallel,
+    // and preloads thumbnails → sprites → previews with adaptive concurrency.
     const warmTimer = window.setTimeout(() => {
-      scheduleIdleWork(warmSpriteCatalog, 3_000);
-    }, SPRITE_WARM_DELAY_MS);
+      scheduleIdleWork(() => startCatalogWarmup(), 1_000);
+    }, 2_000);
 
     const persist = () => persistQueryCache(queryClient);
     window.addEventListener("pagehide", persist);
