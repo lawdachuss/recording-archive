@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 
 const NOTIF_QUERY_KEY = ["user", "notifications"];
 
@@ -17,34 +17,34 @@ export function useRealtimeNotifications(userId: string | null | undefined) {
   useEffect(() => {
     if (!userId) return;
 
-    const channel = supabase
-      .channel("notifications-realtime")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "user_notifications",
-          filter: `user_id=eq.${userId}`,
-        },
-        () => {
-          queryClient.invalidateQueries({ queryKey: NOTIF_QUERY_KEY });
-        },
-      )
-      .subscribe((status) => {
-        // Suppress the initial "SUBSCRIBING" status — it's transient and expected.
-        // Only warn on terminal error states.
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          console.warn(
-            `[realtime] notification subscription failed: ${status}. ` +
-            "Ensure Realtime is enabled on the user_notifications table " +
-            "in the Supabase dashboard (Database > Replication).",
-          );
-        }
-      });
+    let unsub: (() => void) | null = null;
+    getSupabase().then((sb) => {
+      const channel = sb
+        .channel("notifications-realtime")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "user_notifications",
+            filter: `user_id=eq.${userId}`,
+          },
+          () => {
+            queryClient.invalidateQueries({ queryKey: NOTIF_QUERY_KEY });
+          },
+        )
+        .subscribe((status) => {
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            console.warn(
+              `[realtime] notification subscription failed: ${status}. ` +
+              "Ensure Realtime is enabled on the user_notifications table " +
+              "in the Supabase dashboard (Database > Replication).",
+            );
+          }
+        });
+      unsub = () => { sb.removeChannel(channel); };
+    });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { unsub?.(); };
   }, [userId, queryClient]);
 }

@@ -185,7 +185,7 @@ export default function AdminRequests() {
               </TableHeader>
               <TableBody>
                 {filtered.map((req) => (
-                  <>
+                  <div key={req.id}>
                     <TableRow
                       key={req.id}
                       className="cursor-pointer"
@@ -320,7 +320,7 @@ export default function AdminRequests() {
                         </TableCell>
                       </TableRow>
                     )}
-                  </>
+                  </div>
                 ))}
               </TableBody>
             </Table>

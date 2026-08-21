@@ -33,8 +33,9 @@ export default function RequestPage() {
   const { data: myRequests = [], isLoading: loadingRequests } = useQuery<UserRequest[]>({
     queryKey: ["my-requests"],
     queryFn: async () => {
-      const { supabase } = await import("@/lib/supabase");
-      const { data: { session } } = await supabase.auth.getSession();
+      const { getSupabase } = await import("@/lib/supabase");
+      const sb = await getSupabase();
+      const { data: { session } } = await sb.auth.getSession();
       const headers: Record<string, string> = {};
       if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
       const res = await fetch(resolveApiPath("/api/requests"), { headers });

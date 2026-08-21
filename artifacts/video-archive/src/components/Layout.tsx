@@ -1,12 +1,18 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { Link, useLocation } from "wouter";
 import { Menu, X, Film, Sun, Moon } from "lucide-react";
 import { UserMenu } from "@/components/UserMenu";
-import { NotificationBell } from "@/components/NotificationBell";
 import { DesktopNav } from "@/components/nav/DesktopNav";
 import { SearchDropdown } from "@/components/nav/SearchDropdown";
-import { MobileMenu } from "@/components/nav/MobileMenu";
-import RequestDialog from "@/components/RequestDialog";
+
+// Lazy-load components that are heavy or only needed on interaction:
+// - NotificationBell: pulls in notification hooks, only visible for auth users
+// - MobileMenu: only visible on mobile toggle
+// - RequestDialog: pulls in framer-motion, only opens on click
+const NotificationBell = lazy(() => import("@/components/NotificationBell").then(m => ({ default: m.NotificationBell })));
+const MobileMenu = lazy(() => import("@/components/nav/MobileMenu").then(m => ({ default: m.MobileMenu })));
+const RequestDialog = lazy(() => import("@/components/RequestDialog"));
+
 import { enqueuePrefetch, flushPrefetch } from "@/lib/query-client";
 
 const FOOTER_PAGE_IMPORTS: Record<string, () => Promise<unknown>> = {
@@ -22,6 +28,14 @@ const FOOTER_PAGE_IMPORTS: Record<string, () => Promise<unknown>> = {
 };
 
 function prefetchFooter(href: string) {
+  // Skip prefetching on slow/constrained connections — the bandwidth is
+  // needed for the current page, not speculative preloading.
+  try {
+    const conn = (navigator as any).connection;
+    if (conn && (conn.saveData || (typeof conn.effectiveType === 'string' && ['slow-2g', '2g', '3g'].includes(conn.effectiveType)))) {
+      return;
+    }
+  } catch {}
   const imp = FOOTER_PAGE_IMPORTS[href];
   if (imp) imp().catch(() => {});
 }
@@ -245,7 +259,7 @@ export function Navbar() {
             </button>
           )}
 
-          <NotificationBell />
+          <Suspense fallback={null}><NotificationBell /></Suspense>
           <UserMenu />
 
           <button
@@ -261,15 +275,19 @@ export function Navbar() {
         </div>
       </div>
 
-      <MobileMenu
-        open={mobileOpen}
-        location={location}
-        dark={dark}
-        onDarkToggle={() => setDark((d) => !d)}
-        onClose={() => setMobileOpen(false)}
-        onRequestOpen={() => setRequestOpen(true)}
-      />
-      <RequestDialog open={requestOpen} onOpenChange={setRequestOpen} />
+      <Suspense fallback={null}>
+        <MobileMenu
+          open={mobileOpen}
+          location={location}
+          dark={dark}
+          onDarkToggle={() => setDark((d) => !d)}
+          onClose={() => setMobileOpen(false)}
+          onRequestOpen={() => setRequestOpen(true)}
+        />
+      </Suspense>
+      <Suspense fallback={null}>
+        <RequestDialog open={requestOpen} onOpenChange={setRequestOpen} />
+      </Suspense>
     </header>
   );
 }

@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { pool } from "@workspace/db";
+import { requireRole } from "../middleware/requireRole.js";
 
 const migrationSql = `
 -- User Profiles
@@ -151,7 +152,9 @@ CREATE INDEX IF NOT EXISTS idx_requests_user ON requests(user_id);
 
 const router = Router();
 
-router.get("/migrate-auth", async (_req: Request, res: Response) => {
+const admin = requireRole("admin");
+
+router.get("/migrate-auth", ...admin, async (_req: Request, res: Response) => {
   try {
     console.log("[migrate-auth] Running migration...");
     await pool.query(migrationSql);

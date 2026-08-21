@@ -145,7 +145,7 @@ export default function Browse() {
   const { data, isLoading, isFetching } = useListRecordings(recordingsParams, {
     query: {
       queryKey: getListRecordingsQueryKey(recordingsParams),
-      staleTime: 0,
+      staleTime: 30_000,
       placeholderData: keepPreviousData,
     },
   });

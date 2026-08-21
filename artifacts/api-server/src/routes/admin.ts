@@ -254,6 +254,7 @@ router.delete("/admin/users/:id", ...admin, async (req: Request, res: Response) 
       await tx.execute(sql`DELETE FROM user_collections WHERE user_id = ${id}`);
       await tx.execute(sql`DELETE FROM performer_follows WHERE user_id = ${id}`);
       await tx.execute(sql`DELETE FROM user_notifications WHERE user_id = ${id}`);
+      await tx.execute(sql`DELETE FROM user_notification_preferences WHERE user_id = ${id}`);
       await tx.execute(sql`DELETE FROM requests WHERE user_id = ${id}`);
       await tx.execute(sql`DELETE FROM user_profiles WHERE user_id = ${id}`);
     });

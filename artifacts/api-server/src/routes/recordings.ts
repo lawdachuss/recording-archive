@@ -91,7 +91,8 @@ router.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds: 
     const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10) || 1);
     const limit = Math.min(Math.max(1, parseInt(String(req.query.limit ?? "12"), 10) || 12), 100);
     const excludeRaw = typeof req.query.exclude === "string" ? req.query.exclude : "";
-    const exclude = excludeRaw.split(",").map(s => s.trim()).filter(Boolean);
+    // Cap at 200 IDs to prevent abuse
+    const exclude = excludeRaw.split(",").map(s => s.trim()).filter(Boolean).slice(0, 200);
     // Max pool size for scoring — cap at 1000 to keep response times reasonable
     // while allowing pagination to grow with the database.
     const MAX_POOL = 1000;
