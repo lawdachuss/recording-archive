@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { db, sql } from "@workspace/db";
 import { supabase } from "../lib/supabase.js";
 import { logger } from "../lib/logger.js";
 
@@ -87,44 +88,33 @@ router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search"
     }
 
     // 3. Tag suggestions (tag name matches, up to 4)
-    // Tags are stored as a PostgreSQL array on each recording row, so we
-    // paginate through recordings until we collect 4 matching distinct tags.
-    // This avoids fetching the entire table — we stop as soon as we have enough.
+    // Use SQL unnest() to expand PostgreSQL text[] tags into individual rows,
+    // then GROUP BY and match — runs entirely in the database instead of
+    // paginating through thousands of rows client-side.
     {
-      const matchedTags = new Set<string>();
-      const lowerQ = q.toLowerCase();
-      const TAG_PAGE = 1000;
-      let offset = 0;
-
-      while (matchedTags.size < 4) {
-        const { data: tagPage, error: tagErr } = await supabase
-          .from("recordings_with_links")
-          .select("tags")
-          .not("links", "is", "null")
-          .range(offset, offset + TAG_PAGE - 1);
-
-        if (tagErr || !tagPage || tagPage.length === 0) break;
-
-        for (const row of tagPage) {
-          if (!row.tags) continue;
-          for (const tag of row.tags) {
-            if (matchedTags.size >= 4) break;
-            if (tag?.toLowerCase().includes(lowerQ) && !matchedTags.has(tag)) {
-              matchedTags.add(tag);
-              suggestions.push({
-                type: "tag",
-                label: tag,
-                subtitle: "Tag",
-                href: `/browse?tags=${encodeURIComponent(tag)}`,
-              });
-            }
-          }
-          if (matchedTags.size >= 4) break;
+      try {
+        const lowerQ = q.toLowerCase();
+        const tagResult = await db.execute(sql`
+          SELECT DISTINCT tag
+          FROM (
+            SELECT unnest(tags) AS tag
+            FROM recordings_with_links
+            WHERE links IS NOT NULL
+          ) sub
+          WHERE LOWER(tag) LIKE ${`%${lowerQ}%`}
+          LIMIT 4
+        `);
+        for (const row of tagResult.rows) {
+          const tag = row.tag as string;
+          suggestions.push({
+            type: "tag",
+            label: tag,
+            subtitle: "Tag",
+            href: `/browse?tags=${encodeURIComponent(tag)}`,
+          });
         }
-
-        // If we got fewer rows than the page size, we've exhausted the table
-        if (tagPage.length < TAG_PAGE) break;
-        offset += TAG_PAGE;
+      } catch {
+        // Non-critical — tag suggestions are a nice-to-have
       }
     }
   } catch (err) {

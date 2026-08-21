@@ -5,34 +5,11 @@ import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
 import { useAuth } from "@/contexts/AuthContext";
-import { userApi, parseCloudItem } from "@/lib/user-api";
+import { userApi, parseCloudItem, cloudItemToRecording } from "@/lib/user-api";
 import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { Clock, Trash2, ListX } from "lucide-react";
 
-function toRecording(r: ReturnType<typeof parseCloudItem>) {
-  return {
-    id: r.id,
-    username: r.username,
-    filename: r.filename,
-    room_title: r.room_title ?? null,
-    thumbnail_url: r.thumbnail_url ?? null,
-    preview_url: r.preview_url ?? null,
-    sprite_url: r.sprite_url ?? null,
-    resolution: r.resolution ?? null,
-    timestamp: r.timestamp,
-    created_at: r.saved_at,
-    tags: [] as string[],
-    viewers: null,
-    framerate: null,
-    filesize: null,
-    gender: null,
-    embed_url: null,
-    instance_id: null,
-    channel_id: null,
-    updated_at: null,
-  };
-}
 
 export default function WatchLater() {
   const { user, loading } = useAuth();
@@ -126,7 +103,7 @@ export default function WatchLater() {
                   {index + 1}
                 </div>
                 <VideoCard
-                  recording={toRecording(rec)}
+                  recording={cloudItemToRecording(rec)}
                   showRemove
                   onRemove={() => handleRemove(rec.id)}
                   isWatched={recentlyWatched.has(rec.id)}

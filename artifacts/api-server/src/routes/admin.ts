@@ -243,15 +243,20 @@ router.delete("/admin/users/:id", ...admin, async (req: Request, res: Response) 
       return;
     }
 
-    await db.execute(sql`DELETE FROM user_roles WHERE user_id = ${id}`);
-    await db.execute(sql`DELETE FROM user_profiles WHERE user_id = ${id}`);
-    await db.execute(sql`DELETE FROM saved_videos WHERE user_id = ${id}`);
-    await db.execute(sql`DELETE FROM watch_history WHERE user_id = ${id}`);
-    await db.execute(sql`DELETE FROM watch_later_items WHERE user_id = ${id}`);
-    await db.execute(sql`DELETE FROM user_collections WHERE user_id = ${id}`);
-    await db.execute(sql`DELETE FROM performer_follows WHERE user_id = ${id}`);
-    await db.execute(sql`DELETE FROM user_notifications WHERE user_id = ${id}`);
-    await db.execute(sql`DELETE FROM requests WHERE user_id = ${id}`);
+    // Use a transaction so a failure mid-way doesn't leave the user
+    // partially deleted (e.g. profile gone but history still orphaned).
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`DELETE FROM user_roles WHERE user_id = ${id}`);
+      await tx.execute(sql`DELETE FROM saved_videos WHERE user_id = ${id}`);
+      await tx.execute(sql`DELETE FROM watch_history WHERE user_id = ${id}`);
+      await tx.execute(sql`DELETE FROM watch_later_items WHERE user_id = ${id}`);
+      await tx.execute(sql`DELETE FROM user_collection_items WHERE collection_id IN (SELECT id FROM user_collections WHERE user_id = ${id})`);
+      await tx.execute(sql`DELETE FROM user_collections WHERE user_id = ${id}`);
+      await tx.execute(sql`DELETE FROM performer_follows WHERE user_id = ${id}`);
+      await tx.execute(sql`DELETE FROM user_notifications WHERE user_id = ${id}`);
+      await tx.execute(sql`DELETE FROM requests WHERE user_id = ${id}`);
+      await tx.execute(sql`DELETE FROM user_profiles WHERE user_id = ${id}`);
+    });
 
     logger.info({ targetUserId: id, adminId: req.user!.id }, "User deleted by admin");
     res.json({ ok: true });

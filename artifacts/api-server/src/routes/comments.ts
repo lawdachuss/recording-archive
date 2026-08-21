@@ -57,7 +57,10 @@ function buildCommentTree(rows: CommentRow[], likedSet?: Set<number>): CommentNo
     const parentId = row.parent_id != null ? Number(row.parent_id) : null;
     if (parentId && map.has(parentId)) {
       map.get(parentId)!.replies.push(node);
-    } else if (!parentId) {
+    } else {
+      // Either a root comment (parentId is null) or an orphan reply
+      // (parentId references a comment not in this paginated result set).
+      // Promote orphans to roots so they aren't silently dropped.
       roots.push(node);
     }
   }
@@ -97,6 +100,18 @@ router.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comme
   // replies, preserving tree structure for buildCommentTree. When paginated,
   // this means some replies may be separated from their parent, but the
   // tree builder handles orphans by promoting them to roots.
+  //
+  // Sort mode affects root comment ordering:
+  //   "new" / default → newest first (by created_at DESC)
+  //   "old"           → oldest first (by created_at ASC)
+  //   "top"           → most liked first (by total likes DESC, then newest)
+  const orderClause =
+    sort === "old"
+      ? sql`c.parent_id NULLS FIRST, c.created_at ASC`
+      : sort === "top"
+        ? sql`c.parent_id NULLS FIRST, COUNT(cl.id) DESC, c.created_at DESC`
+        : sql`c.parent_id NULLS FIRST, c.created_at DESC`;
+
   const result = await db.execute(sql`
     SELECT
       c.id, c.recording_id, c.parent_id, c.author, c.content, c.deleted, c.created_at,
@@ -105,7 +120,7 @@ router.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comme
     LEFT JOIN comment_likes cl ON cl.comment_id = c.id
     WHERE c.recording_id = ${recording_id}
     GROUP BY c.id
-    ORDER BY c.parent_id NULLS FIRST, c.created_at DESC
+    ORDER BY ${orderClause}
     LIMIT ${limit} OFFSET ${offset}
   `);
 

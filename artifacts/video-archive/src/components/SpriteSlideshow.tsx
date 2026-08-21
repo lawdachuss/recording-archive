@@ -6,8 +6,7 @@ interface SpriteSlideshowProps {
   cols?: number;
   /** Explicit sprite grid rows — skip auto-detection from image dimensions */
   rows?: number;
-  fps?: number;
-  /** ms each sprite frame is held before advancing */
+  /** ms each sprite frame is held before advancing (default: 100ms = 10fps) */
   frameMs?: number;
   className?: string;
   active?: boolean;
@@ -36,48 +35,52 @@ function detectLayout(width: number, height: number): SpriteLayout {
   const known = KNOWN_LAYOUTS.get(key);
   if (known) return known;
 
-  let best: SpriteLayout | null = null;
-  let bestScore = -1;
-  let bestFrames = 0;
+  // Fast path: try common grid sizes (4x4, 4x3, 3x3, etc.) first
+  const commonGrids: [number, number][] = [
+    [4, 4], [4, 3], [3, 4], [3, 3], [5, 4], [4, 5],
+    [6, 4], [4, 6], [5, 5], [6, 5], [5, 6], [6, 6],
+  ];
 
-  for (let cols = 1; cols <= 20; cols++) {
-    if (width % cols !== 0) continue;
-    const fw = width / cols;
-
-    for (let rows = 1; rows <= 20; rows++) {
-      if (height % rows !== 0) continue;
+  for (const [cols, rows] of commonGrids) {
+    if (width % cols === 0 && height % rows === 0) {
+      const fw = width / cols;
       const fh = height / rows;
-      if (fh <= 0) continue;
-
       const ratio = fw / fh;
-      const expectedRatio = 16 / 9;
-      const ratioDiff = Math.abs(ratio - expectedRatio);
-
-      const aspectScore = ratioDiff < 0.001 ? 100 : Math.max(0, 100 - ratioDiff * 50);
-      const orientScore = cols >= rows ? 10 : 5;
-      const totalFrames = cols * rows;
-      const frameScore = Math.min(totalFrames, 20);
-
-      const score = aspectScore + orientScore + frameScore;
-
-      if (score > bestScore || (score === bestScore && totalFrames < bestFrames)) {
-        bestScore = score;
-        bestFrames = totalFrames;
-        best = { cols, rows, totalFrames };
+      // 16:9 frames are the standard
+      if (Math.abs(ratio - 16 / 9) < 0.1) {
+        return { cols, rows, totalFrames: cols * rows };
       }
     }
   }
 
-  if (best && bestScore > 0) return best;
+  // Fallback: assume 4x4 if divisible, otherwise 1x1
+  if (width % 4 === 0 && height % 4 === 0) {
+    const fw = width / 4;
+    const fh = height / 4;
+    if (Math.abs(fw / fh - 16 / 9) < 0.5) {
+      return { cols: 4, rows: 4, totalFrames: 16 };
+    }
+  }
 
   return { cols: 1, rows: 1, totalFrames: 1 };
+}
+
+function isConnectionConstrained(): boolean {
+  try {
+    const conn = (navigator as any).connection;
+    if (!conn) return false;
+    if (conn.saveData) return true;
+    const slow = ["slow-2g", "2g", "3g"];
+    return typeof conn.effectiveType === "string" && slow.includes(conn.effectiveType);
+  } catch {
+    return false;
+  }
 }
 
 export const SpriteSlideshow = memo(function SpriteSlideshow({
   spriteUrl,
   cols: explicitCols,
   rows: explicitRows,
-  fps = 10,
   frameMs = 100,
   className,
   active = true,
@@ -105,7 +108,6 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({
     frameRef.current = 0;
 
     if (explicitCols && explicitRows) {
-      // Layout is known upfront — image will load via CSS background, no JS detection needed
       setImageLoaded(true);
     }
 
@@ -149,7 +151,9 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({
     const el = divRef.current;
     if (!el || !layout || layout.totalFrames < 2 || !imageLoaded || !active) return;
 
-    const intervalMs = frameMs;
+    // Don't animate on slow/constrained connections
+    if (isConnectionConstrained()) return;
+
     frameRef.current = 0;
     const bgUrl = `url(${spriteUrl})`;
     const bgSize = `${layout.cols * 100}% ${layout.rows * 100}%`;
@@ -170,9 +174,9 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({
     el.style.willChange = "background-position";
     update();
 
-    const interval = setInterval(update, intervalMs);
+    const interval = setInterval(update, frameMs);
     return () => clearInterval(interval);
-  }, [layout, spriteUrl, fps, imageLoaded, active]);
+  }, [layout, spriteUrl, frameMs, imageLoaded, active]);
 
   return (
     <div

@@ -107,7 +107,7 @@ async function warmSpriteCatalog(): Promise<void> {
       // Sprites only — the pages that render these cards will fetch their own
       // thumbnails through the DOM, so pre-downloading them here would just
       // duplicate server traffic.
-      preloadRecordingSprites(recs, { concurrency: 5, chunkSize: 10, timeout: 2_000 });
+      preloadRecordingSprites(recs);
     }
     if (recs.length >= 100) {
       scheduleIdleWork(warmNextPage, 4_000);

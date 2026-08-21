@@ -5,34 +5,11 @@ import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
 import { useAuth } from "@/contexts/AuthContext";
-import { userApi, parseCloudItem, type CloudItem } from "@/lib/user-api";
+import { userApi, parseCloudItem, cloudItemToRecording, type CloudItem } from "@/lib/user-api";
 import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { Bookmark, Trash2, BookmarkX } from "lucide-react";
 
-function toRecording(r: ReturnType<typeof parseCloudItem>) {
-  return {
-    id: r.id,
-    username: r.username,
-    filename: r.filename,
-    room_title: r.room_title ?? null,
-    thumbnail_url: r.thumbnail_url ?? null,
-    preview_url: r.preview_url ?? null,
-    sprite_url: r.sprite_url ?? null,
-    resolution: r.resolution ?? null,
-    timestamp: r.timestamp,
-    created_at: r.saved_at,
-    tags: [] as string[],
-    viewers: null,
-    framerate: null,
-    filesize: null,
-    gender: null,
-    embed_url: null,
-    instance_id: null,
-    channel_id: null,
-    updated_at: null,
-  };
-}
 
 export default function Bookmarks() {
   const { user, loading } = useAuth();
@@ -60,8 +37,15 @@ export default function Bookmarks() {
     removeCloud.mutate(id);
   };
 
-  const handleClearAll = () => {
-    cloudItems.forEach((b: CloudItem) => removeCloud.mutate(b.recording_id));
+  const handleClearAll = async () => {
+    // Use the bulk delete endpoint instead of firing N individual requests
+    try {
+      await userApi.clearSaved();
+      queryClient.invalidateQueries({ queryKey: ["user", "saved"] });
+    } catch {
+      // Fallback: clear one by one if bulk endpoint fails
+      cloudItems.forEach((b: CloudItem) => removeCloud.mutate(b.recording_id));
+    }
   };
 
   if (!user) return null;
@@ -118,7 +102,7 @@ export default function Bookmarks() {
             {bookmarks.map((rec, i) => (
               <div key={rec.id} className="animate-fade-in-up" style={{ animationDelay: `${i * 25}ms` }}>
                 <VideoCard
-                  recording={toRecording(rec)}
+                  recording={cloudItemToRecording(rec)}
                   showRemove
                   onRemove={() => handleRemove(rec.id)}
                   isWatched={recentlyWatched.has(rec.id)}

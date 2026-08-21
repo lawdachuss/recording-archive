@@ -65,6 +65,15 @@ function stableStringify(value: unknown): string {
 }
 
 function makeEtag(body: unknown): string {
+  // For large bodies (>10KB), use a fast timestamp+size fingerprint instead
+  // of expensive stableStringify + SHA-256. This is safe because the ETag
+  // only needs to change when the response body changes — the cache entry's
+  // own timestamps handle staleness.
+  const json = JSON.stringify(body);
+  if (json.length > 10_000) {
+    const hash = createHash("md5").update(json).digest("base64url");
+    return `"${hash.slice(0, 24)}"`;
+  }
   const hash = createHash("sha256").update(stableStringify(body)).digest("base64url");
   return `"${hash.slice(0, 32)}"`;
 }
@@ -204,7 +213,12 @@ async function writeEntry(cacheKey: string, entry: CacheEntry, ttlSeconds: numbe
   if (!redis || !isRedisConnected()) return;
 
   const redisTtl = Math.max(1, ttlSeconds + staleSeconds);
-  await redis.setex(cacheKey, redisTtl, JSON.stringify(entry));
+  // Fire-and-forget: don't await Redis writes to avoid blocking the response.
+  // The memory cache is always populated synchronously, so subsequent requests
+  // get cache hits immediately while Redis catches up asynchronously.
+  redis.setex(cacheKey, redisTtl, JSON.stringify(entry)).catch((err) =>
+    logger.error({ err, cacheKey }, "Redis write error")
+  );
 
   if (entry.tags.length > 0) {
     const pipeline = redis.pipeline();
@@ -212,7 +226,9 @@ async function writeEntry(cacheKey: string, entry: CacheEntry, ttlSeconds: numbe
       pipeline.sadd(`${TAG_PREFIX}:${tag}`, cacheKey);
       pipeline.expire(`${TAG_PREFIX}:${tag}`, redisTtl);
     }
-    await pipeline.exec();
+    pipeline.exec().catch((err) =>
+      logger.error({ err, cacheKey }, "Redis tag write error")
+    );
   }
 }
 

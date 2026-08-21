@@ -15,6 +15,7 @@ export interface Recording {
   resolution?: string | null;
   framerate?: number | null;
   filesize?: number | null;
+  duration?: number | null;
   gender?: string | null;
   thumbnail_url?: string | null;
   embed_url?: string | null;

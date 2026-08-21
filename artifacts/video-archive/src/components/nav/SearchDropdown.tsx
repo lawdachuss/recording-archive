@@ -58,10 +58,11 @@ export function SearchDropdown({ open, onOpenChange }: SearchDropdownProps) {
   const predictions = predictionsData?.suggestions ?? [];
 
   // Trending data for empty-state suggestions (only fetch when search is open)
+  // These are shared with Home/tags pages so they hit the same React Query cache.
   const { data: trendingTags } = useListTags();
   const { data: trendingPerformers } = useListPerformers(
     open ? { limit: 5, sort: "count" } : undefined,
-    open ? { staleTime: 5 * 60 * 1000 } : undefined,
+    open ? { staleTime: 3 * 60_000 } : undefined,
   );
 
   // Reset selected index when results change

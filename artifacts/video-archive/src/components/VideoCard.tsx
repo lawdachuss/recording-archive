@@ -10,23 +10,11 @@ import { cn } from "@/lib/utils";
 import { proxyUrl } from "@/lib/proxy-url";
 import { getSpriteGrid } from "@/lib/sprite-grid";
 
-const BLOCKED_HOSTS: string[] = [];
-
 // If a hover preview hasn't produced its first frame within this window,
 // treat the source as unreachable and fall back (files.catbox.moe consistently
 // times out for minutes on this network; the browser would otherwise leave the
 // request hanging and never engage the sprite/static fallback).
 const PREVIEW_TIMEOUT_MS = 6000;
-
-function isHostBlocked(url: string | null | undefined): boolean {
-  if (!url) return false;
-  try {
-    const { hostname } = new URL(url);
-    return BLOCKED_HOSTS.some((h) => hostname.includes(h));
-  } catch {
-    return false;
-  }
-}
 
 interface VideoCardProps {
   recording: Recording;
@@ -54,8 +42,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   } = useHoverPreview({ thumbnailUrl, previewUrl, spriteUrl });
 
   const staticImage = thumbnailUrl;
-  const staticImageBlocked = staticImage ? isHostBlocked(staticImage) : false;
-  const hasStaticImage = !!staticImage && !staticImageBlocked;
+  const hasStaticImage = !!staticImage;
   const initials = useMemo(() => recording.username?.slice(0, 2).toUpperCase() ?? "??", [recording.username]);
 
   const showPreview = isHovered && (showVideo || showAnimatedImage);
@@ -133,8 +120,8 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     setPreviewReady(true);
   }, []);
 
-  const spriteAvailable = !!spriteUrl && !isHostBlocked(spriteUrl);
-  const previewAvailable = !!previewUrl && !isHostBlocked(previewUrl);
+  const spriteAvailable = !!spriteUrl;
+  const previewAvailable = !!previewUrl;
 
   // The real animated preview is the primary hover experience whenever one
   // exists (most recordings have one; historically catbox previews were

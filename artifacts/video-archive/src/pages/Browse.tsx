@@ -66,6 +66,8 @@ const RESOLUTION_OPTIONS = [
   { value: "360p", label: "360p" },
 ];
 
+const ITEMS_PER_PAGE = 40;
+
 function parseTagList(raw: string): string[] {
   return raw
     ? raw
@@ -115,7 +117,7 @@ export default function Browse() {
   const isInternalRef = useRef(false);
 
   const { data: tagsData } = useListTags({
-    query: { queryKey: getListTagsQueryKey(), staleTime: 0 },
+    query: { queryKey: getListTagsQueryKey(), staleTime: 60_000 },
   });
   const popularTags = useMemo(() => tagsData ?? [], [tagsData]);
 
@@ -131,7 +133,7 @@ export default function Browse() {
     const p = new URLSearchParams(searchString);
     return {
       page: parseInt(p.get("page") || "1", 10),
-      limit: 40,
+      limit: ITEMS_PER_PAGE,
       search: p.get("search") || undefined,
       tags: parseTagList(p.get("tags") || "").join(",") || undefined,
       gender: p.get("gender") || undefined,
@@ -199,7 +201,7 @@ export default function Browse() {
         // Warm sprites + thumbnails for the WHOLE next page — small, proxy-free
         // pixhost images and the primary hover/grid media — so hover and
         // rendering are instant right after navigating.
-        preloadRecordingAssets(recs, { concurrency: 6, chunkSize: 12 });
+        preloadRecordingAssets(recs);
         // Seed the preview clips for the first row(s) still via <video>/<img>.
         // Preload fewer on constrained connections.
         const conn = (navigator as any).connection;
@@ -740,7 +742,7 @@ export default function Browse() {
         <div className="container mx-auto">
           {isLoading && recordingsParams.page === 1 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8">
-              {Array.from({ length: 40 }).map((_, i) => (
+              {Array.from({ length: ITEMS_PER_PAGE }).map((_, i) => (
                 <div key={i} className="space-y-2.5 animate-pulse">
                   <div className="w-full aspect-video rounded-lg bg-secondary/60" />
                   <div className="h-3 w-3/4 rounded bg-secondary/40" />
@@ -808,7 +810,7 @@ export default function Browse() {
                 <span className="tabular-nums">Page {recordingsParams.page}</span>
                 <span className="w-px h-3 bg-border/40" />
                 <span className="tabular-nums">
-                  {Math.ceil(data.total / 40)} total
+                  {Math.ceil(data.total / recordingsParams.limit)} total
                 </span>
                 <span className="w-px h-3 bg-border/40" />
                 <span className="tabular-nums">
@@ -819,7 +821,7 @@ export default function Browse() {
               <div className="w-full max-w-4xl flex justify-center">
                 <AppPagination
                   itemsCount={data.total}
-                  itemsPerPage={40}
+                  itemsPerPage={ITEMS_PER_PAGE}
                   currentPage={recordingsParams.page}
                   onPageChange={handlePageChange}
                   pageRangeDisplayed={5}

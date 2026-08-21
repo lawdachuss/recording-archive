@@ -163,16 +163,21 @@ function startCleanup() {
     // IndexedDB sweep
     try {
       const db = await openDB();
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.openCursor();
-      req.onsuccess = () => {
-        const cursor = req.result;
-        if (!cursor) return;
-        const entry = cursor.value as CacheEntry<unknown>;
-        if (Date.now() > entry.expiresAt) cursor.delete();
-        cursor.continue();
-      };
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readwrite");
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.openCursor();
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (!cursor) return resolve();
+          const entry = cursor.value as CacheEntry<unknown>;
+          if (Date.now() > entry.expiresAt) cursor.delete();
+          cursor.continue();
+        };
+        req.onerror = () => reject(req.error);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
     } catch {}
   }, CLEANUP_INTERVAL_MS);
 }
@@ -218,13 +223,6 @@ export async function cacheClear(): Promise<void> {
     toDelete.forEach(k => localStorage.removeItem(k));
   } catch {}
   await idbClear();
-}
-
-/**
- * Composite key helper for API responses.
- */
-export function apiCacheKey(method: string, path: string): string {
-  return `api:${method}:${path}`;
 }
 
 export const CACHE_TTL = {

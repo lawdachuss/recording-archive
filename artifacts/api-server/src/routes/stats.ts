@@ -1,46 +1,55 @@
 import { Router } from "express";
-import { supabase, fetchAll } from "../lib/supabase.js";
+import { db, sql } from "@workspace/db";
 import { cache } from "../middleware/cache.js";
 
 const router = Router();
 
-router.get("/stats", cache({ ttlSeconds: 600, staleSeconds: 1800, tags: ["stats", "recordings"] }), async (req, res) => {
-  // Fetch all rows in pages — PostgREST caps a single request at 1,000 rows.
-  const { data, error } = await fetchAll((start, end) =>
-    supabase
-      .from("recordings_with_links")
-      .select("username, tags, filesize, timestamp, links")
-      .not("links", "is", "null")
-      .range(start, end),
-  );
+router.get("/stats", cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["stats", "recordings"] }), async (req, res) => {
+  try {
+    // Use SQL aggregation instead of loading all rows into memory.
+    // With 8,000+ recordings, fetching every row just to count is extremely slow.
+    const [countResult, sizeResult, newestResult, performersResult, tagsResult] = await Promise.all([
+      // Total recordings with links
+      db.execute(sql`
+        SELECT COUNT(*)::int AS count FROM recordings_with_links WHERE links IS NOT NULL
+      `),
+      // Total storage
+      db.execute(sql`
+        SELECT COALESCE(SUM(filesize), 0)::bigint AS total FROM recordings_with_links WHERE links IS NOT NULL
+      `),
+      // Newest recording timestamp
+      db.execute(sql`
+        SELECT MAX(timestamp) AS newest FROM recordings_with_links WHERE links IS NOT NULL
+      `),
+      // Unique performers count
+      db.execute(sql`
+        SELECT COUNT(DISTINCT username)::int AS count FROM recordings_with_links WHERE links IS NOT NULL
+      `),
+      // Unique tags count — unnest the tags array and count distinct values
+      db.execute(sql`
+        SELECT COUNT(DISTINCT tag)::int AS count FROM (
+          SELECT unnest(tags) AS tag FROM recordings_with_links WHERE links IS NOT NULL AND tags IS NOT NULL
+        ) sub
+      `),
+    ]);
 
-  if (error) {
-    req.log.error({ err: error }, "Supabase error fetching stats");
+    const countRow = countResult.rows[0] as { count: number } | undefined;
+    const sizeRow = sizeResult.rows[0] as { total: number } | undefined;
+    const newestRow = newestResult.rows[0] as { newest: string | null } | undefined;
+    const performersRow = performersResult.rows[0] as { count: number } | undefined;
+    const tagsRow = tagsResult.rows[0] as { count: number } | undefined;
+
+    res.json({
+      total_recordings: countRow?.count ?? 0,
+      total_performers: performersRow?.count ?? 0,
+      total_tags: tagsRow?.count ?? 0,
+      total_size_bytes: Number(sizeRow?.total ?? 0),
+      newest_recording: newestRow?.newest ?? null,
+    });
+  } catch (err) {
+    req.log.error({ err }, "GET /stats unexpected error");
     res.status(500).json({ error: "Failed to fetch stats" });
-    return;
   }
-
-  // The optimized view returns NULL (not '{}') for recordings without links,
-  // so the SQL `.not("links", "is", "null")` filter already excludes them.
-  const rows = data ?? [];
-
-  const uniquePerformers = new Set(rows.map((r) => r.username)).size;
-  const uniqueTags = new Set(rows.flatMap((r) => r.tags ?? [])).size;
-  const totalSize = rows.reduce((sum, r) => sum + (r.filesize ?? 0), 0);
-
-  const newest = rows
-    .map((r) => r.timestamp)
-    .filter(Boolean)
-    .sort()
-    .reverse()[0] ?? null;
-
-  res.json({
-    total_recordings: rows.length,
-    total_performers: uniquePerformers,
-    total_tags: uniqueTags,
-    total_size_bytes: totalSize,
-    newest_recording: newest,
-  });
 });
 
 export default router;

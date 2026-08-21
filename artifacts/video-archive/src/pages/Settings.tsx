@@ -44,7 +44,6 @@ export default function Settings() {
   const [soundOn, setSoundOn] = useState(true);
   const [vibrateOn, setVibrateOn] = useState(true);
 
-  const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [pwSaving, setPwSaving] = useState(false);
@@ -74,7 +73,7 @@ export default function Settings() {
       setSoundOn(prefs.sound_enabled);
       setVibrateOn(prefs.vibration_enabled);
     });
-  }, [user]);
+  }, [user, loading]);
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,7 +113,6 @@ export default function Settings() {
       setPwMsg({ ok: false, text: error.message });
     } else {
       setPwMsg({ ok: true, text: "Password updated successfully." });
-      setCurrentPw("");
       setNewPw("");
       setConfirmPw("");
     }

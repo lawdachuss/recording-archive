@@ -290,6 +290,14 @@ export default function VideoDetail() {
 
   useEffect(() => {
     if (!video) return;
+    // Always write to localStorage for instant badge feedback,
+    // regardless of auth state. Authenticated users also sync to
+    // the server for cross-device history.
+    addWatchedId(video.id, {
+      username: video.username,
+      filename: video.filename,
+      thumbnail_url: video.thumbnail_url,
+    });
     if (user) {
       const meta = {
         id: video.id,
@@ -304,19 +312,15 @@ export default function VideoDetail() {
         saved_at: new Date().toISOString(),
       };
       userApi.addHistory(video.id, recordingToMeta(meta)).catch(() => {});
-    } else {
-      addWatchedId(video.id, {
-        username: video.username,
-        filename: video.filename,
-        thumbnail_url: video.thumbnail_url,
-      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [video?.id, user]);
 
-  // ─── Track view on page load (once per session) ──────────
+  // ─── Track view on page load (once per video ID) ──────────
+  const trackedRef = useRef(new Set<string>());
   useEffect(() => {
-    if (!video?.id) return;
+    if (!video?.id || trackedRef.current.has(video.id)) return;
+    trackedRef.current.add(video.id);
     trackView(video.id);
   }, [video?.id]);
 
@@ -461,20 +465,49 @@ export default function VideoDetail() {
     }
   };
 
-  const handleShare = () => {
-    navigator.clipboard.writeText(window.location.href).then(() => {
+  const handleShare = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
-    });
+    } catch {
+      // Fallback: select from a temporary textarea for HTTP or denied clipboard
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = window.location.href;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+      } catch { /* clipboard unavailable */ }
+    }
   };
 
-  const handleCopyEmbed = () => {
+  const handleCopyEmbed = async () => {
     if (!currentServer?.src) return;
     const code = `<iframe src="${currentServer.src}" width="960" height="540" frameborder="0" allowfullscreen allow="autoplay; fullscreen"></iframe>`;
-    navigator.clipboard.writeText(code).then(() => {
+    try {
+      await navigator.clipboard.writeText(code);
       setEmbedCopied(true);
       setTimeout(() => setEmbedCopied(false), 2500);
-    });
+    } catch {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = code;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        setEmbedCopied(true);
+        setTimeout(() => setEmbedCopied(false), 2500);
+      } catch { /* clipboard unavailable */ }
+    }
   };
 
   const totalReactions = (reactions?.likes ?? 0) + (reactions?.dislikes ?? 0);

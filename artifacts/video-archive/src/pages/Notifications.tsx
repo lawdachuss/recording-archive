@@ -42,13 +42,24 @@ export default function Notifications() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "notifications"] }),
   });
 
-  // Auto-mark notifications as read when the user views this page
+  const clearAll = useTrackedMutation({
+    mutationFn: () => userApi.clearNotifications(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "notifications"] }),
+  });
+
+  // Auto-mark notifications as read when the user views this page.
+  // Only fire once per mount — the boolean dep ensures this runs when
+  // notifications first load (empty → has data) and not on every render.
+  const hasLoaded = notifications.length > 0 || !isLoading;
   useEffect(() => {
-    const unreadCount = notifications.filter((n: UserNotification) => !n.is_read).length;
-    if (unreadCount > 0 && !markAll.isPending) {
-      markAll.mutate();
+    if (hasLoaded && !markAll.isPending) {
+      const unreadCount = notifications.filter((n: UserNotification) => !n.is_read).length;
+      if (unreadCount > 0) {
+        markAll.mutate();
+      }
     }
-  }, [notifications.length > 0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasLoaded]);
 
   if (!user) return null;
 
@@ -142,9 +153,7 @@ export default function Notifications() {
             {notifications.length > 0 && (
               <div className="pt-4 border-t border-border/30 flex justify-end">
                 <button
-                  onClick={() =>
-                    notifications.forEach((n: UserNotification) => deleteOne.mutate(n.id))
-                  }
+                  onClick={() => clearAll.mutate()}
                   className="flex items-center gap-1.5 text-xs text-muted-foreground/50 hover:text-destructive transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />

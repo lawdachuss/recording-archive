@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { GetPerformerParams } from "@workspace/api-zod";
-import { supabase, fetchAll } from "../lib/supabase.js";
+import { supabase } from "../lib/supabase.js";
+import { db, sql } from "@workspace/db";
 import { cache } from "../middleware/cache.js";
 
 const COOKIES = process.env.COOKIES ?? "";
@@ -294,87 +295,78 @@ router.get("/performers", cache({ ttlSeconds: 600, staleSeconds: 900, tags: ["pe
     const gender = (req.query.gender as string) || "";
     const sort = (req.query.sort as string) || "count";
 
-    // Fetch ALL rows with pagination — PostgREST caps a single request at
-    // 1,000 rows, so the old `.limit(50_000)` silently returned only 1,000,
-    // cutting off performers whose latest recording was beyond that window.
-    const { data: allRows, error } = await fetchAll((start, end) =>
-      supabase
-        .from("recordings_with_links")
-        .select("username, gender, thumbnail_url, sprite_url, preview_url, timestamp, links")
-        .not("links", "is", "null")
-        .order("timestamp", { ascending: false })
-        .range(start, end),
-    );
+    // Use SQL aggregation with GROUP BY instead of loading ALL recordings into
+    // memory. With 8,000+ recordings, the old fetchAll approach loaded every
+    // row, built a Map in JS, and was O(n) in both time and memory.
+    //
+    // We use a subquery to find each performer's latest recording (for thumbnail)
+    // and count, then paginate the results server-side.
+    const genderFilter = gender ? sql`WHERE gender = ${gender}` : sql``;
+    const searchFilter = search ? sql`AND LOWER(username) LIKE ${`%${search.toLowerCase()}%`}` : sql``;
 
-    if (error) {
-      req.log.error({ err: error }, "Supabase error listing performers");
-      res.status(500).json({ error: "Failed to fetch performers" });
-      return;
-    }
+    // Step 1: Get total count of distinct performers matching filters
+    const countResult = await db.execute(sql`
+      SELECT COUNT(DISTINCT username)::int AS count
+      FROM recordings_with_links
+      WHERE links IS NOT NULL
+      ${genderFilter}
+      ${searchFilter}
+    `);
+    const totalPerformers = (countResult.rows[0] as any)?.count ?? 0;
 
-    // The optimized view returns NULL (not '{}') for recordings without links,
-    // so the SQL `.not("links", "is", "null")` filter already excludes them.
-    let validRows = allRows ?? [];
+    // Step 2: Get paginated performer list with recording counts and latest thumbnails
+    // Using a window function to get the latest recording per performer efficiently.
+    const sortClause = sort === "name"
+      ? sql`ORDER BY username ASC`
+      : sql`ORDER BY recording_count DESC, username ASC`;
 
-    // Apply optional filters after fetchAll — these are cheap JS-side filters
-    // and avoid complicating the paginated query builder.
-    if (search) {
-      const lower = search.toLowerCase();
-      validRows = validRows.filter((r) => r.username.toLowerCase().includes(lower));
-    }
-    if (gender) {
-      validRows = validRows.filter((r) => r.gender === gender);
-    }
+    const result = await db.execute(sql`
+      WITH performer_stats AS (
+        SELECT
+          username,
+          gender,
+          COUNT(*)::int AS recording_count,
+          MAX(timestamp) AS latest_timestamp
+        FROM recordings_with_links
+        WHERE links IS NOT NULL
+        ${genderFilter}
+        ${searchFilter}
+        GROUP BY username, gender
+      ),
+      latest_recordings AS (
+        SELECT DISTINCT ON (r.username)
+          r.username,
+          r.thumbnail_url,
+          r.sprite_url
+        FROM recordings_with_links r
+        WHERE r.links IS NOT NULL
+        ORDER BY r.username, r.timestamp DESC
+      )
+      SELECT
+        ps.username,
+        ps.recording_count,
+        ps.gender,
+        ps.latest_timestamp,
+        lr.thumbnail_url AS latest_thumbnail,
+        lr.sprite_url
+      FROM performer_stats ps
+      LEFT JOIN latest_recordings lr ON lr.username = ps.username
+      ${sortClause}
+      LIMIT ${limit} OFFSET ${(page - 1) * limit}
+    `);
 
-    const performerMap = new Map<
-      string,
-      {
-        username: string;
-        recording_count: number;
-        latest_thumbnail: string | null;
-        sprite_url: string | null;
-        gender: string | null;
-        latest_timestamp: string | null;
-      }
-    >();
+    const performers = result.rows.map((r: any) => ({
+      username: r.username as string,
+      recording_count: r.recording_count as number,
+      latest_thumbnail: (r.latest_thumbnail || r.sprite_url) as string | null,
+      sprite_url: r.sprite_url as string | null,
+      gender: r.gender as string | null,
+      latest_timestamp: r.latest_timestamp as string | null,
+    }));
 
-    for (const row of validRows) {
-      const existing = performerMap.get(row.username);
-      if (!existing) {
-        const image = row.thumbnail_url || row.sprite_url || row.preview_url || null;
-        performerMap.set(row.username, {
-          username: row.username,
-          recording_count: 1,
-          latest_thumbnail: image,
-          sprite_url: row.sprite_url,
-          gender: row.gender,
-          latest_timestamp: row.timestamp,
-        });
-      } else {
-        existing.recording_count += 1;
-        if (!existing.latest_thumbnail) {
-          const image = row.thumbnail_url || row.sprite_url || row.preview_url || null;
-          if (image) {
-            existing.latest_thumbnail = image;
-            existing.sprite_url = row.sprite_url;
-          }
-        }
-      }
-    }
-
-    let performers = Array.from(performerMap.values());
-    if (sort === "name") {
-      performers.sort((a, b) => a.username.localeCompare(b.username));
-    } else {
-      performers.sort((a, b) => b.recording_count - a.recording_count);
-    }
-
-    const totalPerformers = performers.length;
     const totalPages = Math.ceil(totalPerformers / limit) || 1;
-    const start = (page - 1) * limit;
-    const pagedPerformers = performers.slice(start, start + limit);
 
-    res.json({ performers: pagedPerformers, total: totalPerformers, page, limit, totalPages });
+    res.json({ performers, total: totalPerformers, page, limit, totalPages });
   } catch (err) {
     req.log.error({ err }, "GET /performers unexpected error");
     res.status(500).json({ error: "Failed to fetch performers" });
@@ -393,7 +385,7 @@ router.get("/performers/:username", cache({ ttlSeconds: 900, staleSeconds: 1800,
 
     const { data, error } = await supabase
       .from("recordings_with_links")
-      .select("*")
+      .select("id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at,links")
       .not("links", "is", "null")
       .eq("username", username)
       .order("timestamp", { ascending: false });

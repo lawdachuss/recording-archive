@@ -157,9 +157,7 @@ export function preloadImage(url: string | null | undefined): void {
  */
 export function preloadImages(
   urls: (string | null | undefined)[],
-  options: { concurrency?: number; chunkSize?: number; timeout?: number } = {},
 ): void {
-  void options;
   if (typeof window === "undefined") return;
   for (const url of urls) preloadImage(url);
 }
@@ -173,7 +171,6 @@ export function preloadImages(
  */
 export function preloadRecordingAssets(
   recs: Array<{ sprite_url?: string | null; thumbnail_url?: string | null; preview_url?: string | null }>,
-  options: { concurrency?: number; chunkSize?: number; timeout?: number } = {},
 ): void {
   const thumbs: (string | null | undefined)[] = [];
   const sprites: (string | null | undefined)[] = [];
@@ -185,7 +182,7 @@ export function preloadRecordingAssets(
       previews.push(proxyUrl(rec.preview_url));
     }
   }
-  preloadImages([...thumbs, ...sprites], options);
+  preloadImages([...thumbs, ...sprites]);
   if (previews.length) {
     scheduleIdle(() => previews.forEach((p) => preloadPreviewMedia(p)));
   }
@@ -199,7 +196,6 @@ export function preloadRecordingAssets(
  */
 export function preloadRecordingSprites(
   recs: Array<{ sprite_url?: string | null; preview_url?: string | null }>,
-  options: { concurrency?: number; chunkSize?: number; timeout?: number } = {},
 ): void {
   const sprites: (string | null | undefined)[] = [];
   const previews: (string | null | undefined)[] = [];
@@ -209,7 +205,7 @@ export function preloadRecordingSprites(
       previews.push(proxyUrl(rec.preview_url));
     }
   }
-  preloadImages(sprites, options);
+  preloadImages(sprites);
   if (previews.length) {
     scheduleIdle(() => previews.forEach((p) => preloadPreviewMedia(p)));
   }
