@@ -5,10 +5,16 @@ import {
   ListRelatedRecordingsQueryParams,
 } from "@workspace/api-zod";
 import { supabase } from "../lib/supabase.js";
-import { db, sql, pool } from "@workspace/db";
+import { db, sql } from "@workspace/db";
 import { cache } from "../middleware/cache.js";
 
 const router = Router();
+
+const LIST_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at";
+const RELATED_COLS = "id,username,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,preview_url";
+const POOL_COLS = "id,username,tags,gender,timestamp,viewers,thumbnail_url,sprite_url,preview_url";
+
+// ─── LIST RECORDINGS ────────────────────────────────────────────────────────
 
 router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["recordings", "search"] }), async (req, res) => {
   try {
@@ -21,106 +27,58 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     const { page = 1, limit = 24, search, tags, gender, username, resolution, sort } = parsed.data;
     const normalizedPage = Math.max(1, page);
     const normalizedLimit = Math.min(Math.max(1, limit), 100);
-    const offset = (normalizedPage - 1) * normalizedLimit;
 
-    // Use pool.query() directly instead of Supabase client because:
-    // 1. PostgREST serializes text[] tags as null through the grouped view
-    // 2. Drizzle's parameterized queries can't cast JS arrays to text[]
-    // Pool.query() handles PostgreSQL arrays natively.
-    const conditions: string[] = ["r.links IS NOT NULL"];
-    const values: any[] = [];
-    let paramIdx = 1;
+    let query = supabase.from("recordings_with_links").select(LIST_COLS).not("links", "is", "null");
 
     if (search?.trim()) {
-      conditions.push(`(
-        LOWER(r.username) LIKE $${paramIdx} OR
-        LOWER(r.room_title) LIKE $${paramIdx} OR
-        LOWER(r.filename) LIKE $${paramIdx}
-      )`);
-      values.push(`%${search.trim().toLowerCase()}%`);
-      paramIdx++;
+      const s = search.trim();
+      query = query.or(`username.ilike.%${s}%,room_title.ilike.%${s}%,filename.ilike.%${s}%`);
     }
-
     if (tags) {
       const tagList = tags.split(",").map((t: string) => t.trim()).filter(Boolean);
-      if (tagList.length > 0) {
-        const ph = tagList.map((_, i) => `$${paramIdx + i}`).join(",");
-        conditions.push(`EXISTS (SELECT 1 FROM unnest(r.tags) AS t WHERE t IN (${ph}))`);
-        values.push(...tagList);
-        paramIdx += tagList.length;
-      }
+      if (tagList.length > 0) query = query.overlaps("tags", tagList);
     }
+    if (gender) query = query.eq("gender", gender);
+    if (username) query = query.eq("username", username);
+    if (resolution) query = query.eq("resolution", resolution);
 
-    if (gender) {
-      conditions.push(`r.gender = $${paramIdx}`);
-      values.push(gender);
-      paramIdx++;
+    const ascending = sort === "oldest";
+    const sortCol = sort === "largest" ? "filesize" : sort === "popular" ? "viewers" : "timestamp";
+    query = query.order(sortCol, { ascending, nullsFirst: false });
+
+    const offset = (normalizedPage - 1) * normalizedLimit;
+    const { data, error, count } = await query.range(offset, offset + normalizedLimit - 1);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error listing recordings");
+      res.status(500).json({ error: "Failed to fetch recordings" });
+      return;
     }
-
-    if (username) {
-      conditions.push(`r.username = $${paramIdx}`);
-      values.push(username);
-      paramIdx++;
-    }
-
-    if (resolution) {
-      conditions.push(`r.resolution = $${paramIdx}`);
-      values.push(resolution);
-      paramIdx++;
-    }
-
-    const whereSql = conditions.join(" AND ");
-        const orderCol =
-      sort === "oldest" ? 'r."timestamp"' :
-      sort === "largest" ? "r.filesize" :
-      sort === "popular" ? "r.viewers" :
-      'r."timestamp"';
-    const orderDir = sort === "oldest" ? "ASC" : "DESC";
-
-    const countResult = await pool.query(
-      `SELECT COUNT(*)::int AS count FROM recordings_with_links r WHERE ${whereSql}`,
-      values,
-    );
-    const total = Number(countResult.rows[0]?.count ?? 0);
-
-    const dataResult = await pool.query(
-      `SELECT r.id, r.channel_id, r.username, r.filename, r."timestamp", r.room_title,
-              r.tags, r.viewers, r.resolution, r.framerate, r.filesize, r.duration,
-              r.gender, r.thumbnail_url, r.sprite_url, r.embed_url, r.preview_url,
-              r.instance_id, r.created_at, r.updated_at
-       FROM recordings_with_links r
-       WHERE ${whereSql}
-       ORDER BY ${orderCol} ${orderDir} NULLS LAST
-       LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
-      [...values, normalizedLimit, offset],
-    );
 
     res.json({
-      data: dataResult.rows,
-      total,
+      data: data ?? [],
+      total: count ?? 0,
       page: normalizedPage,
       limit: normalizedLimit,
-      totalPages: Math.ceil(total / normalizedLimit),
+      totalPages: Math.ceil((count ?? 0) / normalizedLimit),
     });
   } catch (err) {
     req.log.error({ err }, "GET /recordings unexpected error");
     res.status(500).json({ error: "Failed to fetch recordings" });
   }
 });
+
+// ─── RECOMMENDATIONS ────────────────────────────────────────────────────────
+
 router.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds: 120, tags: ["recordings"] }), async (req, res) => {
   try {
     const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10) || 1);
     const limit = Math.min(Math.max(1, parseInt(String(req.query.limit ?? "12"), 10) || 12), 100);
     const excludeRaw = typeof req.query.exclude === "string" ? req.query.exclude : "";
-    // Cap at 200 IDs to prevent abuse
     const exclude = excludeRaw.split(",").map(s => s.trim()).filter(Boolean).slice(0, 200);
-    // Max pool size for scoring — cap at 1000 to keep response times reasonable
-    // while allowing pagination to grow with the database.
     const MAX_POOL = 1000;
-
     const seenIds = new Set<string>(exclude);
 
-    // ── User profile: signals from history, follows, saves ──
     let userTagFreq: Record<string, number> = {};
     let userPerformerFreq: Record<string, number> = {};
     let followedPerformers = new Set<string>();
@@ -138,7 +96,6 @@ router.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds: 
           isAuthenticated = true;
           const uid = user.id;
 
-          // 1. Watch history — last 100 entries with watch-time signals
           const { data: history } = await supabase
             .from("watch_history")
             .select("recording_id, metadata, progress_seconds, duration_seconds, watched_at")
@@ -153,77 +110,32 @@ router.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds: 
               if (h.recording_id) {
                 seenIds.add(h.recording_id);
                 historyRecordingIds.push(h.recording_id);
-
-                // Weight by watch completion ratio × recency (recent = higher weight)
                 const progress = Number(h.progress_seconds) || 0;
                 const duration = Number(h.duration_seconds) || 1;
                 const ratio = duration > 0 ? Math.min(progress / duration, 1) : 0.5;
-                const completionWeight = ratio < 0.1 ? 0.1 : ratio < 0.5 ? 0.5 : ratio < 0.8 ? 1 : 2;
+                const cw = ratio < 0.1 ? 0.1 : ratio < 0.5 ? 0.5 : ratio < 0.8 ? 1 : 2;
                 const daysAgo = h.watched_at ? (Date.now() - new Date(h.watched_at).getTime()) / 86400000 : 30;
-                const recencyWeight = Math.max(0.5, 1 - daysAgo / 30);
-                completionWeights.set(h.recording_id, completionWeight * recencyWeight);
+                completionWeights.set(h.recording_id, cw * Math.max(0.5, 1 - daysAgo / 30));
               }
             }
           }
 
-          // 2. Performer follows — strong positive signal
-          const { data: follows } = await supabase
-            .from("performer_follows")
-            .select("performer_username")
-            .eq("user_id", uid);
+          const { data: follows } = await supabase.from("performer_follows").select("performer_username").eq("user_id", uid);
+          if (follows) for (const f of follows) { if (f.performer_username) followedPerformers.add(f.performer_username); }
 
-          if (follows) {
-            for (const f of follows) {
-              if (f.performer_username) followedPerformers.add(f.performer_username);
-            }
-          }
-
-          // 3. Saved videos (bookmarks) — strong positive signal
-          const { data: saved } = await supabase
-            .from("saved_videos")
-            .select("recording_id")
-            .eq("user_id", uid);
-
+          const { data: saved } = await supabase.from("saved_videos").select("recording_id").eq("user_id", uid);
           const savedRecordingIds: string[] = [];
-          if (saved) {
-            for (const s of saved) {
-              if (s.recording_id) {
-                savedRecordingIds.push(s.recording_id);
-                seenIds.add(s.recording_id);
-              }
-            }
-          }
+          if (saved) for (const s of saved) { if (s.recording_id) { savedRecordingIds.push(s.recording_id); seenIds.add(s.recording_id); } }
 
-          // 4. Watch later items — interest signal
-          const { data: watchLater } = await supabase
-            .from("watch_later_items")
-            .select("recording_id")
-            .eq("user_id", uid);
-
+          const { data: watchLater } = await supabase.from("watch_later_items").select("recording_id").eq("user_id", uid);
           const watchLaterRecordingIds: string[] = [];
-          if (watchLater) {
-            for (const w of watchLater) {
-              if (w.recording_id) {
-                watchLaterRecordingIds.push(w.recording_id);
-                watchLaterIds.add(w.recording_id);
-                seenIds.add(w.recording_id);
-              }
-            }
-          }
+          if (watchLater) for (const w of watchLater) { if (w.recording_id) { watchLaterRecordingIds.push(w.recording_id); watchLaterIds.add(w.recording_id); seenIds.add(w.recording_id); } }
 
-          // ── Resolve recording metadata for all collected IDs ──
           const allIds = [...new Set([...historyRecordingIds, ...savedRecordingIds, ...watchLaterRecordingIds])];
           if (allIds.length > 0) {
-            const metaResult = await pool.query(
-              `SELECT id, username, tags, gender FROM recordings_with_links WHERE id = ANY($1)`,
-              [allIds],
-            );
-            const metaRows = metaResult.rows;
-
+            const { data: metaRows } = await supabase.from("recordings_with_links").select("id, username, tags, gender").in("id", allIds);
             if (metaRows) {
               const idToMeta = new Map(metaRows.map((r: any) => [r.id, r]));
-
-              // Watch history: tag + performer + gender frequency (weighted by completion)
               for (const hid of historyRecordingIds) {
                 const m = idToMeta.get(hid);
                 if (!m) continue;
@@ -232,8 +144,6 @@ router.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds: 
                 if (m.username) userPerformerFreq[m.username] = (userPerformerFreq[m.username] ?? 0) + cw;
                 if (m.gender) watchedGenders[m.gender] = (watchedGenders[m.gender] ?? 0) + cw;
               }
-
-              // Saved videos: tag + performer affinity (higher weight than watch)
               for (const sid of savedRecordingIds) {
                 const m = idToMeta.get(sid);
                 if (!m) continue;
@@ -243,32 +153,21 @@ router.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds: 
             }
           }
         }
-      } catch {
-        // Auth failed silently — fall back to anonymous logic
-      }
+      } catch { /* auth failed silently */ }
     }
 
-    // ── Helper: log-normalized weight ──
     const logWeight = (n: number) => Math.log10(n + 1);
-
-    // ── Helper: diversification (MMR-style) ──
-    const diversify = (items: any[], pageSize: number, maxPerPerformer: number = 2): any[] => {
+    const diversify = (items: any[], pageSize: number, maxPerPerformer = 2): any[] => {
       const result: any[] = [];
-      const performerCount: Record<string, number> = {};
-      const working = [...items];
-      while (result.length < pageSize && working.length > 0) {
-        let picked = -1;
-        for (let i = 0; i < working.length; i++) {
-          const perf = working[i].username || "unknown";
-          if ((performerCount[perf] ?? 0) < maxPerPerformer) {
-            picked = i;
-            break;
-          }
-        }
-        if (picked === -1) picked = 0; // all performers at max — take top remaining
-        const item = working.splice(picked, 1)[0];
-        const perf = item.username || "unknown";
-        performerCount[perf] = (performerCount[perf] ?? 0) + 1;
+      const pc: Record<string, number> = {};
+      const w = [...items];
+      while (result.length < pageSize && w.length > 0) {
+        let p = -1;
+        for (let i = 0; i < w.length; i++) { if ((pc[w[i].username || "unknown"] ?? 0) < maxPerPerformer) { p = i; break; } }
+        if (p === -1) p = 0;
+        const item = w.splice(p, 1)[0];
+        const k = item.username || "unknown";
+        pc[k] = (pc[k] ?? 0) + 1;
         result.push(item);
       }
       return result;
@@ -279,176 +178,99 @@ router.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds: 
       for (const r of (rows ?? [])) {
         if (seenIds.has(r.id)) continue;
         let score = baseScore;
-
         if (isAuthenticated) {
-          // Tag affinity from watch history (log-normalized)
           for (const tag of r.tags ?? []) {
             if (userTagFreq[tag]) score += logWeight(userTagFreq[tag]) * 15;
             if (savedTags[tag]) score += logWeight(savedTags[tag]) * 30;
           }
-
-          // Performer affinity
           if (r.username) {
             if (userPerformerFreq[r.username]) score += logWeight(userPerformerFreq[r.username]) * 25;
             if (savedPerformers[r.username]) score += logWeight(savedPerformers[r.username]) * 40;
             if (followedPerformers.has(r.username)) score += 50;
           }
-
-          // Gender preference from watch history
-          const preferredGender = Object.entries(watchedGenders).sort((a, b) => b[1] - a[1])[0]?.[0];
-          if (preferredGender && r.gender === preferredGender) score += 5;
-
-          // Watch later item match
+          const pg = Object.entries(watchedGenders).sort((a, b) => b[1] - a[1])[0]?.[0];
+          if (pg && r.gender === pg) score += 5;
           if (watchLaterIds.has(r.id)) score += 20;
         }
-
-        // Global popularity (log-normalized to prevent domination)
         score += logWeight(r.viewers ?? 0) * 3;
-
-        // Recency boost (decay over days)
         const ageDays = r.timestamp ? (Date.now() - new Date(r.timestamp).getTime()) / 86400000 : 999;
-        score += Math.max(0, 30 - ageDays * 0.5);
-
-        // Random jitter (±4) so each page load shuffles similarly-scored items
-        score += (Math.random() - 0.5) * 8;
-
+        score += Math.max(0, 30 - ageDays * 0.5) + (Math.random() - 0.5) * 8;
         scored.push({ ...r, _score: score });
         seenIds.add(r.id);
       }
     };
 
-    const SCORED_COLS = 'id, username, tags, gender, "timestamp", viewers, thumbnail_url, sprite_url, preview_url';
-
     if (isAuthenticated) {
-      const neededItems = page * limit;
-      const POOL = Math.min(Math.max(neededItems * 4, limit * 10), MAX_POOL);
-      const poolResult = await pool.query(
-        `SELECT ${SCORED_COLS} FROM recordings_with_links WHERE links IS NOT NULL ORDER BY "timestamp" DESC LIMIT ${POOL * 2}`,
-      );
-      addScored(poolResult.rows, 0);
+      const POOL = Math.min(Math.max(page * limit * 4, limit * 10), MAX_POOL);
+      const { data } = await supabase.from("recordings_with_links").select(POOL_COLS).not("links", "is", "null").order("timestamp", { ascending: false }).limit(POOL * 2);
+      addScored(data, 0);
       scored.sort((a: any, b: any) => b._score - a._score);
     } else {
-      const neededItems = page * limit;
-      const POOL = Math.min(Math.max(neededItems * 4, limit * 10), MAX_POOL);
-
-      const [newestRes, popularRes] = await Promise.all([
-        pool.query(
-          `SELECT ${SCORED_COLS} FROM recordings_with_links WHERE links IS NOT NULL ORDER BY "timestamp" DESC LIMIT ${POOL}`,
-        ),
-        pool.query(
-          `SELECT ${SCORED_COLS} FROM recordings_with_links WHERE links IS NOT NULL ORDER BY viewers NULLS LAST DESC LIMIT ${POOL}`,
-        ),
+      const POOL = Math.min(Math.max(page * limit * 4, limit * 10), MAX_POOL);
+      const [newest, popular] = await Promise.all([
+        supabase.from("recordings_with_links").select(POOL_COLS).not("links", "is", "null").order("timestamp", { ascending: false }).limit(POOL),
+        supabase.from("recordings_with_links").select(POOL_COLS).not("links", "is", "null").order("viewers", { ascending: false, nullsFirst: false }).limit(POOL),
       ]);
-
-      addScored(newestRes.rows, 80);
-      addScored(popularRes.rows, 20);
-
+      addScored(newest.data, 80);
+      addScored(popular.data, 20);
       scored.sort((a: any, b: any) => b._score - a._score);
     }
 
-    // Apply diversity re-ranking: max 2 per performer, return all scored items
-    // so totalPages grows dynamically with the database size.
     const diversified = diversify(scored, scored.length, 2);
-
     const totalItems = diversified.length;
     const totalPages = Math.ceil(totalItems / limit) || 1;
     const safePage = Math.min(page, totalPages);
     const offset = (safePage - 1) * limit;
     const pageRows = diversified.slice(offset, offset + limit).map(({ _score, ...r }: any) => r);
 
-    res.json({
-      data: pageRows,
-      total: totalItems,
-      page: safePage,
-      limit,
-      totalPages,
-    });
+    res.json({ data: pageRows, total: totalItems, page: safePage, limit, totalPages });
   } catch (err) {
     req.log.error({ err }, "GET /recordings/recommendations unexpected error");
-    res.status(500).json({ error: "Failed to fetch recommendations" });
+    res.status(500).json({ error: "Failed to get recommendations" });
   }
 });
 
+// ─── RANDOM ─────────────────────────────────────────────────────────────────
+
 router.get("/recordings/random", cache({ ttlSeconds: 30, staleSeconds: 60, tags: ["recordings"] }), async (req, res) => {
   try {
-    // Optional exclude list: comma-separated recording IDs to skip
-    // (e.g. already-viewed videos from the client).
-    const excludeRaw = typeof req.query.exclude === "string" ? req.query.exclude : "";
-    const excludeIds = excludeRaw
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .slice(0, 200);
+    const { count } = await supabase
+      .from("recordings_with_links").select("id", { count: "exact", head: true }).not("links", "is", "null");
 
-    // Single SQL query with ORDER BY RANDOM() LIMIT 1 — the DB handles
-    // random sampling natively, avoiding the count+fetch pattern.
-    const excludeFilter = excludeIds.length > 0
-      ? sql`AND id != ANY(${excludeIds}::text[])`
-      : sql``;
+    if (!count || count === 0) { res.status(404).json({ error: "No recordings found" }); return; }
 
-    const result = await db.execute(sql`
-      SELECT id FROM recordings_with_links
-      WHERE links IS NOT NULL ${excludeFilter}
-      ORDER BY RANDOM()
-      LIMIT 1
-    `);
+    const offset = Math.floor(Math.random() * count);
+    const { data } = await supabase
+      .from("recordings_with_links").select("id").not("links", "is", "null").order("id").range(offset, offset + 1);
 
-    if (result.rows.length === 0 && excludeIds.length > 0) {
-      // All excluded — retry without exclusions
-      const fallback = await db.execute(sql`
-        SELECT id FROM recordings_with_links
-        WHERE links IS NOT NULL
-        ORDER BY RANDOM()
-        LIMIT 1
-      `);
-      if (fallback.rows.length > 0) {
-        res.json({ id: fallback.rows[0].id });
-        return;
-      }
-    }
-
-    if (result.rows.length > 0) {
-      res.json({ id: result.rows[0].id });
+    if (!data || data.length === 0) {
+      const { data: fb } = await supabase.from("recordings_with_links").select("id").not("links", "is", "null").order("id").limit(1);
+      if (fb && fb.length > 0) { res.json({ id: fb[0].id }); return; }
+      res.status(404).json({ error: "No recordings found" });
       return;
     }
 
-    res.status(404).json({ error: "No recordings found" });
+    res.json({ id: data[0].id });
   } catch (err) {
     req.log.error({ err }, "GET /recordings/random unexpected error");
     res.status(500).json({ error: "Failed to get random recording" });
   }
 });
 
+// ─── RELATED ────────────────────────────────────────────────────────────────
+
 router.get("/recordings/related", cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["recordings"] }), async (req, res) => {
   try {
     const parsed = ListRelatedRecordingsQueryParams.safeParse(req.query);
-    if (!parsed.success) {
-      res.status(400).json({ error: "Invalid query params" });
-      return;
-    }
-
+    if (!parsed.success) { res.status(400).json({ error: "Invalid query params" }); return; }
     const { id, limit = 8 } = parsed.data;
 
-    // Validate UUID format — PostgreSQL throws a type error for non-UUID strings
-    // that isn't PGRST116, so catch it here to return a clean empty result.
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
-      res.json([]);
-      return;
-    }
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) { res.json([]); return; }
 
-    // ── Fetch source recording (use pool.query — PostgREST can't handle
-    //    the grouped recordings_with_links view properly) ──
-    const srcResult = await pool.query(
-      `SELECT username, tags, gender FROM recordings_with_links WHERE links IS NOT NULL AND id = $1`,
-      [id],
-    );
-    const recording = srcResult.rows[0];
-    if (!recording) {
-      res.json([]);
-      return;
-    }
+    const { data: recording, error: recError } = await supabase
+      .from("recordings_with_links").select("username, tags, gender").not("links", "is", "null").eq("id", id).single();
+    if (recError || !recording) { res.json([]); return; }
 
-    // ── Authenticated user personalization ──
     let userTagFreq: Record<string, number> = {};
     let userPerformerFreq: Record<string, number> = {};
     let isAuthenticated = false;
@@ -460,179 +282,96 @@ router.get("/recordings/related", cache({ ttlSeconds: 120, staleSeconds: 300, ta
         const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.slice(7));
         if (!authError && user) {
           isAuthenticated = true;
-          const { data: history } = await supabase
-            .from("watch_history")
-            .select("recording_id, metadata")
-            .eq("user_id", user.id)
-            .order("watched_at", { ascending: false })
-            .limit(50);
-
+          const { data: history } = await supabase.from("watch_history").select("recording_id").eq("user_id", user.id).order("watched_at", { ascending: false }).limit(50);
           if (history && history.length > 0) {
-            for (const h of history) {
-              if (h.recording_id) seenIds.add(h.recording_id);
-            }
-
+            for (const h of history) if (h.recording_id) seenIds.add(h.recording_id);
             const historyIds = history.map((h) => h.recording_id).filter(Boolean);
             if (historyIds.length > 0) {
-              const hrResult = await pool.query(
-                `SELECT username, tags FROM recordings_with_links WHERE id = ANY($1)`,
-                [historyIds],
-              );
-              for (const hr of hrResult.rows) {
-                if (hr.tags) {
-                  for (const tag of hr.tags) {
-                    userTagFreq[tag] = (userTagFreq[tag] ?? 0) + 1;
-                  }
-                }
-                if (hr.username) {
-                  userPerformerFreq[hr.username] = (userPerformerFreq[hr.username] ?? 0) + 1;
-                }
+              const { data: hr } = await supabase.from("recordings_with_links").select("username, tags").in("id", historyIds);
+              if (hr) for (const r of hr) {
+                if (r.tags) for (const tag of r.tags) userTagFreq[tag] = (userTagFreq[tag] ?? 0) + 1;
+                if (r.username) userPerformerFreq[r.username] = (userPerformerFreq[r.username] ?? 0) + 1;
               }
             }
           }
         }
-      } catch {
-        // Auth check failed silently — fall back to anonymous
-      }
+      } catch { /* silent */ }
     }
 
-    const RELATED_COLS = 'id, username, "timestamp", room_title, tags, viewers, resolution, framerate, filesize, duration, gender, thumbnail_url, sprite_url, preview_url';
+    // 1. Same performer
+    const { data: performerData } = await supabase
+      .from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null")
+      .neq("id", id).eq("username", recording.username).order("timestamp", { ascending: false }).limit(limit);
 
-    // ── 1. Same performer recordings ──
-    const perfResult = await pool.query(
-      `SELECT ${RELATED_COLS} FROM recordings_with_links WHERE links IS NOT NULL AND id != $1 AND username = $2 ORDER BY "timestamp" DESC LIMIT $3`,
-      [id, recording.username, limit],
-    );
-    const performerResults = perfResult.rows;
-
-    // ── 2. Tag-based recordings (any overlapping tag) ──
+    // 2. Tag-based
     let tagResults: any[] = [];
     if (recording.tags && recording.tags.length > 0) {
       const sourceTags = new Set(recording.tags);
-      const tagResult = await pool.query(
-        `SELECT ${RELATED_COLS} FROM recordings_with_links
-         WHERE links IS NOT NULL AND id != $1 AND username != $2
-           AND EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t = ANY($3))
-         ORDER BY "timestamp" DESC LIMIT $4`,
-        [id, recording.username, recording.tags, limit * 3],
-      );
-      tagResults = tagResult.rows;
+      const { data } = await supabase
+        .from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null")
+        .neq("id", id).neq("username", recording.username).overlaps("tags", recording.tags)
+        .order("timestamp", { ascending: false }).limit(limit * 3);
 
-      // Score: shared tag count + personalization weight
-      tagResults = tagResults.map((r: any) => {
-        let score = 0;
-        const sharedTags = (r.tags ?? []).filter((t: string) => sourceTags.has(t));
-        score += sharedTags.length * 15;
-
+      tagResults = (data ?? []).map((r: any) => {
+        let score = (r.tags ?? []).filter((t: string) => sourceTags.has(t)).length * 15;
         if (isAuthenticated) {
-          for (const tag of r.tags ?? []) {
-            score += (userTagFreq[tag] ?? 0) * 3;
-          }
-          if (r.username && userPerformerFreq[r.username]) {
-            score += userPerformerFreq[r.username] * 10;
-          }
-          if (recording.gender && r.gender === recording.gender) {
-            score += 3;
-          }
+          for (const tag of r.tags ?? []) score += (userTagFreq[tag] ?? 0) * 3;
+          if (r.username && userPerformerFreq[r.username]) score += userPerformerFreq[r.username] * 10;
+          if (recording.gender && r.gender === recording.gender) score += 3;
         }
-
         score += (r.viewers ?? 0) * 0.01;
         return { ...r, _score: score };
       });
-
       tagResults.sort((a: any, b: any) => b._score - a._score);
     }
 
-    // ── 3. Merge: same-performer first, then tag-based ──
+    // 3. Merge
     const merged: any[] = [];
     const seen = new Set(seenIds);
+    for (const r of (performerData ?? [])) { if (!seen.has(r.id)) { seen.add(r.id); merged.push(r); } if (merged.length >= limit) { res.json(merged); return; } }
+    for (const r of tagResults) { if (merged.length >= limit) break; if (!seen.has(r.id)) { seen.add(r.id); const { _score, ...c } = r; merged.push(c); } }
 
-    for (const r of performerResults) {
-      if (!seen.has(r.id)) { seen.add(r.id); merged.push(r); }
-      if (merged.length >= limit) { res.json(merged); return; }
-    }
-
-    for (const r of tagResults) {
-      if (merged.length >= limit) break;
-      if (!seen.has(r.id)) {
-        seen.add(r.id);
-        const { _score, ...clean } = r;
-        merged.push(clean);
-      }
-    }
-
-    // ── 4. Fallback: gender-based popular ──
+    // 4. Gender fallback
     if (merged.length < limit && recording.gender) {
-      const genderResult = await pool.query(
-        `SELECT ${RELATED_COLS} FROM recordings_with_links
-         WHERE links IS NOT NULL AND id != $1 AND username != $2 AND gender = $3
-         ORDER BY viewers NULLS LAST DESC LIMIT $4`,
-        [id, recording.username, recording.gender, limit * 2],
-      );
-      for (const r of genderResult.rows) {
-        if (merged.length >= limit) break;
-        if (!seen.has(r.id)) { seen.add(r.id); merged.push(r); }
-      }
+      const { data } = await supabase.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).neq("username", recording.username).eq("gender", recording.gender).order("viewers", { ascending: false, nullsFirst: false }).limit(limit * 2);
+      for (const r of (data ?? [])) { if (merged.length >= limit) break; if (!seen.has(r.id)) { seen.add(r.id); merged.push(r); } }
     }
 
-    // ── 5. Final fallback: popular recordings ──
+    // 5. Popular fallback
     if (merged.length < limit) {
-      const popResult = await pool.query(
-        `SELECT ${RELATED_COLS} FROM recordings_with_links
-         WHERE links IS NOT NULL AND id != $1 AND username != $2
-         ORDER BY viewers NULLS LAST DESC LIMIT $3`,
-        [id, recording.username, limit * 3],
-      );
-      for (const r of popResult.rows) {
-        if (merged.length >= limit) break;
-        if (!seen.has(r.id)) { seen.add(r.id); merged.push(r); }
-      }
+      const { data } = await supabase.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).neq("username", recording.username).order("viewers", { ascending: false, nullsFirst: false }).limit(limit * 3);
+      for (const r of (data ?? [])) { if (merged.length >= limit) break; if (!seen.has(r.id)) { seen.add(r.id); merged.push(r); } }
     }
 
     res.json(merged.slice(0, limit));
   } catch (err) {
     req.log.error({ err, id: req.query.id }, "GET /recordings/related unexpected error");
-    res.status(500).json({ error: "Failed to fetch related recordings" });
+    res.status(500).json({ error: "Failed to get related recordings" });
   }
 });
+
+// ─── SINGLE RECORDING ──────────────────────────────────────────────────────
 
 router.get("/recordings/:id", cache({ ttlSeconds: 600, staleSeconds: 900, tags: ["recordings"] }), async (req, res) => {
   try {
     const parsed = GetRecordingParams.safeParse(req.params);
-    if (!parsed.success) {
-      res.status(400).json({ error: "Invalid params" });
-      return;
-    }
-
+    if (!parsed.success) { res.status(400).json({ error: "Invalid params" }); return; }
     const { id } = parsed.data;
 
-    // Validate UUID format — PostgreSQL throws a type error for non-UUID strings
-    // that isn't PGRST116, so catch it here to return a clean 404.
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
-      res.status(404).json({ error: "Recording not found" });
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) { res.status(404).json({ error: "Recording not found" }); return; }
+
+    const { data, error } = await supabase
+      .from("recordings_with_links").select("*").not("links", "is", "null").eq("id", id).single();
+
+    if (error) {
+      if (error.code === "PGRST116") { res.status(404).json({ error: "Recording not found" }); return; }
+      req.log.error({ err: error, id }, "Supabase error fetching recording");
+      res.status(500).json({ error: "Failed to fetch recording" });
       return;
     }
+    if (!data) { res.status(404).json({ error: "Recording not found" }); return; }
 
-    // Use pool.query() instead of Supabase client because PostgREST can't
-    // properly query recordings_with_links (GROUP BY + jsonb_object_agg
-    // causes tags, username, room_title to return as null/undefined).
-    const result = await pool.query(
-      `SELECT id, channel_id, username, filename, r."timestamp", room_title,
-              tags, viewers, resolution, framerate, filesize, duration,
-              gender, thumbnail_url, sprite_url, embed_url, preview_url,
-              instance_id, created_at, updated_at, links
-       FROM recordings_with_links r
-       WHERE r.links IS NOT NULL AND r.id = $1`,
-      [id],
-    );
-
-    const row = result.rows[0];
-    if (!row) {
-      res.status(404).json({ error: "Recording not found" });
-      return;
-    }
-
-    res.json(row);
+    res.json(data);
   } catch (err) {
     req.log.error({ err, id: req.params.id }, "GET /recordings/:id unexpected error");
     res.status(500).json({ error: "Failed to fetch recording" });

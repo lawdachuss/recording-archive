@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { GetPerformerParams } from "@workspace/api-zod";
 import { supabase } from "../lib/supabase.js";
-import { db, sql, pool } from "@workspace/db";
+import { db, sql } from "@workspace/db";
 import { cache } from "../middleware/cache.js";
 
 const COOKIES = process.env.COOKIES ?? "";
@@ -180,14 +180,13 @@ router.get("/performers/lookup", cache({ ttlSeconds: 120, staleSeconds: 300, tag
 
     // 1. Check local archive first
     try {
-      const archiveResult = await pool.query(
-        `SELECT thumbnail_url, sprite_url, preview_url, "timestamp", username
-         FROM recordings_with_links
-         WHERE username = $1 AND links IS NOT NULL
-         ORDER BY "timestamp" DESC LIMIT 50`,
-        [username],
-      );
-      const archiveData = archiveResult.rows;
+      const { data: archiveData } = await supabase
+        .from("recordings_with_links")
+        .select("thumbnail_url, sprite_url, preview_url, timestamp, username")
+        .eq("username", username)
+        .not("links", "is", "null")
+        .order("timestamp", { ascending: false })
+        .limit(50);
 
       if (archiveData && archiveData.length > 0) {
         result.in_archive = true;
@@ -384,18 +383,19 @@ router.get("/performers/:username", cache({ ttlSeconds: 900, staleSeconds: 1800,
 
     const { username } = parsed.data;
 
-    const result = await pool.query(
-      `SELECT id, channel_id, username, filename, "timestamp", room_title,
-              tags, viewers, resolution, framerate, filesize, duration,
-              gender, thumbnail_url, sprite_url, embed_url, preview_url,
-              instance_id, created_at, updated_at, links
-       FROM recordings_with_links
-       WHERE links IS NOT NULL AND username = $1
-       ORDER BY "timestamp" DESC`,
-      [username],
-    );
+    const SELECT_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at";
+    const { data: validRecordings, error } = await supabase
+      .from("recordings_with_links")
+      .select(SELECT_COLS)
+      .not("links", "is", "null")
+      .eq("username", username)
+      .order("timestamp", { ascending: false });
 
-    const validRecordings = result.rows;
+    if (error) {
+      req.log.error({ err: error, username }, "Supabase error fetching performer");
+      res.status(500).json({ error: "Failed to fetch performer" });
+      return;
+    }
 
     // Return 404 if no recordings with valid links exist for this performer
     if (validRecordings.length === 0) {
