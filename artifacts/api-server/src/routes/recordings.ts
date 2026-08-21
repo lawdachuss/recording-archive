@@ -28,7 +28,7 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     const normalizedPage = Math.max(1, page);
     const normalizedLimit = Math.min(Math.max(1, limit), 100);
 
-    let query = supabase.from("recordings_with_links").select(LIST_COLS).not("links", "is", "null");
+    let query = supabase.from("recordings_with_links").select(LIST_COLS, { count: "exact" }).not("links", "is", "null");
 
     if (search?.trim()) {
       const s = search.trim();
