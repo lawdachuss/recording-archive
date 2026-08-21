@@ -60,3 +60,4 @@ migrate-auth.*
 .env.vercel
 artifacts/api-server/tmp-analyze-*
 artifacts/video-archive/json
+artifacts/video-archive/dist/
