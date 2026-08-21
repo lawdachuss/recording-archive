@@ -42,9 +42,9 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     if (tags) {
       const tagList = tags.split(",").map((t: string) => t.trim()).filter(Boolean);
       if (tagList.length > 0) {
-        // Use = ANY() which works reliably with drizzle's parameterized queries
-        // for text[] columns, unlike @> which has cast issues.
-        conditions.push(sql`r.tags && ${tagList}`);
+        // Use unnest to check if any of the tags match. This works reliably
+        // with drizzle's parameterized queries for text[] columns.
+        conditions.push(sql`EXISTS (SELECT 1 FROM unnest(r.tags) AS tag WHERE tag = ANY(${tagList}))`);
       }
     }
 
