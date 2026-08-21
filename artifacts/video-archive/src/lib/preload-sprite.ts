@@ -74,6 +74,11 @@ function isConnectionConstrained(): boolean {
   return typeof conn.effectiveType === "string" && slow.includes(conn.effectiveType);
 }
 
+function getConcurrency(): number {
+  if (isConnectionConstrained()) return 2; // Only 2 concurrent loads on slow connections
+  return MAX_ACTIVE;
+}
+
 function scheduleIdle(task: () => void, timeout = 1_500) {
   const requestIdle =
     window.requestIdleCallback ??
@@ -107,7 +112,8 @@ function pump() {
     pumpTimer = null;
   }
   const now = performance.now();
-  for (let i = 0; i < queue.length && activeCount < MAX_ACTIVE; ) {
+  const maxActive = getConcurrency();
+  for (let i = 0; i < queue.length && activeCount < maxActive; ) {
     const item = queue[i];
     const last = lastStartByOrigin.get(originOf(item.url)) ?? 0;
     if (now - last < ORIGIN_INTERVAL_MS) {
