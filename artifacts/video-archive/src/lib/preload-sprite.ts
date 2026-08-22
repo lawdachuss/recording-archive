@@ -23,15 +23,11 @@
 import { preloadPreviewMedia } from "@/lib/preload-preview";
 import { proxyUrl } from "@/lib/proxy-url";
 
-// Hosts known to be unreachable on this network — preloading their previews
-// would just hang the browser for minutes and spam the console. Sprites are
-// the preview for these recordings instead.
-const UNREACHABLE_PREVIEW_HOSTS = [
-  "catbox.moe",
-  "files.catbox.moe",
-  "litter.catbox.moe",
-  "files.litterbox.catbox.moe",
-];
+// Hosts known to be unreachable from the SERVER (datacenter IPs) — but they
+// work fine from the browser with referrerPolicy="no-referrer". We proxy
+// them through /api/media so the browser never connects to catbox directly.
+// Keep this list empty unless a host truly blocks browser requests too.
+const UNREACHABLE_PREVIEW_HOSTS: string[] = [];
 
 export function isReachablePreviewUrl(url: string | null | undefined): boolean {
   if (!url) return false;
@@ -170,10 +166,9 @@ export function preloadImages(
 
 /**
  * Warm all hover media for a list of recordings: thumbnails (grid paint)
- * first, then sprites (hover preview), and previews — but only previews from
- * reachable hosts (catbox previews are skipped; the sprite IS the preview
- * there). Thumbnails-first keeps the visible grid painting before the larger
- * sprite sheets start.
+ * first, then sprites (hover preview), and previews eagerly. Previews use
+ * <link rel="preload" as="image"> for instant HTTP/2 priority so they're
+ * cached before the user hovers.
  */
 export function preloadRecordingAssets(
   recs: Array<{ sprite_url?: string | null; thumbnail_url?: string | null; preview_url?: string | null }>,
@@ -189,8 +184,10 @@ export function preloadRecordingAssets(
     }
   }
   preloadImages([...thumbs, ...sprites]);
+  // Previews are preloaded eagerly (not deferred to idle) because
+  // <link rel="preload"> is lightweight and the browser handles prioritization.
   if (previews.length) {
-    scheduleIdle(() => previews.forEach((p) => preloadPreviewMedia(p)));
+    previews.forEach((p) => preloadPreviewMedia(p));
   }
 }
 
@@ -212,8 +209,9 @@ export function preloadRecordingSprites(
     }
   }
   preloadImages(sprites);
+  // Eager preload — <link rel="preload"> is lightweight.
   if (previews.length) {
-    scheduleIdle(() => previews.forEach((p) => preloadPreviewMedia(p)));
+    previews.forEach((p) => preloadPreviewMedia(p));
   }
 }
 

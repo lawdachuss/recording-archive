@@ -92,13 +92,30 @@ export function preloadVideo(url: string): void {
   videoKeys.push(url);
 }
 
+/**
+ * Warm an animated image (.webp) into the browser cache.
+ * Uses <link rel="preload"> for HTTP/2 server-push priority — the browser
+ * fetches the resource at high priority and caches it for instant reuse when
+ * the actual <img> element renders on hover.
+ */
 export function preloadAnimatedImage(url: string): void {
   if (preloadCache.has(url)) return;
   if (isConnectionConstrained()) return;
-  const img = new Image();
-  img.referrerPolicy = "no-referrer";
-  img.src = url;
-  preloadCache.set(url, img);
+
+  // <link rel="preload" as="image"> is the highest-priority hint a page
+  // can give the browser. Unlike new Image(), the browser treats it as a
+  // critical resource and fetches it immediately (not deferred to idle).
+  const link = document.createElement("link");
+  link.rel = "preload";
+  link.as = "image";
+  link.href = url;
+  link.referrerPolicy = "no-referrer";
+  // Cross-origin for proxied URLs (/api/media), same-origin for direct loads
+  if (url.startsWith("/")) {
+    link.crossOrigin = "anonymous";
+  }
+  document.head.appendChild(link);
+  preloadCache.set(url, true);
 }
 
 /**
