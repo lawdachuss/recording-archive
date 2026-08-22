@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import {
+  isVideoUrl,
   isVideoCandidate,
   isAnimatedImageUrl,
   preloadPreviewMedia,
@@ -147,12 +148,16 @@ export function useHoverPreview({
   // Preload the preview VIDEO while in viewport so playback starts instantly on hover.
   // Skip entirely on slow connections — the bandwidth is needed for the grid,
   // not speculative video preloads that may never be watched.
-  const canPreloadVideo = !!previewUrl && isVideoCandidate(inspectUrl) && !isConnectionConstrained();
+  // Only preload actual video files (.mp4, .webm etc.) — .webp files are images
+  // and must NOT be loaded into a <video> element (it wastes a connection slot
+  // and blocks the <img> from loading).
+  const canPreloadVideo = !!previewUrl && isVideoUrl(inspectUrl) && !isConnectionConstrained();
   const preloadVideoUrl = canPreloadVideo ? previewUrl : null;
 
-  // Determine preview type: video, animated WebP, or none. .webp is treated as
-  // a video candidate first (see isVideoCandidate); VideoCard falls back to
-  // <img> when the video cannot play.
+  // Determine preview type: video, animated WebP, or none. Real video files
+  // (.mp4, .webm) are shown via <video>; .webp files are shown via <img>.
+  // isVideoCandidate still includes .webp for the showVideo/showAnimatedImage
+  // flags (VideoCard uses isWebpPreview to pick the right rendering path).
   const isPreviewVideo = isVideoCandidate(inspectUrl);
   const isAnimatedImage = isAnimatedImageUrl(inspectUrl);
   const showVideo = isHovered && isPreviewVideo;

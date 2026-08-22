@@ -103,11 +103,12 @@ export function preloadAnimatedImage(url: string): void {
 
 /**
  * Preload a preview URL using the best strategy for its (probable) type.
- * For .webp we preload both a video element (for MP4-labeled webp) and an
- * image (for genuine animated webp); the mismatched one errors harmlessly.
+ * Real video files (.mp4, .webm) are preloaded as <video>. .webp files are
+ * preloaded as <img> only — loading them into <video> wastes a connection
+ * slot and blocks the actual <img> from loading.
  */
 export function preloadPreviewMedia(url: string | null | undefined): void {
   if (!url) return;
-  if (isVideoCandidate(url)) preloadVideo(url);
-  if (isAnimatedImageUrl(url)) preloadAnimatedImage(url);
+  if (isVideoUrl(url)) preloadVideo(url);
+  else if (isAnimatedImageUrl(url)) preloadAnimatedImage(url);
 }

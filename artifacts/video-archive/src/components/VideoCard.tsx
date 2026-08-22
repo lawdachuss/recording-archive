@@ -191,7 +191,10 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
       <div ref={viewportRef} className="flex flex-col gap-2">
         <div className="relative aspect-video overflow-hidden bg-secondary rounded-sm will-change-transform">
 
-          {usePreviewChain && preloadVideoUrl && !isSlowConnection && (
+          {/* Hidden preload video — only for actual video files (.mp4 etc.),
+              NOT for .webp images (loading a .webp into <video> wastes a
+              connection slot and blocks the <img> from loading). */}
+          {usePreviewChain && preloadVideoUrl && !isSlowConnection && !isWebpPreview && (
             <video
               src={preloadVideoUrl}
               className="hidden"
