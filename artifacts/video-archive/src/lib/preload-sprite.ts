@@ -23,11 +23,16 @@
 import { preloadPreviewMedia } from "@/lib/preload-preview";
 import { proxyUrl } from "@/lib/proxy-url";
 
-// Hosts known to be unreachable from the SERVER (datacenter IPs) — but they
-// work fine from the browser with referrerPolicy="no-referrer". We proxy
-// them through /api/media so the browser never connects to catbox directly.
-// Keep this list empty unless a host truly blocks browser requests too.
-const UNREACHABLE_PREVIEW_HOSTS: string[] = [];
+// Hosts that block server/datacenter IPs entirely (SSL handshake fails,
+// empty bodies, or multi-minute timeouts). Catbox is reachable from
+// residential browsers but unreliable enough to skip — the sprite IS
+// the preview for these recordings.
+const UNREACHABLE_PREVIEW_HOSTS = [
+  "catbox.moe",
+  "files.catbox.moe",
+  "litter.catbox.moe",
+  "files.litterbox.catbox.moe",
+];
 
 export function isReachablePreviewUrl(url: string | null | undefined): boolean {
   if (!url) return false;

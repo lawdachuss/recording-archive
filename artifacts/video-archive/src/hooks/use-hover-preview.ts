@@ -93,7 +93,10 @@ export function useHoverPreview({
           for (const entry of entries) {
             if (entry.isIntersecting && !intersectionPreloadedRef.current) {
               intersectionPreloadedRef.current = true;
-              if (previewUrl) {
+              // Skip preloading for catbox URLs — they block datacenter IPs
+              // and many residential networks. The sprite is the preview.
+              const isCatbox = /catbox\.moe/i.test(previewUrl ?? "");
+              if (previewUrl && !isCatbox) {
                 preloadPreviewMedia(previewUrl);
               } else if (spriteUrl) {
                 preloadSprite(spriteUrl);

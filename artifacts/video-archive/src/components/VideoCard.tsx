@@ -143,10 +143,15 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   const usePreviewChain = previewAvailable && mediaFail !== "all";
   const useSprite = spriteAvailable && !spriteFailed;
 
+  // Catbox previews are unreliable — the host blocks datacenter IPs and
+  // many residential networks. Skip the .webp chain entirely for catbox
+  // URLs; the sprite (preloaded and instant) is the preview instead.
+  const isCatboxPreview = /catbox\.moe/i.test(previewUrl ?? "");
+
   // .webp URLs are images — load them as <img> first. If the image fails
   // (e.g. it's actually an MP4 with a misleading .webp extension), fall back
   // to <video>. For real video URLs (.mp4 etc.) keep the original order.
-  const isWebpPreview = (previewUrl ?? "").toLowerCase().endsWith(".webp");
+  const isWebpPreview = !isCatboxPreview && (previewUrl ?? "").toLowerCase().endsWith(".webp");
   const showWebpImg = isWebpPreview && usePreviewChain && showAnimatedImage && mediaFail === "none";
   const showWebpVideoFallback = isWebpPreview && usePreviewChain && showVideo && mediaFail === "video";
   const showVideoEl = !isWebpPreview && usePreviewChain && showVideo && mediaFail === "none";
