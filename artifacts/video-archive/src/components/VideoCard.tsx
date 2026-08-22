@@ -59,9 +59,11 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   const showPreview = isHovered && (showVideo || showAnimatedImage);
 
   // Preview playback fallback chain:
-  //   <video> -> (on error, if .webp) <img> -> (on error) static thumbnail.
-  // .webp previews in this DB are mostly MP4 clips with a misleading extension,
-  // so we attempt <video> first; genuine animated WebP falls back to <img>.
+  //   For .webp:   <img> -> (on error) <video> -> (on error) static thumbnail.
+  //   For .mp4 etc: <video> -> (on error) <img> -> (on error) static thumbnail.
+  // .webp files are images and should be loaded as <img> first; some .webp
+  // URLs in the DB are actually MP4 clips with a misleading extension, so
+  // we fall back to <video> if the image fails.
   const [mediaFail, setMediaFail] = useState<"none" | "video" | "all">("none");
   // The preview is only swapped over the thumbnail once it actually has frames
   // (`onLoadedData`) — until then the thumbnail stays visible with a loading
@@ -141,10 +143,16 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   const usePreviewChain = previewAvailable && mediaFail !== "all";
   const useSprite = spriteAvailable && !spriteFailed;
 
-  const showVideoEl = usePreviewChain && showVideo && mediaFail === "none";
-  const showImgFallback = usePreviewChain && showAnimatedImage && mediaFail === "video";
+  // .webp URLs are images — load them as <img> first. If the image fails
+  // (e.g. it's actually an MP4 with a misleading .webp extension), fall back
+  // to <video>. For real video URLs (.mp4 etc.) keep the original order.
+  const isWebpPreview = (previewUrl ?? "").toLowerCase().endsWith(".webp");
+  const showWebpImg = isWebpPreview && usePreviewChain && showAnimatedImage && mediaFail === "none";
+  const showWebpVideoFallback = isWebpPreview && usePreviewChain && showVideo && mediaFail === "video";
+  const showVideoEl = !isWebpPreview && usePreviewChain && showVideo && mediaFail === "none";
+  const showImgFallback = !isWebpPreview && usePreviewChain && showAnimatedImage && mediaFail === "video";
   const restoreStatic =
-    mediaFail === "all" || (mediaFail === "video" && !showAnimatedImage) || !usePreviewChain;
+    mediaFail === "all" || (mediaFail === "video" && !showAnimatedImage && !isWebpPreview) || !usePreviewChain;
 
   const showSprite = isHovered && useSprite;
 
@@ -163,12 +171,12 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   // mark the preview failed, so the sprite/static fallback engages in seconds
   // instead of the browser's multi-minute connection timeout.
   useEffect(() => {
-    if (!(showVideoEl || showImgFallback) || previewReady) {
+    if (!(showVideoEl || showImgFallback || showWebpImg || showWebpVideoFallback) || previewReady) {
       return;
     }
     const t = setTimeout(() => setMediaFail("all"), PREVIEW_TIMEOUT_MS);
     return () => clearTimeout(t);
-  }, [showVideoEl, showImgFallback, previewReady]);
+  }, [showVideoEl, showImgFallback, showWebpImg, showWebpVideoFallback, previewReady]);
 
   const showDuration = (recording.duration ?? 0) > 0;
   const showFilesize = !!recording.filesize && !showDuration;
@@ -213,6 +221,40 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
                 noShimmer
               />
 
+              {/* .webp preview: load as <img> first (it's an image), fall back
+                  to <video> if it fails (some .webp URLs are MP4 with a
+                  misleading extension). */}
+              {showWebpImg && animatedImageUrl && (
+                <img
+                  src={animatedImageUrl}
+                  alt={recording.username}
+                  referrerPolicy="no-referrer"
+                  className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ease-out"
+                  style={{ opacity: previewReady ? 1 : 0 }}
+                  onLoad={() => setPreviewReady(true)}
+                  onError={() => setMediaFail("video")}
+                />
+              )}
+              {showWebpVideoFallback && videoUrl && (
+                <video
+                  src={videoUrl}
+                  className={cn(
+                    "absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ease-out",
+                    previewReady ? "opacity-100" : "opacity-0"
+                  )}
+                  autoPlay muted playsInline
+                  preload="auto"
+                  onCanPlay={onPreviewReady}
+                  onError={() => setMediaFail("all")}
+                  ref={(el) => {
+                    if (el) (el as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
+                  }}
+                />
+              )}
+
+              {/* Video-first preview: try <video> first, fall back to <img>
+                  for genuine animated WebP that wasn't caught by the .webp
+                  branch above (e.g. URL without extension). */}
               {showVideoEl && videoUrl && (
                 <video
                   src={videoUrl}

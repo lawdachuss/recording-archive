@@ -6,7 +6,7 @@ interface SpriteSlideshowProps {
   cols?: number;
   /** Explicit sprite grid rows — skip auto-detection from image dimensions */
   rows?: number;
-  /** ms each sprite frame is held before advancing (default: 100ms = 10fps) */
+  /** ms each sprite frame is held before advancing (default: 200ms ≈ 5fps) */
   frameMs?: number;
   className?: string;
   active?: boolean;
@@ -81,7 +81,7 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({
   spriteUrl,
   cols: explicitCols,
   rows: explicitRows,
-  frameMs = 100,
+  frameMs = 200,
   className,
   active = true,
   onLoaded,
