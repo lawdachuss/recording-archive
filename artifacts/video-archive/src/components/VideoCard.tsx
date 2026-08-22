@@ -312,23 +312,13 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
 
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent opacity-50 pointer-events-none" />
 
-          {/* Real-time loading bar pinned to the bottom while the preview
-              buffers — width tracks the video's buffered progress, so the
-              animation matches the actual fetch and playback starts the
-              moment the bar completes. */}
+          {/* Shimmer + pulse animation while the preview loads — replaces
+              the old thin progress bar with a more attractive effect. */}
           {showLoadingBar && (
-            <div className="absolute inset-x-0 bottom-0 z-10 px-3 pb-2 pointer-events-none">
-              <div
-                className="progress-loader"
-                role="progressbar"
-                aria-label="Loading preview"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={bufferProgress}
-              >
-                <div className="progress" style={{ width: `${bufferProgress}%` }} />
-              </div>
-            </div>
+            <>
+              <div className="preview-loading-shimmer" />
+              <div className="preview-loading-pulse" />
+            </>
           )}
 
           {/* Watched badge */}

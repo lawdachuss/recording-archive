@@ -529,21 +529,55 @@
   }
 }
 
-/* ── Hover-preview loading bar (Uiverse.io by mrhyddenn) ────────────
-   Width is driven in real time by the video's buffered progress (VideoCard),
-   so it reflects the actual fetch while hovering. */
-.progress-loader {
-  width: 100%;
-  background: rgba(236, 236, 238, 0.253);
-  height: 3px;
-  border-radius: 7px;
-  overflow: hidden;
+/* ── Hover-preview loading shimmer ──────────────────────────────────
+   A diagonal shimmer sweep across the card while the preview loads.
+   Much more attractive than a thin progress bar. */
+@keyframes preview-shimmer {
+  0% { transform: translateX(-100%) skewX(-15deg); }
+  100% { transform: translateX(200%) skewX(-15deg); }
 }
 
-.progress-loader .progress {
-  width: 0%;
-  height: 3px;
-  border-radius: 7px;
-  background: rgb(255, 255, 255);
-  transition: width 0.3s ease;
+.preview-loading-shimmer {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.preview-loading-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.12) 45%,
+    rgba(255, 255, 255, 0.2) 50%,
+    rgba(255, 255, 255, 0.12) 55%,
+    transparent 70%
+  );
+  animation: preview-shimmer 1.5s ease-in-out infinite;
+}
+
+/* Subtle pulsing ring at center */
+@keyframes preview-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.95); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+.preview-loading-pulse {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 11;
+  pointer-events: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: rgba(255, 255, 255, 0.8);
+  animation: preview-pulse 1.2s ease-in-out infinite;
 }
