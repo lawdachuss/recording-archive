@@ -102,17 +102,21 @@ function GroupCards({ performers }: { performers: Performer[] }) {
 function CircleCard({ performer, fetchPriority }: { performer: Performer; fetchPriority: "high" | "low" | "auto" }) {
   const initial = performer.username.charAt(0).toUpperCase();
   return (
-    <Link href={`/performers/${performer.username}`} className="group block outline-none">
+    <Link href={`/performers/${performer.username}`} className="group block outline-none w-full circle-bloom-hover">
       <div className="flex flex-col items-center gap-2.5">
-        <div className="relative w-[72px] h-[72px] sm:w-[82px] sm:h-[82px]">
-          <div className="w-full h-full rounded-full overflow-hidden ring-2 ring-border/40 group-hover:ring-primary/50 transition-all duration-300 shadow-sm group-hover:shadow-md group-hover:shadow-primary/10">
+        {/* Circle container — fixed size, centered via grid justify-items-center */}
+        <div className="relative w-[72px] h-[72px] sm:w-[82px] sm:h-[82px] shrink-0">
+          {/* Bloom ring — shadow expands outward on hover */}
+          <div className="absolute inset-0 rounded-full circle-bloom-ring transition-shadow duration-300" />
+          {/* Main circle — scales up on hover */}
+          <div className="relative w-full h-full rounded-full overflow-hidden ring-[1.5px] ring-border/30 group-hover:ring-primary/60 shadow-sm group-hover:shadow-lg transition-all duration-300 ease-out group-hover:scale-110">
             {proxyUrl(performer.latest_thumbnail) ? (
               <OptimizedImage
                 src={proxyUrl(performer.latest_thumbnail)!}
                 alt={performer.username}
                 fetchPriority={fetchPriority}
                 loading={fetchPriority === "high" ? "eager" : "lazy"}
-                className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-110 will-change-transform"
+                className="w-full h-full object-cover object-top transition-transform duration-500 ease-out group-hover:scale-110 will-change-transform"
                 containerClassName="w-full h-full"
               />
             ) : (
@@ -121,10 +125,9 @@ function CircleCard({ performer, fetchPriority }: { performer: Performer; fetchP
               </div>
             )}
           </div>
-          <div className="absolute -inset-1 rounded-full bg-primary/0 group-hover:bg-primary/5 -z-10 blur-sm transition-all duration-300" />
         </div>
-        <div className="text-center min-w-0 max-w-[90px]">
-          <p className="text-xs font-semibold text-foreground truncate group-hover:text-primary transition-colors">
+        <div className="text-center min-w-0 w-[90px]">
+          <p className="text-xs font-semibold text-foreground truncate group-hover:text-primary transition-colors duration-300">
             {performer.username}
           </p>
           <p className="text-[10px] text-muted-foreground/50 mt-0.5">
