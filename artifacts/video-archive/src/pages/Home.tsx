@@ -342,7 +342,7 @@ export default function Home() {
                 Directory <ArrowRight className="w-3 h-3 transition-transform duration-200 group-hover:translate-x-0.5" />
               </Link>
             </div>
-            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-y-6 gap-x-2 justify-items-center animate-fade-in-up">
+            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-y-8 gap-x-2 justify-items-center place-items-center animate-fade-in-up">
               {topPerformers.slice(0, 20).map((perf, i) => (
                 <div key={perf.username}>
                   <PerformerCard performer={perf} variant="circle" fetchPriority={i < 4 ? "high" : undefined} />
