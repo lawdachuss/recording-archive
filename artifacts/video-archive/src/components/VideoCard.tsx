@@ -10,6 +10,22 @@ import { cn } from "@/lib/utils";
 import { proxyUrl } from "@/lib/proxy-url";
 import { getSpriteGrid } from "@/lib/sprite-grid";
 
+/**
+ * Unwrap a media-proxy URL to extract the real upstream URL for
+ * extension-based type detection.
+ */
+function getOriginalUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.pathname.startsWith("/api/media")) {
+      const inner = parsed.searchParams.get("url");
+      if (inner) return inner;
+    }
+  } catch {}
+  return url;
+}
+
 // If a hover preview hasn't produced its first frame within this window,
 // treat the source as unreachable and fall back (files.catbox.moe consistently
 // times out for minutes on this network; the browser would otherwise leave the
@@ -80,8 +96,6 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
 
   // The hover <video> unmounts when the pointer leaves, so re-entering must
   // go through the ready gate again (loading bar over thumbnail, never black).
-  // Sprite ready state is NOT reset — the sprite stays in browser cache so
-  // the next hover is instant (no re-download needed).
   useEffect(() => {
     if (!isHovered) {
       setPreviewReady(false);
@@ -97,6 +111,17 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     setSpriteReady(false);
     setSpriteFailed(false);
   }, [spriteUrl]);
+
+  // Reset sprite states when hover ends. Keeping spriteReady=true across
+  // hovers caused a black flash: hideStatic became true immediately on
+  // re-enter, hiding the thumbnail before SpriteSlideshow had painted its
+  // background-image — exposing the dark bg-secondary behind it.
+  useEffect(() => {
+    if (!isHovered) {
+      setSpriteReady(false);
+      setSpriteFailed(false);
+    }
+  }, [isHovered]);
 
   const onPreviewProgress = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
     const v = e.currentTarget;
@@ -151,7 +176,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   // .webp URLs are images — load them as <img> first. If the image fails
   // (e.g. it's actually an MP4 with a misleading .webp extension), fall back
   // to <video>. For real video URLs (.mp4 etc.) keep the original order.
-  const isWebpPreview = !isCatboxPreview && (previewUrl ?? "").toLowerCase().endsWith(".webp");
+  const isWebpPreview = !isCatboxPreview && (getOriginalUrl(previewUrl) ?? "").toLowerCase().endsWith(".webp");
   const showWebpImg = isWebpPreview && usePreviewChain && showAnimatedImage && mediaFail === "none";
   const showWebpVideoFallback = isWebpPreview && usePreviewChain && showVideo && mediaFail === "video";
   const showVideoEl = !isWebpPreview && usePreviewChain && showVideo && mediaFail === "none";

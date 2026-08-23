@@ -74,8 +74,6 @@ function lsDelete(key: string) {
 
 // ─── IndexedDB tier ───────────────────────────────────────────────
 
-let _idbCache: Map<string, CacheEntry<unknown>> | null = null;
-
 async function idbGet<T>(key: string): Promise<T | undefined> {
   try {
     const db = await openDB();

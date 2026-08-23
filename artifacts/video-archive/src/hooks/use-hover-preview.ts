@@ -6,7 +6,7 @@ import {
   preloadPreviewMedia,
   preloadAnimatedImage,
 } from "@/lib/preload-preview";
-import { preloadSprite } from "@/lib/preload-sprite";
+import { preloadImage } from "@/lib/preload-sprite";
 
 const DEBUG = false;
 function dlog(...args: any[]) { if (DEBUG) console.log("[HoverPreview]", ...args); }
@@ -99,7 +99,7 @@ export function useHoverPreview({
               if (previewUrl && !isCatbox) {
                 preloadPreviewMedia(previewUrl);
               } else if (spriteUrl) {
-                preloadSprite(spriteUrl);
+                preloadImage(spriteUrl);
               }
               observer?.disconnect();
               break;

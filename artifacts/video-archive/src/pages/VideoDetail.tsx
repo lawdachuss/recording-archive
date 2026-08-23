@@ -213,10 +213,7 @@ export default function VideoDetail() {
 
   useEffect(() => {
     setVideoStarted(sessionStorage.getItem("vplayed") === id);
-    setActiveServer(() => {
-      const stored = sessionStorage.getItem("vserver");
-      return stored ? parseInt(stored, 10) : 0;
-    });
+    setActiveServer(0);
     setCollectionOpen(false);
     setAddedToCol(null);
     setBookmarked(false);
