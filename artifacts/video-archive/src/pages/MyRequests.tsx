@@ -166,14 +166,14 @@ export default function MyRequests() {
     return map;
   }, [notifications]);
 
+  const queryClient = useQueryClient();
+  const deleteRequest = useDeleteRequest();
+
   const markOneRead = useTrackedMutation({
     mutationFn: (ids: number[]) =>
       userApi.markAsReadBatch(ids),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["user", "notifications"] }),
   });
-
-  const queryClient = useQueryClient();
-  const deleteRequest = useDeleteRequest();
 
   const handleDelete = (id: number) => async () => {
     try {

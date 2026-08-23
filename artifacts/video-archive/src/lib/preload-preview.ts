@@ -29,9 +29,27 @@ function isConnectionConstrained(): boolean {
   }
 }
 
+/**
+ * Unwrap a media-proxy URL (`/api/media?url=<encoded>`) to extract the
+ * real upstream URL. Extension-based type detection needs the original
+ * URL, not the proxy wrapper.
+ */
+function unwrapProxyUrl(url: string): string {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.pathname.startsWith("/api/media")) {
+      const inner = parsed.searchParams.get("url");
+      if (inner) return inner;
+    }
+  } catch {
+    // Not parseable — fall through to the raw string.
+  }
+  return url;
+}
+
 export function isVideoUrl(url: string | null | undefined): boolean {
   if (!url) return false;
-  const lower = url.toLowerCase();
+  const lower = unwrapProxyUrl(url).toLowerCase();
   return (
     lower.endsWith(".mp4") ||
     lower.endsWith(".webm") ||
@@ -42,7 +60,7 @@ export function isVideoUrl(url: string | null | undefined): boolean {
 
 export function isAnimatedImageUrl(url: string | null | undefined): boolean {
   if (!url) return false;
-  return url.toLowerCase().endsWith(".webp");
+  return unwrapProxyUrl(url).toLowerCase().endsWith(".webp");
 }
 
 /**

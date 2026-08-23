@@ -15,7 +15,7 @@ export function formatRelativeTime(dateString: string | null | undefined) {
   const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
   // Future or just-now dates
-  if (seconds < 0) return 'just now';
+  if (seconds < 0 || seconds < 5) return 'just now';
 
   let interval = seconds / 31536000;
   if (interval > 1) return Math.floor(interval) + 'y ago';
