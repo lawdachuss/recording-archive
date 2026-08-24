@@ -1,7 +1,9 @@
 // ─── Cache configuration ────────────────────────────────────────────────────
 
 const IMAGE_CACHE = "vault-images-v6";
+const API_CACHE = "vault-api-v1";
 const IMAGE_MAX_ENTRIES = 10000;
+const API_TTL = 5 * 60_000; // 5 minutes — API data changes more often than images
 
 // Tiered TTLs — different asset types have different staleness tolerances.
 // Thumbnails change when a recording is re-encoded (rare) → long TTL.
@@ -151,6 +153,34 @@ async function cacheResponse(cache, request, response) {
   }
 }
 
+// ─── API cache (network-first, fallback to cache on failure) ──────────────
+
+async function networkFirstWithCache(request) {
+  const cache = await caches.open(API_CACHE);
+  try {
+    const response = await fetch(request, { cache: "no-cache" });
+    if (response.ok) {
+      // Clone and cache a copy (non-blocking)
+      const tagged = new Response(response.clone().body, {
+        status: response.status,
+        headers: new Headers(response.headers),
+      });
+      tagged.headers.set("sw-cached-at", String(Date.now()));
+      cache.put(request, tagged).catch(() => {});
+    }
+    return response;
+  } catch {
+    // Network failed — serve from cache if available
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    // Return a simple JSON error so the app can handle it gracefully
+    return new Response(JSON.stringify({ error: "offline" }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+}
+
 // ─── Fetch handler ──────────────────────────────────────────────────────────
 
 self.addEventListener("fetch", (event) => {
@@ -159,6 +189,19 @@ self.addEventListener("fetch", (event) => {
   if (request.headers.has("range")) return;
 
   const url = new URL(request.url);
+
+  // API requests: network-first with cache fallback (for offline/slow)
+  const isApiRequest =
+    url.pathname.startsWith("/api/") &&
+    !url.pathname.endsWith("/api/media") &&
+    request.headers.get("accept")?.includes("application/json");
+
+  if (isApiRequest) {
+    event.respondWith(networkFirstWithCache(request));
+    return;
+  }
+
+  // Media requests: stale-while-revalidate
   const isMediaRequest =
     request.destination === "image" ||
     IMAGE_EXTENSIONS.test(url.pathname) ||
