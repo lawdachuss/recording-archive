@@ -6,7 +6,6 @@ import {
   preloadPreviewMedia,
 } from "@/lib/preload-preview";
 import { preloadImage } from "@/lib/preload-sprite";
-import { cacheImage } from "@/lib/image-cache";
 
 const DEBUG = false;
 function dlog(...args: any[]) { if (DEBUG) console.log("[HoverPreview]", ...args); }
@@ -103,12 +102,11 @@ export function useHoverPreview({
               // and many residential networks. The sprite is the preview.
               const isCatbox = /catbox\.moe/i.test(previewUrl ?? "");
               if (previewUrl && !isCatbox) {
+                // preloadPreviewMedia / preloadImage already persist to IDB
+                // via img.onload → cacheImage() in preload-sprite.ts
                 preloadPreviewMedia(previewUrl);
-                // Also persist to IDB for instant repeat-visit hover
-                cacheImage(previewUrl);
               } else if (spriteUrl) {
                 preloadImage(spriteUrl);
-                cacheImage(spriteUrl);
               }
               observer?.disconnect();
               break;
