@@ -6,8 +6,9 @@ export default function AuthCallback() {
   const [, setLocation] = useLocation();
 
   useEffect(() => {
+    let unsub: (() => void) | null = null;
     getSupabase().then((sb) => {
-      sb.auth.onAuthStateChange((event) => {
+      const { data: { subscription } } = sb.auth.onAuthStateChange((event) => {
         if (event === "PASSWORD_RECOVERY") {
           setLocation("/settings");
         } else if (event === "SIGNED_IN") {
@@ -16,7 +17,9 @@ export default function AuthCallback() {
           setLocation("/login");
         }
       });
+      unsub = () => subscription.unsubscribe();
     });
+    return () => { unsub?.(); };
   }, [setLocation]);
 
   return (

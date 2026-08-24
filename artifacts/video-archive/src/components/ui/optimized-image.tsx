@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, memo } from "react";
 import { cn } from "@/lib/utils";
 import { proxyUrl } from "@/lib/proxy-url";
+import { getCachedBlobUrl, cacheImage } from "@/lib/image-cache";
 
 interface OptimizedImageProps {
   src: string;
@@ -56,15 +57,46 @@ export const OptimizedImage = memo(function OptimizedImage({
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const prevSrcRef = useRef(resolvedSrc);
+  const blobUrlRef = useRef<string | null>(null);
+  const [displaySrc, setDisplaySrc] = useState<string>(resolvedSrc);
 
-  // Reset state when src changes (handles list re-ordering / prop changes)
+  // Check IDB blob cache on mount and whenever src changes.
+  // On repeat visits, serves from blob URL instantly (zero network).
   useEffect(() => {
-    if (resolvedSrc !== prevSrcRef.current) {
-      setLoaded(false);
-      setError(false);
-      prevSrcRef.current = resolvedSrc;
-    }
+    setLoaded(false);
+    setError(false);
+    prevSrcRef.current = resolvedSrc;
+
+    let cancelled = false;
+    getCachedBlobUrl(resolvedSrc).then((blobUrl) => {
+      if (cancelled) {
+        if (blobUrl) URL.revokeObjectURL(blobUrl);
+        return;
+      }
+      if (blobUrl) {
+        if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = blobUrl;
+        setDisplaySrc(blobUrl);
+        // Stale-while-revalidate: update IDB in background
+        cacheImage(resolvedSrc);
+      } else {
+        setDisplaySrc(resolvedSrc);
+        // Not cached — persist for next visit after image loads
+        cacheImage(resolvedSrc);
+      }
+    });
+    return () => { cancelled = true; };
   }, [resolvedSrc]);
+
+  // Cleanup blob URL on unmount
+  useEffect(() => {
+    return () => {
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+    };
+  }, []);
 
   const onLoad = useCallback(() => {
     setLoaded(true);
@@ -82,7 +114,7 @@ export const OptimizedImage = memo(function OptimizedImage({
   return (
     <div className={cn("relative overflow-hidden bg-secondary", containerClassName)}>
       <img
-        src={resolvedSrc}
+        src={displaySrc}
         alt={alt}
         referrerPolicy="no-referrer"
         loading={loading ?? (fetchPriority === "high" ? "eager" : "lazy")}

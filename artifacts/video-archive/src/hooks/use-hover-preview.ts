@@ -4,9 +4,9 @@ import {
   isVideoCandidate,
   isAnimatedImageUrl,
   preloadPreviewMedia,
-  preloadAnimatedImage,
 } from "@/lib/preload-preview";
 import { preloadImage } from "@/lib/preload-sprite";
+import { cacheImage } from "@/lib/image-cache";
 
 const DEBUG = false;
 function dlog(...args: any[]) { if (DEBUG) console.log("[HoverPreview]", ...args); }
@@ -79,6 +79,12 @@ export function useHoverPreview({
   // still uses the proxied `previewUrl`.
   const inspectUrl = getInspectUrl(previewUrl);
 
+  // Reset preload flag when the preview or sprite URL changes so the new
+  // URL gets preloaded when the card re-enters the viewport.
+  useEffect(() => {
+    intersectionPreloadedRef.current = false;
+  }, [previewUrl, spriteUrl]);
+
   const viewportRef = useMemo<React.RefCallback<HTMLElement>>(() => {
     let observer: IntersectionObserver | null = null;
     return (el: HTMLElement | null) => {
@@ -98,8 +104,11 @@ export function useHoverPreview({
               const isCatbox = /catbox\.moe/i.test(previewUrl ?? "");
               if (previewUrl && !isCatbox) {
                 preloadPreviewMedia(previewUrl);
+                // Also persist to IDB for instant repeat-visit hover
+                cacheImage(previewUrl);
               } else if (spriteUrl) {
                 preloadImage(spriteUrl);
+                cacheImage(spriteUrl);
               }
               observer?.disconnect();
               break;

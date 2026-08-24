@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
@@ -48,18 +48,18 @@ export default function Notifications() {
   });
 
   // Auto-mark notifications as read when the user views this page.
-  // Only fire once per mount — the boolean dep ensures this runs when
-  // notifications first load (empty → has data) and not on every render.
-  const hasLoaded = notifications.length > 0 || !isLoading;
+  // Only fire once after the initial load completes — the ref guard
+  // ensures this doesn't re-fire on re-renders or realtime updates.
+  const autoMarkedRef = useRef(false);
   useEffect(() => {
-    if (hasLoaded && !markAll.isPending) {
-      const unreadCount = notifications.filter((n: UserNotification) => !n.is_read).length;
-      if (unreadCount > 0) {
-        markAll.mutate();
-      }
+    if (autoMarkedRef.current) return;
+    if (isLoading) return;
+    autoMarkedRef.current = true;
+    const unreadCount = notifications.filter((n: UserNotification) => !n.is_read).length;
+    if (unreadCount > 0) {
+      markAll.mutate();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasLoaded]);
+  }, [isLoading, notifications]);
 
   if (!user) return null;
 

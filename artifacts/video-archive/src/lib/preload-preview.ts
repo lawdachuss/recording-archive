@@ -8,7 +8,9 @@
  * responses for repeat visits.
  */
 
-const preloadCache = new Map<string, HTMLVideoElement | HTMLImageElement | true>();
+import { cacheImage } from "@/lib/image-cache";
+
+const preloadCache = new Map<string, HTMLVideoElement | HTMLImageElement | HTMLLinkElement | true>();
 
 // Maximum number of detached video elements to keep alive.
 // Each preview video holds a reference to the decoded media in memory.
@@ -16,6 +18,11 @@ const MAX_VIDEO_ELEMENTS = 20;
 
 // Separate queue tracking video URLs for O(1) eviction (FIFO order).
 const videoKeys: string[] = [];
+
+// Track <link rel="preload"> elements so we can remove stale ones
+// when the limit is reached, preventing unbounded DOM growth.
+const preloadLinks: Array<{ url: string; el: HTMLLinkElement }> = [];
+const MAX_PRELOAD_LINKS = 50;
 
 function isConnectionConstrained(): boolean {
   try {
@@ -106,6 +113,8 @@ export function preloadVideo(url: string): void {
   v.preload = "auto";
   (v as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
   v.src = url;
+  // Persist to IDB blob cache after load (fire-and-forget)
+  v.onloadeddata = () => { cacheImage(url); };
   preloadCache.set(url, v);
   videoKeys.push(url);
 }
@@ -118,7 +127,17 @@ export function preloadVideo(url: string): void {
  */
 export function preloadAnimatedImage(url: string): void {
   if (preloadCache.has(url)) return;
+  // On slow connections, skip entirely — bandwidth is needed for the grid
   if (isConnectionConstrained()) return;
+
+  // Evict oldest <link> if we're at capacity to prevent unbounded DOM growth.
+  if (preloadLinks.length >= MAX_PRELOAD_LINKS) {
+    const oldest = preloadLinks.shift();
+    if (oldest) {
+      oldest.el.remove();
+      preloadCache.delete(oldest.url);
+    }
+  }
 
   // <link rel="preload" as="image"> is the highest-priority hint a page
   // can give the browser. Unlike new Image(), the browser treats it as a
@@ -128,12 +147,14 @@ export function preloadAnimatedImage(url: string): void {
   link.as = "image";
   link.href = url;
   link.referrerPolicy = "no-referrer";
-  // Cross-origin for proxied URLs (/api/media), same-origin for direct loads
   if (url.startsWith("/")) {
     link.crossOrigin = "anonymous";
   }
   document.head.appendChild(link);
+  // Persist to IDB blob cache after successful load (fire-and-forget)
+  link.onload = () => { cacheImage(url); };
   preloadCache.set(url, true);
+  preloadLinks.push({ url, el: link });
 }
 
 /**

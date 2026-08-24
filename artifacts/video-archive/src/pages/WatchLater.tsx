@@ -43,6 +43,7 @@ export default function WatchLater() {
   };
 
   const handleClearAll = () => {
+    if (!confirm("Clear entire watch later queue? This cannot be undone.")) return;
     clearCloud.mutate();
   };
 
