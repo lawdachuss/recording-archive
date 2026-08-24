@@ -26,6 +26,22 @@ function getOriginalUrl(url: string | null | undefined): string | null {
   return url;
 }
 
+/**
+ * Get the file extension from a URL's pathname (ignores query params).
+ * Returns lowercase extension with dot, e.g. ".webp", or "" if none.
+ */
+function getExt(url: string): string {
+  try {
+    const pathname = new URL(url, window.location.origin).pathname;
+    const dot = pathname.lastIndexOf(".");
+    return dot >= 0 ? pathname.slice(dot).toLowerCase() : "";
+  } catch {
+    const q = url.split("?")[0];
+    const dot = q.lastIndexOf(".");
+    return dot >= 0 ? q.slice(dot).toLowerCase() : "";
+  }
+}
+
 // If a hover preview hasn't produced its first frame within this window,
 // treat the source as unreachable and fall back (files.catbox.moe consistently
 // times out for minutes on this network; the browser would otherwise leave the
@@ -162,7 +178,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   // .webp URLs are images — load them as <img> first. If the image fails
   // (e.g. it's actually an MP4 with a misleading .webp extension), fall back
   // to <video>. For real video URLs (.mp4 etc.) keep the original order.
-  const isWebpPreview = !isCatboxPreview && (getOriginalUrl(previewUrl) ?? "").toLowerCase().endsWith(".webp");
+  const isWebpPreview = !isCatboxPreview && getExt(getOriginalUrl(previewUrl) ?? "") === ".webp";
   const showWebpImg = isWebpPreview && usePreviewChain && showAnimatedImage && mediaFail === "none";
   const showWebpVideoFallback = isWebpPreview && usePreviewChain && showVideo && mediaFail === "video";
   const showVideoEl = !isWebpPreview && usePreviewChain && showVideo && mediaFail === "none";
@@ -239,6 +255,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             />
           )}
 
+          {/* Static thumbnail or initials fallback */}
           {hasStaticImage ? (
             <div className="absolute inset-0 w-full h-full">
               <OptimizedImage
@@ -256,68 +273,6 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
                 }
                 noShimmer
               />
-
-              {/* .webp preview: load as <img> first (it's an image), fall back
-                  to <video> if it fails (some .webp URLs are MP4 with a
-                  misleading extension). */}
-              {showWebpImg && animatedImageUrl && (
-                <img
-                  src={animatedImageUrl}
-                  alt={recording.username}
-                  referrerPolicy="no-referrer"
-                  className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ease-out"
-                  style={{ opacity: previewReady ? 1 : 0 }}
-                  onLoad={() => setPreviewReady(true)}
-                  onError={() => setMediaFail("video")}
-                />
-              )}
-              {showWebpVideoFallback && videoUrl && (
-                <video
-                  src={videoUrl}
-                  className={cn(
-                    "absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ease-out",
-                    previewReady ? "opacity-100" : "opacity-0"
-                  )}
-                  autoPlay muted playsInline
-                  preload="auto"
-                  onCanPlay={onPreviewReady}
-                  onError={() => setMediaFail("all")}
-                  ref={(el) => {
-                    if (el) (el as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
-                  }}
-                />
-              )}
-
-              {/* Video-first preview: try <video> first, fall back to <img>
-                  for genuine animated WebP that wasn't caught by the .webp
-                  branch above (e.g. URL without extension). */}
-              {showVideoEl && videoUrl && (
-                <video
-                  src={videoUrl}
-                  poster={hasStaticImage ? staticImage! : undefined}
-                  className={cn(
-                    "absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ease-out",
-                    previewReady ? "opacity-100" : "opacity-0"
-                  )}
-                  autoPlay muted playsInline
-                  preload="auto"
-                  onCanPlay={onPreviewReady}
-                  onError={() => setMediaFail((f) => (f === "none" ? "video" : f))}
-                  ref={(el) => {
-                    if (el) (el as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
-                  }}
-                />
-              )}
-              {showImgFallback && animatedImageUrl && (
-                <img
-                  src={animatedImageUrl}
-                  alt={recording.username}
-                  referrerPolicy="no-referrer"
-                  className="absolute inset-0 w-full h-full object-cover"
-                  onLoad={() => setPreviewReady(true)}
-                  onError={() => setMediaFail("all")}
-                />
-              )}
             </div>
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-secondary/80 to-secondary">
@@ -327,7 +282,62 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             </div>
           )}
 
-
+          {/* Preview overlays — rendered outside thumbnail branch so they
+              work whether or not a static image exists. */}
+          {showWebpImg && animatedImageUrl && (
+            <img
+              src={animatedImageUrl}
+              alt={recording.username}
+              referrerPolicy="no-referrer"
+              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ease-out"
+              style={{ opacity: previewReady ? 1 : 0 }}
+              onLoad={() => setPreviewReady(true)}
+              onError={() => setMediaFail("video")}
+            />
+          )}
+          {showWebpVideoFallback && videoUrl && (
+            <video
+              src={videoUrl}
+              className={cn(
+                "absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ease-out",
+                previewReady ? "opacity-100" : "opacity-0"
+              )}
+              autoPlay muted playsInline
+              preload="auto"
+              onCanPlay={onPreviewReady}
+              onError={() => setMediaFail("all")}
+              ref={(el) => {
+                if (el) (el as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
+              }}
+            />
+          )}
+          {showVideoEl && videoUrl && (
+            <video
+              src={videoUrl}
+              poster={hasStaticImage ? staticImage! : undefined}
+              className={cn(
+                "absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ease-out",
+                previewReady ? "opacity-100" : "opacity-0"
+              )}
+              autoPlay muted playsInline
+              preload="auto"
+              onCanPlay={onPreviewReady}
+              onError={() => setMediaFail((f) => (f === "none" ? "video" : f))}
+              ref={(el) => {
+                if (el) (el as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
+              }}
+            />
+          )}
+          {showImgFallback && animatedImageUrl && (
+            <img
+              src={animatedImageUrl}
+              alt={recording.username}
+              referrerPolicy="no-referrer"
+              className="absolute inset-0 w-full h-full object-cover"
+              onLoad={() => setPreviewReady(true)}
+              onError={() => setMediaFail("all")}
+            />
+          )}
 
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent opacity-50 pointer-events-none" />
 

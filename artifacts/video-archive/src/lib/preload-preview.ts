@@ -10,7 +10,7 @@
 
 import { cacheImage } from "@/lib/image-cache";
 
-const preloadCache = new Map<string, HTMLVideoElement | HTMLImageElement | HTMLLinkElement | true>();
+const preloadCache = new Map<string, HTMLVideoElement | HTMLImageElement | true>();
 
 // Maximum number of detached video elements to keep alive.
 // Each preview video holds a reference to the decoded media in memory.
@@ -18,11 +18,6 @@ const MAX_VIDEO_ELEMENTS = 20;
 
 // Separate queue tracking video URLs for O(1) eviction (FIFO order).
 const videoKeys: string[] = [];
-
-// Track <link rel="preload"> elements so we can remove stale ones
-// when the limit is reached, preventing unbounded DOM growth.
-const preloadLinks: Array<{ url: string; el: HTMLLinkElement }> = [];
-const MAX_PRELOAD_LINKS = 50;
 
 function isConnectionConstrained(): boolean {
   try {
@@ -54,20 +49,33 @@ function unwrapProxyUrl(url: string): string {
   return url;
 }
 
+/**
+ * Extract the file extension from a URL, using pathname (not the full URL)
+ * so query params like `?token=abc` don't break detection.
+ * Returns lowercase extension with dot, e.g. ".webp", or "" if none.
+ */
+function getExt(url: string): string {
+  try {
+    const pathname = new URL(url, window.location.origin).pathname;
+    const dot = pathname.lastIndexOf(".");
+    return dot >= 0 ? pathname.slice(dot).toLowerCase() : "";
+  } catch {
+    // Fall back to string search
+    const q = url.split("?")[0];
+    const dot = q.lastIndexOf(".");
+    return dot >= 0 ? q.slice(dot).toLowerCase() : "";
+  }
+}
+
 export function isVideoUrl(url: string | null | undefined): boolean {
   if (!url) return false;
-  const lower = unwrapProxyUrl(url).toLowerCase();
-  return (
-    lower.endsWith(".mp4") ||
-    lower.endsWith(".webm") ||
-    lower.endsWith(".mov") ||
-    lower.includes(".m3u8")
-  );
+  const ext = getExt(unwrapProxyUrl(url));
+  return ext === ".mp4" || ext === ".webm" || ext === ".mov" || url.includes(".m3u8");
 }
 
 export function isAnimatedImageUrl(url: string | null | undefined): boolean {
   if (!url) return false;
-  return unwrapProxyUrl(url).toLowerCase().endsWith(".webp");
+  return getExt(unwrapProxyUrl(url)) === ".webp";
 }
 
 /**
@@ -120,41 +128,27 @@ export function preloadVideo(url: string): void {
 }
 
 /**
- * Warm an animated image (.webp) into the browser cache.
- * Uses <link rel="preload"> for HTTP/2 server-push priority — the browser
- * fetches the resource at high priority and caches it for instant reuse when
- * the actual <img> element renders on hover.
+ * Warm an animated image (.webp) into the browser HTTP cache.
+ * Uses new Image() (not <link rel="preload">) because:
+ *  1. <link rel="preload" crossorigin> creates a CORS-mode fetch whose
+ *     cache entry is NOT reused by a same-origin <img> without crossorigin.
+ *  2. Some browsers don't reliably cache preload responses for <img> reuse.
+ *  3. new Image() is proven for sprites and thumbnails in preload-sprite.ts.
  */
 export function preloadAnimatedImage(url: string): void {
   if (preloadCache.has(url)) return;
   // On slow connections, skip entirely — bandwidth is needed for the grid
   if (isConnectionConstrained()) return;
 
-  // Evict oldest <link> if we're at capacity to prevent unbounded DOM growth.
-  if (preloadLinks.length >= MAX_PRELOAD_LINKS) {
-    const oldest = preloadLinks.shift();
-    if (oldest) {
-      oldest.el.remove();
-      preloadCache.delete(oldest.url);
-    }
-  }
-
-  // <link rel="preload" as="image"> is the highest-priority hint a page
-  // can give the browser. Unlike new Image(), the browser treats it as a
-  // critical resource and fetches it immediately (not deferred to idle).
-  const link = document.createElement("link");
-  link.rel = "preload";
-  link.as = "image";
-  link.href = url;
-  link.referrerPolicy = "no-referrer";
-  if (url.startsWith("/")) {
-    link.crossOrigin = "anonymous";
-  }
-  document.head.appendChild(link);
-  // Persist to IDB blob cache after successful load (fire-and-forget)
-  link.onload = () => { cacheImage(url); };
-  preloadCache.set(url, true);
-  preloadLinks.push({ url, el: link });
+  const img = new Image();
+  img.referrerPolicy = "no-referrer";
+  img.decoding = "async";
+  img.onload = () => {
+    // Persist to IDB blob cache for repeat-visit speed (fire-and-forget)
+    cacheImage(url);
+  };
+  preloadCache.set(url, img);
+  img.src = url;
 }
 
 /**
