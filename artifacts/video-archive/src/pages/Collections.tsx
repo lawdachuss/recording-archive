@@ -41,12 +41,17 @@ export default function Collections() {
     e.preventDefault();
     if (!newName.trim()) return;
     setCreating(true);
-    await userApi.createCollection(newName.trim(), newDesc.trim() || undefined);
-    queryClient.invalidateQueries({ queryKey: ["user", "collections"] });
-    setNewName("");
-    setNewDesc("");
-    setShowCreate(false);
-    setCreating(false);
+    try {
+      await userApi.createCollection(newName.trim(), newDesc.trim() || undefined);
+      queryClient.invalidateQueries({ queryKey: ["user", "collections"] });
+      setNewName("");
+      setNewDesc("");
+      setShowCreate(false);
+    } catch {
+      // Error is non-fatal — user can retry
+    } finally {
+      setCreating(false);
+    }
   };
 
   const handleDelete = (id: string) => {

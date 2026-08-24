@@ -31,6 +31,7 @@ export default function History() {
   });
 
   const handleClear = () => {
+    if (!confirm("Clear all watch history? This cannot be undone.")) return;
     if (user) {
       clearCloud.mutate();
     } else {

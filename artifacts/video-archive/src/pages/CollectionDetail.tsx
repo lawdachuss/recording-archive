@@ -217,8 +217,12 @@ export default function CollectionDetail() {
           <button
             onClick={async () => {
               if (!confirm("Delete this collection? This cannot be undone.")) return;
-              await deleteCloud.mutateAsync();
-              setLocation("/collections");
+              try {
+                await deleteCloud.mutateAsync();
+                setLocation("/collections");
+              } catch {
+                // Delete failed — stay on page so user can retry
+              }
             }}
             className="shrink-0 flex items-center gap-1.5 h-9 px-3 text-xs font-medium text-muted-foreground/50 hover:text-destructive border border-border/40 hover:border-destructive/40 rounded-sm transition-all"
             title="Delete collection"

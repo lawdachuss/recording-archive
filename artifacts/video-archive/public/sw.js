@@ -97,9 +97,23 @@ async function staleWhileRevalidate(request) {
     }
     return response;
   } catch (err) {
-    // Network failed — fall back to stale cache
+    // Network failed (CORS, offline, etc.) — fall back to stale cache
+    // or return a transparent 1×1 pixel so the <img> doesn't error.
     if (cached) return cached;
-    throw err;
+    // Return a tiny transparent GIF to prevent unhandled rejections
+    // and broken <img> elements on CORS failures.
+    const pixel = new Uint8Array([
+      0x47,0x49,0x46,0x38,0x39,0x61,0x01,0x00,
+      0x01,0x00,0x80,0x00,0x00,0xff,0xff,0xff,
+      0x00,0x00,0x00,0x21,0xf9,0x04,0x01,0x00,
+      0x00,0x00,0x00,0x2c,0x00,0x00,0x00,0x00,
+      0x01,0x00,0x01,0x00,0x00,0x02,0x02,0x44,
+      0x01,0x00,0x3b,
+    ]);
+    return new Response(pixel, {
+      status: 200,
+      headers: { "Content-Type": "image/gif", "Content-Length": String(pixel.length) },
+    });
   }
 }
 

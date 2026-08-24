@@ -93,7 +93,11 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   const method = (options?.method ?? "GET").toUpperCase();
   const url = resolveApiPath(path);
 
-  if (method === "GET" && !options?.signal) {
+  // Only deduplicate plain GET requests with no custom headers or signal.
+  // When headers are present (e.g. Authorization), two concurrent requests
+  // to the same URL may need different responses (auth vs anon), so they
+  // must NOT share a promise.
+  if (method === "GET" && !options?.signal && !options?.headers) {
     const cacheKey = url.toString();
     const existing = inflightGetRequests.get(cacheKey);
     if (existing) return existing as Promise<T>;
@@ -461,19 +465,20 @@ export function getGetReactionsQueryKey(
 }
 
 export interface Comment {
-  id: string;
+  id: number;
   recording_id: string;
-  user_id: string;
-  parent_id: string | null;
+  user_id?: string;
+  parent_id?: number | null;
+  author: string;
   content: string;
+  deleted?: boolean;
   likes: number;
-  dislikes: number;
-  user_reaction: string | null;
+  user_liked?: boolean;
   created_at: string;
-  updated_at: string;
+  replies?: Comment[];
 }
 
-export type ListCommentsSort = "newest" | "oldest" | "top";
+export type ListCommentsSort = "new" | "old" | "top";
 
 export interface ListCommentsParams {
   recording_id: string;

@@ -36,8 +36,10 @@ export default function RandomRedirect() {
           }
         }
 
-        // Deduplicate
-        const uniqueExclude = [...new Set(excludeIds)].slice(0, 200);
+        // Deduplicate and cap at 50 IDs to avoid exceeding URL length limits.
+        // The server picks random from non-excluded, so capping is fine —
+        // it just means recently-watched videos might occasionally reappear.
+        const uniqueExclude = [...new Set(excludeIds)].slice(0, 50);
 
         const base = resolveApiPath("/api/recordings/random");
         const qs = uniqueExclude.length > 0

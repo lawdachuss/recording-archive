@@ -22,6 +22,7 @@
 
 import { preloadPreviewMedia } from "@/lib/preload-preview";
 import { proxyUrl } from "@/lib/proxy-url";
+import { cacheImage } from "@/lib/image-cache";
 
 // Hosts that block server/datacenter IPs entirely (SSL handshake fails,
 // empty bodies, or multi-minute timeouts). Catbox is reachable from
@@ -80,21 +81,15 @@ function getConcurrency(): number {
   return MAX_ACTIVE;
 }
 
-function scheduleIdle(task: () => void, timeout = 1_500) {
-  const requestIdle =
-    window.requestIdleCallback ??
-    ((cb: IdleRequestCallback) => {
-      const id = window.setTimeout(() => cb({ didTimeout: false, timeRemaining: () => 0 }), timeout);
-      return id as unknown as number;
-    });
-  requestIdle(task, { timeout });
-}
-
 function startRequest(url: string, img: HTMLImageElement) {
   lastStartByOrigin.set(originOf(url), performance.now());
   activeCount++;
+
   img.onload = () => {
     activeCount--;
+    // Persist to IDB blob cache for instant repeat-visit loading in
+    // OptimizedImage / preloadVideo / preloadAnimatedImage.
+    cacheImage(url); // fire-and-forget
     pump();
   };
   img.onerror = () => {

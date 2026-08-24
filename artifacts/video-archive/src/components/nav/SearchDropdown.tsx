@@ -25,14 +25,16 @@ interface SearchDropdownProps {
 
 function highlightMatch(text: string, query: string): React.ReactNode {
   if (!query.trim()) return text;
-  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const regex = new RegExp(`(${escaped})`, "gi");
-  const parts = text.split(regex);
-  if (parts.length === 1) return text;
-  return parts.map((part, i) =>
-    regex.test(part)
-      ? <strong key={i} className="text-foreground font-semibold">{part}</strong>
-      : part,
+  const lowerText = text.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  const idx = lowerText.indexOf(lowerQuery);
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <strong className="text-foreground font-semibold">{text.slice(idx, idx + query.length)}</strong>
+      {text.slice(idx + query.length)}
+    </>
   );
 }
 

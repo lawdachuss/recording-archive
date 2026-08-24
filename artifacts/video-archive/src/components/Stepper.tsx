@@ -87,7 +87,7 @@ export default function Stepper({
               className="px-4 py-1.5 text-xs font-medium rounded-sm border border-primary/30 text-primary hover:border-primary/60 transition-colors disabled:opacity-40 disabled:pointer-events-none"
               {...nextButtonProps}
             >
-              {isLastStep ? nextButtonText : nextButtonText}
+              {nextButtonText}
             </button>
           </div>
         </div>

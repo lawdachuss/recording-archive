@@ -17,7 +17,10 @@ const DB_NAME = "vault-cache";
 const DB_VERSION = 1;
 const STORE_NAME = "cache-store";
 
+let _idb: IDBDatabase | null = null;
+
 function openDB(): Promise<IDBDatabase> {
+  if (_idb) return Promise.resolve(_idb);
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
@@ -26,7 +29,12 @@ function openDB(): Promise<IDBDatabase> {
         db.createObjectStore(STORE_NAME, { keyPath: "key" });
       }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const db = req.result;
+      _idb = db;
+      db.onclose = () => { _idb = null; };
+      resolve(db);
+    };
     req.onerror = () => reject(req.error);
   });
 }

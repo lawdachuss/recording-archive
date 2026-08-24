@@ -17,15 +17,17 @@ import { preloadImage, preloadImages } from "@/lib/preload-sprite";
 import { proxyUrl } from "@/lib/proxy-url";
 import { isReachablePreviewUrl } from "@/lib/preload-sprite";
 import { preloadPreviewMedia } from "@/lib/preload-preview";
+import { cacheImage, isCached, evictIfNeeded } from "@/lib/image-cache";
 
 // ─── Configuration ──────────────────────────────────────────────────────────
 
 const WARM_MARKER = "catalog.warmUntil";
 const WARM_REINTERVAL_MS = 6 * 60 * 60 * 1000; // re-warm at most every 6h
-const WARM_DELAY_MS = 2_000; // start 2s after first paint
+const WARM_DELAY_MS = 500; // start 500ms after first paint (was 2s)
 const PAGE_SIZE = 100;
 const MAX_PAGES = 100; // up to 10,000 recordings
 const PARALLEL_FETCHES = 3; // concurrent API page fetches
+const IDB_CACHE_CONCURRENCY = 4; // concurrent fetch+cache writes to IDB
 
 // Adaptive concurrency thresholds
 const FAST_THRESHOLD_BPS = 5_000_000; // >5MB/s = fast
@@ -314,7 +316,9 @@ export function cancelWarmup() {
 
 export async function startCatalogWarmup(): Promise<void> {
   if (typeof window === "undefined") return;
-  if (isConnectionConstrained()) return;
+  // On slow connections, still run but with heavily reduced scope.
+  // Weak-network users benefit MOST from cached assets on repeat visits.
+  const constrained = isConnectionConstrained();
 
   // Check if we already warmed recently
   const last = Number(localStorage.getItem(WARM_MARKER) || 0);
@@ -335,7 +339,9 @@ export async function startCatalogWarmup(): Promise<void> {
     startedAt: Date.now(),
   });
 
-  const maxPages = getMaxPages();
+  // On slow connections: only warm 2 pages (200 recordings) — just enough
+  // for the visible grid. On fast connections: warm the full catalog.
+  const maxPages = constrained ? 2 : getMaxPages();
   const concurrency = getAdaptiveConcurrency();
   const queue = new PriorityPreloadQueue(() => getAdaptiveConcurrency());
   queue.setOnTaskComplete((priority) => {
@@ -371,35 +377,58 @@ export async function startCatalogWarmup(): Promise<void> {
 
       // Build priority tasks for this page
       const tasks: PreloadTask[] = [];
+      const idbUrls: string[] = []; // URLs to persist in IndexedDB
 
       for (const rec of data) {
         // Priority 1: Thumbnails (small, critical for grid paint)
-        if (rec.thumbnail_url) {
+        const thumbUrl = rec.thumbnail_url ? proxyUrl(rec.thumbnail_url) : null;
+        if (thumbUrl) {
           tasks.push({
-            url: proxyUrl(rec.thumbnail_url) ?? "",
+            url: thumbUrl,
             priority: 1,
             size: 30_000, // ~30KB per thumbnail
           });
+          idbUrls.push(thumbUrl);
         }
 
         // Priority 2: Sprites (medium, critical for hover preview)
-        if (rec.sprite_url) {
+        const spriteUrl = rec.sprite_url ? proxyUrl(rec.sprite_url) : null;
+        if (spriteUrl) {
           tasks.push({
-            url: proxyUrl(rec.sprite_url) ?? "",
+            url: spriteUrl,
             priority: 2,
             size: 300_000, // ~300KB per sprite sheet
           });
+          idbUrls.push(spriteUrl);
         }
 
         // Priority 3: Preview clips (large, nice-to-have)
-        if (rec.preview_url && isReachablePreviewUrl(rec.preview_url)) {
-          const proxiedUrl = proxyUrl(rec.preview_url) ?? "";
-          tasks.push({
-            url: proxiedUrl,
-            priority: 3,
-            size: 1_000_000, // ~1MB per preview clip
-          });
+        // On slow connections, skip previews entirely — bandwidth is needed
+        // for thumbnails and sprites which are the grid/hover essentials.
+        if (!constrained && rec.preview_url && isReachablePreviewUrl(rec.preview_url)) {
+          const proxiedUrl = proxyUrl(rec.preview_url);
+          if (proxiedUrl) {
+            tasks.push({
+              url: proxiedUrl,
+              priority: 3,
+              size: 1_000_000, // ~1MB per preview clip
+            });
+          }
         }
+      }
+
+      // Persist thumbnails + sprites to IndexedDB for offline/repeat-visit speed.
+      // Only cache URLs not already in IDB to avoid redundant fetches.
+      if (idbUrls.length > 0) {
+        (async () => {
+          const uncached: string[] = [];
+          for (const u of idbUrls) {
+            if (!(await isCached(u))) uncached.push(u);
+          }
+          if (uncached.length > 0) {
+            await cacheImagesToIdb(uncached);
+          }
+        })(); // fire-and-forget
       }
 
       queue.enqueue(tasks);
@@ -421,12 +450,15 @@ export async function startCatalogWarmup(): Promise<void> {
   }
 
   // Wait for all queued preloads to finish (with timeout)
-  const WAIT_TIMEOUT_MS = 120_000; // 2 minutes max
+  const WAIT_TIMEOUT_MS = constrained ? 60_000 : 120_000;
   const waitStart = Date.now();
   while (!queue.isComplete() && !warmupAbort) {
     if (Date.now() - waitStart > WAIT_TIMEOUT_MS) break;
     await new Promise((r) => setTimeout(r, 500));
   }
+
+  // Evict old IDB entries if cache is too large
+  evictIfNeeded();
 
   // Mark as warmed
   try {
@@ -434,4 +466,25 @@ export async function startCatalogWarmup(): Promise<void> {
   } catch { /* non-fatal */ }
 
   updateProgress({ phase: "done" });
+}
+
+// ─── IDB image caching helper ───────────────────────────────────────────────
+
+/**
+ * Fetch multiple images and store them in IndexedDB for persistent caching.
+ * Uses bounded concurrency to avoid overwhelming the network.
+ */
+async function cacheImagesToIdb(urls: string[]): Promise<void> {
+  let idx = 0;
+  async function worker() {
+    while (idx < urls.length) {
+      const i = idx++;
+      await cacheImage(urls[i]);
+    }
+  }
+  const workers = Array.from(
+    { length: Math.min(IDB_CACHE_CONCURRENCY, urls.length) },
+    () => worker(),
+  );
+  await Promise.all(workers);
 }
