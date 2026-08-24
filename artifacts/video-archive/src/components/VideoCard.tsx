@@ -264,7 +264,6 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
                 fetchPriority={fetchPriority}
                 loading={fetchPriority === "high" ? "eager" : "lazy"}
                 className={cn(
-                  "transition-opacity duration-300 ease-out",
                   hideStatic ? "opacity-0" : "opacity-100"
                 )}
                 containerClassName="absolute inset-0 w-full h-full"
@@ -289,7 +288,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               src={animatedImageUrl}
               alt={recording.username}
               referrerPolicy="no-referrer"
-              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ease-out"
+              className="absolute inset-0 w-full h-full object-cover"
               style={{ opacity: previewReady ? 1 : 0 }}
               onLoad={() => setPreviewReady(true)}
               onError={() => setMediaFail("video")}
@@ -299,7 +298,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             <video
               src={videoUrl}
               className={cn(
-                "absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ease-out",
+                "absolute inset-0 w-full h-full object-cover",
                 previewReady ? "opacity-100" : "opacity-0"
               )}
               autoPlay muted playsInline
@@ -316,7 +315,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               src={videoUrl}
               poster={hasStaticImage ? staticImage! : undefined}
               className={cn(
-                "absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ease-out",
+                "absolute inset-0 w-full h-full object-cover",
                 previewReady ? "opacity-100" : "opacity-0"
               )}
               autoPlay muted playsInline
