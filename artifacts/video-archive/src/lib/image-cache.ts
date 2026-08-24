@@ -170,9 +170,6 @@ export async function getCachedBlob(url: string): Promise<Blob | null> {
  * Skips non-OK responses, opaque redirects, and huge responses (>10 MB).
  */
 export async function cacheImage(url: string): Promise<ImageCacheEntry | null> {
-  // Skip if already cached
-  if (await isCached(url)) return null;
-
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -182,6 +179,9 @@ export async function cacheImage(url: string): Promise<ImageCacheEntry | null> {
       headers: { "Accept": "image/*,video/*,*/*" },
       // CORS: don't send credentials for proxied URLs
       credentials: url.startsWith("/") ? "same-origin" : "omit",
+      // Let the browser HTTP cache serve this — avoids redundant network
+      // fetches when the image was already loaded by <img> or <link preload>.
+      cache: "force-cache",
     });
     clearTimeout(timer);
 
@@ -216,13 +216,48 @@ export async function cacheImage(url: string): Promise<ImageCacheEntry | null> {
 }
 
 /**
+ * Batch-check whether multiple URLs are already cached in IDB.
+ * Single cursor scan instead of one transaction per URL.
+ * Returns a Set of URLs that ARE cached and fresh.
+ */
+export async function areCached(urls: string[]): Promise<Set<string>> {
+  const result = new Set<string>();
+  if (urls.length === 0) return result;
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const store = tx.objectStore(STORE_NAME);
+      const urlSet = new Set(urls);
+      let pending = urls.length;
+      for (const url of urls) {
+        const req = store.get(url);
+        req.onsuccess = () => {
+          const entry = req.result as ImageCacheEntry | undefined;
+          if (entry && Date.now() - entry.cachedAt <= CACHE_TTL_MS) {
+            result.add(url);
+          }
+          if (--pending === 0) resolve();
+        };
+        req.onerror = () => {
+          if (--pending === 0) resolve();
+        };
+      }
+    });
+  } catch { /* non-fatal */ }
+  return result;
+}
+
+/**
  * Batch-cache multiple URLs with bounded concurrency.
- * Returns the number of successfully cached entries.
+ * Skips URLs already in the provided `knownCached` set (from areCached)
+ * to avoid redundant IDB reads.
  */
 export async function cacheImages(
   urls: string[],
   concurrency = CONCURRENT_FETCHES,
   onProgress?: (done: number, total: number) => void,
+  knownCached?: Set<string>,
 ): Promise<number> {
   let cached = 0;
   let idx = 0;
@@ -230,6 +265,11 @@ export async function cacheImages(
   async function worker() {
     while (idx < urls.length) {
       const i = idx++;
+      // Skip if caller already confirmed this URL is cached
+      if (knownCached?.has(urls[i])) {
+        onProgress?.(i + 1, urls.length);
+        continue;
+      }
       const result = await cacheImage(urls[i]);
       if (result) cached++;
       onProgress?.(i + 1, urls.length);

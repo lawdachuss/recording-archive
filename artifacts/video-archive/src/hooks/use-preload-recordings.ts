@@ -1,7 +1,5 @@
 import { useEffect } from "react";
 import { preloadRecordingSprites } from "@/lib/preload-sprite";
-import { cacheImage } from "@/lib/image-cache";
-import { proxyUrl } from "@/lib/proxy-url";
 
 type RecordingLike = {
   id: string | number;
@@ -35,16 +33,9 @@ export function usePreloadRecordings(recordings: RecordingLike[] | null | undefi
     // On slow connections, only preload sprites for the first 6 recordings
     // (roughly the visible row) instead of all 40+ on the page.
     const limited = isConnectionConstrained() ? recordings.slice(0, 6) : recordings;
+    // preloadRecordingSprites handles browser HTTP cache warming + IDB
+    // persistence (via img.onload → cacheImage() in preload-sprite.ts).
+    // No separate cacheImage loop needed — avoids duplicate network fetches.
     preloadRecordingSprites(limited);
-
-    // Persist thumbnails + sprites to IDB for instant repeat-visit loading.
-    // Fire-and-forget — non-blocking.  Use proxyUrl() so cross-origin
-    // requests go through our server proxy (avoids CORS failures).
-    for (const rec of limited) {
-      const thumb = rec.thumbnail_url ? proxyUrl(rec.thumbnail_url) : null;
-      if (thumb) cacheImage(thumb);
-      const sprite = rec.sprite_url ? proxyUrl(rec.sprite_url) : null;
-      if (sprite) cacheImage(sprite);
-    }
   }, [ids]); // eslint-disable-line react-hooks/exhaustive-deps
 }
