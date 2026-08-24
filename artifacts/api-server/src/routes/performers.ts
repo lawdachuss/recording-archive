@@ -340,7 +340,9 @@ router.get("/performers", cache({ ttlSeconds: 600, staleSeconds: 900, tags: ["pe
           r.sprite_url
         FROM recordings_with_links r
         WHERE r.links IS NOT NULL
-        ORDER BY r.username, r.timestamp DESC
+        ORDER BY r.username,
+          CASE WHEN r.thumbnail_url IS NOT NULL THEN 0 ELSE 1 END,
+          r.timestamp DESC
       )
       SELECT
         ps.username,

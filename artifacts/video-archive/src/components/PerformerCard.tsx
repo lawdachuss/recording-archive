@@ -101,6 +101,8 @@ function GroupCards({ performers }: { performers: Performer[] }) {
 
 function CircleCard({ performer, fetchPriority }: { performer: Performer; fetchPriority: "high" | "low" | "auto" }) {
   const initial = performer.username.charAt(0).toUpperCase();
+  // Pick best available image: thumbnail first, then sprite as fallback
+  const imageUrl = proxyUrl(performer.latest_thumbnail) || (performer.sprite_url ? proxyUrl(performer.sprite_url) : null);
   return (
     <Link href={`/performers/${performer.username}`} className="group block outline-none w-full circle-bloom-hover">
       <div className="flex flex-col items-center gap-2.5">
@@ -110,9 +112,9 @@ function CircleCard({ performer, fetchPriority }: { performer: Performer; fetchP
           <div className="absolute inset-0 rounded-full circle-bloom-ring transition-shadow duration-300" />
           {/* Main circle — scales up on hover */}
           <div className="relative w-full h-full rounded-full overflow-hidden ring-[1.5px] ring-border/30 group-hover:ring-primary/60 shadow-sm group-hover:shadow-lg transition-all duration-300 ease-out group-hover:scale-110">
-            {proxyUrl(performer.latest_thumbnail) ? (
+            {imageUrl ? (
               <OptimizedImage
-                src={proxyUrl(performer.latest_thumbnail)!}
+                src={imageUrl}
                 alt={performer.username}
                 fetchPriority={fetchPriority}
                 loading={fetchPriority === "high" ? "eager" : "lazy"}
@@ -154,7 +156,8 @@ export const PerformerCard = memo(function PerformerCard({ performer, performers
 });
 
 const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { performer: Performer; fetchPriority: "high" | "low" | "auto" }) {
-  const hasThumbnail = !!proxyUrl(performer.latest_thumbnail);
+  // Pick best available image: thumbnail first, then sprite as fallback
+  const imageUrl = proxyUrl(performer.latest_thumbnail) || (performer.sprite_url ? proxyUrl(performer.sprite_url) : null);
   const initial = useMemo(() => performer.username.charAt(0).toUpperCase(), [performer.username]);
   const recCount = performer.recording_count ?? 0;
 
@@ -167,9 +170,9 @@ const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { perf
         group-hover:shadow-black/40"
       >
         <div className="relative aspect-[3/4] overflow-hidden">
-          {hasThumbnail ? (
+          {imageUrl ? (
             <OptimizedImage
-              src={proxyUrl(performer.latest_thumbnail!)!}
+              src={imageUrl}
               alt={performer.username}
               fetchPriority={fetchPriority}
               loading={fetchPriority === "high" ? "eager" : "lazy"}
