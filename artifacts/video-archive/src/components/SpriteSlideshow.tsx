@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, memo } from "react";
+import { getCachedBlobUrl } from "@/lib/image-cache";
+import { isConnectionConstrained } from "@/lib/connection";
 
 interface SpriteSlideshowProps {
   spriteUrl: string;
@@ -65,17 +67,7 @@ function detectLayout(width: number, height: number): SpriteLayout {
   return { cols: 1, rows: 1, totalFrames: 1 };
 }
 
-function isConnectionConstrained(): boolean {
-  try {
-    const conn = (navigator as any).connection;
-    if (!conn) return false;
-    if (conn.saveData) return true;
-    const slow = ["slow-2g", "2g", "3g"];
-    return typeof conn.effectiveType === "string" && slow.includes(conn.effectiveType);
-  } catch {
-    return false;
-  }
-}
+
 
 export const SpriteSlideshow = memo(function SpriteSlideshow({
   spriteUrl,
@@ -103,44 +95,68 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({
 
   const hasExplicitLayout = !!(explicitCols && explicitRows);
 
-  // Always load the sprite image via new Image() to:
-  // 1. Auto-detect layout when explicit cols/rows aren't provided
-  // 2. Wait for the image to actually be in the browser cache before
-  //    signaling onLoaded — otherwise the thumbnail hides but the sprite
-  //    background hasn't painted yet, causing a black flash.
+  // Load the sprite image. On repeat visits, check the IDB blob cache
+  // first for instant display — no network round-trip needed.
   useEffect(() => {
     setDetectedLayout(null);
     setImageLoaded(false);
     frameRef.current = 0;
 
     let cancelled = false;
-    const img = new Image();
-    img.referrerPolicy = "no-referrer";
+    const blobUrlRef: { current: string | null } = { current: null };
 
-    img.onload = () => {
+    function finishWithImage(img: HTMLImageElement) {
       if (cancelled) return;
-      // Only auto-detect layout when no explicit cols/rows provided
       if (!hasExplicitLayout) {
         setDetectedLayout(detectLayout(img.naturalWidth, img.naturalHeight));
       }
       setImageLoaded(true);
       cbRef.current.onLoaded?.();
-    };
-    img.onerror = () => {
-      if (cancelled) return;
-      setImageLoaded(true);
-      cbRef.current.onError?.();
-    };
-    img.src = spriteUrl;
-
-    // If already cached by browser, fire onload immediately
-    if (img.complete && img.naturalWidth > 0) {
-      setImageLoaded(true);
-      cbRef.current.onLoaded?.();
     }
+
+    // Try IDB blob cache first — instant on repeat visits
+    getCachedBlobUrl(spriteUrl).then((blobUrl) => {
+      if (cancelled) {
+        if (blobUrl) URL.revokeObjectURL(blobUrl);
+        return;
+      }
+      if (blobUrl) {
+        blobUrlRef.current = blobUrl;
+        // Blob is cached — load from it for instant paint
+        const img = new Image();
+        img.referrerPolicy = "no-referrer";
+        img.onload = () => finishWithImage(img);
+        img.onerror = () => {
+          if (!cancelled) {
+            setImageLoaded(true);
+            cbRef.current.onError?.();
+          }
+        };
+        img.src = blobUrl;
+        return;
+      }
+
+      // Not in IDB — load from network (will be cached for next time by preload queue)
+      const img = new Image();
+      img.referrerPolicy = "no-referrer";
+      img.onload = () => finishWithImage(img);
+      img.onerror = () => {
+        if (!cancelled) {
+          setImageLoaded(true);
+          cbRef.current.onError?.();
+        }
+      };
+      img.src = spriteUrl;
+
+      // If already cached by browser HTTP cache, fire immediately
+      if (img.complete && img.naturalWidth > 0) {
+        finishWithImage(img);
+      }
+    });
 
     return () => {
       cancelled = true;
+      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
     };
   }, [spriteUrl, hasExplicitLayout]);
 

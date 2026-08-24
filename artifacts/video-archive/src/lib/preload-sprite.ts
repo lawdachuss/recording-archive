@@ -23,6 +23,7 @@
 import { preloadPreviewMedia } from "@/lib/preload-preview";
 import { proxyUrl } from "@/lib/proxy-url";
 import { cacheImage } from "@/lib/image-cache";
+import { isConnectionConstrained } from "@/lib/connection";
 
 // Hosts that block server/datacenter IPs entirely (SSL handshake fails,
 // empty bodies, or multi-minute timeouts). Catbox is reachable from
@@ -46,35 +47,17 @@ export function isReachablePreviewUrl(url: string | null | undefined): boolean {
 }
 
 // ─── Global paced preload queue ─────────────────────────────────────────
-// One queue across every preload caller (page effects, warmSpriteCatalog,
-// app background warmup) so the browser never opens unbounded parallel
-// connections to a single media host. Since media now comes from our own
-// origin (/api/media, which queues upstream fetches server-side), the pacing
-// here is a lighter safety net than before.
+// All media now comes through /api/media (same-origin proxy) which handles
+// upstream rate limiting server-side. We removed the per-origin client-side
+// throttling that was limiting us to 1 request/60ms — the browser's built-in
+// connection limits (6-8 per origin for HTTP/1.1, more for HTTP/2) are
+// sufficient safety.
 const warmed = new Set<string>();
-const MAX_ACTIVE = 8;
-const ORIGIN_INTERVAL_MS = 60;
+const MAX_ACTIVE = 12;
 
 const queue: Array<{ url: string; img: HTMLImageElement }> = [];
 let activeCount = 0;
 let pumpTimer: number | null = null;
-const lastStartByOrigin = new Map<string, number>();
-
-function originOf(url: string): string {
-  try {
-    return new URL(url).origin;
-  } catch {
-    return "";
-  }
-}
-
-function isConnectionConstrained(): boolean {
-  const conn = (navigator as any).connection;
-  if (!conn) return false;
-  if (conn.saveData) return true;
-  const slow = ["slow-2g", "2g", "3g"];
-  return typeof conn.effectiveType === "string" && slow.includes(conn.effectiveType);
-}
 
 function getConcurrency(): number {
   if (isConnectionConstrained()) return 2; // Only 2 concurrent loads on slow connections
@@ -82,7 +65,6 @@ function getConcurrency(): number {
 }
 
 function startRequest(url: string, img: HTMLImageElement) {
-  lastStartByOrigin.set(originOf(url), performance.now());
   activeCount++;
 
   img.onload = () => {
@@ -107,20 +89,14 @@ function pump() {
     window.clearTimeout(pumpTimer);
     pumpTimer = null;
   }
-  const now = performance.now();
   const maxActive = getConcurrency();
-  for (let i = 0; i < queue.length && activeCount < maxActive; ) {
-    const item = queue[i];
-    const last = lastStartByOrigin.get(originOf(item.url)) ?? 0;
-    if (now - last < ORIGIN_INTERVAL_MS) {
-      i++;
-      continue;
-    }
-    queue.splice(i, 1);
+  while (queue.length > 0 && activeCount < maxActive) {
+    const item = queue.shift()!;
     startRequest(item.url, item.img);
   }
-  if (queue.length && pumpTimer === null) {
-    pumpTimer = window.setTimeout(pump, ORIGIN_INTERVAL_MS);
+  // Re-pump after a short delay in case active slots freed up
+  if (queue.length > 0 && pumpTimer === null) {
+    pumpTimer = window.setTimeout(pump, 50);
   }
 }
 
