@@ -1,9 +1,10 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { Link, useLocation } from "wouter";
-import { Menu, X, Film, Sun, Moon } from "lucide-react";
+import { Menu, X, Film, Sun, Moon, WifiOff } from "lucide-react";
 import { UserMenu } from "@/components/UserMenu";
 import { DesktopNav } from "@/components/nav/DesktopNav";
 import { SearchDropdown } from "@/components/nav/SearchDropdown";
+import { isConnectionConstrained } from "@/lib/connection";
 
 // Lazy-load components that are heavy or only needed on interaction:
 // - NotificationBell: pulls in notification hooks, only visible for auth users
@@ -30,12 +31,7 @@ const FOOTER_PAGE_IMPORTS: Record<string, () => Promise<unknown>> = {
 function prefetchFooter(href: string) {
   // Skip prefetching on slow/constrained connections — the bandwidth is
   // needed for the current page, not speculative preloading.
-  try {
-    const conn = (navigator as any).connection;
-    if (conn && (conn.saveData || (typeof conn.effectiveType === 'string' && ['slow-2g', '2g', '3g'].includes(conn.effectiveType)))) {
-      return;
-    }
-  } catch {}
+  if (isConnectionConstrained()) return;
   const imp = FOOTER_PAGE_IMPORTS[href];
   if (imp) imp().catch(() => {});
 }
@@ -292,11 +288,46 @@ export function Navbar() {
   );
 }
 
+function SlowConnectionBanner() {
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    // Check once on mount — don't re-render on connection changes
+    if (isConnectionConstrained()) {
+      const dismissed = sessionStorage.getItem("slow-conn-dismissed");
+      if (!dismissed) setShow(true);
+    }
+  }, []);
+
+  if (!show) return null;
+
+  return (
+    <div className="bg-primary/10 border-b border-primary/20 px-4 py-2.5 text-center animate-fade-in-up">
+      <div className="flex items-center justify-center gap-2 text-xs text-primary/80">
+        <WifiOff className="w-3.5 h-3.5 shrink-0" />
+        <span>
+          <strong>Slow connection detected.</strong> Preloading disabled to save bandwidth. Content loads on demand.
+        </span>
+        <button
+          onClick={() => {
+            setShow(false);
+            sessionStorage.setItem("slow-conn-dismissed", "1");
+          }}
+          className="ml-2 text-primary/50 hover:text-primary transition-colors font-medium"
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen text-foreground flex flex-col font-sans">
       <AgeGate />
       <Navbar />
+      <SlowConnectionBanner />
       <main className="flex-1 flex flex-col">
         {children}
       </main>

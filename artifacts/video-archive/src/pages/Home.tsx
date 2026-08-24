@@ -149,7 +149,7 @@ export default function Home() {
   );
   const recommendations = recData?.data ?? [];
 
-  const { data: topPerformersData } = useListPerformers(undefined, { staleTime: 30_000 });
+  const { data: topPerformersData, isLoading: performersLoading } = useListPerformers(undefined, { staleTime: 30_000 });
   const topPerformers = topPerformersData?.performers ?? [];
   const { data: tags } = useListTags({ query: { queryKey: getListTagsQueryKey(), staleTime: 30_000 } });
 
@@ -327,7 +327,7 @@ export default function Home() {
       )}
 
       {/* Top Performers — Circular avatars */}
-      {topPerformers.length > 0 && (
+      {(topPerformers.length > 0 || performersLoading) && (
         <section className="border-t border-border/50 px-4 sm:px-6 py-14 relative overflow-hidden">
           <div className="container mx-auto">
             <div className="flex items-center justify-between mb-8">
@@ -342,13 +342,24 @@ export default function Home() {
                 Directory <ArrowRight className="w-3 h-3 transition-transform duration-200 group-hover:translate-x-0.5" />
               </Link>
             </div>
-            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-y-8 gap-x-2 justify-items-center place-items-center animate-fade-in-up">
-              {topPerformers.slice(0, 20).map((perf, i) => (
-                <div key={perf.username}>
-                  <PerformerCard performer={perf} variant="circle" fetchPriority={i < 4 ? "high" : undefined} />
-                </div>
-              ))}
-            </div>
+            {performersLoading ? (
+              <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-y-8 gap-x-2 justify-items-center place-items-center">
+                {Array.from({ length: 10 }).map((_, i) => (
+                  <div key={i} className="flex flex-col items-center gap-2.5">
+                    <Skeleton className="w-[72px] h-[72px] sm:w-[82px] sm:h-[82px] rounded-full" />
+                    <Skeleton className="w-16 h-3" />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-y-8 gap-x-2 justify-items-center place-items-center animate-fade-in-up">
+                {topPerformers.slice(0, 20).map((perf, i) => (
+                  <div key={perf.username}>
+                    <PerformerCard performer={perf} variant="circle" fetchPriority={i < 4 ? "high" : undefined} />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
       )}

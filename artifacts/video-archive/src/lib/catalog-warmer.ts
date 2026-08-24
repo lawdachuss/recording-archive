@@ -313,9 +313,10 @@ export function cancelWarmup() {
 
 export async function startCatalogWarmup(): Promise<void> {
   if (typeof window === "undefined") return;
-  // On slow connections, still run but with heavily reduced scope.
-  // Weak-network users benefit MOST from cached assets on repeat visits.
-  const constrained = isConnectionConstrained();
+  // On slow connections, skip the catalog warmer entirely. Every MB of
+  // bandwidth should go to what the user is actually viewing, not to
+  // speculative preloading of recordings they may never see.
+  if (isConnectionConstrained()) return;
 
   // Check if we already warmed recently
   const last = Number(localStorage.getItem(WARM_MARKER) || 0);
@@ -336,9 +337,8 @@ export async function startCatalogWarmup(): Promise<void> {
     startedAt: Date.now(),
   });
 
-  // On slow connections: only warm 2 pages (200 recordings) — just enough
-  // for the visible grid. On fast connections: warm the full catalog.
-  const maxPages = constrained ? 2 : getMaxPages();
+  // Only reaches here on fast connections (slow connections return early above).
+  const maxPages = getMaxPages();
   const concurrency = getAdaptiveConcurrency();
   const queue = new PriorityPreloadQueue(() => getAdaptiveConcurrency());
   queue.setOnTaskComplete((priority) => {
@@ -399,7 +399,7 @@ export async function startCatalogWarmup(): Promise<void> {
         // Priority 3: Preview clips (large, nice-to-have)
         // On slow connections, skip previews entirely — bandwidth is needed
         // for thumbnails and sprites which are the grid/hover essentials.
-        if (!constrained && rec.preview_url && isReachablePreviewUrl(rec.preview_url)) {
+        if (rec.preview_url && isReachablePreviewUrl(rec.preview_url)) {
           const proxiedUrl = proxyUrl(rec.preview_url);
           if (proxiedUrl) {
             tasks.push({
@@ -433,7 +433,7 @@ export async function startCatalogWarmup(): Promise<void> {
   }
 
   // Wait for all queued preloads to finish (with timeout)
-  const WAIT_TIMEOUT_MS = constrained ? 60_000 : 120_000;
+  const WAIT_TIMEOUT_MS = 120_000;
   const waitStart = Date.now();
   while (!queue.isComplete() && !warmupAbort) {
     if (Date.now() - waitStart > WAIT_TIMEOUT_MS) break;
