@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback, memo } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef, memo } from "react";
 import { Link } from "wouter";
 import type { Recording } from "@workspace/api-client-react";
 import { formatBytes, formatRelativeTime, formatViewers, formatDuration } from "@/lib/formatters";
@@ -9,6 +9,7 @@ import { SpriteSlideshow } from "@/components/SpriteSlideshow";
 import { cn } from "@/lib/utils";
 import { proxyUrl } from "@/lib/proxy-url";
 import { getSpriteGrid } from "@/lib/sprite-grid";
+import { getCachedBlobUrl, cacheImage } from "@/lib/image-cache";
 
 /**
  * Unwrap a media-proxy URL to extract the real upstream URL for
@@ -135,6 +136,43 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
       setSpriteFailed(false);
     }
   }, [isHovered]);
+
+  // ── IDB blob cache for .webp previews ──────────────────────────────────
+  // On repeat visits, serve the .webp preview from IDB blob URL (instant)
+  // instead of re-fetching from network. The preload system stores .webp
+  // previews in IDB via preloadAnimatedImage -> cacheImage().
+  const [webpBlobUrl, setWebpBlobUrl] = useState<string | null>(null);
+  const webpBlobUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!previewUrl) { setWebpBlobUrl(null); return; }
+    const inspectUrl = getOriginalUrl(previewUrl) ?? previewUrl;
+    const ext = getExt(inspectUrl);
+    if (ext !== ".webp") { setWebpBlobUrl(null); return; }
+    let cancelled = false;
+    getCachedBlobUrl(previewUrl).then((blobUrl) => {
+      if (cancelled) { if (blobUrl) URL.revokeObjectURL(blobUrl); return; }
+      if (webpBlobUrlRef.current) URL.revokeObjectURL(webpBlobUrlRef.current);
+      webpBlobUrlRef.current = blobUrl;
+      setWebpBlobUrl(blobUrl);
+    });
+    return () => { cancelled = true; };
+  }, [previewUrl]);
+  // Cleanup blob URL on unmount
+  useEffect(() => {
+    return () => {
+      if (webpBlobUrlRef.current) { URL.revokeObjectURL(webpBlobUrlRef.current); webpBlobUrlRef.current = null; }
+    };
+  }, []);
+
+  // Eagerly cache .webp previews into IDB on mount so they're ready
+  // for instant hover. The preload queue handles sprites, but .webp
+  // previews need a separate fire-and-forget cacheImage call.
+  useEffect(() => {
+    if (!previewUrl || isSlowConnection) return;
+    const inspectUrl = getOriginalUrl(previewUrl) ?? previewUrl;
+    if (getExt(inspectUrl) !== ".webp") return;
+    cacheImage(previewUrl); // fire-and-forget — persists to IDB
+  }, [previewUrl, isSlowConnection]);
 
   // `canplay`/`loadeddata` fire as soon as bytes are buffered, which can be
   // well before the first frame is actually painted to the screen. Flipping
@@ -285,7 +323,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               work whether or not a static image exists. */}
           {showWebpImg && animatedImageUrl && (
             <img
-              src={animatedImageUrl}
+              src={webpBlobUrl || animatedImageUrl}
               alt={recording.username}
               referrerPolicy="no-referrer"
               className="absolute inset-0 w-full h-full object-cover"
