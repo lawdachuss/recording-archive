@@ -103,29 +103,26 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({
 
   const hasExplicitLayout = !!(explicitCols && explicitRows);
 
-  // When explicit layout is provided, skip Image load — no auto-detection needed.
-  // Only create an Image when we need to measure dimensions for layout detection.
+  // Always load the sprite image via new Image() to:
+  // 1. Auto-detect layout when explicit cols/rows aren't provided
+  // 2. Wait for the image to actually be in the browser cache before
+  //    signaling onLoaded — otherwise the thumbnail hides but the sprite
+  //    background hasn't painted yet, causing a black flash.
   useEffect(() => {
     setDetectedLayout(null);
+    setImageLoaded(false);
     frameRef.current = 0;
 
-    if (hasExplicitLayout) {
-      // Explicit layout — no need to load the image for detection.
-      // Signal loaded immediately so the animation can start.
-      setImageLoaded(true);
-      cbRef.current.onLoaded?.();
-      return;
-    }
-
-    // Auto-detect layout from image dimensions
-    setImageLoaded(false);
     let cancelled = false;
     const img = new Image();
     img.referrerPolicy = "no-referrer";
 
     img.onload = () => {
       if (cancelled) return;
-      setDetectedLayout(detectLayout(img.naturalWidth, img.naturalHeight));
+      // Only auto-detect layout when no explicit cols/rows provided
+      if (!hasExplicitLayout) {
+        setDetectedLayout(detectLayout(img.naturalWidth, img.naturalHeight));
+      }
       setImageLoaded(true);
       cbRef.current.onLoaded?.();
     };

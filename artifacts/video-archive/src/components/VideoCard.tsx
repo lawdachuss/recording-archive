@@ -85,21 +85,18 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   // (`onLoadedData`) — until then the thumbnail stays visible with a loading
   // bar, so hovering never flashes a black box.
   const [previewReady, setPreviewReady] = useState(false);
-  // Real-time buffered progress of the hover video (0-100), shown as the bar
-  // at the bottom of the card so the loader reflects the actual fetch.
-  const [bufferProgress, setBufferProgress] = useState(0);
   useEffect(() => {
     setMediaFail("none");
     setPreviewReady(false);
-    setBufferProgress(0);
   }, [previewUrl]);
 
   // The hover <video> unmounts when the pointer leaves, so re-entering must
   // go through the ready gate again (loading bar over thumbnail, never black).
+  // Also reset mediaFail so the preview retry works on re-hover.
   useEffect(() => {
     if (!isHovered) {
+      setMediaFail("none");
       setPreviewReady(false);
-      setBufferProgress(0);
     }
   }, [isHovered]);
 
@@ -122,17 +119,6 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
       setSpriteFailed(false);
     }
   }, [isHovered]);
-
-  const onPreviewProgress = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
-    const v = e.currentTarget;
-    const duration = v.duration;
-    if (!Number.isFinite(duration) || duration <= 0) return;
-    const buffered = v.buffered;
-    if (!buffered || buffered.length === 0) return;
-    const loaded = buffered.end(buffered.length - 1);
-    const pct = Math.min(100, Math.max(0, Math.round((loaded / duration) * 100)));
-    setBufferProgress(pct);
-  }, []);
 
   // `canplay`/`loadeddata` fire as soon as bytes are buffered, which can be
   // well before the first frame is actually painted to the screen. Flipping
@@ -224,15 +210,32 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
           {/* Hidden preload video — only for actual video files (.mp4 etc.),
               NOT for .webp images (loading a .webp into <video> wastes a
               connection slot and blocks the <img> from loading). */}
+          {/* Hidden preload video — warms the HTTP cache for instant hover
+              playback. Uses preload="metadata" to avoid buffering the full
+              video (the visible <video> on hover handles actual playback). */}
           {usePreviewChain && preloadVideoUrl && !isSlowConnection && !isWebpPreview && (
             <video
               src={preloadVideoUrl}
               className="hidden"
-              muted playsInline preload="auto"
+              muted playsInline preload="metadata"
               aria-hidden
               ref={(el) => {
                 if (el) (el as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
               }}
+            />
+          )}
+
+          {/* Sprite sheet is the instant hover preview — rendered BELOW
+              preview elements so video/image layers on top when loaded. */}
+          {showSprite && spriteUrl && (
+            <SpriteSlideshow
+              spriteUrl={spriteUrl}
+              cols={spriteGrid?.cols}
+              rows={spriteGrid?.rows}
+              className="absolute inset-0 w-full h-full"
+              active={showSprite}
+              onLoaded={() => setSpriteReady(true)}
+              onError={() => setSpriteFailed(true)}
             />
           )}
 
@@ -298,7 +301,6 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
                   )}
                   autoPlay muted playsInline
                   preload="auto"
-                  onProgress={onPreviewProgress}
                   onCanPlay={onPreviewReady}
                   onError={() => setMediaFail((f) => (f === "none" ? "video" : f))}
                   ref={(el) => {
@@ -325,20 +327,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             </div>
           )}
 
-          {/* Sprite sheet is the primary hover preview when available — it
-              renders above the thumbnail (or the initials fallback) so it
-              works whether or not a static image exists. */}
-          {showSprite && spriteUrl && (
-            <SpriteSlideshow
-              spriteUrl={spriteUrl}
-              cols={spriteGrid?.cols}
-              rows={spriteGrid?.rows}
-              className="absolute inset-0 w-full h-full"
-              active={showSprite}
-              onLoaded={() => setSpriteReady(true)}
-              onError={() => setSpriteFailed(true)}
-            />
-          )}
+
 
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent opacity-50 pointer-events-none" />
 
