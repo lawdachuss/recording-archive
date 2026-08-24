@@ -118,7 +118,7 @@ function CircleCard({ performer, fetchPriority }: { performer: Performer; fetchP
                 alt={performer.username}
                 fetchPriority={fetchPriority}
                 loading={fetchPriority === "high" ? "eager" : "lazy"}
-                className="w-full h-full object-cover object-top transition-transform duration-500 ease-out group-hover:scale-110 will-change-transform"
+                className="w-full h-full object-cover object-top group-hover:scale-110"
                 containerClassName="w-full h-full"
               />
             ) : (
@@ -176,7 +176,7 @@ const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { perf
               alt={performer.username}
               fetchPriority={fetchPriority}
               loading={fetchPriority === "high" ? "eager" : "lazy"}
-              className="object-cover object-top transition-all duration-600 ease-out will-change-transform scale-100"
+              className="object-cover object-top"
               containerClassName="absolute inset-0 w-full h-full"
               fallback={<div className="absolute inset-0 bg-secondary/60" />}
               noShimmer
