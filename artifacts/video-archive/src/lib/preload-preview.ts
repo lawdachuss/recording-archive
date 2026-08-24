@@ -147,6 +147,11 @@ export function preloadAnimatedImage(url: string): void {
     // Persist to IDB blob cache for repeat-visit speed (fire-and-forget)
     cacheImage(url);
   };
+  img.onerror = () => {
+    // Preload failed (DNS, CORS, network) — silently remove from cache
+    // so a future attempt can retry.
+    preloadCache.delete(url);
+  };
   preloadCache.set(url, img);
   img.src = url;
 }
