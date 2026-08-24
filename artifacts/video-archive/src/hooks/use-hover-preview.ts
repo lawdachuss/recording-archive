@@ -6,17 +6,12 @@ import {
   preloadPreviewMedia,
 } from "@/lib/preload-preview";
 import { preloadImage } from "@/lib/preload-sprite";
+import { isConnectionConstrained } from "@/lib/connection";
 
 const DEBUG = false;
 function dlog(...args: any[]) { if (DEBUG) console.log("[HoverPreview]", ...args); }
 
-function isConnectionConstrained(): boolean {
-  const conn = (navigator as any).connection;
-  if (!conn) return false;
-  if (conn.saveData) return true;
-  const slow = ["slow-2g", "2g", "3g"];
-  return typeof conn.effectiveType === "string" && slow.includes(conn.effectiveType);
-}
+
 
 /**
  * Preview URLs reach this hook already routed through the media proxy

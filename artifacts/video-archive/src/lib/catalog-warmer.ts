@@ -16,6 +16,7 @@ import { listRecordings } from "@workspace/api-client-react";
 import { proxyUrl } from "@/lib/proxy-url";
 import { isReachablePreviewUrl } from "@/lib/preload-sprite";
 import { evictIfNeeded } from "@/lib/image-cache";
+import { isConnectionConstrained } from "@/lib/connection";
 
 // ─── Configuration ──────────────────────────────────────────────────────────
 
@@ -101,16 +102,6 @@ function getAdaptiveConcurrency(): number {
   if (median > FAST_THRESHOLD_BPS) return CONCURRENCY_FAST;
   if (median < SLOW_THRESHOLD_BPS) return CONCURRENCY_SLOW;
   return CONCURRENCY_MEDIUM;
-}
-
-// ─── Connection detection ───────────────────────────────────────────────────
-
-function isConnectionConstrained(): boolean {
-  const conn = (navigator as any).connection;
-  if (!conn) return false;
-  if (conn.saveData) return true;
-  const slow = ["slow-2g", "2g", "3g"];
-  return typeof conn.effectiveType === "string" && slow.includes(conn.effectiveType);
 }
 
 function getMaxPages(): number {

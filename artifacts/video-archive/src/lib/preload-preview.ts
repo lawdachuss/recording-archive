@@ -9,6 +9,7 @@
  */
 
 import { cacheImage } from "@/lib/image-cache";
+import { isConnectionConstrained } from "@/lib/connection";
 
 const preloadCache = new Map<string, HTMLVideoElement | HTMLImageElement | true>();
 
@@ -19,17 +20,7 @@ const MAX_VIDEO_ELEMENTS = 20;
 // Separate queue tracking video URLs for O(1) eviction (FIFO order).
 const videoKeys: string[] = [];
 
-function isConnectionConstrained(): boolean {
-  try {
-    const conn = (navigator as any).connection;
-    if (!conn) return false;
-    if (conn.saveData) return true;
-    const slow = ["slow-2g", "2g", "3g"];
-    return typeof conn.effectiveType === "string" && slow.includes(conn.effectiveType);
-  } catch {
-    return false;
-  }
-}
+
 
 /**
  * Unwrap a media-proxy URL (`/api/media?url=<encoded>`) to extract the

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { preloadRecordingSprites } from "@/lib/preload-sprite";
+import { isConnectionConstrained } from "@/lib/connection";
 
 type RecordingLike = {
   id: string | number;
@@ -7,18 +8,6 @@ type RecordingLike = {
   thumbnail_url?: string | null;
   preview_url?: string | null;
 };
-
-function isConnectionConstrained(): boolean {
-  try {
-    const conn = (navigator as any).connection;
-    if (!conn) return false;
-    if (conn.saveData) return true;
-    const slow = ["slow-2g", "2g", "3g"];
-    return typeof conn.effectiveType === "string" && slow.includes(conn.effectiveType);
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Warm hover media (sprites + reachable previews) for a list of recordings as
