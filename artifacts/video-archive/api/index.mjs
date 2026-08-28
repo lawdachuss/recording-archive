@@ -70879,6 +70879,16 @@ function performerExistsOnPlatform(html, username, platform) {
     if (/class="[^"]*profile-avatar[^"]*"/i.test(html)) return true;
     if (/class="[^"]*panel-avatar[^"]*"/i.test(html)) return true;
     if (/class="[^"]*room-status[^"]*"/i.test(html)) return true;
+    const cbCanonical = (html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i) || html.match(/<link[^>]+href=["']([^"']+)["'][^>]+rel=["']canonical["']/i))?.[1];
+    if (cbCanonical) {
+      const normalized = cbCanonical.replace(/\/+$/, "").toLowerCase();
+      if (normalized === `https://chaturbate.com/${usernameLower}` || normalized === `https://chaturbate.com/${usernameLower}/`) return true;
+    }
+    const cbOgUrl = extractMetaContent(html, "og:url");
+    if (cbOgUrl) {
+      const normalized = cbOgUrl.replace(/\/+$/, "").toLowerCase();
+      if (normalized === `https://chaturbate.com/${usernameLower}` || normalized === `https://chaturbate.com/${usernameLower}/") return true;
+    }
   }
   if (platform === "stripchat") {
     const expectedUrls = [
