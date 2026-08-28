@@ -70935,7 +70935,8 @@ router3.get("/performers/lookup", cache({ ttlSeconds: 120, staleSeconds: 300, ta
         res.json(result);
         return;
       }
-      if (result.in_archive) { result.exists = true; result.platform_check_failed = true; }
+      result.platform_check_failed = true;
+      if (result.in_archive) result.exists = true;
       res.json(result);
       return;
     }

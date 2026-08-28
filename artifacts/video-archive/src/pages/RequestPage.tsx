@@ -469,6 +469,13 @@ function Step2PerformerLookup({
           {!lookupLoading && !hasError && data && (
             data.exists ? (
               <PerformerDetailsCard data={data} />
+            ) : data.platform_check_failed ? (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
+                <p className="text-xs font-medium text-amber-500">Could not verify performer on {platform}</p>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  The platform check failed — you can still submit this request and it will be reviewed manually.
+                </p>
+              </div>
             ) : (
               <PerformerLookupNotFound
                 platform={platform ?? ""}
