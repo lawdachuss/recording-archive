@@ -98,14 +98,25 @@ export const OptimizedImage = memo(function OptimizedImage({
     };
   }, []);
 
+  const [retryCount, setRetryCount] = useState(0);
   const onLoad = useCallback(() => {
     setLoaded(true);
   }, []);
 
   const onError = useCallback(() => {
+    // If displaying a stale blob URL, fall back to the original URL
+    if (blobUrlRef.current && displaySrc.startsWith("blob:")) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+      if (retryCount === 0) {
+        setRetryCount(1);
+        setDisplaySrc(resolvedSrc);
+        return;
+      }
+    }
     setError(true);
     setLoaded(true);
-  }, []);
+  }, [displaySrc, resolvedSrc, retryCount]);
 
   if (error) {
     return fallback ?? <DefaultFallback />;
