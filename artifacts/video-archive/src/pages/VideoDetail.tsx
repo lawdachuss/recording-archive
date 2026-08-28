@@ -185,7 +185,7 @@ export default function VideoDetail() {
   const { data: video, isLoading, isError } = useGetRecording(id || "", {
     query: { enabled: !!id, queryKey: getGetRecordingQueryKey(id || "") },
   });
-n  // Track watch progress (time spent, resume position, completion %)
+  // Track watch progress (time spent, resume position, completion %)
   useWatchProgress({ video, durationSeconds: video?.duration });
 
   const { data: related, isLoading: relatedLoading } = useListRelatedRecordings(
