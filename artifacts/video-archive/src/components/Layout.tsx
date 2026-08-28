@@ -25,6 +25,7 @@ const FOOTER_PAGE_IMPORTS: Record<string, () => Promise<unknown>> = {
   "/bookmarks": () => import("@/pages/Bookmarks"),
   "/watch-later": () => import("@/pages/WatchLater"),
   "/history": () => import("@/pages/History"),
+  "/analytics": () => import("@/pages/Analytics"),
   "/request": () => import("@/pages/RequestPage"),
 };
 
@@ -372,6 +373,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <Link href="/bookmarks" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/bookmarks")}>Bookmarks</Link>
               <Link href="/watch-later" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/watch-later")}>Watch Later</Link>
               <Link href="/history" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/history")}>History</Link>
+              <Link href="/analytics" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/analytics")}>Analytics</Link>
               <span className="hidden sm:block w-px h-3 bg-border/40 self-center" />
               <span className="cursor-default">Terms</span>
               <span className="cursor-default">Privacy</span>

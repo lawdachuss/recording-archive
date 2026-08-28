@@ -22,6 +22,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { userApi, recordingToMeta, type CloudCollection } from "@/lib/user-api";
 import { addWatchedId } from "@/lib/watched-storage";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
+import { useWatchProgress } from "@/hooks/use-watch-progress";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { proxyUrl } from "@/lib/proxy-url";
 
@@ -181,10 +182,11 @@ export default function VideoDetail() {
   const REC_PAGE_SIZE = 12;
   const queryClient = useQueryClient();
   const recentlyWatched = useRecentlyWatched();
-
   const { data: video, isLoading, isError } = useGetRecording(id || "", {
     query: { enabled: !!id, queryKey: getGetRecordingQueryKey(id || "") },
   });
+n  // Track watch progress (time spent, resume position, completion %)
+  useWatchProgress({ video, durationSeconds: video?.duration });
 
   const { data: related, isLoading: relatedLoading } = useListRelatedRecordings(
     { id: id || "", limit: 12 },

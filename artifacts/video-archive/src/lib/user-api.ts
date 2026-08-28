@@ -32,6 +32,9 @@ export interface CloudItem {
   saved_at?: string;
   watched_at?: string;
   added_at?: string;
+  progress?: number;
+  last_position_ms?: number;
+  total_watch_ms?: number;
 }
 
 export interface CloudCollection {
@@ -65,6 +68,31 @@ export interface UserProfile {
   bio: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ContinueWatchingItem {
+  recording_id: string;
+  metadata: string | null;
+  watched_at: string;
+  progress: number;
+  last_position_ms: number;
+  total_watch_ms: number;
+}
+
+export interface PerformerWatchStat {
+  username: string;
+  count: number;
+  watchMs: number;
+}
+
+export interface WatchStats {
+  totalWatchMs: number;
+  totalVideos: number;
+  completedVideos: number;
+  avgProgress: number;
+  topPerformers: PerformerWatchStat[];
+  dayBuckets: number[];
+  hourBuckets: number[];
 }
 
 export function parseCloudItem(item: CloudItem): SavedRecording {
@@ -149,6 +177,19 @@ export const userApi = {
       method: "POST",
       body: JSON.stringify({ recording_id, metadata }),
     }),
+  updateHistoryProgress: (
+    recording_id: string,
+    progress: number,
+    last_position_ms: number,
+    total_watch_ms: number,
+  ) =>
+    apiFetch("/api/user/history", {
+      method: "POST",
+      body: JSON.stringify({ recording_id, progress, last_position_ms, total_watch_ms }),
+    }),
+  getContinueWatching: (limit = 12) =>
+    apiFetch<ContinueWatchingItem[]>(`/api/user/history/continue?limit=${limit}`),
+  getWatchStats: () => apiFetch<WatchStats>("/api/user/history/stats"),
   clearHistory: () =>
     apiFetch("/api/user/history", { method: "DELETE" }),
 

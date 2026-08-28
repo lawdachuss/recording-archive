@@ -22,6 +22,7 @@ const PerformerProfile = lazy(() => import("@/pages/PerformerProfile"));
 const TagsPage = lazy(() => import("@/pages/TagsPage"));
 const Bookmarks = lazy(() => import("@/pages/Bookmarks"));
 const History = lazy(() => import("@/pages/History"));
+const Analytics = lazy(() => import("@/pages/Analytics"));
 const WatchLater = lazy(() => import("@/pages/WatchLater"));
 const Charts = lazy(() => import("@/pages/Charts"));
 const Collections = lazy(() => import("@/pages/Collections"));
@@ -132,6 +133,9 @@ function Router() {
         </Route>
         <Route path="/history">
           <ProtectedRoute><History /></ProtectedRoute>
+        </Route>
+        <Route path="/analytics">
+          <ProtectedRoute><Analytics /></ProtectedRoute>
         </Route>
         <Route path="/watch-later">
           <ProtectedRoute><WatchLater /></ProtectedRoute>

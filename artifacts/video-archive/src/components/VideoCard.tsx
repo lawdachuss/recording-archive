@@ -55,9 +55,11 @@ interface VideoCardProps {
   onRemove?: () => void;
   fetchPriority?: "high" | "low" | "auto";
   isWatched?: boolean;
+  /** 0-100 completion percentage. Shows progress bar when > 0 and < 100. */
+  progress?: number;
 }
 
-export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemove, fetchPriority, isWatched }: VideoCardProps) {
+export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemove, fetchPriority, isWatched, progress }: VideoCardProps) {
   const thumbnailUrl = useMemo(() => proxyUrl(recording.thumbnail_url), [recording.thumbnail_url]);
   const previewUrl = useMemo(() => proxyUrl(recording.preview_url), [recording.preview_url]);
   const spriteUrl = useMemo(() => proxyUrl(recording.sprite_url), [recording.sprite_url]);
@@ -396,6 +398,19 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               </span>
             )}
           </div>
+
+          {/* Progress bar */}
+          {progress !== undefined && progress > 0 && progress < 100 && (
+            <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/40 z-10">
+              <div
+                className="h-full bg-primary transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          )}
+          {progress !== undefined && progress >= 100 && (
+            <div className="absolute bottom-0 left-0 right-0 h-1 bg-green-500/60 z-10" />
+          )}
 
           <div className="absolute bottom-2 left-2 right-2 flex items-end justify-between pointer-events-none">
             {showDuration ? (
