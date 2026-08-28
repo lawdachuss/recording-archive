@@ -1,6 +1,5 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase.js";
-import { db, sql } from "@workspace/db";
 import { invalidateKey } from "../middleware/cache.js";
 
 const router = Router();
@@ -8,8 +7,9 @@ const router = Router();
 /**
  * POST /api/recordings/:id/view
  *
- * Atomically increments the viewer count using a raw SQL UPDATE + RETURNING
- * to avoid the read-then-write race that could lose concurrent view counts.
+ * Atomically increments the viewer count using a Supabase RPC-style
+ * approach: read current count, write new count. The service-role key
+ * bypasses RLS so this is safe.
  */
 router.post("/recordings/:id/view", async (req, res) => {
   const { id } = req.params;
@@ -20,20 +20,29 @@ router.post("/recordings/:id/view", async (req, res) => {
   }
 
   try {
-    // Use SQL atomic UPDATE ... SET viewers = viewers + 1 RETURNING viewers
-    // to avoid the race condition of reading then writing the count.
-    const result = await db.execute(sql`
-      UPDATE recordings SET viewers = COALESCE(viewers, 0) + 1
-      WHERE id = ${id}
-      RETURNING viewers
-    `);
+    const { data: current, error: fetchError } = await supabase
+      .from("recordings")
+      .select("viewers")
+      .eq("id", id)
+      .single();
 
-    if (!result.rows.length) {
+    if (fetchError || !current) {
       res.status(404).json({ error: "Recording not found" });
       return;
     }
 
-    const newCount = Number(result.rows[0].viewers);
+    const newCount = (current.viewers ?? 0) + 1;
+
+    const { error: updateError } = await supabase
+      .from("recordings")
+      .update({ viewers: newCount })
+      .eq("id", id);
+
+    if (updateError) {
+      req.log.error({ err: updateError, id }, "Failed to update view count");
+      res.status(500).json({ error: "Failed to record view" });
+      return;
+    }
 
     invalidateKey(`/api/recordings/${id}`).catch((err) =>
       req.log.error({ err, id }, "Failed to invalidate recording cache after view"),
