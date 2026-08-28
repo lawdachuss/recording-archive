@@ -15,7 +15,7 @@ import { formatBytes, formatRelativeTime } from "@/lib/formatters";
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
-import { userApi, parseCloudItem, type PerformerFollow } from "@/lib/user-api";
+import { userApi, parseCloudItem, cloudItemToRecording, type PerformerFollow } from "@/lib/user-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
@@ -234,11 +234,11 @@ export default function Home() {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-6">
               {continueWatching.map((item, i) => {
-                const rec = parseCloudItem(item);
+                const rec = cloudItemToRecording(parseCloudItem(item));
                 return (
                   <div key={item.recording_id}>
                     <VideoCard
-                      recording={{ ...rec, saved_at: item.watched_at ?? rec.saved_at }}
+                      recording={rec}
                       isWatched
                       progress={item.progress}
                       fetchPriority={i < 2 ? "high" : undefined}

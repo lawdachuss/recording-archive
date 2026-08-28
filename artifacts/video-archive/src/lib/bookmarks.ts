@@ -10,6 +10,7 @@ export interface SavedRecording {
   duration?: number | null;
   timestamp: string;
   saved_at: string;
+  progress?: number;
 }
 
 export function getRecentSearches(): string[] {
