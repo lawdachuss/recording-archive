@@ -6,6 +6,7 @@ import { cache } from "../middleware/cache.js";
 import { logger } from "../lib/logger.js";
 
 const COOKIES = process.env.COOKIES ?? "";
+const CB_AFFILIATE = process.env.CHATURBATE_AFFILIATE_CODE ?? "";
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 // Googlebot UA bypasses Cloudflare for Chaturbate (used only for API calls)
@@ -207,7 +208,7 @@ router.get(
 
       const profileUrl =
         platform === "chaturbate"
-          ? `https://chaturbate.com/${username}/?campaign=gpCZM`
+          ? `https://chaturbate.com/${username}/${CB_AFFILIATE ? `?campaign=${CB_AFFILIATE}` : ''}`
           : `https://stripchat.com/${username}`;
 
       const result: LookupResult = {
