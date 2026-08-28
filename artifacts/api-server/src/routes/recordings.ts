@@ -240,13 +240,12 @@ router.get("/recordings/random", cache({ ttlSeconds: 30, staleSeconds: 60, tags:
       excludeRaw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 100),
     );
 
-    // Fetch a pool of candidate IDs (more than needed for randomization)
+    // Fetch a pool of candidate IDs — randomize in JS (PostgREST doesn't support ORDER BY random())
     const POOL_SIZE = Math.max(200, excludeIds.size + 50);
     const { data: pool, error } = await supabase
       .from("recordings_with_links")
       .select("id")
       .not("links", "is", "null")
-      .order("random()")
       .limit(POOL_SIZE);
 
     if (error) {
@@ -264,7 +263,6 @@ router.get("/recordings/random", cache({ ttlSeconds: 30, staleSeconds: 60, tags:
         .from("recordings_with_links")
         .select("id")
         .not("links", "is", "null")
-        .order("random()")
         .limit(1);
       if (fallback && fallback.length > 0) {
         res.json({ id: fallback[0].id });
