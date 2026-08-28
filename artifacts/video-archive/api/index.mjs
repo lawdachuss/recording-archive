@@ -90075,6 +90075,25 @@ router8.post("/requests", requireAuth, async (req, res) => {
     return;
   }
   const validPriority = ["low", "normal", "high"].includes(priority ?? "") ? priority : "normal";
+  if (performer_username) {
+    try {
+      const existingCount = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM recordings_with_links
+        WHERE LOWER(username) = LOWER(${performer_username})
+          AND links IS NOT NULL
+      `);
+      const recordingCount = (existingCount.rows[0])?.count ?? 0;
+      if (recordingCount > 0) {
+        res.status(409).json({
+          error: `@${performer_username} already has ${recordingCount} recording${recordingCount === 1 ? "" : "s"} in the archive.`,
+          recording_count: recordingCount
+        });
+        return;
+      }
+    } catch {
+    }
+  }
   const dedupeKey = performer_username ? performer_username : stream_link;
   if (dedupeKey) {
     try {
