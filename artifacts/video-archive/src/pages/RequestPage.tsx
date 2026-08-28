@@ -432,7 +432,7 @@ function Step2PerformerLookup({
 
   useEffect(() => {
     inputRef.current?.focus();
-  }, []);
+  }, [username]);
 
   return (
     <div className="space-y-4 py-2">
