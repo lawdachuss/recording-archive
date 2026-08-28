@@ -234,23 +234,48 @@ router.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds: 
 
 router.get("/recordings/random", cache({ ttlSeconds: 30, staleSeconds: 60, tags: ["recordings"] }), async (req, res) => {
   try {
-    const { count } = await supabase
-      .from("recordings_with_links").select("id", { count: "exact", head: true }).not("links", "is", "null");
+    // Parse exclude list — comma-separated recording IDs to skip
+    const excludeRaw = typeof req.query.exclude === "string" ? req.query.exclude : "";
+    const excludeIds = new Set(
+      excludeRaw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 100),
+    );
 
-    if (!count || count === 0) { res.status(404).json({ error: "No recordings found" }); return; }
+    // Fetch a pool of candidate IDs (more than needed for randomization)
+    const POOL_SIZE = Math.max(200, excludeIds.size + 50);
+    const { data: pool, error } = await supabase
+      .from("recordings_with_links")
+      .select("id")
+      .not("links", "is", "null")
+      .order("random()")
+      .limit(POOL_SIZE);
 
-    const offset = Math.floor(Math.random() * count);
-    const { data } = await supabase
-      .from("recordings_with_links").select("id").not("links", "is", "null").order("id").range(offset, offset + 1);
+    if (error) {
+      req.log.error({ err: error }, "Supabase error getting recordings for random");
+      res.status(500).json({ error: "Failed to get random recording" });
+      return;
+    }
 
-    if (!data || data.length === 0) {
-      const { data: fb } = await supabase.from("recordings_with_links").select("id").not("links", "is", "null").order("id").limit(1);
-      if (fb && fb.length > 0) { res.json({ id: fb[0].id }); return; }
+    // Filter out excluded IDs and pick one
+    const candidates = (pool ?? []).filter((r) => !excludeIds.has(r.id));
+
+    if (candidates.length === 0) {
+      // Fallback: try without exclusion
+      const { data: fallback } = await supabase
+        .from("recordings_with_links")
+        .select("id")
+        .not("links", "is", "null")
+        .order("random()")
+        .limit(1);
+      if (fallback && fallback.length > 0) {
+        res.json({ id: fallback[0].id });
+        return;
+      }
       res.status(404).json({ error: "No recordings found" });
       return;
     }
 
-    res.json({ id: data[0].id });
+    const randomId = candidates[Math.floor(Math.random() * candidates.length)].id;
+    res.json({ id: randomId });
   } catch (err) {
     req.log.error({ err }, "GET /recordings/random unexpected error");
     res.status(500).json({ error: "Failed to get random recording" });
