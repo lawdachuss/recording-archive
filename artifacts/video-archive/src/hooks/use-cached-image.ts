@@ -40,14 +40,12 @@ export function useCachedImage(
         revokeRef.current = cached;
         setBlobUrl(cached);
         // Stale-while-revalidate: update IDB in background
-        cacheImage(url);
+        cacheImage(url, 2);
       } else {
         // Not cached — return null so caller uses the original URL
         setBlobUrl(null);
-        // Persist to IDB after the <img> loads (caller should trigger this)
-        // We use a MutationObserver-free approach: just fire-and-forget cacheImage
-        // when the URL changes, so the next visit is cached.
-        cacheImage(url);
+        // Persist to IDB so the next visit is instant
+        cacheImage(url, 2);
       }
     });
 

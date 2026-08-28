@@ -93,15 +93,15 @@ export function useHoverPreview({
           for (const entry of entries) {
             if (entry.isIntersecting && !intersectionPreloadedRef.current) {
               intersectionPreloadedRef.current = true;
-              // Skip preloading for catbox URLs — they block datacenter IPs
-              // and many residential networks. The sprite is the preview.
+              // Always preload the sprite — it's the instant hover effect.
+              // Also preload the preview media when reachable (skip catbox
+              // which blocks datacenter IPs and many residential networks).
+              if (spriteUrl) {
+                preloadImage(spriteUrl);
+              }
               const isCatbox = /catbox\.moe/i.test(previewUrl ?? "");
               if (previewUrl && !isCatbox) {
-                // preloadPreviewMedia / preloadImage already persist to IDB
-                // via img.onload → cacheImage() in preload-sprite.ts
                 preloadPreviewMedia(previewUrl);
-              } else if (spriteUrl) {
-                preloadImage(spriteUrl);
               }
               observer?.disconnect();
               break;

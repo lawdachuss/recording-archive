@@ -69,9 +69,9 @@ function startRequest(url: string, img: HTMLImageElement) {
 
   img.onload = () => {
     activeCount--;
-    // Persist to IDB blob cache for instant repeat-visit loading in
-    // OptimizedImage / preloadVideo / preloadAnimatedImage.
-    cacheImage(url); // fire-and-forget
+    // Persist to IDB blob cache for instant repeat-visit loading.
+    // Sprites and thumbnails get higher priority (3) so they're evicted last.
+    cacheImage(url, 3); // fire-and-forget
     pump();
   };
   img.onerror = () => {
