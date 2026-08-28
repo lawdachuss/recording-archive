@@ -171,7 +171,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     if (!previewUrl || isSlowConnection) return;
     const inspectUrl = getOriginalUrl(previewUrl) ?? previewUrl;
     if (getExt(inspectUrl) !== ".webp") return;
-    cacheImage(previewUrl); // fire-and-forget — persists to IDB
+    cacheImage(previewUrl, 1); // fire-and-forget — preview = cold, evict first
   }, [previewUrl, isSlowConnection]);
 
   // `canplay`/`loadeddata` fire as soon as bytes are buffered, which can be
@@ -221,21 +221,13 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   const showWebpVideoFallback = isWebpPreview && usePreviewChain && showVideo && mediaFail === "video";
   const showVideoEl = !isWebpPreview && usePreviewChain && showVideo && mediaFail === "none";
   const showImgFallback = !isWebpPreview && usePreviewChain && showAnimatedImage && mediaFail === "video";
-  const restoreStatic =
-    mediaFail === "all" || (mediaFail === "video" && !showAnimatedImage && !isWebpPreview) || !usePreviewChain;
 
   const showSprite = isHovered && useSprite;
 
-  // The sprite is the primary hover effect — hide the static thumbnail as
-  // soon as the sprite has painted. Preview video/image layers on top of the
-  // sprite (not the thumbnail) for a seamless crossfade.
-  const hideStatic =
-    (showSprite && spriteReady) || (showPreview && !restoreStatic && previewReady);
-  // Only show loading bar when the preview video is trying to load AND the
-  // sprite hasn't painted yet. If the sprite is already showing, the user
-  // has instant feedback — no loading bar needed.
-  const showLoadingBar =
-    usePreviewChain && showPreview && mediaFail === "none" && !previewReady && !(showSprite && spriteReady);
+  // Show loading shimmer whenever the user is hovering and something is
+  // loading but nothing is visually playing yet. Once the sprite or preview
+  // paints, the shimmer disappears — the user has real content.
+  const showLoadingBar = isHovered && !spriteReady && !previewReady && (useSprite || usePreviewChain);
 
   // Fail-fast timer: unmount the hanging <video> / <img> after the timeout and
   // mark the preview failed, so the sprite/static fallback engages in seconds
@@ -261,12 +253,9 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
       <div ref={viewportRef} className="flex flex-col gap-2">
         <div className="relative aspect-video overflow-hidden bg-secondary rounded-sm will-change-transform">
 
-          {/* Hidden preload video — only for actual video files (.mp4 etc.),
-              NOT for .webp images (loading a .webp into <video> wastes a
-              connection slot and blocks the <img> from loading). */}
           {/* Hidden preload video — warms the HTTP cache for instant hover
-              playback. Uses preload="metadata" to avoid buffering the full
-              video (the visible <video> on hover handles actual playback). */}
+              playback. Only for actual video files (.mp4 etc.), NOT for .webp
+              images (loading a .webp into <video> wastes a connection slot). */}
           {usePreviewChain && preloadVideoUrl && !isSlowConnection && !isWebpPreview && (
             <video
               src={preloadVideoUrl}
@@ -279,21 +268,8 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             />
           )}
 
-          {/* Sprite sheet is the instant hover preview — rendered BELOW
-              preview elements so video/image layers on top when loaded. */}
-          {showSprite && spriteUrl && (
-            <SpriteSlideshow
-              spriteUrl={spriteUrl}
-              cols={spriteGrid?.cols}
-              rows={spriteGrid?.rows}
-              className="absolute inset-0 w-full h-full"
-              active={showSprite}
-              onLoaded={() => setSpriteReady(true)}
-              onError={() => setSpriteFailed(true)}
-            />
-          )}
-
-          {/* Static thumbnail or initials fallback */}
+          {/* Layer 1: Static thumbnail or initials fallback — always visible,
+              provides the base image underneath sprite/preview layers. */}
           {hasStaticImage ? (
             <div className="absolute inset-0 w-full h-full">
               <OptimizedImage
@@ -301,9 +277,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
                 alt={recording.username}
                 fetchPriority={fetchPriority}
                 loading={fetchPriority === "high" ? "eager" : "lazy"}
-                className={cn(
-                  hideStatic ? "opacity-0" : "opacity-100"
-                )}
+                className="opacity-100"
                 containerClassName="absolute inset-0 w-full h-full"
                 fallback={
                   <div className="absolute inset-0 bg-secondary" />
@@ -319,14 +293,29 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             </div>
           )}
 
-          {/* Preview overlays — rendered outside thumbnail branch so they
-              work whether or not a static image exists. */}
+          {/* Layer 2: Sprite sheet — instant hover preview, fades in smoothly
+              on top of the thumbnail. No need to hide the thumbnail because
+              the sprite covers it when ready. */}
+          {showSprite && spriteUrl && (
+            <SpriteSlideshow
+              spriteUrl={spriteUrl}
+              cols={spriteGrid?.cols}
+              rows={spriteGrid?.rows}
+              className="absolute inset-0 w-full h-full transition-opacity duration-300"
+              active={showSprite}
+              onLoaded={() => setSpriteReady(true)}
+              onError={() => setSpriteFailed(true)}
+            />
+          )}
+
+          {/* Layer 3: Preview video/image — loads on top of sprite when
+              available. Fades in when the first frame is painted. */}
           {showWebpImg && animatedImageUrl && (
             <img
               src={webpBlobUrl || animatedImageUrl}
               alt={recording.username}
               referrerPolicy="no-referrer"
-              className="absolute inset-0 w-full h-full object-cover"
+              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
               style={{ opacity: previewReady ? 1 : 0 }}
               onLoad={() => setPreviewReady(true)}
               onError={() => setMediaFail("video")}
@@ -336,7 +325,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             <video
               src={videoUrl}
               className={cn(
-                "absolute inset-0 w-full h-full object-cover",
+                "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
                 previewReady ? "opacity-100" : "opacity-0"
               )}
               autoPlay muted playsInline
@@ -353,7 +342,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               src={videoUrl}
               poster={hasStaticImage ? staticImage! : undefined}
               className={cn(
-                "absolute inset-0 w-full h-full object-cover",
+                "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
                 previewReady ? "opacity-100" : "opacity-0"
               )}
               autoPlay muted playsInline
@@ -370,13 +359,13 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               src={animatedImageUrl}
               alt={recording.username}
               referrerPolicy="no-referrer"
-              className="absolute inset-0 w-full h-full object-cover"
+              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
               onLoad={() => setPreviewReady(true)}
               onError={() => setMediaFail("all")}
             />
           )}
 
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent opacity-50 pointer-events-none" />
+
 
           {/* Shimmer + pulse animation while the preview loads — replaces
               the old thin progress bar with a more attractive effect. */}

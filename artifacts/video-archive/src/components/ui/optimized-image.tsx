@@ -77,12 +77,12 @@ export const OptimizedImage = memo(function OptimizedImage({
         if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
         blobUrlRef.current = blobUrl;
         setDisplaySrc(blobUrl);
-        // Stale-while-revalidate: update IDB in background
-        cacheImage(resolvedSrc);
+        // Stale-while-revalidate: update IDB in background (thumbnail = hot)
+        cacheImage(resolvedSrc, 3);
       } else {
         setDisplaySrc(resolvedSrc);
         // Not cached — persist for next visit after image loads
-        cacheImage(resolvedSrc);
+        cacheImage(resolvedSrc, 3);
       }
     });
     return () => { cancelled = true; };

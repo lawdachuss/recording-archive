@@ -5,9 +5,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { userApi, type UserProfile } from "@/lib/user-api";
 import { getSoundEnabled, getVibrationEnabled, fetchSoundPreferences, saveSoundPreferences } from "@/lib/sound-prefs";
 import { getSupabase } from "@/lib/supabase";
+import { useCacheProfiler, type CacheProfile } from "@/hooks/use-cache-profiler";
+import { clearImageCache, getCacheStats } from "@/lib/image-cache";
 import {
   Settings as SettingsIcon, User, Lock, Save, AlertCircle, CheckCircle2,
-  Bell, BellOff, Mail, Volume2, Smartphone,
+  Bell, BellOff, Mail, Volume2, Smartphone, Database, Trash2, RefreshCw,
 } from "lucide-react";
 
 const NOTIF_LABELS: Record<string, { label: string; description: string }> = {
@@ -118,6 +120,28 @@ export default function Settings() {
       setConfirmPw("");
     }
     setTimeout(() => setPwMsg(null), 3000);
+  };
+
+  // Cache profiling
+  const cacheStats = useCacheProfiler(2000);
+  const [clearingCache, setClearingCache] = useState(false);
+  const [cacheCleared, setCacheCleared] = useState(false);
+  const [cacheSize, setCacheSize] = useState<{ memoryEntries: number; memoryBytes: number; idbEntries: number; idbBytes: number } | null>(null);
+
+  useEffect(() => {
+    if (!cacheStats) return;
+    getCacheStats().then(setCacheSize);
+  }, [cacheStats?.totalLookups]); // re-fetch when lookup count changes
+
+  const handleClearCache = async () => {
+    setClearingCache(true);
+    try {
+      await clearImageCache();
+      setCacheCleared(true);
+      setTimeout(() => setCacheCleared(false), 3000);
+    } finally {
+      setClearingCache(false);
+    }
   };
 
   if (loading) return null;
@@ -631,7 +655,156 @@ export default function Settings() {
             </button>
           </form>
         </section>
+
+        {/* Cache Performance */}
+        <section className="border border-border/40 rounded-xl p-5 sm:p-6 bg-card">
+          <div className="flex items-center gap-2 mb-5 pb-3 border-b border-border/30">
+            <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Database className="w-3.5 h-3.5 text-primary" />
+            </div>
+            <h2 className="text-sm font-semibold">Cache Performance</h2>
+          </div>
+
+          {cacheStats ? (
+            <div className="space-y-4">
+              {/* Hit Rate Gauges */}
+              <div className="grid grid-cols-3 gap-3">
+                <StatCard
+                  label="Memory"
+                  value={`${cacheStats.memoryHitRate.toFixed(1)}%`}
+                  detail={`${cacheStats.memoryHits} hits`}
+                  color="text-green-400"
+                />
+                <StatCard
+                  label="IDB"
+                  value={`${cacheStats.idbHitRate.toFixed(1)}%`}
+                  detail={`${cacheStats.idbHits} hits`}
+                  color="text-blue-400"
+                />
+                <StatCard
+                  label="Overall"
+                  value={`${cacheStats.overallHitRate.toFixed(1)}%`}
+                  detail={`${cacheStats.totalLookups} total`}
+                  color="text-primary"
+                />
+              </div>
+
+              {/* Timing */}
+              <div className="grid grid-cols-2 gap-3">
+                <StatCard
+                  label="IDB Lookup"
+                  value={cacheStats.idbLookupCount > 0 ? `${(cacheStats.idbLookupMs / cacheStats.idbLookupCount).toFixed(1)}ms` : "—"}
+                  detail={`${cacheStats.idbLookupCount} lookups`}
+                  color="text-yellow-400"
+                />
+                <StatCard
+                  label="Fetch"
+                  value={cacheStats.fetchCount > 0 ? `${(cacheStats.fetchMs / cacheStats.fetchCount).toFixed(0)}ms` : "—"}
+                  detail={`${cacheStats.fetchCount} fetches, ${cacheStats.deduped} deduped`}
+                  color="text-orange-400"
+                />
+              </div>
+
+              {/* Cache Size */}
+              {cacheSize && (
+                <div className="bg-secondary/30 rounded-lg p-3">
+                  <p className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-2">Storage</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground/60">Memory LRU</p>
+                      <p className="text-sm font-bold text-green-400">{cacheSize.memoryEntries} entries</p>
+                      <p className="text-[10px] text-muted-foreground/40">~{(cacheSize.memoryBytes / 1024 / 1024).toFixed(1)} MB / 50 MB cap</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground/60">IndexedDB</p>
+                      <p className="text-sm font-bold text-blue-400">{cacheSize.idbEntries} entries</p>
+                      <p className="text-[10px] text-muted-foreground/40">{(cacheSize.idbBytes / 1024 / 1024).toFixed(1)} MB / 200 MB cap</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Category Breakdown */}
+              {Object.keys(cacheStats.byCategory).length > 0 && (
+                <div>
+                  <p className="text-[11px] text-muted-foreground/50 uppercase tracking-wider font-medium mb-2">
+                    By Category
+                  </p>
+                  <div className="space-y-1.5">
+                    {Object.entries(cacheStats.byCategory).map(([cat, stats]: [string, { hits: number; misses: number; fetches: number }]) => {
+                      const total = stats.hits + stats.misses;
+                      const hitRate = total > 0 ? (stats.hits / total) * 100 : 0;
+                      return (
+                        <div key={cat} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-secondary/30">
+                          <span className="text-xs font-medium capitalize w-20 shrink-0">{cat}</span>
+                          <div className="flex-1 h-1.5 bg-secondary rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary/60 rounded-full transition-all duration-500"
+                              style={{ width: `${hitRate}%` }}
+                            />
+                          </div>
+                          <span className="text-[11px] text-muted-foreground/60 w-16 text-right">
+                            {hitRate.toFixed(0)}% ({stats.hits}/{total})
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Live indicator + Clear button */}
+              <div className="flex items-center justify-between pt-2 border-t border-border/20">
+                <div className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                  <span className="text-[11px] text-muted-foreground/50">
+                    Live • {Math.round((Date.now() - cacheStats.startTime) / 1000)}s elapsed
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.location.reload()}
+                    className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-medium border border-border/40 rounded-md text-muted-foreground hover:text-foreground hover:border-border transition-colors"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    Refresh
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearCache}
+                    disabled={clearingCache}
+                    className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-medium border border-destructive/30 rounded-md text-destructive/80 hover:text-destructive hover:border-destructive/50 transition-colors disabled:opacity-60"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    {clearingCache ? "Clearing…" : "Clear Cache"}
+                  </button>
+                </div>
+              </div>
+
+              {cacheCleared && (
+                <p className="text-[11px] text-green-400 text-center">Cache cleared successfully.</p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-10 bg-secondary/30 rounded-lg animate-pulse" />
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     </Layout>
+  );
+}
+
+function StatCard({ label, value, detail, color }: { label: string; value: string; detail: string; color: string }) {
+  return (
+    <div className="bg-secondary/30 rounded-lg p-3">
+      <p className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-1">{label}</p>
+      <p className={`text-lg font-bold ${color}`}>{value}</p>
+      <p className="text-[10px] text-muted-foreground/40 mt-0.5">{detail}</p>
+    </div>
   );
 }

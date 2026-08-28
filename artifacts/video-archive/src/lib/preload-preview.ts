@@ -113,7 +113,7 @@ export function preloadVideo(url: string): void {
   (v as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
   v.src = url;
   // Persist to IDB blob cache after load (fire-and-forget)
-  v.onloadeddata = () => { cacheImage(url); };
+  v.onloadeddata = () => { cacheImage(url, 1); };
   preloadCache.set(url, v);
   videoKeys.push(url);
 }
@@ -136,7 +136,7 @@ export function preloadAnimatedImage(url: string): void {
   img.decoding = "async";
   img.onload = () => {
     // Persist to IDB blob cache for repeat-visit speed (fire-and-forget)
-    cacheImage(url);
+    cacheImage(url, 1);
   };
   img.onerror = () => {
     // Preload failed (DNS, CORS, network) — silently remove from cache
