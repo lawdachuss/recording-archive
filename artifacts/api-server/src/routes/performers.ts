@@ -258,10 +258,13 @@ router.get(
           res.json(result);
           return;
         }
-        // API failed -- fall back to archive-only if available
+        // API failed (Chaturbate blocks Vercel IPs via Cloudflare).
+        // If the performer is in our archive, we know they exist.
+        // Otherwise set platform_check_failed so the frontend can show a
+        // helpful message instead of "Performer not found".
+        result.platform_check_failed = true;
         if (result.in_archive) {
           result.exists = true;
-          result.platform_check_failed = true;
         }
         res.json(result);
         return;
