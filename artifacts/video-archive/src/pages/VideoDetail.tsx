@@ -96,6 +96,9 @@ function isEmbedUrl(url: string): boolean {
     if (hostname.includes("upns")) {
       return true;
     }
+    if (hostname.includes("vidara")) {
+      return true;
+    }
     return false;
   } catch {
     return false;
@@ -125,6 +128,10 @@ function deriveServers(
           const pdMatch = parsed.pathname.match(/^\/api\/file\/(.+)/);
           if (parsed.hostname.includes("pixeldrain") && pdMatch) {
             url = `https://pixeldrain.com/u/${pdMatch[1]}`;
+          }
+          // Vidara: /v/XXX is the download page, /e/XXX is the embed player
+          if (parsed.hostname.includes("vidara") && parsed.pathname.startsWith("/v/")) {
+            url = parsed.origin + "/e" + parsed.pathname.slice(2);
           }
         } catch {}
         if (isEmbedUrl(url)) {
