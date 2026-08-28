@@ -6,8 +6,15 @@ import { cache } from "../middleware/cache.js";
 
 const COOKIES = process.env.COOKIES ?? "";
 
+// Stripchat pages are massive React SPAs (2-5 MB inline JS/state).
+// We only need the <head> meta tags and a small slice of <body>, so we
+// stream the response and stop after MAX_STRIPCHAT_BYTES to avoid
+// pulling the entire page into memory.
+const MAX_STRIPCHAT_BYTES = 120_000; // ~120 KB – enough for <head> + early <body>
+
 async function fetchWithCookies(url: string): Promise<string | null> {
   try {
+    const isStripchat = /stripchat\.com/i.test(url);
     const res = await fetch(url, {
       headers: {
         "User-Agent":
@@ -18,7 +25,28 @@ async function fetchWithCookies(url: string): Promise<string | null> {
       },
     });
     if (!res.ok) return null;
-    return res.text();
+
+    // For non-Stripchat pages (Chaturbate) return the full body – they are
+    // small enough. For Stripchat, stream and cap at MAX_STRIPCHAT_BYTES.
+    if (!isStripchat || !res.body) {
+      return res.text();
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let accumulated = "";
+    let totalBytes = 0;
+
+    while (totalBytes < MAX_STRIPCHAT_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      accumulated += decoder.decode(value, { stream: true });
+    }
+
+    // Release the reader so the connection can close cleanly.
+    reader.releaseLock();
+    return accumulated;
   } catch {
     return null;
   }
