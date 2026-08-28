@@ -70823,8 +70823,10 @@ var recordings_default = router2;
 // src/routes/performers.ts
 var import_express3 = __toESM(require_express2(), 1);
 var COOKIES = process.env.COOKIES ?? "";
+var MAX_STRIPCHAT_BYTES = 12e4;
 async function fetchWithCookies(url2) {
   try {
+    const isStripchat = /stripchat\.com/i.test(url2);
     const res = await fetch(url2, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -70834,7 +70836,19 @@ async function fetchWithCookies(url2) {
       }
     });
     if (!res.ok) return null;
-    return res.text();
+    if (!isStripchat || !res.body) return res.text();
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let accumulated = "";
+    let totalBytes = 0;
+    while (totalBytes < MAX_STRIPCHAT_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      accumulated += decoder.decode(value, { stream: true });
+    }
+    reader.releaseLock();
+    return accumulated;
   } catch {
     return null;
   }
