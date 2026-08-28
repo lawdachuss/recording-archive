@@ -122,14 +122,14 @@ function performerExistsOnPlatform(html: string, username: string, platform: str
     if (cbOgUrl) {
       const normalized = cbOgUrl.replace(/\/+$/, "").toLowerCase();
       if (normalized === `https://chaturbate.com/${usernameLower}` ||
-          normalized === `https://chaturbate.com/${usernameLower}/") return true;
+          normalized === `https://chaturbate.com/${usernameLower}/`) return true;
     }
   }
 
   if (platform === "stripchat") {
     // Stripchat embeds a global JSON state that lists the logged-in viewer and
-    // recommended models, so a bare `"username":"..."` substring or a generic
-    // `model-avatar`/`model-card` class is NOT proof the requested performer
+    // recommended models, so a bare the username substring or a generic
+    // model-avatar/model-card class is NOT proof the requested performer
     // owns this page. Only trust the canonical profile URL, which Stripchat
     // sets to https://stripchat.com/{exact-username} for the real model.
     //
