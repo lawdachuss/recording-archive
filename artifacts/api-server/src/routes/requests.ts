@@ -44,6 +44,29 @@ router.post("/requests", requireAuth, async (req, res) => {
 
   const validPriority = ["low", "normal", "high"].includes(priority ?? "") ? priority : "normal";
 
+  // If the performer already has recordings in the archive, reject the request
+  // immediately — there's nothing to capture.
+  if (performer_username) {
+    try {
+      const existingCount = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM recordings_with_links
+        WHERE LOWER(username) = LOWER(${performer_username})
+          AND links IS NOT NULL
+      `);
+      const recordingCount = (existingCount.rows[0] as { count: number })?.count ?? 0;
+      if (recordingCount > 0) {
+        res.status(409).json({
+          error: `@${performer_username} already has ${recordingCount} recording${recordingCount === 1 ? "" : "s"} in the archive.`,
+          recording_count: recordingCount,
+        });
+        return;
+      }
+    } catch {
+      // If the check fails, fall through to the normal flow
+    }
+  }
+
   // Prevent duplicate requests: a user cannot request the same performer on the
   // same platform more than once. If a duplicate is attempted, return the
   // existing request instead of creating a redundant channel.

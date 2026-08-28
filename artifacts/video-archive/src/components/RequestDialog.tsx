@@ -86,8 +86,17 @@ function RequestDialogInner({ open, onOpenChange }: RequestDialogProps) {
       setSubmissionId(result.id);
       setSubmitted(true);
       toast({ title: "Success", description: "Request submitted successfully!" });
-    } catch {
-      toast({ title: "Error", description: "Failed to submit request. Please try again.", variant: "destructive" });
+    } catch (err) {
+      let message = "Failed to submit request. Please try again.";
+      if (err instanceof Error) {
+        try {
+          const body = JSON.parse(err.message);
+          if (body.error) message = body.error;
+        } catch {
+          // err.message is plain text
+        }
+      }
+      toast({ title: "Error", description: message, variant: "destructive" });
     }
   }, [platform, lookupUsername, notes, priority, createRequest]);
 
