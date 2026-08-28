@@ -90069,7 +90069,8 @@ router8.post("/requests", requireAuth, async (req, res) => {
         });
         return;
       }
-    } catch {
+    } catch (err) {
+      console.error("[requests] existing-recordings check failed:", err);
     }
   }
   const dedupeKey = performer_username ? performer_username : stream_link;

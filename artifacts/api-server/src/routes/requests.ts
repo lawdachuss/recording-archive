@@ -62,7 +62,8 @@ router.post("/requests", requireAuth, async (req, res) => {
         });
         return;
       }
-    } catch {
+    } catch (err) {
+      console.error("[requests] existing-recordings check failed:", err);
       // If the check fails, fall through to the normal flow
     }
   }
