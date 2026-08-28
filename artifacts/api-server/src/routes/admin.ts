@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db, sql } from "@workspace/db";
 import { requireRole } from "../middleware/requireRole.js";
-import { getCacheStats, invalidateTags, invalidatePattern, purgeAllCache } from "../middleware/cache.js";
+import { getCacheStats, getCacheMetrics, invalidateTags, invalidatePattern, purgeAllCache } from "../middleware/cache.js";
 import { getRedis, isRedisConnected, getRedisStatus } from "../lib/redis.js";
 import { logger } from "../lib/logger.js";
 
@@ -274,7 +274,7 @@ router.get("/admin/cache/status", ...admin, async (_req: Request, res: Response)
   const status = getRedisStatus();
   const connected = isRedisConnected();
 
-  let info: Record<string, unknown> = { connected, status, memory: getCacheStats() };
+  let info: Record<string, unknown> = { connected, status, memory: getCacheStats(), metrics: getCacheMetrics() };
 
   if (redis && connected) {
     try {

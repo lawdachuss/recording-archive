@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { getRedis, isRedisConnected, getRedisStatus } from "../lib/redis.js";
-import { getCacheStats, invalidateTags, invalidatePattern, purgeAllCache } from "../middleware/cache.js";
+import { getCacheStats, getCacheMetrics, resetCacheMetrics, invalidateTags, invalidatePattern, purgeAllCache } from "../middleware/cache.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { logger } from "../lib/logger.js";
 
@@ -14,7 +14,7 @@ router.get("/cache/status", ...admin, async (_req: Request, res: Response) => {
   const status = getRedisStatus();
   const connected = isRedisConnected();
 
-  let info: Record<string, unknown> = { connected, status, memory: getCacheStats() };
+  let info: Record<string, unknown> = { connected, status, memory: getCacheStats(), metrics: getCacheMetrics() };
 
   if (redis && connected) {
     try {
@@ -77,47 +77,29 @@ router.post("/cache/purge", ...admin, async (_req: Request, res: Response) => {
 });
 
 // DELETE /api/cache/flush — Clear all cache (use with caution)
+// purgeAllCache() already scans and deletes all api:* and tag:* keys
+// from Redis, so no additional scanning is needed.
 router.delete("/cache/flush", ...admin, async (_req: Request, res: Response) => {
-  const redis = getRedis();
-
   try {
-    const memoryResult = await purgeAllCache();
-
-    if (!redis || !isRedisConnected()) {
-      res.json({ flushed: true, keysDeleted: memoryResult.deletedKeys });
-      return;
-    }
-
-    // Only delete keys matching our prefix
-    let cursor = "0";
-    let deleted = 0;
-    do {
-      const [nextCursor, keys] = await redis.scan(cursor, "MATCH", "api:*", "COUNT", 200);
-      cursor = nextCursor;
-      if (keys.length > 0) {
-        await redis.del(keys);
-        deleted += keys.length;
-      }
-    } while (cursor !== "0");
-
-    // Also delete tag sets
-    cursor = "0";
-    do {
-      const [nextCursor, keys] = await redis.scan(cursor, "MATCH", "tag:*", "COUNT", 100);
-      cursor = nextCursor;
-      if (keys.length > 0) {
-        await redis.del(keys);
-        deleted += keys.length;
-      }
-    } while (cursor !== "0");
-
-    const keysDeleted = deleted + memoryResult.deletedKeys;
-    logger.info({ keysDeleted }, "Cache flushed");
-    res.json({ flushed: true, keysDeleted });
+    const result = await purgeAllCache();
+    logger.info({ keysDeleted: result.deletedKeys }, "Cache flushed");
+    res.json({ flushed: true, keysDeleted: result.deletedKeys });
   } catch (err) {
     logger.error({ err }, "Cache flush failed");
     res.status(500).json({ error: "Cache flush failed" });
   }
+});
+
+// GET /api/cache/metrics — Get detailed cache performance metrics
+router.get("/cache/metrics", ...admin, async (_req: Request, res: Response) => {
+  res.json(getCacheMetrics());
+});
+
+// POST /api/cache/metrics/reset — Reset cache metrics counters
+router.post("/cache/metrics/reset", ...admin, async (_req: Request, res: Response) => {
+  resetCacheMetrics();
+  logger.info("Cache metrics reset");
+  res.json({ reset: true });
 });
 
 export default router;

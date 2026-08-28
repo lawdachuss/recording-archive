@@ -53,6 +53,12 @@ export function isReachablePreviewUrl(url: string | null | undefined): boolean {
 // connection limits (6-8 per origin for HTTP/1.1, more for HTTP/2) are
 // sufficient safety.
 const warmed = new Set<string>();
+// Track URLs that have failed to load — allow one retry, then give up.
+// This prevents infinite retry loops for permanently broken URLs (404s,
+// DNS failures, CORS errors) while still allowing a single retry from
+// a different caller (e.g. hover preload after catalog warmer failed).
+const failedAttempts = new Map<string, number>();
+const MAX_FAILED_ATTEMPTS = 1;
 const MAX_ACTIVE = 12;
 
 const queue: Array<{ url: string; img: HTMLImageElement }> = [];
@@ -76,9 +82,15 @@ function startRequest(url: string, img: HTMLImageElement) {
   };
   img.onerror = () => {
     activeCount--;
-    // The URL failed this session — drop it from the dedup set so a later,
-    // narrower preload call (e.g. just before a hover) gets one real retry.
-    warmed.delete(url);
+    const attempts = (failedAttempts.get(url) ?? 0) + 1;
+    failedAttempts.set(url, attempts);
+    if (attempts >= MAX_FAILED_ATTEMPTS) {
+      // Permanently broken — keep in warmed set to prevent retries
+      // from any future preload pass.
+    } else {
+      // Allow one retry from a different caller (e.g. hover preload)
+      warmed.delete(url);
+    }
     pump();
   };
   img.src = url;

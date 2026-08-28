@@ -141,48 +141,48 @@ export type CachePriority = 1 | 2 | 3; // 1=preview(cold), 2=sprite(warm), 3=thu
 // ─── In-memory LRU cache ────────────────────────────────────────────────────
 
 const MEMORY_CACHE_MAX = 750; // up from 500 — holds ~3 pages of thumbnails + sprites
-const memoryCache = new Map<string, string>(); // url → blobUrl
+interface MemoryRecord { blobUrl: string; size: number; }
+const memoryCache = new Map<string, MemoryRecord>(); // url → { blobUrl, size }
 
-// Track memory cache byte estimate for smarter eviction
+// Track actual memory cache byte usage for accurate eviction
 let memoryCacheBytes = 0;
 const MEMORY_CACHE_MAX_BYTES = 50 * 1024 * 1024; // 50 MB soft cap for memory
 
 function memGet(url: string): string | null {
-  const blobUrl = memoryCache.get(url);
-  if (blobUrl !== undefined) {
+  const record = memoryCache.get(url);
+  if (record !== undefined) {
     // Move to end (most recently used)
     memoryCache.delete(url);
-    memoryCache.set(url, blobUrl);
+    memoryCache.set(url, record);
     trackHit("memory", url);
-    return blobUrl;
+    return record.blobUrl;
   }
   return null;
 }
 
-function memSet(url: string, blobUrl: string) {
-  // Evict by count or byte estimate — whichever limit is hit first
+function memSet(url: string, blobUrl: string, sizeBytes: number) {
+  // Evict by count or byte usage — whichever limit is hit first
   while (memoryCache.size >= MEMORY_CACHE_MAX || memoryCacheBytes >= MEMORY_CACHE_MAX_BYTES) {
     const oldest = memoryCache.keys().next().value;
     if (oldest !== undefined) {
-      URL.revokeObjectURL(memoryCache.get(oldest)!);
+      const oldestRecord = memoryCache.get(oldest)!;
+      URL.revokeObjectURL(oldestRecord.blobUrl);
       memoryCache.delete(oldest);
-      // Rough estimate: revoke ~30KB per evicted entry (thumbnail average)
-      memoryCacheBytes = Math.max(0, memoryCacheBytes - 30_000);
+      memoryCacheBytes = Math.max(0, memoryCacheBytes - oldestRecord.size);
     } else {
       break;
     }
   }
-  memoryCache.set(url, blobUrl);
-  // Rough estimate: add ~50KB per new entry (sprite average)
-  memoryCacheBytes += 50_000;
+  memoryCache.set(url, { blobUrl, size: sizeBytes });
+  memoryCacheBytes += sizeBytes;
 }
 
 function memDelete(url: string) {
-  const blobUrl = memoryCache.get(url);
-  if (blobUrl !== undefined) {
-    URL.revokeObjectURL(blobUrl);
+  const record = memoryCache.get(url);
+  if (record !== undefined) {
+    URL.revokeObjectURL(record.blobUrl);
     memoryCache.delete(url);
-    memoryCacheBytes = Math.max(0, memoryCacheBytes - 30_000);
+    memoryCacheBytes = Math.max(0, memoryCacheBytes - record.size);
   }
 }
 
@@ -330,6 +330,9 @@ function enqueueDelete(url: string): Promise<void> {
 /**
  * Check whether a URL is already cached. Checks in-memory first (instant),
  * then falls back to IDB.
+ *
+ * This is a read-only check — it does NOT create blob URLs or populate
+ * the memory cache. Use getCachedBlobUrl() when you need the actual data.
  */
 export async function isCached(url: string): Promise<boolean> {
   if (memGet(url) !== null) return true;
@@ -351,9 +354,6 @@ export async function isCached(url: string): Promise<boolean> {
           return resolve(false);
         }
         trackHit("idb", url);
-        // Populate memory cache
-        const blobUrl = URL.createObjectURL(entry.blob);
-        memSet(url, blobUrl);
         resolve(true);
       };
       req.onerror = () => resolve(false);
@@ -414,7 +414,7 @@ export async function getCachedBlobUrl(url: string): Promise<string | null> {
         }
         trackHit("idb", url);
         const blobUrl = URL.createObjectURL(entry.blob);
-        memSet(url, blobUrl);
+        memSet(url, blobUrl, entry.size || entry.blob.size || 0);
         resolve(blobUrl);
       };
       req.onerror = () => resolve(null);
@@ -508,7 +508,7 @@ async function _cacheImageInner(
 
     // Populate in-memory cache immediately
     const blobUrl = URL.createObjectURL(blob);
-    memSet(url, blobUrl);
+    memSet(url, blobUrl, entry.size);
 
     return entry;
   } catch {
@@ -548,7 +548,7 @@ export async function areCached(urls: string[]): Promise<Set<string>> {
           if (entry && Date.now() - entry.cachedAt <= CACHE_TTL_MS) {
             result.add(url);
             const blobUrl = URL.createObjectURL(entry.blob);
-            memSet(url, blobUrl);
+            memSet(url, blobUrl, entry.size || entry.blob.size || 0);
           }
           if (--pending === 0) resolve();
         };
@@ -693,7 +693,7 @@ export async function evictIfNeeded(): Promise<void> {
  * Clear the entire image cache (IDB + in-memory).
  */
 export async function clearImageCache(): Promise<void> {
-  for (const blobUrl of memoryCache.values()) URL.revokeObjectURL(blobUrl);
+  for (const record of memoryCache.values()) URL.revokeObjectURL(record.blobUrl);
   memoryCache.clear();
   memoryCacheBytes = 0;
 
@@ -741,5 +741,141 @@ export async function getCacheStats(): Promise<{
     idbEntries,
     idbBytes,
     profiling: getCacheProfile(),
+  };
+}
+
+// ─── Cache Budget Management ─────────────────────────────────────
+
+interface CacheBudget {
+  /** Maximum total cache size in bytes (IDB + memory) */
+  maxTotalBytes: number;
+  /** Target cache size after eviction (80% of max) */
+  targetBytes: number;
+  /** Maximum memory cache entries */
+  maxMemoryEntries: number;
+  /** Maximum IDB cache size in bytes */
+  maxIdbBytes: number;
+}
+
+let currentBudget: CacheBudget = {
+  maxTotalBytes: MAX_CACHE_BYTES,
+  targetBytes: MAX_CACHE_BYTES * 0.8,
+  maxMemoryEntries: MEMORY_CACHE_MAX,
+  maxIdbBytes: MAX_CACHE_BYTES,
+};
+
+/**
+ * Get the current cache budget and usage status.
+ */
+export async function getCacheBudget(): Promise<CacheBudget & {
+  currentMemoryBytes: number;
+  currentIdbBytes: number;
+  totalBytesUsed: number;
+  usagePercent: number;
+  needsEviction: boolean;
+}> {
+  const stats = await getCacheStats();
+  const totalBytesUsed = stats.memoryBytes + stats.idbBytes;
+  return {
+    ...currentBudget,
+    currentMemoryBytes: stats.memoryBytes,
+    currentIdbBytes: stats.idbBytes,
+    totalBytesUsed,
+    usagePercent: (totalBytesUsed / currentBudget.maxTotalBytes) * 100,
+    needsEviction: totalBytesUsed > currentBudget.targetBytes,
+  };
+}
+
+/**
+ * Update cache budget limits. Call this to dynamically adjust
+ * cache size based on device capabilities or user preferences.
+ */
+export function setCacheBudget(budget: Partial<CacheBudget>): void {
+  currentBudget = { ...currentBudget, ...budget };
+  currentBudget.targetBytes = currentBudget.maxTotalBytes * 0.8;
+}
+
+/**
+ * Preload images with budget awareness. Checks if adding these images
+ * would exceed the budget and evicts old entries if needed.
+ *
+ * @returns Number of images successfully cached
+ */
+export async function preloadWithBudget(
+  urls: string[],
+  priority: CachePriority = 2,
+): Promise<number> {
+  const budget = await getCacheBudget();
+  
+  // If we're already over budget, trigger eviction first
+  if (budget.needsEviction) {
+    await evictIfNeeded();
+  }
+  
+  // Check budget again after eviction
+  const afterEviction = await getCacheBudget();
+  if (afterEviction.usagePercent > 90) {
+    // Still over 90% — skip preloading to prevent OOM
+    return 0;
+  }
+  
+  // Estimate total size of URLs to preload (rough: 30KB per thumbnail)
+  const estimatedSize = urls.length * 30_000;
+  const remainingBudget = afterEviction.maxTotalBytes - afterEviction.totalBytesUsed;
+  
+  if (estimatedSize > remainingBudget) {
+    // Only preload what fits in the remaining budget
+    const maxUrls = Math.floor(remainingBudget / 30_000);
+    urls = urls.slice(0, maxUrls);
+  }
+  
+  // Batch-cache with concurrency control
+  return cacheImages(urls, 4);
+}
+
+/**
+ * Get a summary of cache health for monitoring dashboards.
+ */
+export async function getCacheHealth(): Promise<{
+  status: "healthy" | "warning" | "critical";
+  memoryUtilization: number;
+  idbUtilization: number;
+  totalUtilization: number;
+  hitRate: number;
+  recommendations: string[];
+}> {
+  const budget = await getCacheBudget();
+  const profile = getCacheProfile();
+  const recommendations: string[] = [];
+  
+  const memoryUtilization = (budget.currentMemoryBytes / (currentBudget.maxMemoryEntries * 50_000)) * 100;
+  const idbUtilization = (budget.currentIdbBytes / currentBudget.maxIdbBytes) * 100;
+  const totalUtilization = budget.usagePercent;
+  
+  let status: "healthy" | "warning" | "critical" = "healthy";
+  
+  if (totalUtilization > 90) {
+    status = "critical";
+    recommendations.push("Cache usage critical — consider reducing MAX_CACHE_BYTES");
+  } else if (totalUtilization > 75) {
+    status = "warning";
+    recommendations.push("Cache usage high — eviction will increase");
+  }
+  
+  if (profile.overallHitRate < 50) {
+    recommendations.push("Low cache hit rate — check if TTLs are appropriate");
+  }
+  
+  if (profile.memoryHitRate < 30 && profile.idbHitRate > 50) {
+    recommendations.push("Memory cache underperforming — consider increasing MEMORY_CACHE_MAX");
+  }
+  
+  return {
+    status,
+    memoryUtilization,
+    idbUtilization,
+    totalUtilization,
+    hitRate: profile.overallHitRate,
+    recommendations,
   };
 }
