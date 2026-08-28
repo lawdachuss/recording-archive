@@ -327,6 +327,7 @@ export default function RequestPage() {
             onFinalStepCompleted={handleSubmit}
             backButtonText="Back"
             nextButtonText={step === 3 ? "Submit Request" : "Continue"}
+            canNext={step === 2 ? !(lookupData?.in_archive && lookupData?.archive_recording_count && lookupData.archive_recording_count > 0) : true}
           >
             <Step>
               <Step1PlatformSelect onSelect={handlePlatformSelect} />
@@ -468,7 +469,17 @@ function Step2PerformerLookup({
           )}
           {!lookupLoading && !hasError && data && (
             data.exists ? (
-              <PerformerDetailsCard data={data} />
+              <>
+                <PerformerDetailsCard data={data} />
+                {data.in_archive && data.archive_recording_count && data.archive_recording_count > 0 && (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 mt-2">
+                    <p className="text-xs font-medium text-amber-500">Already in archive</p>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      @{username} already has {data.archive_recording_count} recording{data.archive_recording_count === 1 ? "" : "s"} in the archive. Click Back to try a different username.
+                    </p>
+                  </div>
+                )}
+              </>
             ) : data.platform_check_failed ? (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
                 <p className="text-xs font-medium text-amber-500">Could not verify performer on {platform}</p>

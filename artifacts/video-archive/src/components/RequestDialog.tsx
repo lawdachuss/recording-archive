@@ -401,6 +401,15 @@ function Step3Confirmation({
     <div className="space-y-3">
       <PerformerDetailsCard data={lookupData} />
 
+      {lookupData.in_archive && lookupData.archive_recording_count && lookupData.archive_recording_count > 0 && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+          <p className="text-xs font-medium text-amber-500">Already in archive</p>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            @{lookupUsername} already has {lookupData.archive_recording_count} recording{lookupData.archive_recording_count === 1 ? "" : "s"} in the archive.
+          </p>
+        </div>
+      )}
+
       <label className="flex items-center gap-2.5 p-3 rounded-lg border border-border/30 bg-secondary/20 cursor-pointer hover:bg-secondary/30 transition-colors select-none">
         <button
           type="button"
