@@ -70823,13 +70823,25 @@ var recordings_default = router2;
 // src/routes/performers.ts
 var import_express3 = __toESM(require_express2(), 1);
 var COOKIES = process.env.COOKIES ?? "";
-var MAX_STRIPCHAT_BYTES = 12e4;
-async function fetchWithCookies(url2) {
+var CB_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+async function checkChaturbateApi(username) {
   try {
-    const isStripchat = /stripchat\.com/i.test(url2);
+    const res = await fetch("https://chaturbate.com/get_edge_hls_url_ajax/", {
+      method: "POST",
+      headers: { "User-Agent": CB_UA, "X-Requested-With": "XMLHttpRequest", Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded" },
+      body: `room_slug=${encodeURIComponent(username)}`
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return { exists: !!data.success, is_live: data.room_status === "public", room_status: data.room_status || "unknown" };
+  } catch { return null; }
+}
+var MAX_STRIPCHAT_BYTES = 12e4;
+async function fetchStripchatPage(url2) {
+  try {
     const res = await fetch(url2, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": CB_UA,
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
         Cookie: COOKIES
@@ -70870,61 +70882,27 @@ function parseCount(str) {
   if (s.endsWith("k")) return parseFloat(s) * 1e3;
   return parseFloat(s) || 0;
 }
-function performerExistsOnPlatform(html, username, platform) {
+function performerExistsOnStripchat(html, username) {
   const bodyLower = html.toLowerCase();
   const usernameLower = username.toLowerCase();
-  if (platform === "chaturbate") {
-    if (bodyLower.includes(`data-room="${usernameLower}"`)) return true;
-    if (bodyLower.includes(`data-username="${usernameLower}"`)) return true;
-    if (/class="[^"]*profile-avatar[^"]*"/i.test(html)) return true;
-    if (/class="[^"]*panel-avatar[^"]*"/i.test(html)) return true;
-    if (/class="[^"]*room-status[^"]*"/i.test(html)) return true;
-    const cbCanonical = (html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i) || html.match(/<link[^>]+href=["']([^"']+)["'][^>]+rel=["']canonical["']/i))?.[1];
-    if (cbCanonical) {
-      const normalized = cbCanonical.replace(/\/+$/, "").toLowerCase();
-      if (normalized === `https://chaturbate.com/${usernameLower}` || normalized === `https://chaturbate.com/${usernameLower}/`) return true;
-    }
-    const cbOgUrl = extractMetaContent(html, "og:url");
-    if (cbOgUrl) {
-      const normalized = cbOgUrl.replace(/\/+$/, "").toLowerCase();
-      if (normalized === `https://chaturbate.com/${usernameLower}` || normalized === `https://chaturbate.com/${usernameLower}/") return true;
-    }
-  }
-  if (platform === "stripchat") {
-    const expectedUrls = [
-      `https://stripchat.com/${usernameLower}`,
-      `https://www.stripchat.com/${usernameLower}`
-    ];
-    const canonical = extractMetaContent(html, "og:url");
-    if (canonical) {
-      const normalized = canonical.replace(/\/+$/, "").toLowerCase();
-      if (expectedUrls.some((u) => normalized === u)) return true;
-    }
+  const expectedUrls = [`https://stripchat.com/${usernameLower}`, `https://www.stripchat.com/${usernameLower}`];
+  const canonical = extractMetaContent(html, "og:url");
+  if (canonical) { const normalized = canonical.replace(/\/+$/, "").toLowerCase(); if (expectedUrls.some((u) => normalized === u)) return true; }
     const canonicalLink = (html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i) || html.match(/<link[^>]+href=["']([^"']+)["'][^>]+rel=["']canonical["']/i))?.[1];
     if (canonicalLink) {
       const normalized = canonicalLink.replace(/\/+$/, "").toLowerCase();
       if (expectedUrls.some((u) => normalized === u)) return true;
-    }
     if (bodyLower.includes(`data-model-username="${usernameLower}"`)) return true;
     if (bodyLower.includes(`data-username="${usernameLower}"`)) return true;
     if (bodyLower.includes(`data-profile="${usernameLower}"`)) return true;
-    const profileLinkRegex = new RegExp(`href=["']https://stripchat.com/${usernameLower}(?:/|"|')`, "i");
+    const profileLinkRegex = new RegExp(`href=["']https://stripchat\.com/${usernameLower}(?:/|"|')`, "i");
     if (profileLinkRegex.test(html)) return true;
     const twitterSite = extractMetaContent(html, "twitter:site");
     if (twitterSite && twitterSite.toLowerCase().includes(usernameLower)) {
       const ogImage = extractMetaContent(html, "og:image");
       if (ogImage && !ogImage.includes("default") && !ogImage.includes("logo")) return true;
     }
-  }
-  if (platform === "stripchat") return false;
-  const ogTitle = extractMetaContent(html, "og:title");
-  if (ogTitle && ogTitle.toLowerCase().includes(usernameLower)) return true;
-  const ogDescription = extractMetaContent(html, "og:description");
-  if (ogDescription && ogDescription.toLowerCase().includes(usernameLower)) return true;
-  const ogUrl = extractMetaContent(html, "og:url");
-  if (ogUrl && ogUrl.toLowerCase().includes(usernameLower)) return true;
-  if (bodyLower.includes(usernameLower) && (bodyLower.includes("is online") || bodyLower.includes("last online") || bodyLower.includes("live now"))) return true;
-  return false;
+    return false;
 }
 var router3 = (0, import_express3.Router)();
 router3.get("/performers/lookup", cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["performers", "search"] }), async (req, res) => {
@@ -70957,43 +70935,35 @@ router3.get("/performers/lookup", cache({ ttlSeconds: 120, staleSeconds: 300, ta
       }
     } catch {
     }
-    const html = await fetchWithCookies(profileUrl);
-    if (!html) {
-      if (result.in_archive) {
-        result.exists = true;
-        result.platform_check_failed = true;
+    if (platform === "chaturbate") {
+      const apiResult = await checkChaturbateApi(username);
+      if (apiResult) {
+        result.exists = apiResult.exists;
+        result.is_online = apiResult.is_live;
+        if (!apiResult.exists && result.in_archive) { result.exists = true; result.platform_check_failed = true; }
         res.json(result);
         return;
       }
+      if (result.in_archive) { result.exists = true; result.platform_check_failed = true; }
       res.json(result);
       return;
     }
-    if (performerExistsOnPlatform(html, username, platform)) {
+    const html = await fetchStripchatPage(profileUrl);
+    if (!html) {
+      if (result.in_archive) { result.exists = true; result.platform_check_failed = true; }
+      res.json(result);
+      return;
+    }
+    if (performerExistsOnStripchat(html, username)) {
       result.exists = true;
     } else {
       const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
       const title = titleMatch ? titleMatch[1].toLowerCase() : "";
-      const notFoundTitles = ["page not found", "not found", "404", "error"];
-      const isNotFound = notFoundTitles.some((p) => title.includes(p));
-      if (isNotFound) {
-        req.log.warn({ title, username, platform, htmlSample: html.slice(0, 500) }, "performer-lookup: title suggests not found");
-        if (result.in_archive) {
-          result.exists = true;
-          result.platform_check_failed = true;
-          res.json(result);
-          return;
-        }
-        result.exists = false;
-        res.json(result);
-        return;
+      if (["page not found", "not found", "404", "error"].some((p) => title.includes(p))) {
+        if (result.in_archive) { result.exists = true; result.platform_check_failed = true; res.json(result); return; }
+        result.exists = false; res.json(result); return;
       }
-      if (platform === "stripchat") {
-        result.exists = false;
-        res.json(result);
-        return;
-      }
-      result.exists = true;
-      req.log.warn({ username, platform, title, htmlSample: html.slice(0, 300) }, "performer-lookup: no positive signals but page loaded");
+      result.exists = false; res.json(result); return;
     }
     const bodyLower = html.toLowerCase();
     result.display_name = extractMetaContent(html, "og:title") || username;
@@ -71003,24 +70973,16 @@ router3.get("/performers/lookup", cache({ ttlSeconds: 120, staleSeconds: 300, ta
     } else {
       result.is_online = false;
       const lastSeenMatch = html.match(/(?:last\s+(?:online|seen|live)|offline)\s*[:]?\s*([^<]+)/i);
-      if (lastSeenMatch) {
-        result.last_seen = lastSeenMatch[1].trim();
-      }
+      if (lastSeenMatch) result.last_seen = lastSeenMatch[1].trim();
     }
     const ogDesc = extractMetaContent(html, "og:description");
-    if (ogDesc) {
-      result.room_title = ogDesc;
-    }
+    if (ogDesc) result.room_title = ogDesc;
     if (result.is_online) {
       const viewerMatch = html.match(/(\d[\d,]*)\s*(?:viewers?|watching)/i);
-      if (viewerMatch) {
-        result.viewer_count = parseInt(viewerMatch[1].replace(/,/g, ""), 10);
-      }
+      if (viewerMatch) result.viewer_count = parseInt(viewerMatch[1].replace(/,/g, ""), 10);
     }
     const followerMatch = html.match(/(\d[\d,.]*[kKmM]?)\s*(?:followers?|fans)/i);
-    if (followerMatch) {
-      result.follower_count = parseCount(followerMatch[1]);
-    }
+    if (followerMatch) result.follower_count = parseCount(followerMatch[1]);
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "GET /performers/lookup error");
