@@ -4,7 +4,7 @@ import { PerformerDetailsCard, PerformerLookupLoading, PerformerLookupNotFound, 
 import { usePerformerLookup, useCreateRequest, type PerformerLookupResult } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "@/hooks/use-toast";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Film, Sparkles, CheckCircle, Check } from "lucide-react";
 
 type Platform = "chaturbate" | "stripchat" | null;
@@ -21,9 +21,12 @@ export default function RequestDialog({ open, onOpenChange }: RequestDialogProps
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-sm">
-          <div className="text-center py-8">
-            <p className="text-muted-foreground">Please sign in to submit a request.</p>
-          </div>
+          <DialogTitle className="sr-only">Sign in required</DialogTitle>
+          <DialogDescription asChild>
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">Please sign in to submit a request.</p>
+            </div>
+          </DialogDescription>
         </DialogContent>
       </Dialog>
     );
@@ -126,6 +129,8 @@ function RequestDialogInner({ open, onOpenChange }: RequestDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg !p-5 !pb-4">
+        <DialogTitle className="sr-only">Request a performer</DialogTitle>
+        <DialogDescription className="sr-only">Submit a recording request for a Chaturbate or Stripchat performer</DialogDescription>
         {submitted ? (
           <div className="text-center py-3">
             <div className="animate-fade-in-scale">
