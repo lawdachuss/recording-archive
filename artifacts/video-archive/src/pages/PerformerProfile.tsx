@@ -22,6 +22,14 @@ export default function PerformerProfile() {
   const queryClient = useQueryClient();
 
   const recentlyWatched = useRecentlyWatched();
+  // Fetch watch stats for this performer
+  const { data: watchStats } = useQuery({
+    queryKey: ["user", "history", "stats"],
+    queryFn: () => userApi.getWatchStats(),
+    enabled: !!user,
+    staleTime: 60_000,
+  });
+  const performerStats = watchStats?.topPerformers.find(p => p.username.toLowerCase() === (username || "").toLowerCase());
 
   const { data: profile, isLoading, isError } = useGetPerformer(username || "", {
     query: {
@@ -173,6 +181,18 @@ export default function PerformerProfile() {
                         <span className="flex items-center gap-1.5 capitalize">
                           <Users className="w-3 h-3 text-muted-foreground/50" />
                           {profile.gender}
+                        </span>
+                      </>
+                    )}
+                    {performerStats && performerStats.count > 0 && (
+                      <>
+                        <span className="w-px h-3 bg-border/40" />
+                        <span className="flex items-center gap-1.5 text-primary/80">
+                          <Heart className="w-3 h-3" />
+                          <span className="font-medium">You watched {performerStats.count} video{performerStats.count === 1 ? "" : "s"}</span>
+                          {performerStats.watchMs > 0 && (
+                            <span className="text-muted-foreground/50">({Math.round(performerStats.watchMs / 60000)} min)</span>
+                          )}
                         </span>
                       </>
                     )}

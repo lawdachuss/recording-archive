@@ -268,11 +268,27 @@ router.get("/user/history", async (req, res) => {
 router.post("/user/history", async (req, res) => {
   try {
     const userId = req.user!.id;
-    const { recording_id, metadata } = req.body as { recording_id: string; metadata?: string };
+    const { recording_id, metadata, progress, last_position_ms, total_watch_ms } = req.body as {
+      recording_id: string;
+      metadata?: string;
+      progress?: number;
+      last_position_ms?: number;
+      total_watch_ms?: number;
+    };
     if (!recording_id) { res.status(400).json({ error: "recording_id required" }); return; }
 
+    const update: Record<string, unknown> = {
+      user_id: userId,
+      recording_id,
+      metadata: metadata ?? null,
+      watched_at: new Date().toISOString(),
+    };
+    if (progress !== undefined) update.progress = Math.min(100, Math.max(0, Math.round(progress)));
+    if (last_position_ms !== undefined) update.last_position_ms = Math.max(0, Math.round(last_position_ms));
+    if (total_watch_ms !== undefined) update.total_watch_ms = Math.max(0, Math.round(total_watch_ms));
+
     const { error } = await req.supabase!.from("watch_history").upsert(
-      { user_id: userId, recording_id, metadata: metadata ?? null, watched_at: new Date().toISOString() },
+      update,
       { onConflict: "user_id, recording_id" },
     );
 
@@ -304,6 +320,107 @@ router.delete("/user/history", async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     req.log.error({ err }, "DELETE /user/history unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── Continue Watching ──────────────────────────────────────────────────────
+// Returns unfinished videos (progress > 0 and < 100), sorted by most recent.
+router.get("/user/history/continue", async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const limit = Math.min(20, Math.max(1, parseInt(req.query.limit as string) || 12));
+
+    const { data, error } = await req.supabase!
+      .from("watch_history")
+      .select("recording_id, metadata, watched_at, progress, last_position_ms, total_watch_ms")
+      .eq("user_id", userId)
+      .gt("progress", 0)
+      .lt("progress", 100)
+      .order("watched_at", { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error fetching continue watching");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json(data ?? []);
+  } catch (err) {
+    req.log.error({ err }, "GET /user/history/continue unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── Watch Stats ─────────────────────────────────────────────────────────────
+// Returns aggregated watch statistics for the authenticated user.
+router.get("/user/history/stats", async (req, res) => {
+  try {
+    const userId = req.user!.id;
+
+    const { data, error } = await req.supabase!
+      .from("watch_history")
+      .select("recording_id, progress, total_watch_ms, metadata, watched_at")
+      .eq("user_id", userId);
+
+    if (error) {
+      req.log.error({ err: error }, "Supabase error fetching watch stats");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+
+    const items = data ?? [];
+    const totalWatchMs = items.reduce((sum, i) => sum + (i.total_watch_ms ?? 0), 0);
+    const totalVideos = items.length;
+    const completedVideos = items.filter((i) => (i.progress ?? 0) >= 100).length;
+    const avgProgress = totalVideos > 0 ? Math.round(items.reduce((s, i) => s + (i.progress ?? 0), 0) / totalVideos) : 0;
+
+    // Per-performer stats
+    const performerMap = new Map<string, { count: number; watchMs: number; username: string }>();
+    for (const item of items) {
+      try {
+        const meta = item.metadata ? JSON.parse(item.metadata) : null;
+        const username = meta?.username ?? "unknown";
+        const existing = performerMap.get(username) ?? { count: 0, watchMs: 0, username };
+        existing.count++;
+        existing.watchMs += item.total_watch_ms ?? 0;
+        performerMap.set(username, existing);
+      } catch { /* skip malformed metadata */ }
+    }
+    const topPerformers = [...performerMap.values()]
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    // Watch by day of week (last 30 days)
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const dayBuckets = [0, 0, 0, 0, 0, 0, 0]; // Sun-Sat
+    for (const item of items) {
+      const t = new Date(item.watched_at).getTime();
+      if (t < thirtyDaysAgo) continue;
+      const day = new Date(item.watched_at).getDay();
+      dayBuckets[day] += item.total_watch_ms ?? 0;
+    }
+
+    // Watch by hour of day (last 30 days)
+    const hourBuckets = new Array(24).fill(0);
+    for (const item of items) {
+      const t = new Date(item.watched_at).getTime();
+      if (t < thirtyDaysAgo) continue;
+      const hour = new Date(item.watched_at).getHours();
+      hourBuckets[hour] += item.total_watch_ms ?? 0;
+    }
+
+    res.json({
+      totalWatchMs,
+      totalVideos,
+      completedVideos,
+      avgProgress,
+      topPerformers,
+      dayBuckets,
+      hourBuckets,
+    });
+  } catch (err) {
+    req.log.error({ err }, "GET /user/history/stats unexpected error");
     res.status(500).json({ error: "Internal server error" });
   }
 });

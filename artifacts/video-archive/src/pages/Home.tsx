@@ -72,6 +72,13 @@ export default function Home() {
     staleTime: 30_000,
   });
 
+  const { data: continueWatching = [] } = useQuery({
+    queryKey: ["user", "continue-watching"],
+    queryFn: () => userApi.getContinueWatching(8),
+    enabled: !!user,
+    staleTime: 60_000,
+  });
+
   const recentActivity = useMemo(() => {
     if (!user) return [];
     const events: ActivityEvent[] = [];
@@ -212,6 +219,37 @@ export default function Home() {
           </form>
         </div>
       </section>
+
+      {/* Continue Watching */}
+      {user && continueWatching.length > 0 && (
+        <section className="px-4 sm:px-6 py-10 relative overflow-hidden">
+          <div className="container mx-auto">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Clock className="w-3.5 h-3.5 text-primary" />
+                </div>
+                <h2 className="text-sm font-bold tracking-tight">Continue Watching</h2>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-6">
+              {continueWatching.map((item, i) => {
+                const rec = parseCloudItem(item);
+                return (
+                  <div key={item.recording_id}>
+                    <VideoCard
+                      recording={{ ...rec, saved_at: item.watched_at ?? rec.saved_at }}
+                      isWatched
+                      progress={item.progress}
+                      fetchPriority={i < 2 ? "high" : undefined}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Recordings — tabs */}
       <section className="px-4 sm:px-6 py-14 relative overflow-hidden">

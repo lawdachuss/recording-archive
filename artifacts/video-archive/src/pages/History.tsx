@@ -1,4 +1,5 @@
 
+import { useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
@@ -10,6 +11,40 @@ import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { getWatchedEntries, clearWatched } from "@/lib/watched-storage";
 import { History as HistoryIcon, Trash2, Clock } from "lucide-react";
+
+interface HistoryGroup {
+  label: string;
+  items: ReturnType<typeof parseCloudItem>[];
+}
+
+function groupByDate(items: ReturnType<typeof parseCloudItem>[]): HistoryGroup[] {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const yesterdayStart = todayStart - 86400000;
+  const weekStart = todayStart - 7 * 86400000;
+  const monthStart = todayStart - 30 * 86400000;
+
+  const groups: Record<string, ReturnType<typeof parseCloudItem>[]> = {
+    "Today": [],
+    "Yesterday": [],
+    "This Week": [],
+    "This Month": [],
+    "Older": [],
+  };
+
+  for (const item of items) {
+    const t = new Date(item.saved_at).getTime();
+    if (t >= todayStart) groups["Today"].push(item);
+    else if (t >= yesterdayStart) groups["Yesterday"].push(item);
+    else if (t >= weekStart) groups["This Week"].push(item);
+    else if (t >= monthStart) groups["This Month"].push(item);
+    else groups["Older"].push(item);
+  }
+
+  return Object.entries(groups)
+    .filter(([_, items]) => items.length > 0)
+    .map(([label, items]) => ({ label, items }));
+}
 
 
 export default function History() {
@@ -73,6 +108,7 @@ export default function History() {
   }).sort((a, b) => new Date(b.saved_at).getTime() - new Date(a.saved_at).getTime());
 
   const totalCount = merged.length;
+  const groups = useMemo(() => groupByDate(merged), [merged]);
 
   return (
     <Layout>
@@ -120,10 +156,24 @@ export default function History() {
             </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-            {merged.map((rec, i) => (
-              <div key={rec.id} className="animate-fade-in-up" style={{ animationDelay: `${i * 25}ms` }}>
-                <VideoCard recording={cloudItemToRecording(rec)} isWatched={recentlyWatched.has(rec.id)} />
+          <div className="space-y-8">
+            {groups.map((group) => (
+              <div key={group.label}>
+                <h2 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
+                  {group.label}
+                  <span className="text-[10px] font-normal text-muted-foreground/50">({group.items.length})</span>
+                </h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+                  {group.items.map((rec, i) => (
+                    <div key={rec.id} className="animate-fade-in-up" style={{ animationDelay: `${i * 25}ms` }}>
+                      <VideoCard
+                        recording={cloudItemToRecording(rec)}
+                        isWatched={recentlyWatched.has(rec.id)}
+                        progress={rec.progress}
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
