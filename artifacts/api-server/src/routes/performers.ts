@@ -36,7 +36,7 @@ async function checkChaturbateApi(
     };
     return {
       exists: !!data.success,
-      is_live: data.room_status === "public",
+      is_live: data.room_status === "public" || data.room_status === "group_show" || data.room_status === "private",
       room_status: data.room_status ?? "unknown",
     };
   } catch {
@@ -47,7 +47,7 @@ async function checkChaturbateApi(
 // ─── Stripchat HTML scraping ───────────────────────────────────────────────
 // Stripchat pages are massive React SPAs (2-5 MB inline JS/state).
 // Stream the response and stop after MAX_STRIPCHAT_BYTES.
-const MAX_STRIPCHAT_BYTES = 120_000; // ~120 KB
+const MAX_STRIPCHAT_BYTES = 400_000; // ~400 KB -- isOnline JSON is at ~294 KB
 
 async function fetchStripchatPage(url: string): Promise<string | null> {
   try {
@@ -207,7 +207,7 @@ router.get(
 
       const profileUrl =
         platform === "chaturbate"
-          ? `https://chaturbate.com/${username}/`
+          ? `https://chaturbate.com/${username}/?campaign=gpCZM`
           : `https://stripchat.com/${username}`;
 
       const result: LookupResult = {
@@ -321,27 +321,36 @@ router.get(
       result.avatar_url =
         extractMetaContent(html, "og:image") ?? undefined;
 
-      if (
-        bodyLower.includes("is online") ||
-        bodyLower.includes("online now") ||
-        bodyLower.includes("live now")
-      ) {
-        result.is_online = true;
+      // Parse online status from __PRELOADED_STATE__ JSON (byte ~294K)
+      const isOnlineMatch = html.match(/"isOnline":(true|false)/i);
+      if (isOnlineMatch) {
+        result.is_online = isOnlineMatch[1] === "true";
       } else {
-        result.is_online = false;
-        const lastSeenMatch = html.match(
-          /(?:last\s+(?:online|seen|live)|offline)\s*[:]?\s*([^<]+)/i,
-        );
-        if (lastSeenMatch) {
-          result.last_seen = lastSeenMatch[1].trim();
+        // Fallback: text-based detection
+        if (
+          bodyLower.includes("is online") ||
+          bodyLower.includes("online now") ||
+          bodyLower.includes("live now")
+        ) {
+          result.is_online = true;
+        } else {
+          result.is_online = false;
+          const lastSeenMatch = html.match(
+            /(?:last\s+(?:online|seen|live)|offline)\s*[:]?\s*([^<]+)/i,
+          );
+          if (lastSeenMatch) {
+            result.last_seen = lastSeenMatch[1].trim();
+          }
         }
       }
 
-      const ogDesc = extractMetaContent(html, "og:description");
-      if (ogDesc) {
-        result.room_title = ogDesc;
+      // Parse isLive from JSON for live streaming status
+      const isLiveMatch = html.match(/"isLive":(true|false)/i);
+      if (isLiveMatch && isLiveMatch[1] === "true") {
+        result.is_online = true; // isLive overrides isOnline
       }
 
+      // Parse viewer count from JSON state
       if (result.is_online) {
         const viewerMatch = html.match(
           /(\d[\d,]*)\s*(?:viewers?|watching)/i,
@@ -352,6 +361,11 @@ router.get(
             10,
           );
         }
+      }
+
+      const ogDesc = extractMetaContent(html, "og:description");
+      if (ogDesc) {
+        result.room_title = ogDesc;
       }
 
       const followerMatch = html.match(
