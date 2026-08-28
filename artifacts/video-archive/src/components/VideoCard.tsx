@@ -282,7 +282,11 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
                 className="opacity-100"
                 containerClassName="absolute inset-0 w-full h-full"
                 fallback={
-                  <div className="absolute inset-0 bg-secondary" />
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-secondary/80 to-secondary">
+                    <span className="text-lg font-bold text-muted-foreground/30 uppercase tracking-wider">
+                      {initials}
+                    </span>
+                  </div>
                 }
                 noShimmer
               />

@@ -192,6 +192,25 @@ const inflight = new Map<string, Promise<ImageCacheEntry | null>>();
 
 // ─── IDB handle ─────────────────────────────────────────────────────────────
 
+/** Remove any IDB entries with 0-byte blobs (from cached failed fetches). */
+function cleanupEmptyBlobs(db: IDBDatabase) {
+  try {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.openCursor();
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (!cursor) return;
+      const entry = cursor.value as ImageCacheEntry;
+      if (!entry.blob || entry.blob.size === 0) {
+        memDelete(entry.url);
+        cursor.delete();
+      }
+      cursor.continue();
+    };
+  } catch { /* non-fatal */ }
+}
+
 let _db: IDBDatabase | null = null;
 
 function openDB(): Promise<IDBDatabase> {
@@ -215,6 +234,8 @@ function openDB(): Promise<IDBDatabase> {
       const db = req.result;
       _db = db;
       db.onclose = () => { _db = null; };
+      // Clean up any corrupted 0-byte entries from previous sessions
+      cleanupEmptyBlobs(db);
       resolve(db);
     };
     req.onerror = () => reject(req.error);
@@ -476,7 +497,7 @@ async function _cacheImageInner(
     if (contentLength > 10 * 1024 * 1024) return null;
 
     const blob = await res.blob();
-    if (blob.size > 10 * 1024 * 1024) return null;
+    if (blob.size === 0 || blob.size > 10 * 1024 * 1024) return null;
 
     const entry: ImageCacheEntry = {
       url, blob, type: contentType,
