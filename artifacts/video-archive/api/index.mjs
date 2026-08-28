@@ -70823,6 +70823,7 @@ var recordings_default = router2;
 // src/routes/performers.ts
 var import_express3 = __toESM(require_express2(), 1);
 var COOKIES = process.env.COOKIES ?? "";
+var CB_AFFILIATE = process.env.CHATURBATE_AFFILIATE_CODE ?? "";
 var CB_UA = "Googlebot/2.1 (+http://www.google.com/bot.html)";
 async function checkChaturbateApi(username) {
   try {
@@ -70917,7 +70918,7 @@ router3.get("/performers/lookup", cache({ ttlSeconds: 120, staleSeconds: 300, ta
       res.status(400).json({ error: 'platform must be "chaturbate" or "stripchat"' });
       return;
     }
-    const profileUrl = platform === "chaturbate" ? `https://chaturbate.com/${username}/?campaign=gpCZM` : `https://stripchat.com/${username}`;
+    const profileUrl = platform === "chaturbate" ? `https://chaturbate.com/${username}/${CB_AFFILIATE ? `?campaign=${CB_AFFILIATE}` : ''}` : `https://stripchat.com/${username}`;
     const result = {
       exists: false,
       platform,
