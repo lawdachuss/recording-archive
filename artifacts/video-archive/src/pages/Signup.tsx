@@ -3,6 +3,19 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { Film, Eye, EyeOff, AlertCircle, CheckCircle2 } from "lucide-react";
 
+const EMAIL_ERROR_HINTS: [RegExp, string][] = [
+  [/verification email|email service|email provider/i, "This is a server configuration issue. Please contact support for help."],
+  [/already registered/i, "Try signing in with your existing account, or use a different email."],
+  [/email address not confirmed/i, "Check your inbox for the verification link. It may take a few minutes to arrive."],
+];
+
+function emailErrorHint(msg: string): string | null {
+  for (const [re, hint] of EMAIL_ERROR_HINTS) {
+    if (re.test(msg)) return hint;
+  }
+  return null;
+}
+
 export default function Signup() {
   const { signUp } = useAuth();
   const [, setLocation] = useLocation();
@@ -81,9 +94,14 @@ export default function Signup() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-sm text-xs text-destructive">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              {error}
+            <div className="flex flex-col gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-sm text-xs text-destructive">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+              {emailErrorHint(error) && (
+                <p className="ml-5 text-destructive/70 leading-relaxed">{emailErrorHint(error)}</p>
+              )}
             </div>
           )}
 

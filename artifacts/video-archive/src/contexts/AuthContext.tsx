@@ -21,6 +21,37 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+/**
+ * Maps raw Supabase auth error messages to friendlier, more actionable text.
+ * Returns the original message when no mapping is found.
+ */
+function friendlyAuthError(raw: string): string {
+  const lower = raw.toLowerCase();
+
+  if (lower.includes("error sending confirmation email") || lower.includes("smtp") || lower.includes("email provider")) {
+    return "We couldn't send the verification email. The email service is not configured on the server — please contact support or try again later.";
+  }
+  if (lower.includes("email address not confirmed")) {
+    return "Your email hasn't been confirmed yet. Check your inbox for the verification link, or try resetting your password.";
+  }
+  if (lower.includes("invalid login credentials")) {
+    return "Invalid email or password. Please try again.";
+  }
+  if (lower.includes("user already registered") || lower.includes("already been registered")) {
+    return "An account with this email already exists. Try signing in instead.";
+  }
+  if (lower.includes("password should be at least")) {
+    return "Password must be at least 6 characters.";
+  }
+  if (lower.includes("unable to validate email address")) {
+    return "Please enter a valid email address.";
+  }
+  if (lower.includes("rate limit")) {
+    return "Too many attempts — please wait a moment and try again.";
+  }
+  return raw;
+}
+
 async function fetchRole(token: string): Promise<"user" | "moderator" | "admin"> {
   try {
     const res = await fetch(resolveApiPath("/api/user/role"), {
@@ -101,7 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   ): Promise<{ error?: string }> => {
     const sb = await getSupabase();
     const { data, error } = await sb.auth.signInWithPassword({ email, password });
-    if (error) return { error: error.message };
+    if (error) return { error: friendlyAuthError(error.message) };
     if (data.session?.access_token) {
       setSession(data.session);
       setUser(data.session.user);
@@ -123,7 +154,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       password,
       options: { data: { display_name: username, username } },
     });
-    if (error) return { error: error.message };
+    if (error) return { error: friendlyAuthError(error.message) };
     if (data.user && !data.session) {
       if (username) localStorage.setItem("pendingUsername", username);
       return { needsVerification: true };
@@ -156,7 +187,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { error } = await sb.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/auth/callback`,
     });
-    if (error) return { error: error.message };
+    if (error) return { error: friendlyAuthError(error.message) };
     return {};
   };
 
