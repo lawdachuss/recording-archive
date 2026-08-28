@@ -8,6 +8,8 @@ import { logger } from "../lib/logger.js";
 const COOKIES = process.env.COOKIES ?? "";
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+// Googlebot UA bypasses Cloudflare for Chaturbate (used only for API calls)
+const CB_UA = "Googlebot/2.1 (+http://www.google.com/bot.html)";
 
 // ─── Chaturbate API check ──────────────────────────────────────────────────
 // Uses the internal /get_edge_hls_url_ajax/ endpoint (same as yt-dlp).
@@ -20,7 +22,7 @@ async function checkChaturbateApi(
     const res = await fetch("https://chaturbate.com/get_edge_hls_url_ajax/", {
       method: "POST",
       headers: {
-        "User-Agent": UA,
+        "User-Agent": CB_UA,
         "X-Requested-With": "XMLHttpRequest",
         Accept: "application/json",
         "Content-Type": "application/x-www-form-urlencoded",

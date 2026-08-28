@@ -70823,7 +70823,7 @@ var recordings_default = router2;
 // src/routes/performers.ts
 var import_express3 = __toESM(require_express2(), 1);
 var COOKIES = process.env.COOKIES ?? "";
-var CB_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+var CB_UA = "Googlebot/2.1 (+http://www.google.com/bot.html)";
 async function checkChaturbateApi(username) {
   try {
     const res = await fetch("https://chaturbate.com/get_edge_hls_url_ajax/", {
