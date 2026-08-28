@@ -70833,10 +70833,10 @@ async function checkChaturbateApi(username) {
     });
     if (!res.ok) return null;
     const data = await res.json();
-    return { exists: !!data.success, is_live: data.room_status === "public", room_status: data.room_status || "unknown" };
+    return { exists: !!data.success, is_live: data.room_status === "public" || data.room_status === "group_show" || data.room_status === "private", room_status: data.room_status || "unknown" };
   } catch { return null; }
 }
-var MAX_STRIPCHAT_BYTES = 12e4;
+var MAX_STRIPCHAT_BYTES = 4e5;
 async function fetchStripchatPage(url2) {
   try {
     const res = await fetch(url2, {
@@ -70908,7 +70908,7 @@ router3.get("/performers/lookup", cache({ ttlSeconds: 120, staleSeconds: 300, ta
       res.status(400).json({ error: 'platform must be "chaturbate" or "stripchat"' });
       return;
     }
-    const profileUrl = platform === "chaturbate" ? `https://chaturbate.com/${username}/` : `https://stripchat.com/${username}`;
+    const profileUrl = platform === "chaturbate" ? `https://chaturbate.com/${username}/?campaign=gpCZM` : `https://stripchat.com/${username}`;
     const result = {
       exists: false,
       platform,
@@ -70960,12 +70960,21 @@ router3.get("/performers/lookup", cache({ ttlSeconds: 120, staleSeconds: 300, ta
     const bodyLower = html.toLowerCase();
     result.display_name = extractMetaContent(html, "og:title") || username;
     result.avatar_url = extractMetaContent(html, "og:image") ?? void 0;
-    if (bodyLower.includes("is online") || bodyLower.includes("online now") || bodyLower.includes("live now")) {
-      result.is_online = true;
+    const isOnlineMatch = html.match(/"isOnline":(true|false)/i);
+    if (isOnlineMatch) {
+      result.is_online = isOnlineMatch[1] === "true";
     } else {
-      result.is_online = false;
-      const lastSeenMatch = html.match(/(?:last\s+(?:online|seen|live)|offline)\s*[:]?\s*([^<]+)/i);
-      if (lastSeenMatch) result.last_seen = lastSeenMatch[1].trim();
+      if (bodyLower.includes("is online") || bodyLower.includes("online now") || bodyLower.includes("live now")) {
+        result.is_online = true;
+      } else {
+        result.is_online = false;
+        const lastSeenMatch = html.match(/(?:last\s+(?:online|seen|live)|offline)\s*[:]?\s*([^<]+)/i);
+        if (lastSeenMatch) result.last_seen = lastSeenMatch[1].trim();
+      }
+    }
+    const isLiveMatch = html.match(/"isLive":(true|false)/i);
+    if (isLiveMatch && isLiveMatch[1] === "true") {
+      result.is_online = true;
     }
     const ogDesc = extractMetaContent(html, "og:description");
     if (ogDesc) result.room_title = ogDesc;
