@@ -109,11 +109,13 @@ router.put("/user/profile", async (req, res) => {
       username?: string;
     };
 
-    const updates: { updated_at: string; display_name?: string; avatar_url?: string; bio?: string; username?: string } = { updated_at: new Date().toISOString() };
+    const updates: { updated_at: string; display_name?: string; avatar_url?: string; bio?: string; username?: string; email?: string } = { updated_at: new Date().toISOString() };
     if (display_name !== undefined) updates.display_name = display_name;
     if (avatar_url !== undefined) updates.avatar_url = avatar_url;
     if (bio !== undefined) updates.bio = bio;
     if (username != null && typeof username === "string") updates.username = username.trim().toLowerCase();
+    // Always include email so resolve-username can look up users by username
+    if (req.user!.email) updates.email = req.user!.email;
 
     const { data, error } = await req.supabase!
       .from("user_profiles")

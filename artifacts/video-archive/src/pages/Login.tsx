@@ -3,6 +3,18 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { Film, Eye, EyeOff, AlertCircle } from "lucide-react";
 
+const EMAIL_ERROR_HINTS: [RegExp, string][] = [
+  [/email address not confirmed/i, "Your email hasn't been confirmed yet. Check your inbox for the verification link."],
+  [/invalid login credentials/i, "Double-check your email and password. You can also try resetting your password."],
+];
+
+function emailErrorHint(msg: string): string | null {
+  for (const [re, hint] of EMAIL_ERROR_HINTS) {
+    if (re.test(msg)) return hint;
+  }
+  return null;
+}
+
 export default function Login() {
   const { signIn, resolveUsername } = useAuth();
   const [location, setLocation] = useLocation();
@@ -65,9 +77,14 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-sm text-xs text-destructive">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              {error}
+            <div className="flex flex-col gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-sm text-xs text-destructive">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+              {emailErrorHint(error) && (
+                <p className="ml-5 text-destructive/70 leading-relaxed">{emailErrorHint(error)}</p>
+              )}
             </div>
           )}
 

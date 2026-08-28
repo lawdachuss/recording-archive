@@ -90271,6 +90271,7 @@ router9.put("/user/profile", async (req, res) => {
     if (avatar_url !== void 0) updates.avatar_url = avatar_url;
     if (bio !== void 0) updates.bio = bio;
     if (username !== void 0) updates.username = username.trim().toLowerCase();
+    if (req.user.email) updates.email = req.user.email;
     const { data, error: error40 } = await req.supabase.from("user_profiles").upsert({ user_id: userId, ...updates }).select("user_id, display_name, avatar_url, bio, created_at, updated_at, username, email").single();
     if (error40) {
       req.log.error({ err: error40 }, "Supabase error updating user profile");
