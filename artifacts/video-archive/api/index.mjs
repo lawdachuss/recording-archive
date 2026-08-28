@@ -70635,7 +70635,7 @@ router2.get("/recordings/random", async (req, res) => {
     const excludeRaw = typeof req.query.exclude === "string" ? req.query.exclude : "";
     const excludeIds = new Set(excludeRaw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 100));
     const POOL_SIZE = Math.max(200, excludeIds.size + 50);
-    const { data: pool, error: fetchError } = await supabase.from("recordings_with_links").select("id").not("links", "is", "null").order("random()").limit(POOL_SIZE);
+    const { data: pool, error: fetchError } = await supabase.from("recordings_with_links").select("id").not("links", "is", "null").limit(POOL_SIZE);
     if (fetchError) {
       req.log.error({ err: fetchError }, "Supabase error getting recordings for random");
       res.status(500).json({ error: "Failed to get random recording" });
@@ -70643,7 +70643,7 @@ router2.get("/recordings/random", async (req, res) => {
     }
     const candidates = (pool ?? []).filter((r) => !excludeIds.has(r.id));
     if (candidates.length === 0) {
-      const { data: fallback } = await supabase.from("recordings_with_links").select("id").not("links", "is", "null").order("random()").limit(1);
+      const { data: fallback } = await supabase.from("recordings_with_links").select("id").not("links", "is", "null").limit(1);
       if (fallback && fallback.length > 0) { res.json({ id: fallback[0].id }); return; }
       res.status(404).json({ error: "No recordings found" });
       return;
