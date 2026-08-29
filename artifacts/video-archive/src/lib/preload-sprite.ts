@@ -53,12 +53,12 @@ export function isReachablePreviewUrl(url: string | null | undefined): boolean {
 // connection limits (6-8 per origin for HTTP/1.1, more for HTTP/2) are
 // sufficient safety.
 const warmed = new Set<string>();
-// Track URLs that have failed to load — allow one retry, then give up.
-// This prevents infinite retry loops for permanently broken URLs (404s,
-// DNS failures, CORS errors) while still allowing a single retry from
-// a different caller (e.g. hover preload after catalog warmer failed).
-const failedAttempts = new Map<string, number>();
-const MAX_FAILED_ATTEMPTS = 1;
+// Track when a URL last failed. Permanently broken URLs (404s, DNS failures,
+// CORS) won't recover, but transient failures (a momentarily slow/unreachable
+// host) should be retried after a cooldown rather than blacklisted for the
+// entire session. The cooldown bounds retry storms.
+const failedAt = new Map<string, number>();
+const FAILED_RETRY_COOLDOWN_MS = 5 * 60_000; // retry a failed URL after 5 min
 const MAX_ACTIVE = 12;
 
 const queue: Array<{ url: string; img: HTMLImageElement }> = [];
@@ -82,13 +82,15 @@ function startRequest(url: string, img: HTMLImageElement) {
   };
   img.onerror = () => {
     activeCount--;
-    const attempts = (failedAttempts.get(url) ?? 0) + 1;
-    failedAttempts.set(url, attempts);
-    if (attempts >= MAX_FAILED_ATTEMPTS) {
-      // Permanently broken — keep in warmed set to prevent retries
-      // from any future preload pass.
+    const now = Date.now();
+    const last = failedAt.get(url) ?? 0;
+    if (now - last < FAILED_RETRY_COOLDOWN_MS) {
+      // Failed recently — keep in the warmed set to avoid a retry storm.
     } else {
-      // Allow one retry from a different caller (e.g. hover preload)
+      // Record the failure and allow exactly one retry from a later preload
+      // pass (e.g. hover preload after the catalog warmer missed it). Once the
+      // cooldown elapses, preloadImage() will permit another attempt.
+      failedAt.set(url, now);
       warmed.delete(url);
     }
     pump();
@@ -119,25 +121,32 @@ function pump() {
 export function preloadImage(url: string | null | undefined): void {
   if (!url) return;
   if (isConnectionConstrained()) return;
-  if (!warmed.has(url)) {
-    warmed.add(url);
-    const img = new Image();
-    img.referrerPolicy = "no-referrer";
-    img.fetchPriority = "low";
-    img.decoding = "async";
-    queue.push({ url, img });
-    pump();
-    return;
+  if (warmed.has(url)) {
+    const last = failedAt.get(url) ?? 0;
+    if (last && Date.now() - last >= FAILED_RETRY_COOLDOWN_MS) {
+      // Cooldown elapsed since the last failure — permit a fresh attempt.
+      failedAt.delete(url);
+      warmed.delete(url);
+    } else {
+      // Already enqueued (e.g. by the idle full-catalog warmer) but not
+      // started yet — a hot request (viewport preload right before a hover)
+      // should not wait behind the whole catalog. Move it to the head.
+      const idx = queue.findIndex((item) => item.url === url);
+      if (idx > 0) {
+        const [item] = queue.splice(idx, 1);
+        queue.unshift(item);
+        pump();
+      }
+      return;
+    }
   }
-  // Already enqueued (e.g. by the idle full-catalog warmer) but not started
-  // yet — a hot request (viewport preload right before a hover) should not
-  // wait behind the whole catalog. Move it to the head of the queue.
-  const idx = queue.findIndex((item) => item.url === url);
-  if (idx > 0) {
-    const [item] = queue.splice(idx, 1);
-    queue.unshift(item);
-    pump();
-  }
+  warmed.add(url);
+  const img = new Image();
+  img.referrerPolicy = "no-referrer";
+  img.fetchPriority = "low";
+  img.decoding = "async";
+  queue.push({ url, img });
+  pump();
 }
 
 /**

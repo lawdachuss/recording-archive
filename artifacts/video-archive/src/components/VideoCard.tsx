@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import type { Recording } from "@workspace/api-client-react";
 import { formatBytes, formatRelativeTime, formatViewers, formatDuration } from "@/lib/formatters";
 import { Eye, HardDrive, Clock, CheckCircle } from "lucide-react";
-import { OptimizedImage } from "@/components/ui/optimized-image";
+import { OptimizedImage, ImageUnavailable } from "@/components/ui/optimized-image";
 import { useHoverPreview } from "@/hooks/use-hover-preview";
 import { SpriteSlideshow } from "@/components/SpriteSlideshow";
 import { cn } from "@/lib/utils";
@@ -281,22 +281,12 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
                 loading={fetchPriority === "high" ? "eager" : "lazy"}
                 className="opacity-100"
                 containerClassName="absolute inset-0 w-full h-full"
-                fallback={
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-secondary/80 to-secondary">
-                    <span className="text-lg font-bold text-muted-foreground/30 uppercase tracking-wider">
-                      {initials}
-                    </span>
-                  </div>
-                }
+                fallback={<ImageUnavailable initials={initials} />}
                 noShimmer
               />
             </div>
           ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-secondary/80 to-secondary">
-              <span className="text-lg font-bold text-muted-foreground/30 uppercase tracking-wider">
-                {initials}
-              </span>
-            </div>
+            <ImageUnavailable initials={initials} />
           )}
 
           {/* Layer 2: Sprite sheet — instant hover preview, fades in smoothly

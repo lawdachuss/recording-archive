@@ -69918,19 +69918,6 @@ function createUserClient(token) {
     }
   });
 }
-async function fetchAll(build, pageSize = 1e3) {
-  const all = [];
-  let start = 0;
-  for (; ; ) {
-    const { data, error: error40 } = await build(start, start + pageSize - 1);
-    if (error40) return { data: null, error: error40 };
-    if (!data || data.length === 0) break;
-    all.push(...data);
-    if (data.length < pageSize) break;
-    start += pageSize;
-  }
-  return { data: all, error: null };
-}
 
 // src/middleware/cache.ts
 import { createHash } from "node:crypto";
@@ -70014,14 +70001,34 @@ var CACHE_PREFIX = "api:v2";
 var TAG_PREFIX = "tag:v2";
 var DEFAULT_STALE_SECONDS = 60;
 var DEFAULT_MEMORY_ENTRIES = 500;
+var INFLOW_TIMEOUT_MS = Number.parseInt(process.env.API_CACHE_INFLOW_TIMEOUT ?? "", 10) || 1e4;
 var inflightRedisMap = /* @__PURE__ */ new Map();
 var inflightReqMap = /* @__PURE__ */ new Map();
+var PER_PROBABILITY = Number.parseFloat(process.env.API_CACHE_PER_PROBABILITY ?? "0.1") || 0.1;
+var PER_WINDOW_FRACTION = 0.2;
 var maxMemoryEntries = Math.max(
   50,
   Number.parseInt(process.env.API_CACHE_MEMORY_ENTRIES ?? "", 10) || DEFAULT_MEMORY_ENTRIES
 );
 var memoryCache = /* @__PURE__ */ new Map();
 var memoryTags = /* @__PURE__ */ new Map();
+var metrics = {
+  hits: 0,
+  misses: 0,
+  staleServes: 0,
+  backgroundRefreshes: 0,
+  inflightCoalesced: 0,
+  inflightTimeouts: 0,
+  bytesServed: 0,
+  startTime: Date.now()
+};
+function trackMetric(key, value) {
+  if (value !== void 0) {
+    metrics[key] += value;
+  } else {
+    metrics[key]++;
+  }
+}
 function dedupeRedis(key, fetcher) {
   const existing = inflightRedisMap.get(key);
   if (existing) return existing;
@@ -70040,6 +70047,11 @@ function stableStringify(value) {
   return `{${Object.keys(record2).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(record2[key])}`).join(",")}}`;
 }
 function makeEtag(body) {
+  const json3 = JSON.stringify(body);
+  if (json3.length > 1e4) {
+    const hash2 = createHash("md5").update(json3).digest("base64url");
+    return `"${hash2.slice(0, 24)}"`;
+  }
   const hash = createHash("sha256").update(stableStringify(body)).digest("base64url");
   return `"${hash.slice(0, 32)}"`;
 }
@@ -70062,6 +70074,14 @@ function makeInflightKey(req) {
   return `${req.method}:${normalizeOriginalUrl(req.originalUrl)}`;
 }
 function setMemory(key, entry) {
+  const oldRecord = memoryCache.get(key);
+  if (oldRecord) {
+    for (const tag of oldRecord.entry.tags) {
+      const keys = memoryTags.get(tag);
+      keys?.delete(key);
+      if (keys?.size === 0) memoryTags.delete(tag);
+    }
+  }
   const serialized = JSON.stringify(entry);
   memoryCache.delete(key);
   memoryCache.set(key, { entry, size: serialized.length });
@@ -70103,6 +70123,12 @@ function getMemory(key) {
 function isFresh(entry) {
   return Date.now() <= entry.expiresAt;
 }
+function isInPERWindow(entry, ttlSeconds) {
+  const now = Date.now();
+  const entryAge = now - entry.createdAt;
+  const perWindowStart = ttlSeconds * 1e3 * (1 - PER_WINDOW_FRACTION);
+  return entryAge >= perWindowStart && now <= entry.expiresAt;
+}
 function clientHasFreshCopy(req, etag) {
   const header = req.headers["if-none-match"];
   if (!header) return false;
@@ -70117,6 +70143,8 @@ function applyCacheHeaders(res, entry, ttlSeconds, staleSeconds) {
   });
 }
 function sendEntry(req, res, entry, source, ttlSeconds, staleSeconds) {
+  if (source === "HIT") trackMetric("hits");
+  else if (source === "STALE") trackMetric("staleServes");
   applyCacheHeaders(res, entry, ttlSeconds, staleSeconds);
   res.set("X-Cache", source);
   if (!isFresh(entry)) {
@@ -70126,6 +70154,8 @@ function sendEntry(req, res, entry, source, ttlSeconds, staleSeconds) {
     res.status(304).end();
     return;
   }
+  const bodyStr = typeof entry.body === "string" ? entry.body : JSON.stringify(entry.body);
+  trackMetric("bytesServed", bodyStr.length);
   res.status(entry.statusCode).type("json").send(entry.body);
 }
 async function readRedis(cacheKey) {
@@ -70147,14 +70177,18 @@ async function writeEntry(cacheKey, entry, ttlSeconds, staleSeconds) {
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return;
   const redisTtl = Math.max(1, ttlSeconds + staleSeconds);
-  await redis.setex(cacheKey, redisTtl, JSON.stringify(entry));
+  redis.setex(cacheKey, redisTtl, JSON.stringify(entry)).catch(
+    (err) => logger.error({ err, cacheKey }, "Redis write error")
+  );
   if (entry.tags.length > 0) {
     const pipeline = redis.pipeline();
     for (const tag of entry.tags) {
       pipeline.sadd(`${TAG_PREFIX}:${tag}`, cacheKey);
       pipeline.expire(`${TAG_PREFIX}:${tag}`, redisTtl);
     }
-    await pipeline.exec();
+    pipeline.exec().catch(
+      (err) => logger.error({ err, cacheKey }, "Redis tag write error")
+    );
   }
 }
 async function readAny(cacheKey) {
@@ -70172,12 +70206,36 @@ function shouldBypass(req) {
   const cacheControl = String(req.headers["cache-control"] ?? "");
   return cacheControl.includes("no-store");
 }
+function shouldTriggerPER(entry, ttlSeconds, probability) {
+  if (probability <= 0) return false;
+  if (!isInPERWindow(entry, ttlSeconds)) return false;
+  return Math.random() < probability;
+}
+async function awaitInflightWithTimeout(inflightPromise, cacheKey) {
+  let timeoutId;
+  try {
+    await Promise.race([
+      inflightPromise,
+      new Promise((resolve) => {
+        timeoutId = setTimeout(() => {
+          trackMetric("inflightTimeouts");
+          logger.warn({ cacheKey }, "Inflight request timed out \u2014 proceeding to backend");
+          resolve();
+        }, INFLOW_TIMEOUT_MS);
+      })
+    ]);
+    return true;
+  } finally {
+    if (timeoutId !== void 0) clearTimeout(timeoutId);
+  }
+}
 function cache(options) {
   const opts = typeof options === "number" ? { ttlSeconds: options } : options;
   const ttlSeconds = Math.max(1, opts.ttlSeconds);
   const staleSeconds = Math.max(0, opts.staleSeconds ?? DEFAULT_STALE_SECONDS);
   const tags = opts.tags ?? [];
   const cacheStatuses = opts.cacheStatuses ?? [200];
+  const perProbability = opts.perProbability ?? PER_PROBABILITY;
   return async (req, res, next) => {
     if (shouldBypass(req)) {
       res.set("Cache-Control", "no-store");
@@ -70187,6 +70245,36 @@ function cache(options) {
     const cacheKey = makeCacheKey(req);
     const existing = await readAny(cacheKey);
     if (existing && isFresh(existing)) {
+      if (shouldTriggerPER(existing, ttlSeconds, perProbability)) {
+        trackMetric("backgroundRefreshes");
+        const perKey = `per:${cacheKey}`;
+        if (!inflightReqMap.has(perKey)) {
+          let resolvePER = null;
+          const perPromise = new Promise((resolve) => {
+            resolvePER = resolve;
+          });
+          inflightReqMap.set(perKey, perPromise);
+          const fakeReq = { ...req, headers: { ...req.headers, "cache-control": "no-store" } };
+          const fakeRes = {
+            statusCode: 200,
+            json: (body) => {
+              return fakeRes;
+            },
+            set: () => fakeRes,
+            status: () => fakeRes,
+            end: () => {
+            },
+            type: () => fakeRes,
+            send: () => fakeRes
+          };
+          setTimeout(() => {
+            if (resolvePER) resolvePER();
+            inflightReqMap.delete(perKey);
+          }, ttlSeconds * 1e3 * PER_WINDOW_FRACTION);
+        }
+        sendEntry(req, res, existing, "HIT", ttlSeconds, staleSeconds);
+        return;
+      }
       sendEntry(req, res, existing, "HIT", ttlSeconds, staleSeconds);
       return;
     }
@@ -70197,7 +70285,8 @@ function cache(options) {
         sendEntry(req, res, existing, "STALE", ttlSeconds, staleSeconds);
         return;
       }
-      await existingInflight;
+      trackMetric("inflightCoalesced");
+      await awaitInflightWithTimeout(existingInflight, cacheKey);
       const refreshed = await readAny(cacheKey);
       if (refreshed) {
         sendEntry(req, res, refreshed, isFresh(refreshed) ? "REFRESHED" : "STALE", ttlSeconds, staleSeconds);
@@ -70241,16 +70330,12 @@ function cache(options) {
         }
       } else {
         res.set("Cache-Control", "no-store");
+        trackMetric("misses");
       }
       if (resolveInflight) {
         resolveInflight();
         resolveInflight = null;
       }
-      setTimeout(() => {
-        if (inflightReqMap.get(inflightKey) === inflightPromise) {
-          inflightReqMap.delete(inflightKey);
-        }
-      }, 1e3).unref?.();
       return originalJson(body);
     };
     res.once("finish", () => {
@@ -70348,7 +70433,7 @@ function invalidateOnSuccess(tags) {
 async function purgeAllCache() {
   const redis = getRedis();
   const invalidatedTags = new Set(memoryTags.keys());
-  let deletedKeys = memoryCache.size + memoryTags.size;
+  let deletedKeys = memoryCache.size;
   memoryCache.clear();
   memoryTags.clear();
   if (redis && isRedisConnected()) {
@@ -70380,27 +70465,34 @@ function getCacheStats() {
     maxMemoryEntries
   };
 }
+function getCacheMetrics() {
+  const totalRequests = metrics.hits + metrics.misses + metrics.staleServes;
+  return {
+    ...metrics,
+    hitRate: totalRequests > 0 ? metrics.hits / totalRequests * 100 : 0,
+    staleRate: totalRequests > 0 ? metrics.staleServes / totalRequests * 100 : 0,
+    totalRequests,
+    uptimeSeconds: Math.floor((Date.now() - metrics.startTime) / 1e3)
+  };
+}
+function resetCacheMetrics() {
+  metrics.hits = 0;
+  metrics.misses = 0;
+  metrics.staleServes = 0;
+  metrics.backgroundRefreshes = 0;
+  metrics.inflightCoalesced = 0;
+  metrics.inflightTimeouts = 0;
+  metrics.bytesServed = 0;
+  metrics.startTime = Date.now();
+}
 
 // src/routes/recordings.ts
 var router2 = (0, import_express2.Router)();
+var LIST_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at";
+var RELATED_COLS = "id,username,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,preview_url";
+var POOL_COLS = "id,username,tags,gender,timestamp,viewers,thumbnail_url,sprite_url,preview_url";
 router2.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["recordings", "search"] }), async (req, res) => {
   try {
-    let applyFilters2 = function(q) {
-      q = q.not("links", "is", "null");
-      if (search?.trim()) {
-        const term = search.trim();
-        q = q.or(`username.ilike.%${term}%,room_title.ilike.%${term}%,filename.ilike.%${term}%`);
-      }
-      if (tags) {
-        const tagList = tags.split(",").map((t) => t.trim()).filter(Boolean);
-        if (tagList.length > 0) q = q.contains("tags", tagList);
-      }
-      if (gender) q = q.eq("gender", gender);
-      if (username) q = q.eq("username", username);
-      if (resolution) q = q.eq("resolution", resolution);
-      return q;
-    };
-    var applyFilters = applyFilters2;
     const parsed = ListRecordingsQueryParams.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({ error: "Invalid query params" });
@@ -70409,40 +70501,47 @@ router2.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["re
     const { page = 1, limit = 24, search, tags, gender, username, resolution, sort } = parsed.data;
     const normalizedPage = Math.max(1, page);
     const normalizedLimit = Math.min(Math.max(1, limit), 100);
-    const offset = (normalizedPage - 1) * normalizedLimit;
-    const orderCol = sort === "oldest" ? "timestamp" : sort === "largest" ? "filesize" : sort === "popular" ? "viewers" : "timestamp";
+    let query = supabase.from("recordings_with_links").select(LIST_COLS, { count: "exact" }).not("links", "is", "null");
+    if (search?.trim()) {
+      const s = search.trim();
+      query = query.or(`username.ilike.%${s}%,room_title.ilike.%${s}%,filename.ilike.%${s}%`);
+    }
+    if (tags) {
+      const tagList = tags.split(",").map((t) => t.trim()).filter(Boolean);
+      if (tagList.length > 0) query = query.overlaps("tags", tagList);
+    }
+    if (gender) query = query.eq("gender", gender);
+    if (username) query = query.eq("username", username);
+    if (resolution) query = query.eq("resolution", resolution);
     const ascending = sort === "oldest";
-    const SELECT_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at,links";
-    const [countResult, dataResult] = await Promise.all([
-      applyFilters2(supabase.from("recordings_with_links").select("*", { count: "exact", head: true })),
-      applyFilters2(supabase.from("recordings_with_links").select(SELECT_COLS)).order(orderCol, { ascending, nullsFirst: false }).range(offset, offset + normalizedLimit - 1)
-    ]);
-    if (dataResult.error) {
-      req.log.error({ err: dataResult.error }, "Supabase error listing recordings");
+    const sortCol = sort === "largest" ? "filesize" : sort === "popular" ? "viewers" : "timestamp";
+    query = query.order(sortCol, { ascending, nullsFirst: false });
+    const offset = (normalizedPage - 1) * normalizedLimit;
+    const { data, error: error40, count } = await query.range(offset, offset + normalizedLimit - 1);
+    if (error40) {
+      req.log.error({ err: error40 }, "Supabase error listing recordings");
       res.status(500).json({ error: "Failed to fetch recordings" });
       return;
     }
-    const total = countResult.count ?? 0;
-    const rows = dataResult.data ?? [];
     res.json({
-      data: rows,
-      total,
+      data: data ?? [],
+      total: count ?? 0,
       page: normalizedPage,
       limit: normalizedLimit,
-      totalPages: Math.ceil(total / normalizedLimit)
+      totalPages: Math.ceil((count ?? 0) / normalizedLimit)
     });
   } catch (err) {
     req.log.error({ err }, "GET /recordings unexpected error");
     res.status(500).json({ error: "Failed to fetch recordings" });
   }
 });
-router2.get("/recordings/recommendations", async (req, res) => {
+router2.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds: 120, tags: ["recordings"] }), async (req, res) => {
   try {
     const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10) || 1);
     const limit = Math.min(Math.max(1, parseInt(String(req.query.limit ?? "12"), 10) || 12), 100);
     const excludeRaw = typeof req.query.exclude === "string" ? req.query.exclude : "";
-    const exclude = excludeRaw.split(",").map((s) => s.trim()).filter(Boolean);
-    const MAX_PAGES = 10;
+    const exclude = excludeRaw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 200);
+    const MAX_POOL = 1e3;
     const seenIds = new Set(exclude);
     let userTagFreq = {};
     let userPerformerFreq = {};
@@ -70470,38 +70569,31 @@ router2.get("/recordings/recommendations", async (req, res) => {
                 const progress = Number(h.progress_seconds) || 0;
                 const duration3 = Number(h.duration_seconds) || 1;
                 const ratio = duration3 > 0 ? Math.min(progress / duration3, 1) : 0.5;
-                const completionWeight = ratio < 0.1 ? 0.1 : ratio < 0.5 ? 0.5 : ratio < 0.8 ? 1 : 2;
+                const cw = ratio < 0.1 ? 0.1 : ratio < 0.5 ? 0.5 : ratio < 0.8 ? 1 : 2;
                 const daysAgo = h.watched_at ? (Date.now() - new Date(h.watched_at).getTime()) / 864e5 : 30;
-                const recencyWeight = Math.max(0.5, 1 - daysAgo / 30);
-                completionWeights.set(h.recording_id, completionWeight * recencyWeight);
+                completionWeights.set(h.recording_id, cw * Math.max(0.5, 1 - daysAgo / 30));
               }
             }
           }
           const { data: follows } = await supabase.from("performer_follows").select("performer_username").eq("user_id", uid);
-          if (follows) {
-            for (const f of follows) {
-              if (f.performer_username) followedPerformers.add(f.performer_username);
-            }
+          if (follows) for (const f of follows) {
+            if (f.performer_username) followedPerformers.add(f.performer_username);
           }
           const { data: saved } = await supabase.from("saved_videos").select("recording_id").eq("user_id", uid);
           const savedRecordingIds = [];
-          if (saved) {
-            for (const s of saved) {
-              if (s.recording_id) {
-                savedRecordingIds.push(s.recording_id);
-                seenIds.add(s.recording_id);
-              }
+          if (saved) for (const s of saved) {
+            if (s.recording_id) {
+              savedRecordingIds.push(s.recording_id);
+              seenIds.add(s.recording_id);
             }
           }
           const { data: watchLater } = await supabase.from("watch_later_items").select("recording_id").eq("user_id", uid);
           const watchLaterRecordingIds = [];
-          if (watchLater) {
-            for (const w of watchLater) {
-              if (w.recording_id) {
-                watchLaterRecordingIds.push(w.recording_id);
-                watchLaterIds.add(w.recording_id);
-                seenIds.add(w.recording_id);
-              }
+          if (watchLater) for (const w of watchLater) {
+            if (w.recording_id) {
+              watchLaterRecordingIds.push(w.recording_id);
+              watchLaterIds.add(w.recording_id);
+              seenIds.add(w.recording_id);
             }
           }
           const allIds = [.../* @__PURE__ */ new Set([...historyRecordingIds, ...savedRecordingIds, ...watchLaterRecordingIds])];
@@ -70532,21 +70624,20 @@ router2.get("/recordings/recommendations", async (req, res) => {
     const logWeight = (n) => Math.log10(n + 1);
     const diversify = (items, pageSize, maxPerPerformer = 2) => {
       const result = [];
-      const performerCount = {};
-      const working = [...items];
-      while (result.length < pageSize && working.length > 0) {
-        let picked = -1;
-        for (let i = 0; i < working.length; i++) {
-          const perf2 = working[i].username || "unknown";
-          if ((performerCount[perf2] ?? 0) < maxPerPerformer) {
-            picked = i;
+      const pc = {};
+      const w = [...items];
+      while (result.length < pageSize && w.length > 0) {
+        let p = -1;
+        for (let i = 0; i < w.length; i++) {
+          if ((pc[w[i].username || "unknown"] ?? 0) < maxPerPerformer) {
+            p = i;
             break;
           }
         }
-        if (picked === -1) picked = 0;
-        const item = working.splice(picked, 1)[0];
-        const perf = item.username || "unknown";
-        performerCount[perf] = (performerCount[perf] ?? 0) + 1;
+        if (p === -1) p = 0;
+        const item = w.splice(p, 1)[0];
+        const k = item.username || "unknown";
+        pc[k] = (pc[k] ?? 0) + 1;
         result.push(item);
       }
       return result;
@@ -70566,85 +70657,64 @@ router2.get("/recordings/recommendations", async (req, res) => {
             if (savedPerformers[r.username]) score += logWeight(savedPerformers[r.username]) * 40;
             if (followedPerformers.has(r.username)) score += 50;
           }
-          const preferredGender = Object.entries(watchedGenders).sort((a, b) => b[1] - a[1])[0]?.[0];
-          if (preferredGender && r.gender === preferredGender) score += 5;
+          const pg2 = Object.entries(watchedGenders).sort((a, b) => b[1] - a[1])[0]?.[0];
+          if (pg2 && r.gender === pg2) score += 5;
           if (watchLaterIds.has(r.id)) score += 20;
         }
         score += logWeight(r.viewers ?? 0) * 3;
         const ageDays = r.timestamp ? (Date.now() - new Date(r.timestamp).getTime()) / 864e5 : 999;
-        score += Math.max(0, 30 - ageDays * 0.5);
-        score += (Math.random() - 0.5) * 8;
+        score += Math.max(0, 30 - ageDays * 0.5) + (Math.random() - 0.5) * 8;
         scored.push({ ...r, _score: score });
         seenIds.add(r.id);
       }
     };
     if (isAuthenticated) {
-      const POOL = limit * MAX_PAGES;
-      const { data: poolRows } = await supabase.from("recordings_with_links").select("*").not("links", "is", "null").order("timestamp", { ascending: false }).limit(POOL * 2);
-      addScored(poolRows, 0);
+      const POOL = Math.min(Math.max(page * limit * 4, limit * 10), MAX_POOL);
+      const { data } = await supabase.from("recordings_with_links").select(POOL_COLS).not("links", "is", "null").order("timestamp", { ascending: false }).limit(POOL * 2);
+      addScored(data, 0);
       scored.sort((a, b) => b._score - a._score);
     } else {
-      const POOL = limit * MAX_PAGES;
-      const [newestResult, tagDiverseResult, popularResult, categoryResult] = await Promise.all([
-        // Newest recordings (high base score)
-        supabase.from("recordings_with_links").select("*").not("links", "is", "null").order("timestamp", { ascending: false }).limit(POOL),
-        // Tag-diverse: sample from different tags for variety
-        supabase.from("recordings_with_links").select("*").not("links", "is", "null").order("viewers", { ascending: false, nullsFirst: false }).limit(POOL),
-        // Most viewed (popular)
-        supabase.from("recordings_with_links").select("*").not("links", "is", "null").order("viewers", { ascending: false, nullsFirst: false }).limit(POOL),
-        // Recent popular mix
-        supabase.from("recordings_with_links").select("*").not("links", "is", "null").order("timestamp", { ascending: false }).limit(POOL)
+      const POOL = Math.min(Math.max(page * limit * 4, limit * 10), MAX_POOL);
+      const [newest, popular] = await Promise.all([
+        supabase.from("recordings_with_links").select(POOL_COLS).not("links", "is", "null").order("timestamp", { ascending: false }).limit(POOL),
+        supabase.from("recordings_with_links").select(POOL_COLS).not("links", "is", "null").order("viewers", { ascending: false, nullsFirst: false }).limit(POOL)
       ]);
-      const tagDiverseRows = tagDiverseResult.data ?? [];
-      const seenTags = /* @__PURE__ */ new Set();
-      const dedupedTagRows = [];
-      for (const r of tagDiverseRows) {
-        const tagKey = (r.tags ?? []).slice(0, 2).sort().join(",");
-        if (!seenTags.has(tagKey)) {
-          seenTags.add(tagKey);
-          dedupedTagRows.push(r);
-        }
-        if (dedupedTagRows.length >= POOL) break;
-      }
-      addScored(newestResult.data, 80);
-      addScored(dedupedTagRows, 50);
-      addScored(popularResult.data, 20);
-      addScored(categoryResult.data, 1);
+      addScored(newest.data, 80);
+      addScored(popular.data, 20);
       scored.sort((a, b) => b._score - a._score);
     }
-    const diversified = diversify(scored, limit * MAX_PAGES, 2);
+    const diversified = diversify(scored, scored.length, 2);
     const totalItems = diversified.length;
-    const totalPages = Math.min(Math.ceil(totalItems / limit) || 1, MAX_PAGES);
+    const totalPages = Math.ceil(totalItems / limit) || 1;
     const safePage = Math.min(page, totalPages);
     const offset = (safePage - 1) * limit;
     const pageRows = diversified.slice(offset, offset + limit).map(({ _score, ...r }) => r);
-    res.json({
-      data: pageRows,
-      total: totalItems,
-      page: safePage,
-      limit,
-      totalPages
-    });
+    res.json({ data: pageRows, total: totalItems, page: safePage, limit, totalPages });
   } catch (err) {
     req.log.error({ err }, "GET /recordings/recommendations unexpected error");
-    res.status(500).json({ error: "Failed to fetch recommendations" });
+    res.status(500).json({ error: "Failed to get recommendations" });
   }
 });
-router2.get("/recordings/random", async (req, res) => {
+router2.get("/recordings/random", cache({ ttlSeconds: 30, staleSeconds: 60, tags: ["recordings"] }), async (req, res) => {
   try {
     const excludeRaw = typeof req.query.exclude === "string" ? req.query.exclude : "";
-    const excludeIds = new Set(excludeRaw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 100));
+    const excludeIds = new Set(
+      excludeRaw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 100)
+    );
     const POOL_SIZE = Math.max(200, excludeIds.size + 50);
-    const { data: pool, error: fetchError } = await supabase.from("recordings_with_links").select("id").not("links", "is", "null").limit(POOL_SIZE);
-    if (fetchError) {
-      req.log.error({ err: fetchError }, "Supabase error getting recordings for random");
+    const { data: pool2, error: error40 } = await supabase.from("recordings_with_links").select("id").not("links", "is", "null").limit(POOL_SIZE);
+    if (error40) {
+      req.log.error({ err: error40 }, "Supabase error getting recordings for random");
       res.status(500).json({ error: "Failed to get random recording" });
       return;
     }
-    const candidates = (pool ?? []).filter((r) => !excludeIds.has(r.id));
+    const candidates = (pool2 ?? []).filter((r) => !excludeIds.has(r.id));
     if (candidates.length === 0) {
       const { data: fallback } = await supabase.from("recordings_with_links").select("id").not("links", "is", "null").limit(1);
-      if (fallback && fallback.length > 0) { res.json({ id: fallback[0].id }); return; }
+      if (fallback && fallback.length > 0) {
+        res.json({ id: fallback[0].id });
+        return;
+      }
       res.status(404).json({ error: "No recordings found" });
       return;
     }
@@ -70655,7 +70725,7 @@ router2.get("/recordings/random", async (req, res) => {
     res.status(500).json({ error: "Failed to get random recording" });
   }
 });
-router2.get("/recordings/related", async (req, res) => {
+router2.get("/recordings/related", cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["recordings"] }), async (req, res) => {
   try {
     const parsed = ListRelatedRecordingsQueryParams.safeParse(req.query);
     if (!parsed.success) {
@@ -70668,16 +70738,7 @@ router2.get("/recordings/related", async (req, res) => {
       return;
     }
     const { data: recording, error: recError } = await supabase.from("recordings_with_links").select("username, tags, gender").not("links", "is", "null").eq("id", id).single();
-    if (recError) {
-      if (recError.code === "PGRST116") {
-        res.json([]);
-        return;
-      }
-      req.log.error({ err: recError, id }, "Failed to fetch source recording");
-      res.status(500).json({ error: "Failed to fetch related recordings" });
-      return;
-    }
-    if (!recording) {
+    if (recError || !recording) {
       res.json([]);
       return;
     }
@@ -70691,25 +70752,15 @@ router2.get("/recordings/related", async (req, res) => {
         const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.slice(7));
         if (!authError && user) {
           isAuthenticated = true;
-          const { data: history } = await supabase.from("watch_history").select("recording_id, metadata").eq("user_id", user.id).order("watched_at", { ascending: false }).limit(50);
+          const { data: history } = await supabase.from("watch_history").select("recording_id").eq("user_id", user.id).order("watched_at", { ascending: false }).limit(50);
           if (history && history.length > 0) {
-            for (const h of history) {
-              if (h.recording_id) seenIds.add(h.recording_id);
-            }
+            for (const h of history) if (h.recording_id) seenIds.add(h.recording_id);
             const historyIds = history.map((h) => h.recording_id).filter(Boolean);
             if (historyIds.length > 0) {
-              const { data: historyRecordings } = await supabase.from("recordings_with_links").select("username, tags").in("id", historyIds);
-              if (historyRecordings) {
-                for (const hr of historyRecordings) {
-                  if (hr.tags) {
-                    for (const tag of hr.tags) {
-                      userTagFreq[tag] = (userTagFreq[tag] ?? 0) + 1;
-                    }
-                  }
-                  if (hr.username) {
-                    userPerformerFreq[hr.username] = (userPerformerFreq[hr.username] ?? 0) + 1;
-                  }
-                }
+              const { data: hr } = await supabase.from("recordings_with_links").select("username, tags").in("id", historyIds);
+              if (hr) for (const r of hr) {
+                if (r.tags) for (const tag of r.tags) userTagFreq[tag] = (userTagFreq[tag] ?? 0) + 1;
+                if (r.username) userPerformerFreq[r.username] = (userPerformerFreq[r.username] ?? 0) + 1;
               }
             }
           }
@@ -70717,27 +70768,17 @@ router2.get("/recordings/related", async (req, res) => {
       } catch {
       }
     }
-    const { data: performerData } = await supabase.from("recordings_with_links").select("*").not("links", "is", "null").neq("id", id).eq("username", recording.username).order("timestamp", { ascending: false }).limit(limit);
-    const performerResults = performerData ?? [];
+    const { data: performerData } = await supabase.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).eq("username", recording.username).order("timestamp", { ascending: false }).limit(limit);
     let tagResults = [];
     if (recording.tags && recording.tags.length > 0) {
       const sourceTags = new Set(recording.tags);
-      const { data: tagData } = await supabase.from("recordings_with_links").select("*").not("links", "is", "null").neq("id", id).neq("username", recording.username).filter("tags", "?|", `{${recording.tags.join(",")}}`).order("timestamp", { ascending: false }).limit(limit * 3);
-      tagResults = tagData ?? [];
-      tagResults = tagResults.map((r) => {
-        let score = 0;
-        const sharedTags = (r.tags ?? []).filter((t) => sourceTags.has(t));
-        score += sharedTags.length * 15;
+      const { data } = await supabase.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).neq("username", recording.username).overlaps("tags", recording.tags).order("timestamp", { ascending: false }).limit(limit * 3);
+      tagResults = (data ?? []).map((r) => {
+        let score = (r.tags ?? []).filter((t) => sourceTags.has(t)).length * 15;
         if (isAuthenticated) {
-          for (const tag of r.tags ?? []) {
-            score += (userTagFreq[tag] ?? 0) * 3;
-          }
-          if (r.username && userPerformerFreq[r.username]) {
-            score += userPerformerFreq[r.username] * 10;
-          }
-          if (recording.gender && r.gender === recording.gender) {
-            score += 3;
-          }
+          for (const tag of r.tags ?? []) score += (userTagFreq[tag] ?? 0) * 3;
+          if (r.username && userPerformerFreq[r.username]) score += userPerformerFreq[r.username] * 10;
+          if (recording.gender && r.gender === recording.gender) score += 3;
         }
         score += (r.viewers ?? 0) * 0.01;
         return { ...r, _score: score };
@@ -70746,7 +70787,7 @@ router2.get("/recordings/related", async (req, res) => {
     }
     const merged = [];
     const seen = new Set(seenIds);
-    for (const r of performerResults) {
+    for (const r of performerData ?? []) {
       if (!seen.has(r.id)) {
         seen.add(r.id);
         merged.push(r);
@@ -70760,13 +70801,13 @@ router2.get("/recordings/related", async (req, res) => {
       if (merged.length >= limit) break;
       if (!seen.has(r.id)) {
         seen.add(r.id);
-        const { _score, ...clean } = r;
-        merged.push(clean);
+        const { _score, ...c } = r;
+        merged.push(c);
       }
     }
     if (merged.length < limit && recording.gender) {
-      const { data: genderData } = await supabase.from("recordings_with_links").select("*").not("links", "is", "null").neq("id", id).neq("username", recording.username).eq("gender", recording.gender).order("viewers", { ascending: false, nullsFirst: false }).limit(limit * 2);
-      for (const r of genderData ?? []) {
+      const { data } = await supabase.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).neq("username", recording.username).eq("gender", recording.gender).order("viewers", { ascending: false, nullsFirst: false }).limit(limit * 2);
+      for (const r of data ?? []) {
         if (merged.length >= limit) break;
         if (!seen.has(r.id)) {
           seen.add(r.id);
@@ -70775,8 +70816,8 @@ router2.get("/recordings/related", async (req, res) => {
       }
     }
     if (merged.length < limit) {
-      const { data: popularData } = await supabase.from("recordings_with_links").select("*").not("links", "is", "null").neq("id", id).neq("username", recording.username).order("viewers", { ascending: false, nullsFirst: false }).limit(limit * 3);
-      for (const r of popularData ?? []) {
+      const { data } = await supabase.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).neq("username", recording.username).order("viewers", { ascending: false, nullsFirst: false }).limit(limit * 3);
+      for (const r of data ?? []) {
         if (merged.length >= limit) break;
         if (!seen.has(r.id)) {
           seen.add(r.id);
@@ -70787,7 +70828,7 @@ router2.get("/recordings/related", async (req, res) => {
     res.json(merged.slice(0, limit));
   } catch (err) {
     req.log.error({ err, id: req.query.id }, "GET /recordings/related unexpected error");
-    res.status(500).json({ error: "Failed to fetch related recordings" });
+    res.status(500).json({ error: "Failed to get related recordings" });
   }
 });
 router2.get("/recordings/:id", cache({ ttlSeconds: 600, staleSeconds: 900, tags: ["recordings"] }), async (req, res) => {
@@ -70826,325 +70867,6 @@ var recordings_default = router2;
 
 // src/routes/performers.ts
 var import_express3 = __toESM(require_express2(), 1);
-var COOKIES = process.env.COOKIES ?? "";
-var CB_AFFILIATE = process.env.CHATURBATE_AFFILIATE_CODE ?? "";
-var CB_UA = "Googlebot/2.1 (+http://www.google.com/bot.html)";
-async function checkChaturbateApi(username) {
-  try {
-    const res = await fetch("https://chaturbate.com/get_edge_hls_url_ajax/", {
-      method: "POST",
-      headers: { "User-Agent": CB_UA, "X-Requested-With": "XMLHttpRequest", Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded" },
-      body: `room_slug=${encodeURIComponent(username)}`
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return { exists: !!data.success, is_live: data.room_status === "public" || data.room_status === "group_show" || data.room_status === "private", room_status: data.room_status || "unknown" };
-  } catch { return null; }
-}
-var MAX_STRIPCHAT_BYTES = 4e5;
-async function fetchStripchatPage(url2) {
-  try {
-    const res = await fetch(url2, {
-      headers: { "User-Agent": CB_UA, Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "Accept-Language": "en-US,en;q=0.9", Cookie: COOKIES }
-    });
-    if (!res.ok) return null;
-    if (!res.body) return res.text();
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let accumulated = "";
-    let totalBytes = 0;
-    while (totalBytes < MAX_STRIPCHAT_BYTES) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      totalBytes += value.byteLength;
-      accumulated += decoder.decode(value, { stream: true });
-    }
-    reader.releaseLock();
-    return accumulated;
-  } catch { return null; }
-}
-function extractMetaContent(html, propertyOrName) {
-  const propRegex = new RegExp(`<meta\\s+property=["']${propertyOrName}["']\\s+content=["']([^"']*)["']`, "i");
-  let match = html.match(propRegex);
-  if (match) return match[1];
-  const nameRegex = new RegExp(`<meta\\s+name=["']${propertyOrName}["']\\s+content=["']([^"']*)["']`, "i");
-  match = html.match(nameRegex);
-  if (match) return match[1];
-  const revRegex = new RegExp(`<meta\\s+content=["']([^"']*)["']\\s+property=["']${propertyOrName}["']`, "i");
-  match = html.match(revRegex);
-  return match ? match[1] : null;
-}
-function parseCount(str) {
-  const s = str.toLowerCase().replace(/,/g, "");
-  if (s.endsWith("m")) return parseFloat(s) * 1e6;
-  if (s.endsWith("k")) return parseFloat(s) * 1e3;
-  return parseFloat(s) || 0;
-}
-function performerExistsOnStripchat(html, username) {
-  const bodyLower = html.toLowerCase();
-  const usernameLower = username.toLowerCase();
-  const expectedUrls = [`https://stripchat.com/${usernameLower}`, `https://www.stripchat.com/${usernameLower}`];
-  const canonical = extractMetaContent(html, "og:url");
-  if (canonical) { const normalized = canonical.replace(/\/+$/, "").toLowerCase(); if (expectedUrls.some((u) => normalized === u)) return true; }
-  const canonicalLink = (html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i) || html.match(/<link[^>]+href=["']([^"']+)["'][^>]+rel=["']canonical["']/i))?.[1];
-  if (canonicalLink) { const normalized = canonicalLink.replace(/\/+$/, "").toLowerCase(); if (expectedUrls.some((u) => normalized === u)) return true; }
-  if (bodyLower.includes(`data-model-username="${usernameLower}"`)) return true;
-  if (bodyLower.includes(`data-username="${usernameLower}"`)) return true;
-  if (bodyLower.includes(`data-profile="${usernameLower}"`)) return true;
-  const profileLinkRegex = new RegExp(`href=["']https://stripchat\.com/${usernameLower}(?:/|"|')`, "i");
-  if (profileLinkRegex.test(html)) return true;
-  const twitterSite = extractMetaContent(html, "twitter:site");
-  if (twitterSite && twitterSite.toLowerCase().includes(usernameLower)) {
-    const ogImage = extractMetaContent(html, "og:image");
-    if (ogImage && !ogImage.includes("default") && !ogImage.includes("logo")) return true;
-  }
-  return false;
-}
-var router3 = (0, import_express3.Router)();
-router3.get("/performers/lookup", cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["performers", "search"] }), async (req, res) => {
-  try {
-    const platform = req.query.platform?.toLowerCase();
-    const username = req.query.username?.toLowerCase().trim();
-    if (!platform || !username) {
-      res.status(400).json({ error: "platform and username are required" });
-      return;
-    }
-    if (!["chaturbate", "stripchat"].includes(platform)) {
-      res.status(400).json({ error: 'platform must be "chaturbate" or "stripchat"' });
-      return;
-    }
-    const profileUrl = platform === "chaturbate" ? `https://chaturbate.com/${username}/${CB_AFFILIATE ? `?campaign=${CB_AFFILIATE}` : ''}` : `https://stripchat.com/${username}`;
-    const result = {
-      exists: false,
-      platform,
-      username,
-      profile_url: profileUrl,
-      in_archive: false
-    };
-    try {
-      const { data: archiveData } = await supabase.from("recordings_with_links").select("thumbnail_url, sprite_url, preview_url, timestamp, username").eq("username", username).not("links", "is", "null").order("timestamp", { ascending: false }).limit(50);
-      if (archiveData && archiveData.length > 0) {
-        result.in_archive = true;
-        result.archive_recording_count = archiveData.length;
-        result.archive_last_recording = archiveData[0].timestamp;
-        result.archive_thumbnail = archiveData[0].thumbnail_url || archiveData[0].sprite_url || archiveData[0].preview_url || null;
-      }
-    } catch {
-    }
-    if (platform === "chaturbate") {
-      const apiResult = await checkChaturbateApi(username);
-      if (apiResult) {
-        result.exists = apiResult.exists;
-        result.is_online = apiResult.is_live;
-        if (!apiResult.exists && result.in_archive) { result.exists = true; result.platform_check_failed = true; }
-        res.json(result);
-        return;
-      }
-      result.platform_check_failed = true;
-      if (result.in_archive) result.exists = true;
-      res.json(result);
-      return;
-    }
-    const html = await fetchStripchatPage(profileUrl);
-    if (!html) {
-      if (result.in_archive) { result.exists = true; result.platform_check_failed = true; }
-      res.json(result);
-      return;
-    }
-    if (performerExistsOnStripchat(html, username)) {
-      result.exists = true;
-    } else {
-      const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
-      const title = titleMatch ? titleMatch[1].toLowerCase() : "";
-      if (["page not found", "not found", "404", "error"].some((p) => title.includes(p))) {
-        if (result.in_archive) { result.exists = true; result.platform_check_failed = true; res.json(result); return; }
-        result.exists = false; res.json(result); return;
-      }
-      result.exists = false; res.json(result); return;
-    }
-    const bodyLower = html.toLowerCase();
-    result.display_name = extractMetaContent(html, "og:title") || username;
-    result.avatar_url = extractMetaContent(html, "og:image") ?? void 0;
-    const isOnlineMatch = html.match(/"isOnline":(true|false)/i);
-    if (isOnlineMatch) {
-      result.is_online = isOnlineMatch[1] === "true";
-    } else {
-      if (bodyLower.includes("is online") || bodyLower.includes("online now") || bodyLower.includes("live now")) {
-        result.is_online = true;
-      } else {
-        result.is_online = false;
-        const lastSeenMatch = html.match(/(?:last\s+(?:online|seen|live)|offline)\s*[:]?\s*([^<]+)/i);
-        if (lastSeenMatch) result.last_seen = lastSeenMatch[1].trim();
-      }
-    }
-    const isLiveMatch = html.match(/"isLive":(true|false)/i);
-    if (isLiveMatch && isLiveMatch[1] === "true") {
-      result.is_online = true;
-    }
-    const ogDesc = extractMetaContent(html, "og:description");
-    if (ogDesc) result.room_title = ogDesc;
-    if (result.is_online) {
-      const viewerMatch = html.match(/(\d[\d,]*)\s*(?:viewers?|watching)/i);
-      if (viewerMatch) result.viewer_count = parseInt(viewerMatch[1].replace(/,/g, ""), 10);
-    }
-    const followerMatch = html.match(/(\d[\d,.]*[kKmM]?)\s*(?:followers?|fans)/i);
-    if (followerMatch) result.follower_count = parseCount(followerMatch[1]);
-    res.json(result);
-  } catch (err) {
-    req.log.error({ err }, "GET /performers/lookup error");
-    res.status(500).json({ error: "Lookup failed" });
-  }
-});
-router3.get("/performers", cache({ ttlSeconds: 600, staleSeconds: 900, tags: ["performers", "recordings", "search"] }), async (req, res) => {
-  try {
-    const page = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 24));
-    const search = req.query.search || "";
-    const gender = req.query.gender || "";
-    const sort = req.query.sort || "count";
-    const { data: allRows, error: error40 } = await fetchAll(
-      (start2, end) => supabase.from("recordings_with_links").select("username, gender, thumbnail_url, sprite_url, preview_url, timestamp, links").not("links", "is", "null").order("timestamp", { ascending: false }).range(start2, end)
-    );
-    if (error40) {
-      req.log.error({ err: error40 }, "Supabase error listing performers");
-      res.status(500).json({ error: "Failed to fetch performers" });
-      return;
-    }
-    let validRows = allRows ?? [];
-    if (search) {
-      const lower = search.toLowerCase();
-      validRows = validRows.filter((r) => r.username.toLowerCase().includes(lower));
-    }
-    if (gender) {
-      validRows = validRows.filter((r) => r.gender === gender);
-    }
-    const performerMap = /* @__PURE__ */ new Map();
-    for (const row of validRows) {
-      const existing = performerMap.get(row.username);
-      if (!existing) {
-        const image = row.thumbnail_url || row.sprite_url || row.preview_url || null;
-        performerMap.set(row.username, {
-          username: row.username,
-          recording_count: 1,
-          latest_thumbnail: image,
-          sprite_url: row.sprite_url,
-          gender: row.gender,
-          latest_timestamp: row.timestamp
-        });
-      } else {
-        existing.recording_count += 1;
-        if (!existing.latest_thumbnail) {
-          const image = row.thumbnail_url || row.sprite_url || row.preview_url || null;
-          if (image) {
-            existing.latest_thumbnail = image;
-            existing.sprite_url = row.sprite_url;
-          }
-        }
-      }
-    }
-    let performers = Array.from(performerMap.values());
-    if (sort === "name") {
-      performers.sort((a, b) => a.username.localeCompare(b.username));
-    } else {
-      performers.sort((a, b) => b.recording_count - a.recording_count);
-    }
-    const totalPerformers = performers.length;
-    const totalPages = Math.ceil(totalPerformers / limit) || 1;
-    const start = (page - 1) * limit;
-    const pagedPerformers = performers.slice(start, start + limit);
-    res.json({ performers: pagedPerformers, total: totalPerformers, page, limit, totalPages });
-  } catch (err) {
-    req.log.error({ err }, "GET /performers unexpected error");
-    res.status(500).json({ error: "Failed to fetch performers" });
-  }
-});
-router3.get("/performers/:username", cache({ ttlSeconds: 900, staleSeconds: 1800, tags: ["performers", "recordings"] }), async (req, res) => {
-  try {
-    const parsed = GetPerformerParams.safeParse(req.params);
-    if (!parsed.success) {
-      res.status(400).json({ error: "Invalid params" });
-      return;
-    }
-    const { username } = parsed.data;
-    const { data, error: error40 } = await supabase.from("recordings_with_links").select("*").not("links", "is", "null").eq("username", username).order("timestamp", { ascending: false });
-    if (error40) {
-      req.log.error({ err: error40, username }, "Supabase error fetching performer");
-      res.status(500).json({ error: "Failed to fetch performer" });
-      return;
-    }
-    const validRecordings = data ?? [];
-    if (validRecordings.length === 0) {
-      res.status(404).json({ error: "Performer not found" });
-      return;
-    }
-    res.json({
-      username,
-      recording_count: validRecordings.length,
-      gender: validRecordings[0].gender ?? null,
-      recordings: validRecordings
-    });
-  } catch (err) {
-    req.log.error({ err, username: req.params.username }, "GET /performers/:username unexpected error");
-    res.status(500).json({ error: "Failed to fetch performer" });
-  }
-});
-var performers_default = router3;
-
-// src/routes/tags.ts
-var import_express4 = __toESM(require_express2(), 1);
-var router4 = (0, import_express4.Router)();
-router4.get("/tags", cache({ ttlSeconds: 900, staleSeconds: 1800, tags: ["tags", "recordings", "search"] }), async (req, res) => {
-  const { data, error: error40 } = await fetchAll(
-    (start, end) => supabase.from("recordings_with_links").select("tags, links").not("links", "is", "null").range(start, end)
-  );
-  if (error40) {
-    req.log.error({ err: error40 }, "Supabase error listing tags");
-    res.status(500).json({ error: "Failed to fetch tags" });
-    return;
-  }
-  const validRows = data ?? [];
-  const tagCounts = /* @__PURE__ */ new Map();
-  for (const row of validRows) {
-    for (const tag of row.tags ?? []) {
-      if (tag && tag.trim()) {
-        tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
-      }
-    }
-  }
-  const result = Array.from(tagCounts.entries()).map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count);
-  res.json(result);
-});
-var tags_default = router4;
-
-// src/routes/stats.ts
-var import_express5 = __toESM(require_express2(), 1);
-var router5 = (0, import_express5.Router)();
-router5.get("/stats", cache({ ttlSeconds: 600, staleSeconds: 1800, tags: ["stats", "recordings"] }), async (req, res) => {
-  const { data, error: error40 } = await fetchAll(
-    (start, end) => supabase.from("recordings_with_links").select("username, tags, filesize, timestamp, links").not("links", "is", "null").range(start, end)
-  );
-  if (error40) {
-    req.log.error({ err: error40 }, "Supabase error fetching stats");
-    res.status(500).json({ error: "Failed to fetch stats" });
-    return;
-  }
-  const rows = data ?? [];
-  const uniquePerformers = new Set(rows.map((r) => r.username)).size;
-  const uniqueTags = new Set(rows.flatMap((r) => r.tags ?? [])).size;
-  const totalSize = rows.reduce((sum, r) => sum + (r.filesize ?? 0), 0);
-  const newest = rows.map((r) => r.timestamp).filter(Boolean).sort().reverse()[0] ?? null;
-  res.json({
-    total_recordings: rows.length,
-    total_performers: uniquePerformers,
-    total_tags: uniqueTags,
-    total_size_bytes: totalSize,
-    newest_recording: newest
-  });
-});
-var stats_default = router5;
-
-// src/routes/reactions.ts
-var import_express6 = __toESM(require_express2(), 1);
 
 // ../../node_modules/.pnpm/pg@8.20.0/node_modules/pg/esm/index.mjs
 var import_lib = __toESM(require_lib6(), 1);
@@ -89673,7 +89395,486 @@ var pool = new Pool3({
 });
 var db = drizzle(pool, { schema: schema_exports });
 
+// src/routes/performers.ts
+var COOKIES = process.env.COOKIES ?? "";
+var CB_AFFILIATE = process.env.CHATURBATE_AFFILIATE_CODE ?? "";
+var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+var CB_UA = "Googlebot/2.1 (+http://www.google.com/bot.html)";
+async function checkChaturbateApi(username) {
+  try {
+    const res = await fetch("https://chaturbate.com/get_edge_hls_url_ajax/", {
+      method: "POST",
+      headers: {
+        "User-Agent": CB_UA,
+        "X-Requested-With": "XMLHttpRequest",
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: `room_slug=${encodeURIComponent(username)}`
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return {
+      exists: !!data.success,
+      is_live: data.room_status === "public" || data.room_status === "group_show" || data.room_status === "private",
+      room_status: data.room_status ?? "unknown"
+    };
+  } catch {
+    return null;
+  }
+}
+var MAX_STRIPCHAT_BYTES = 4e5;
+async function fetchStripchatPage(url2) {
+  try {
+    const res = await fetch(url2, {
+      headers: {
+        "User-Agent": UA,
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        Cookie: COOKIES
+      }
+    });
+    if (!res.ok) return null;
+    if (!res.body) return res.text();
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let accumulated = "";
+    let totalBytes = 0;
+    while (totalBytes < MAX_STRIPCHAT_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      accumulated += decoder.decode(value, { stream: true });
+    }
+    reader.releaseLock();
+    return accumulated;
+  } catch {
+    return null;
+  }
+}
+function extractMetaContent(html, propertyOrName) {
+  const propRegex = new RegExp(
+    `<meta\\s+property=["']${propertyOrName}["']\\s+content=["']([^"']*)["']`,
+    "i"
+  );
+  let match = html.match(propRegex);
+  if (match) return match[1];
+  const nameRegex = new RegExp(
+    `<meta\\s+name=["']${propertyOrName}["']\\s+content=["']([^"']*)["']`,
+    "i"
+  );
+  match = html.match(nameRegex);
+  if (match) return match[1];
+  const revRegex = new RegExp(
+    `<meta\\s+content=["']([^"']*)["']\\s+property=["']${propertyOrName}["']`,
+    "i"
+  );
+  match = html.match(revRegex);
+  return match ? match[1] : null;
+}
+function parseCount(str) {
+  const s = str.toLowerCase().replace(/,/g, "");
+  if (s.endsWith("m")) return parseFloat(s) * 1e6;
+  if (s.endsWith("k")) return parseFloat(s) * 1e3;
+  return parseFloat(s) || 0;
+}
+function performerExistsOnStripchat(html, username) {
+  const bodyLower = html.toLowerCase();
+  const usernameLower = username.toLowerCase();
+  const expectedUrls = [
+    `https://stripchat.com/${usernameLower}`,
+    `https://www.stripchat.com/${usernameLower}`
+  ];
+  const canonical = extractMetaContent(html, "og:url");
+  if (canonical) {
+    const normalized = canonical.replace(/\/+$/, "").toLowerCase();
+    if (expectedUrls.some((u) => normalized === u)) return true;
+  }
+  const canonicalLink = (html.match(
+    /<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i
+  ) || html.match(
+    /<link[^>]+href=["']([^"']+)["'][^>]+rel=["']canonical["']/i
+  ))?.[1];
+  if (canonicalLink) {
+    const normalized = canonicalLink.replace(/\/+$/, "").toLowerCase();
+    if (expectedUrls.some((u) => normalized === u)) return true;
+  }
+  if (bodyLower.includes(`data-model-username="${usernameLower}"`))
+    return true;
+  if (bodyLower.includes(`data-username="${usernameLower}"`)) return true;
+  if (bodyLower.includes(`data-profile="${usernameLower}"`)) return true;
+  const profileLinkRegex = new RegExp(
+    `href=["']https://stripchat\\.com/${usernameLower}(?:/|"|')`,
+    "i"
+  );
+  if (profileLinkRegex.test(html)) return true;
+  const twitterSite = extractMetaContent(html, "twitter:site");
+  if (twitterSite && twitterSite.toLowerCase().includes(usernameLower)) {
+    const ogImage = extractMetaContent(html, "og:image");
+    if (ogImage && !ogImage.includes("default") && !ogImage.includes("logo"))
+      return true;
+  }
+  return false;
+}
+var router3 = (0, import_express3.Router)();
+router3.get(
+  "/performers/lookup",
+  cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["performers", "search"] }),
+  async (req, res) => {
+    try {
+      const platform = req.query.platform?.toLowerCase();
+      const username = req.query.username?.toLowerCase().trim();
+      if (!platform || !username) {
+        res.status(400).json({ error: "platform and username are required" });
+        return;
+      }
+      if (!["chaturbate", "stripchat"].includes(platform)) {
+        res.status(400).json({
+          error: 'platform must be "chaturbate" or "stripchat"'
+        });
+        return;
+      }
+      const profileUrl = platform === "chaturbate" ? `https://chaturbate.com/${username}/${CB_AFFILIATE ? `?campaign=${CB_AFFILIATE}` : ""}` : `https://stripchat.com/${username}`;
+      const result = {
+        exists: false,
+        platform,
+        username,
+        profile_url: profileUrl,
+        in_archive: false
+      };
+      try {
+        const { data: archiveData } = await supabase.from("recordings_with_links").select(
+          "thumbnail_url, sprite_url, preview_url, timestamp, username"
+        ).eq("username", username).not("links", "is", "null").order("timestamp", { ascending: false }).limit(50);
+        if (archiveData && archiveData.length > 0) {
+          result.in_archive = true;
+          result.archive_recording_count = archiveData.length;
+          result.archive_last_recording = archiveData[0].timestamp;
+          result.archive_thumbnail = archiveData[0].thumbnail_url || archiveData[0].sprite_url || archiveData[0].preview_url || null;
+        }
+      } catch {
+      }
+      if (platform === "chaturbate") {
+        const apiResult = await checkChaturbateApi(username);
+        if (apiResult) {
+          result.exists = apiResult.exists;
+          result.is_online = apiResult.is_live;
+          if (!apiResult.exists && result.in_archive) {
+            result.exists = true;
+            result.platform_check_failed = true;
+          }
+          res.json(result);
+          return;
+        }
+        result.platform_check_failed = true;
+        if (result.in_archive) {
+          result.exists = true;
+        }
+        res.json(result);
+        return;
+      }
+      const html = await fetchStripchatPage(profileUrl);
+      if (!html) {
+        if (result.in_archive) {
+          result.exists = true;
+          result.platform_check_failed = true;
+        }
+        res.json(result);
+        return;
+      }
+      if (performerExistsOnStripchat(html, username)) {
+        result.exists = true;
+      } else {
+        const titleMatch = html.match(
+          /<title[^>]*>([^<]*)<\/title>/i
+        );
+        const title = titleMatch ? titleMatch[1].toLowerCase() : "";
+        const notFoundTitles = [
+          "page not found",
+          "not found",
+          "404",
+          "error"
+        ];
+        const isNotFound = notFoundTitles.some((p) => title.includes(p));
+        if (isNotFound) {
+          if (result.in_archive) {
+            result.exists = true;
+            result.platform_check_failed = true;
+            res.json(result);
+            return;
+          }
+          result.exists = false;
+          res.json(result);
+          return;
+        }
+        result.exists = false;
+        res.json(result);
+        return;
+      }
+      const bodyLower = html.toLowerCase();
+      result.display_name = extractMetaContent(html, "og:title") || username;
+      result.avatar_url = extractMetaContent(html, "og:image") ?? void 0;
+      const isOnlineMatch = html.match(/"isOnline":(true|false)/i);
+      if (isOnlineMatch) {
+        result.is_online = isOnlineMatch[1] === "true";
+      } else {
+        if (bodyLower.includes("is online") || bodyLower.includes("online now") || bodyLower.includes("live now")) {
+          result.is_online = true;
+        } else {
+          result.is_online = false;
+          const lastSeenMatch = html.match(
+            /(?:last\s+(?:online|seen|live)|offline)\s*[:]?\s*([^<]+)/i
+          );
+          if (lastSeenMatch) {
+            result.last_seen = lastSeenMatch[1].trim();
+          }
+        }
+      }
+      const isLiveMatch = html.match(/"isLive":(true|false)/i);
+      if (isLiveMatch && isLiveMatch[1] === "true") {
+        result.is_online = true;
+      }
+      if (result.is_online) {
+        const viewerMatch = html.match(
+          /(\d[\d,]*)\s*(?:viewers?|watching)/i
+        );
+        if (viewerMatch) {
+          result.viewer_count = parseInt(
+            viewerMatch[1].replace(/,/g, ""),
+            10
+          );
+        }
+      }
+      const ogDesc = extractMetaContent(html, "og:description");
+      if (ogDesc) {
+        result.room_title = ogDesc;
+      }
+      const followerMatch = html.match(
+        /(\d[\d,.]*[kKmM]?)\s*(?:followers?|fans)/i
+      );
+      if (followerMatch) {
+        result.follower_count = parseCount(followerMatch[1]);
+      }
+      res.json(result);
+    } catch (err) {
+      req.log.error({ err }, "GET /performers/lookup error");
+      res.status(500).json({ error: "Lookup failed" });
+    }
+  }
+);
+router3.get(
+  "/performers",
+  cache({
+    ttlSeconds: 600,
+    staleSeconds: 900,
+    tags: ["performers", "recordings", "search"]
+  }),
+  async (req, res) => {
+    try {
+      const page = Math.max(
+        1,
+        parseInt(req.query.page) || 1
+      );
+      const limit = Math.min(
+        100,
+        Math.max(1, parseInt(req.query.limit) || 24)
+      );
+      const search = req.query.search || "";
+      const gender = req.query.gender || "";
+      const sort = req.query.sort || "count";
+      const genderFilter = gender ? sql`WHERE gender = ${gender}` : sql``;
+      const searchFilter = search ? sql`AND LOWER(username) LIKE ${`%${search.toLowerCase()}%`}` : sql``;
+      const countResult = await db.execute(sql`
+        SELECT COUNT(DISTINCT username)::int AS count
+        FROM recordings_with_links
+        WHERE links IS NOT NULL
+        ${genderFilter}
+        ${searchFilter}
+      `);
+      const totalPerformers = countResult.rows[0]?.count ?? 0;
+      const sortClause = sort === "name" ? sql`ORDER BY username ASC` : sql`ORDER BY recording_count DESC, username ASC`;
+      const result = await db.execute(sql`
+        WITH performer_stats AS (
+          SELECT
+            username,
+            gender,
+            COUNT(*)::int AS recording_count,
+            MAX(timestamp) AS latest_timestamp
+          FROM recordings_with_links
+          WHERE links IS NOT NULL
+          ${genderFilter}
+          ${searchFilter}
+          GROUP BY username, gender
+        ),
+        latest_recordings AS (
+          SELECT DISTINCT ON (r.username)
+            r.username,
+            r.thumbnail_url,
+            r.sprite_url
+          FROM recordings_with_links r
+          WHERE r.links IS NOT NULL
+          ORDER BY r.username,
+            CASE WHEN r.thumbnail_url IS NOT NULL THEN 0 ELSE 1 END,
+            r.timestamp DESC
+        )
+        SELECT
+          ps.username,
+          ps.recording_count,
+          ps.gender,
+          ps.latest_timestamp,
+          lr.thumbnail_url AS latest_thumbnail,
+          lr.sprite_url
+        FROM performer_stats ps
+        LEFT JOIN latest_recordings lr ON lr.username = ps.username
+        ${sortClause}
+        LIMIT ${limit} OFFSET ${(page - 1) * limit}
+      `);
+      const performers = result.rows.map((r) => ({
+        username: r.username,
+        recording_count: r.recording_count,
+        latest_thumbnail: r.latest_thumbnail || r.sprite_url,
+        sprite_url: r.sprite_url,
+        gender: r.gender,
+        latest_timestamp: r.latest_timestamp
+      }));
+      const totalPages = Math.ceil(totalPerformers / limit) || 1;
+      res.json({
+        performers,
+        total: totalPerformers,
+        page,
+        limit,
+        totalPages
+      });
+    } catch (err) {
+      req.log.error(
+        { err },
+        "GET /performers unexpected error"
+      );
+      res.status(500).json({ error: "Failed to fetch performers" });
+    }
+  }
+);
+router3.get(
+  "/performers/:username",
+  cache({
+    ttlSeconds: 900,
+    staleSeconds: 1800,
+    tags: ["performers", "recordings"]
+  }),
+  async (req, res) => {
+    try {
+      const parsed = GetPerformerParams.safeParse(req.params);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid params" });
+        return;
+      }
+      const { username } = parsed.data;
+      const SELECT_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at";
+      const { data: validRecordings, error: error40 } = await supabase.from("recordings_with_links").select(SELECT_COLS).not("links", "is", "null").eq("username", username).order("timestamp", { ascending: false });
+      if (error40) {
+        req.log.error(
+          { err: error40, username },
+          "Supabase error fetching performer"
+        );
+        res.status(500).json({ error: "Failed to fetch performer" });
+        return;
+      }
+      if (validRecordings.length === 0) {
+        res.status(404).json({ error: "Performer not found" });
+        return;
+      }
+      res.json({
+        username,
+        recording_count: validRecordings.length,
+        gender: validRecordings[0].gender ?? null,
+        recordings: validRecordings
+      });
+    } catch (err) {
+      req.log.error(
+        { err, username: req.params.username },
+        "GET /performers/:username unexpected error"
+      );
+      res.status(500).json({ error: "Failed to fetch performer" });
+    }
+  }
+);
+var performers_default = router3;
+
+// src/routes/tags.ts
+var import_express4 = __toESM(require_express2(), 1);
+var router4 = (0, import_express4.Router)();
+router4.get("/tags", cache({ ttlSeconds: 900, staleSeconds: 1800, tags: ["tags", "recordings", "search"] }), async (req, res) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT tag, COUNT(*)::int AS count
+      FROM (
+        SELECT unnest(tags) AS tag
+        FROM recordings_with_links
+        WHERE links IS NOT NULL AND tags IS NOT NULL
+      ) sub
+      WHERE tag IS NOT NULL AND tag != ''
+      GROUP BY tag
+      ORDER BY count DESC
+    `);
+    const tags = result.rows.map((r) => ({ tag: r.tag, count: r.count }));
+    res.json(tags);
+  } catch (err) {
+    req.log.error({ err }, "GET /tags unexpected error");
+    res.status(500).json({ error: "Failed to fetch tags" });
+  }
+});
+var tags_default = router4;
+
+// src/routes/stats.ts
+var import_express5 = __toESM(require_express2(), 1);
+var router5 = (0, import_express5.Router)();
+router5.get("/stats", cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["stats", "recordings"] }), async (req, res) => {
+  try {
+    const [countResult, sizeResult, newestResult, performersResult, tagsResult] = await Promise.all([
+      // Total recordings with links
+      db.execute(sql`
+        SELECT COUNT(*)::int AS count FROM recordings_with_links WHERE links IS NOT NULL
+      `),
+      // Total storage
+      db.execute(sql`
+        SELECT COALESCE(SUM(filesize), 0)::bigint AS total FROM recordings_with_links WHERE links IS NOT NULL
+      `),
+      // Newest recording timestamp
+      db.execute(sql`
+        SELECT MAX(timestamp) AS newest FROM recordings_with_links WHERE links IS NOT NULL
+      `),
+      // Unique performers count
+      db.execute(sql`
+        SELECT COUNT(DISTINCT username)::int AS count FROM recordings_with_links WHERE links IS NOT NULL
+      `),
+      // Unique tags count — unnest the tags array and count distinct values
+      db.execute(sql`
+        SELECT COUNT(DISTINCT tag)::int AS count FROM (
+          SELECT unnest(tags) AS tag FROM recordings_with_links WHERE links IS NOT NULL AND tags IS NOT NULL
+        ) sub
+      `)
+    ]);
+    const countRow = countResult.rows[0];
+    const sizeRow = sizeResult.rows[0];
+    const newestRow = newestResult.rows[0];
+    const performersRow = performersResult.rows[0];
+    const tagsRow = tagsResult.rows[0];
+    res.json({
+      total_recordings: countRow?.count ?? 0,
+      total_performers: performersRow?.count ?? 0,
+      total_tags: tagsRow?.count ?? 0,
+      total_size_bytes: Number(sizeRow?.total ?? 0),
+      newest_recording: newestRow?.newest ?? null
+    });
+  } catch (err) {
+    req.log.error({ err }, "GET /stats unexpected error");
+    res.status(500).json({ error: "Failed to fetch stats" });
+  }
+});
+var stats_default = router5;
+
 // src/routes/reactions.ts
+var import_express6 = __toESM(require_express2(), 1);
 async function getReactionCounts(recordingId) {
   const result = await db.execute(sql`
     SELECT
@@ -89847,7 +90048,7 @@ function buildCommentTree(rows, likedSet) {
     const parentId = row.parent_id != null ? Number(row.parent_id) : null;
     if (parentId && map2.has(parentId)) {
       map2.get(parentId).replies.push(node);
-    } else if (!parentId) {
+    } else {
       roots.push(node);
     }
   }
@@ -89872,6 +90073,7 @@ router7.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comm
   const limit = hasPagination ? Math.min(100, Math.max(1, parseInt(rawLimit) || 50)) : total || 50;
   const totalPages = hasPagination ? Math.ceil(total / limit) || 1 : 1;
   const offset = (page - 1) * limit;
+  const orderClause = sort === "old" ? sql`c.parent_id NULLS FIRST, c.created_at ASC` : sort === "top" ? sql`c.parent_id NULLS FIRST, COUNT(cl.id) DESC, c.created_at DESC` : sql`c.parent_id NULLS FIRST, c.created_at DESC`;
   const result = await db.execute(sql`
     SELECT
       c.id, c.recording_id, c.parent_id, c.author, c.content, c.deleted, c.created_at,
@@ -89880,7 +90082,7 @@ router7.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comm
     LEFT JOIN comment_likes cl ON cl.comment_id = c.id
     WHERE c.recording_id = ${recording_id}
     GROUP BY c.id
-    ORDER BY c.parent_id NULLS FIRST, c.created_at DESC
+    ORDER BY ${orderClause}
     LIMIT ${limit} OFFSET ${offset}
   `);
   const rows = result.rows;
@@ -90065,7 +90267,7 @@ router8.post("/requests", requireAuth, async (req, res) => {
         WHERE LOWER(username) = LOWER(${performer_username})
           AND links IS NOT NULL
       `);
-      const recordingCount = (existingCount.rows[0])?.count ?? 0;
+      const recordingCount = existingCount.rows[0]?.count ?? 0;
       if (recordingCount > 0) {
         res.status(409).json({
           error: `@${performer_username} already has ${recordingCount} recording${recordingCount === 1 ? "" : "s"} in the archive.`,
@@ -90282,7 +90484,7 @@ router9.put("/user/profile", async (req, res) => {
     if (display_name !== void 0) updates.display_name = display_name;
     if (avatar_url !== void 0) updates.avatar_url = avatar_url;
     if (bio !== void 0) updates.bio = bio;
-    if (username !== void 0) updates.username = username.trim().toLowerCase();
+    if (username != null && typeof username === "string") updates.username = username.trim().toLowerCase();
     if (req.user.email) updates.email = req.user.email;
     const { data, error: error40 } = await req.supabase.from("user_profiles").upsert({ user_id: userId, ...updates }).select("user_id, display_name, avatar_url, bio, created_at, updated_at, username, email").single();
     if (error40) {
@@ -90364,6 +90566,21 @@ router9.delete("/user/saved/:recordingId", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+router9.delete("/user/saved", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { error: error40 } = await req.supabase.from("saved_videos").delete().eq("user_id", userId);
+    if (error40) {
+      req.log.error({ err: error40 }, "Supabase error clearing saved videos");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "DELETE /user/saved unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 router9.get("/user/history", async (req, res) => {
   try {
     const userId = req.user.id;
@@ -90393,9 +90610,9 @@ router9.post("/user/history", async (req, res) => {
       metadata: metadata ?? null,
       watched_at: (/* @__PURE__ */ new Date()).toISOString()
     };
-    if (progress !== undefined) update.progress = Math.min(100, Math.max(0, Math.round(progress)));
-    if (last_position_ms !== undefined) update.last_position_ms = Math.max(0, Math.round(last_position_ms));
-    if (total_watch_ms !== undefined) update.total_watch_ms = Math.max(0, Math.round(total_watch_ms));
+    if (progress !== void 0) update.progress = Math.min(100, Math.max(0, Math.round(progress)));
+    if (last_position_ms !== void 0) update.last_position_ms = Math.max(0, Math.round(last_position_ms));
+    if (total_watch_ms !== void 0) update.total_watch_ms = Math.max(0, Math.round(total_watch_ms));
     const { error: error40 } = await req.supabase.from("watch_history").upsert(
       update,
       { onConflict: "user_id, recording_id" }
@@ -90430,9 +90647,9 @@ router9.get("/user/history/continue", async (req, res) => {
   try {
     const userId = req.user.id;
     const limit = Math.min(20, Math.max(1, parseInt(req.query.limit) || 12));
-    const { data, error } = await req.supabase.from("watch_history").select("recording_id, metadata, watched_at, progress, last_position_ms, total_watch_ms").eq("user_id", userId).gt("progress", 0).lt("progress", 100).order("watched_at", { ascending: false }).limit(limit);
-    if (error) {
-      req.log.error({ err: error }, "Supabase error fetching continue watching");
+    const { data, error: error40 } = await req.supabase.from("watch_history").select("recording_id, metadata, watched_at, progress, last_position_ms, total_watch_ms").eq("user_id", userId).gt("progress", 0).lt("progress", 100).order("watched_at", { ascending: false }).limit(limit);
+    if (error40) {
+      req.log.error({ err: error40 }, "Supabase error fetching continue watching");
       res.status(500).json({ error: "Internal server error" });
       return;
     }
@@ -90445,9 +90662,9 @@ router9.get("/user/history/continue", async (req, res) => {
 router9.get("/user/history/stats", async (req, res) => {
   try {
     const userId = req.user.id;
-    const { data, error } = await req.supabase.from("watch_history").select("recording_id, progress, total_watch_ms, metadata, watched_at").eq("user_id", userId);
-    if (error) {
-      req.log.error({ err: error }, "Supabase error fetching watch stats");
+    const { data, error: error40 } = await req.supabase.from("watch_history").select("recording_id, progress, total_watch_ms, metadata, watched_at").eq("user_id", userId);
+    if (error40) {
+      req.log.error({ err: error40 }, "Supabase error fetching watch stats");
       res.status(500).json({ error: "Internal server error" });
       return;
     }
@@ -90456,7 +90673,7 @@ router9.get("/user/history/stats", async (req, res) => {
     const totalVideos = items.length;
     const completedVideos = items.filter((i) => (i.progress ?? 0) >= 100).length;
     const avgProgress = totalVideos > 0 ? Math.round(items.reduce((s, i) => s + (i.progress ?? 0), 0) / totalVideos) : 0;
-    const performerMap = new Map();
+    const performerMap = /* @__PURE__ */ new Map();
     for (const item of items) {
       try {
         const meta = item.metadata ? JSON.parse(item.metadata) : null;
@@ -90465,21 +90682,34 @@ router9.get("/user/history/stats", async (req, res) => {
         existing.count++;
         existing.watchMs += item.total_watch_ms ?? 0;
         performerMap.set(username, existing);
-      } catch {}
+      } catch {
+      }
     }
     const topPerformers = [...performerMap.values()].sort((a, b) => b.count - a.count).slice(0, 10);
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1e3;
     const dayBuckets = [0, 0, 0, 0, 0, 0, 0];
+    for (const item of items) {
+      const t = new Date(item.watched_at).getTime();
+      if (t < thirtyDaysAgo) continue;
+      const day = new Date(item.watched_at).getDay();
+      dayBuckets[day] += item.total_watch_ms ?? 0;
+    }
     const hourBuckets = new Array(24).fill(0);
     for (const item of items) {
       const t = new Date(item.watched_at).getTime();
       if (t < thirtyDaysAgo) continue;
-      const d = new Date(item.watched_at).getDay();
-      dayBuckets[d] += item.total_watch_ms ?? 0;
-      const h = new Date(item.watched_at).getHours();
-      hourBuckets[h] += item.total_watch_ms ?? 0;
+      const hour = new Date(item.watched_at).getHours();
+      hourBuckets[hour] += item.total_watch_ms ?? 0;
     }
-    res.json({ totalWatchMs, totalVideos, completedVideos, avgProgress, topPerformers, dayBuckets, hourBuckets });
+    res.json({
+      totalWatchMs,
+      totalVideos,
+      completedVideos,
+      avgProgress,
+      topPerformers,
+      dayBuckets,
+      hourBuckets
+    });
   } catch (err) {
     req.log.error({ err }, "GET /user/history/stats unexpected error");
     res.status(500).json({ error: "Internal server error" });
@@ -90946,6 +91176,21 @@ router9.delete("/user/notifications/:id", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+router9.delete("/user/notifications", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { error: error40 } = await req.supabase.from("user_notifications").delete().eq("user_id", userId);
+    if (error40) {
+      req.log.error({ err: error40 }, "Supabase error clearing notifications");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "DELETE /user/notifications unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 var user_default = router9;
 
 // src/routes/cache-admin.ts
@@ -90956,7 +91201,7 @@ router10.get("/cache/status", ...admin2, async (_req, res) => {
   const redis = getRedis();
   const status = getRedisStatus();
   const connected = isRedisConnected();
-  let info = { connected, status, memory: getCacheStats() };
+  let info = { connected, status, memory: getCacheStats(), metrics: getCacheMetrics() };
   if (redis && connected) {
     try {
       const dbsize = await redis.dbsize();
@@ -91005,39 +91250,22 @@ router10.post("/cache/purge", ...admin2, async (_req, res) => {
   }
 });
 router10.delete("/cache/flush", ...admin2, async (_req, res) => {
-  const redis = getRedis();
   try {
-    const memoryResult = await purgeAllCache();
-    if (!redis || !isRedisConnected()) {
-      res.json({ flushed: true, keysDeleted: memoryResult.deletedKeys });
-      return;
-    }
-    let cursor = "0";
-    let deleted = 0;
-    do {
-      const [nextCursor, keys] = await redis.scan(cursor, "MATCH", "api:*", "COUNT", 200);
-      cursor = nextCursor;
-      if (keys.length > 0) {
-        await redis.del(keys);
-        deleted += keys.length;
-      }
-    } while (cursor !== "0");
-    cursor = "0";
-    do {
-      const [nextCursor, keys] = await redis.scan(cursor, "MATCH", "tag:*", "COUNT", 100);
-      cursor = nextCursor;
-      if (keys.length > 0) {
-        await redis.del(keys);
-        deleted += keys.length;
-      }
-    } while (cursor !== "0");
-    const keysDeleted = deleted + memoryResult.deletedKeys;
-    logger.info({ keysDeleted }, "Cache flushed");
-    res.json({ flushed: true, keysDeleted });
+    const result = await purgeAllCache();
+    logger.info({ keysDeleted: result.deletedKeys }, "Cache flushed");
+    res.json({ flushed: true, keysDeleted: result.deletedKeys });
   } catch (err) {
     logger.error({ err }, "Cache flush failed");
     res.status(500).json({ error: "Cache flush failed" });
   }
+});
+router10.get("/cache/metrics", ...admin2, async (_req, res) => {
+  res.json(getCacheMetrics());
+});
+router10.post("/cache/metrics/reset", ...admin2, async (_req, res) => {
+  resetCacheMetrics();
+  logger.info("Cache metrics reset");
+  res.json({ reset: true });
 });
 var cache_admin_default = router10;
 
@@ -91235,15 +91463,19 @@ router11.delete("/admin/users/:id", ...admin3, async (req, res) => {
       res.status(400).json({ error: "Cannot delete your own account" });
       return;
     }
-    await db.execute(sql`DELETE FROM user_roles WHERE user_id = ${id}`);
-    await db.execute(sql`DELETE FROM user_profiles WHERE user_id = ${id}`);
-    await db.execute(sql`DELETE FROM saved_videos WHERE user_id = ${id}`);
-    await db.execute(sql`DELETE FROM watch_history WHERE user_id = ${id}`);
-    await db.execute(sql`DELETE FROM watch_later_items WHERE user_id = ${id}`);
-    await db.execute(sql`DELETE FROM user_collections WHERE user_id = ${id}`);
-    await db.execute(sql`DELETE FROM performer_follows WHERE user_id = ${id}`);
-    await db.execute(sql`DELETE FROM user_notifications WHERE user_id = ${id}`);
-    await db.execute(sql`DELETE FROM requests WHERE user_id = ${id}`);
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`DELETE FROM user_roles WHERE user_id = ${id}`);
+      await tx.execute(sql`DELETE FROM saved_videos WHERE user_id = ${id}`);
+      await tx.execute(sql`DELETE FROM watch_history WHERE user_id = ${id}`);
+      await tx.execute(sql`DELETE FROM watch_later_items WHERE user_id = ${id}`);
+      await tx.execute(sql`DELETE FROM user_collection_items WHERE collection_id IN (SELECT id FROM user_collections WHERE user_id = ${id})`);
+      await tx.execute(sql`DELETE FROM user_collections WHERE user_id = ${id}`);
+      await tx.execute(sql`DELETE FROM performer_follows WHERE user_id = ${id}`);
+      await tx.execute(sql`DELETE FROM user_notifications WHERE user_id = ${id}`);
+      await tx.execute(sql`DELETE FROM user_notification_preferences WHERE user_id = ${id}`);
+      await tx.execute(sql`DELETE FROM requests WHERE user_id = ${id}`);
+      await tx.execute(sql`DELETE FROM user_profiles WHERE user_id = ${id}`);
+    });
     logger.info({ targetUserId: id, adminId: req.user.id }, "User deleted by admin");
     res.json({ ok: true });
   } catch (err) {
@@ -91255,7 +91487,7 @@ router11.get("/admin/cache/status", ...admin3, async (_req, res) => {
   const redis = getRedis();
   const status = getRedisStatus();
   const connected = isRedisConnected();
-  let info = { connected, status, memory: getCacheStats() };
+  let info = { connected, status, memory: getCacheStats(), metrics: getCacheMetrics() };
   if (redis && connected) {
     try {
       const dbsize = await redis.dbsize();
@@ -91351,11 +91583,10 @@ router12.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["searc
     res.json({ suggestions: [], query: q ?? "" });
     return;
   }
-  const query = `%${q}%`;
   const suggestions = [];
   try {
-    const { data: performers, error: perfErr } = await supabase.from("recordings_with_links").select("username, thumbnail_url, sprite_url, preview_url, links").not("links", "is", "null").ilike("username", query).order("timestamp", { ascending: false }).limit(4);
-    if (!perfErr && performers) {
+    const { data: performers } = await supabase.from("recordings_with_links").select("username, thumbnail_url, sprite_url, preview_url, links").not("links", "is", "null").ilike("username", `%${q}%`).order("timestamp", { ascending: false }).limit(4);
+    if (performers) {
       const seen = /* @__PURE__ */ new Set();
       for (const p of performers) {
         if (seen.has(p.username)) continue;
@@ -91370,10 +91601,10 @@ router12.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["searc
         });
       }
     }
-    const { data: recordings, error: recErr } = await supabase.from("recordings_with_links").select("id, username, room_title, filename, thumbnail_url, links").not("links", "is", "null").or(
-      `username.ilike.${query},room_title.ilike.${query},filename.ilike.${query}`
+    const { data: recordings } = await supabase.from("recordings_with_links").select("id, username, room_title, filename, thumbnail_url, links").not("links", "is", "null").or(
+      `username.ilike.%${q}%,room_title.ilike.%${q}%,filename.ilike.%${q}%`
     ).order("timestamp", { ascending: false }).limit(4);
-    if (!recErr && recordings) {
+    if (recordings) {
       for (const r of recordings) {
         const title = r.room_title || r.filename;
         suggestions.push({
@@ -91386,31 +91617,28 @@ router12.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["searc
       }
     }
     {
-      const matchedTags = /* @__PURE__ */ new Set();
-      const lowerQ = q.toLowerCase();
-      const TAG_PAGE = 1e3;
-      let offset = 0;
-      while (matchedTags.size < 4) {
-        const { data: tagPage, error: tagErr } = await supabase.from("recordings_with_links").select("tags").not("links", "is", "null").range(offset, offset + TAG_PAGE - 1);
-        if (tagErr || !tagPage || tagPage.length === 0) break;
-        for (const row of tagPage) {
-          if (!row.tags) continue;
-          for (const tag of row.tags) {
-            if (matchedTags.size >= 4) break;
-            if (tag?.toLowerCase().includes(lowerQ) && !matchedTags.has(tag)) {
-              matchedTags.add(tag);
-              suggestions.push({
-                type: "tag",
-                label: tag,
-                subtitle: "Tag",
-                href: `/browse?tags=${encodeURIComponent(tag)}`
-              });
-            }
-          }
-          if (matchedTags.size >= 4) break;
+      try {
+        const lowerQ = q.toLowerCase();
+        const tagResult = await db.execute(sql`
+          SELECT DISTINCT tag
+          FROM (
+            SELECT unnest(tags) AS tag
+            FROM recordings_with_links
+            WHERE links IS NOT NULL
+          ) sub
+          WHERE LOWER(tag) LIKE ${`%${lowerQ}%`}
+          LIMIT 4
+        `);
+        for (const row of tagResult.rows) {
+          const tag = row.tag;
+          suggestions.push({
+            type: "tag",
+            label: tag,
+            subtitle: "Tag",
+            href: `/browse?tags=${encodeURIComponent(tag)}`
+          });
         }
-        if (tagPage.length < TAG_PAGE) break;
-        offset += TAG_PAGE;
+      } catch {
       }
     }
   } catch (err) {
@@ -91430,6 +91658,7 @@ import { Readable } from "node:stream";
 var CONNECTION_TIMEOUT_MS = 2e4;
 var MAX_RETRIES = 3;
 var BASE_RETRY_DELAY_MS = 500;
+var MAX_REDIRECTS = 5;
 var HOST_MAX_CONCURRENT = 5;
 var HOST_START_INTERVAL_MS = 70;
 var hostGates = /* @__PURE__ */ new Map();
@@ -91472,11 +91701,11 @@ function acquireHostGate(host) {
   });
 }
 var FALLBACK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
-  <rect width="640" height="360" fill="%23f3f4f6"/>
-  <rect x="260" y="140" width="120" height="80" rx="8" fill="%23d1d5db" stroke="%239ca3af" stroke-width="2"/>
-  <path d="M300 180L340 160v40z" fill="%239ca3af"/>
-  <circle cx="285" cy="170" r="5" fill="%239ca3af"/>
-  <text x="320" y="260" text-anchor="middle" fill="%239ca3af" font-family="system-ui,sans-serif" font-size="14">Image unavailable</text>
+  <rect width="640" height="360" fill="#f3f4f6"/>
+  <rect x="260" y="140" width="120" height="80" rx="8" fill="#d1d5db" stroke="#9ca3af" stroke-width="2"/>
+  <path d="M300 180L340 160v40z" fill="#9ca3af"/>
+  <circle cx="285" cy="170" r="5" fill="#9ca3af"/>
+  <text x="320" y="260" text-anchor="middle" fill="#9ca3af" font-family="system-ui,sans-serif" font-size="14">Image unavailable</text>
 </svg>`;
 var FALLBACK_SVG_BUFFER = Buffer.from(FALLBACK_SVG);
 var FAILURE_CACHE_TTL_MS = 10 * 60 * 1e3;
@@ -91667,7 +91896,22 @@ async function fetchWithRetry(url2, headers, log) {
     const isFirst = attempt === 1;
     const timeoutMs = CONNECTION_TIMEOUT_MS * (isFirst ? 1 : 1.5);
     try {
-      const response = await fetchWithTimeout(url2, headers, timeoutMs);
+      let response = await fetchWithTimeout(url2, headers, timeoutMs);
+      let redirectCount = 0;
+      while (redirectCount < MAX_REDIRECTS && response.status >= 300 && response.status < 400) {
+        const location2 = response.headers.get("location");
+        if (!location2) break;
+        let redirectUrl;
+        try {
+          redirectUrl = new URL(location2, url2).toString();
+        } catch {
+          break;
+        }
+        const redirectHeaders = { ...headers };
+        delete redirectHeaders["Referer"];
+        response = await fetchWithTimeout(redirectUrl, redirectHeaders, timeoutMs);
+        redirectCount++;
+      }
       if (response.status >= 500 && response.status < 600 && attempt <= MAX_RETRIES) {
         const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200;
         log.warn({ url: url2, status: response.status, attempt }, "Media proxy upstream 5xx, retrying");
@@ -91746,9 +91990,10 @@ router13.get("/media", async (req, res) => {
     return;
   }
   let urlStr;
+  let parsedUrl;
   try {
     urlStr = decodeURIComponent(rawUrl);
-    const parsedUrl = new URL(urlStr);
+    parsedUrl = new URL(urlStr);
     if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
       res.status(400).json({ error: "Only http(s) URLs are supported" });
       return;
@@ -91768,7 +92013,7 @@ router13.get("/media", async (req, res) => {
     "litter.catbox.moe",
     "files.litterbox.catbox.moe"
   ];
-  const upstreamHostname = new URL(urlStr).hostname;
+  const upstreamHostname = parsedUrl.hostname;
   if (!NO_REFERER_HOSTS.some((h) => upstreamHostname === h || upstreamHostname.endsWith(`.${h}`))) {
     upstreamHeaders["Referer"] = "https://chuglii.in/";
   }
@@ -91978,7 +92223,8 @@ CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes(comment_id
 CREATE INDEX IF NOT EXISTS idx_requests_user ON requests(user_id);
 `;
 var router14 = (0, import_express14.Router)();
-router14.get("/migrate-auth", async (_req, res) => {
+var admin4 = requireRole("admin");
+router14.get("/migrate-auth", ...admin4, async (_req, res) => {
   try {
     console.log("[migrate-auth] Running migration...");
     await pool.query(migrationSql);
@@ -92008,8 +92254,7 @@ router15.post("/recordings/:id/view", async (req, res) => {
   try {
     const { data: current, error: fetchError } = await supabase.from("recordings").select("viewers").eq("id", id).single();
     if (fetchError || !current) {
-      req.log.error({ err: fetchError, id }, "Failed to fetch recording for view increment");
-      res.status(500).json({ error: "Failed to record view" });
+      res.status(404).json({ error: "Recording not found" });
       return;
     }
     const newCount = (current.viewers ?? 0) + 1;
