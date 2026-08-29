@@ -121,6 +121,61 @@ async function staleWhileRevalidate(request) {
   }
 }
 
+// ─── Media cache-first (thumbnails / sprites / previews) ───────────────────
+//
+// Cache-first for valid images, with hard guards so the "Image unavailable"
+// placeholder SVG can NEVER be cached or served from cache:
+//   - cacheResponse() refuses to store svg / non-image content-types.
+//   - We only serve a cached entry if its content-type is image/* (not svg).
+// Because catbox/pixhost image URLs are immutable per recording, a cached
+// entry is always the correct bytes, so cache-first is safe and makes
+// pre-warmed + repeat loads instant. The network fetch uses the default cache
+// mode so the Cloudflare edge cache in front of /api/media is still honored.
+async function mediaCacheFirst(request) {
+  const cache = await caches.open(IMAGE_CACHE);
+  const cached = await cache.match(request);
+
+  if (cached) {
+    const ct = cached.headers.get("content-type") || "";
+    const cachedAt = cached.headers.get("sw-cached-at");
+    const fresh =
+      cachedAt &&
+      Date.now() - Number(cachedAt) < getTtlForUrl(request.url);
+    // Only serve the cached copy if it is a real image (never the svg
+    // placeholder), and revalidate in the background so it stays fresh.
+    if (ct.startsWith("image/") && !ct.includes("svg+xml")) {
+      revalidateInBackground(request, cache);
+      if (fresh) return cached;
+    }
+  }
+
+  try {
+    // catbox/litterbox serve `Access-Control-Allow-Origin: *`, so we can fetch
+    // them in CORS mode and actually read+cache the bytes. Plain <img> requests
+    // are no-cors (opaque) and can't be inspected/cached, so upgrade the mode
+    // for those hosts. Other hosts stay no-cors to avoid breaking them.
+    const host = new URL(request.url).hostname;
+    const isCorsHost = /(^|\.)catbox\.moe$/.test(host);
+    const init = isCorsHost ? { mode: "cors", credentials: "omit" } : undefined;
+    const response = await fetch(request, init);
+    if (response.ok) {
+      await cacheResponse(cache, request, response);
+    }
+    return response;
+  } catch (err) {
+    // Offline / unreachable — fall back to a cached copy if we have one
+    // (it's guaranteed to be a real image), else the placeholder.
+    if (cached) return cached;
+    return new Response(PLACEHOLDER_SVG, {
+      status: 200,
+      headers: {
+        "Content-Type": "image/svg+xml",
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+}
+
 // ─── Background revalidation ────────────────────────────────────────────────
 
 async function revalidateInBackground(request, cache) {
@@ -143,6 +198,9 @@ async function cacheResponse(cache, request, response) {
     // Never cache the "Image unavailable" placeholder — it would otherwise be
     // served as "fresh" for the thumbnail TTL and mask a recovered image.
     if (contentType.includes("image/svg+xml")) return;
+    // Never cache empty/throttled responses (catbox can answer 200 + 0 bytes),
+    // which would otherwise be served as a blank image.
+    if ((response.headers.get("content-length") || "0") === "0") return;
 
     const taggedResponse = new Response(response.clone().body, {
       status: response.status,
@@ -206,16 +264,19 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Media requests (thumbnails / sprites / previews): do NOT intercept.
-  // Let the browser fetch them directly. The Service Worker's media caching
-  // was the cause of thumbnails failing to display, and it is redundant with
-  // the IDB blob cache (image-cache.ts), which already speeds up repeat
-  // visits. Bypassing the SW here guarantees the browser loads the real image
-  // the same way a direct request does (verified working end-to-end).
+  // Media requests (thumbnails / sprites / previews): cache-first via the SW.
+  // This is safe because cacheResponse() refuses to store the SVG placeholder
+  // or any non-image, and we only ever SERVE a cached entry whose
+  // content-type is a real image — so a broken/placeholder entry can never be
+  // returned. Combined with the IDB blob cache (image-cache.ts), repeat and
+  // pre-warmed loads are instant; the first load still pays origin latency.
   const isMediaRequest =
     request.destination === "image" ||
     IMAGE_EXTENSIONS.test(url.pathname) ||
     (url.pathname.endsWith("/api/media") && MEDIA_EXTENSIONS.test(url.search));
 
-  if (isMediaRequest) return;
+  if (isMediaRequest) {
+    event.respondWith(mediaCacheFirst(request));
+    return;
+  }
 });
