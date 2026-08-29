@@ -241,7 +241,7 @@ export default function Home() {
                       recording={rec}
                       isWatched
                       progress={item.progress}
-                      fetchPriority={i < 2 ? "high" : undefined}
+                      fetchPriority={i < 10 ? "high" : undefined}
                     />
                   </div>
                 );
@@ -299,7 +299,7 @@ export default function Home() {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-8 animate-fade-in-up">
               {recordings.map((rec, i) => (
                 <div key={rec.id}>
-                  <VideoCard recording={rec} fetchPriority={i < 2 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
+                  <VideoCard recording={rec} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
                 </div>
               ))}
             </div>
@@ -355,7 +355,7 @@ export default function Home() {
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-8 animate-fade-in-up">
                 {recommendations.map((rec, i) => (
                   <div key={rec.id}>
-                    <VideoCard key={rec.id} recording={rec} fetchPriority={i < 2 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
+                    <VideoCard key={rec.id} recording={rec} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
                   </div>
                 ))}
               </div>

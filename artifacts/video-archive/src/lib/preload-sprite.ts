@@ -22,7 +22,7 @@
 
 import { preloadPreviewMedia } from "@/lib/preload-preview";
 import { proxyUrl } from "@/lib/proxy-url";
-import { cacheImage } from "@/lib/image-cache";
+import { cacheImage, type CachePriority } from "@/lib/image-cache";
 import { isConnectionConstrained } from "@/lib/connection";
 
 // Hosts that block server/datacenter IPs entirely (SSL handshake fails,
@@ -61,7 +61,12 @@ const failedAt = new Map<string, number>();
 const FAILED_RETRY_COOLDOWN_MS = 5 * 60_000; // retry a failed URL after 5 min
 const MAX_ACTIVE = 12;
 
-const queue: Array<{ url: string; img: HTMLImageElement }> = [];
+const queue: Array<{
+  url: string;
+  img: HTMLImageElement;
+  priority: CachePriority;
+  immediate: boolean;
+}> = [];
 let activeCount = 0;
 let pumpTimer: number | null = null;
 
@@ -70,14 +75,14 @@ function getConcurrency(): number {
   return MAX_ACTIVE;
 }
 
-function startRequest(url: string, img: HTMLImageElement) {
+function startRequest(url: string, img: HTMLImageElement, priority: CachePriority = 3) {
   activeCount++;
 
   img.onload = () => {
     activeCount--;
-    // Persist to IDB blob cache for instant repeat-visit loading.
-    // Sprites and thumbnails get higher priority (3) so they're evicted last.
-    cacheImage(url, 3); // fire-and-forget
+    // Persist to IDB blob cache for instant repeat-visit loading. Priority
+    // controls eviction order: thumbnails(3) evicted last, previews(1) first.
+    cacheImage(url, priority); // fire-and-forget
     pump();
   };
   img.onerror = () => {
@@ -103,10 +108,16 @@ function pump() {
     window.clearTimeout(pumpTimer);
     pumpTimer = null;
   }
+  // Prioritize immediate tasks, then higher-priority items, so the first
+  // screen and first-screen thumbnails are pulled before the long tail.
+  queue.sort((a, b) => {
+    if (a.immediate !== b.immediate) return a.immediate ? -1 : 1;
+    return b.priority - a.priority;
+  });
   const maxActive = getConcurrency();
   while (queue.length > 0 && activeCount < maxActive) {
     const item = queue.shift()!;
-    startRequest(item.url, item.img);
+    startRequest(item.url, item.img, item.priority);
   }
   // Re-pump after a short delay in case active slots freed up
   if (queue.length > 0 && pumpTimer === null) {
@@ -114,13 +125,25 @@ function pump() {
   }
 }
 
+export interface PreloadOptions {
+  /** 1 = preview (evict first), 2 = sprite, 3 = thumbnail (evict last). */
+  priority?: CachePriority;
+  /** Jump the queue to the front (first-screen thumbnails). */
+  immediate?: boolean;
+}
+
 /**
- * Warm a single image into the HTTP cache + service worker cache.
- * Idempotent per URL for the lifetime of the page.
+ * Warm a single image into the HTTP cache + service worker cache + IDB blob
+ * cache. Idempotent per URL for the lifetime of the page. Returns immediately.
  */
-export function preloadImage(url: string | null | undefined): void {
+export function preloadImage(
+  url: string | null | undefined,
+  opts: PreloadOptions = {},
+): void {
   if (!url) return;
-  if (isConnectionConstrained()) return;
+  if (isConnectionConstrained() && !opts.immediate) return;
+  const priority = opts.priority ?? 3;
+  const immediate = opts.immediate ?? false;
   if (warmed.has(url)) {
     const last = failedAt.get(url) ?? 0;
     if (last && Date.now() - last >= FAILED_RETRY_COOLDOWN_MS) {
@@ -129,11 +152,12 @@ export function preloadImage(url: string | null | undefined): void {
       warmed.delete(url);
     } else {
       // Already enqueued (e.g. by the idle full-catalog warmer) but not
-      // started yet — a hot request (viewport preload right before a hover)
-      // should not wait behind the whole catalog. Move it to the head.
+      // started yet — a hot request should not wait behind the whole catalog.
+      // Move it to the head (or to the immediate front if it just became hot).
       const idx = queue.findIndex((item) => item.url === url);
-      if (idx > 0) {
+      if (idx >= 0) {
         const [item] = queue.splice(idx, 1);
+        if (immediate) item.immediate = true;
         queue.unshift(item);
         pump();
       }
@@ -143,9 +167,11 @@ export function preloadImage(url: string | null | undefined): void {
   warmed.add(url);
   const img = new Image();
   img.referrerPolicy = "no-referrer";
-  img.fetchPriority = "low";
+  // First-screen / high-priority thumbnails load at high browser priority;
+  // the long tail is best-effort "low" so it never competes with paint.
+  img.fetchPriority = immediate || priority >= 3 ? "high" : "low";
   img.decoding = "async";
-  queue.push({ url, img });
+  queue.push({ url, img, priority, immediate });
   pump();
 }
 
@@ -156,19 +182,21 @@ export function preloadImage(url: string | null | undefined): void {
  */
 export function preloadImages(
   urls: (string | null | undefined)[],
+  opts: PreloadOptions = {},
 ): void {
   if (typeof window === "undefined") return;
-  for (const url of urls) preloadImage(url);
+  for (const url of urls) preloadImage(url, opts);
 }
 
 /**
- * Warm all hover media for a list of recordings: thumbnails (grid paint)
- * first, then sprites (hover preview), and previews eagerly. Previews use
- * <link rel="preload" as="image"> for instant HTTP/2 priority so they're
+ * Warm all hover media for a list of recordings: thumbnails (grid paint,
+ * priority 3) first, then sprites (priority 2), and previews eagerly. Previews
+ * use <link rel="preload" as="image"> for instant HTTP/2 priority so they're
  * cached before the user hovers.
  */
 export function preloadRecordingAssets(
   recs: Array<{ sprite_url?: string | null; thumbnail_url?: string | null; preview_url?: string | null }>,
+  opts: PreloadOptions = {},
 ): void {
   const thumbs: (string | null | undefined)[] = [];
   const sprites: (string | null | undefined)[] = [];
@@ -180,7 +208,8 @@ export function preloadRecordingAssets(
       previews.push(proxyUrl(rec.preview_url));
     }
   }
-  preloadImages([...thumbs, ...sprites]);
+  preloadImages(thumbs, { ...opts, priority: 3 });
+  preloadImages(sprites, { ...opts, priority: 2 });
   // Previews are preloaded eagerly (not deferred to idle) because
   // <link rel="preload"> is lightweight and the browser handles prioritization.
   if (previews.length) {
@@ -196,6 +225,7 @@ export function preloadRecordingAssets(
  */
 export function preloadRecordingSprites(
   recs: Array<{ sprite_url?: string | null; preview_url?: string | null }>,
+  opts: PreloadOptions = {},
 ): void {
   const sprites: (string | null | undefined)[] = [];
   const previews: (string | null | undefined)[] = [];
@@ -205,7 +235,7 @@ export function preloadRecordingSprites(
       previews.push(proxyUrl(rec.preview_url));
     }
   }
-  preloadImages(sprites);
+  preloadImages(sprites, { ...opts, priority: 2 });
   // Eager preload — <link rel="preload"> is lightweight.
   if (previews.length) {
     previews.forEach((p) => preloadPreviewMedia(p));

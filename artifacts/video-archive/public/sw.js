@@ -20,13 +20,13 @@ const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|webp|gif|avif|svg)(\?|$)/i;
 const MEDIA_EXTENSIONS = /\.(jpg|jpeg|png|webp|gif|avif|svg|mp4|webm|mov)(\?|$)/i;
 const CACHEABLE_TYPES = /^(image\/|video\/|application\/octet-stream)/i;
 
-// Light "Image unavailable" placeholder returned when a media request fails at
-// the network level (offline / CORS / unreachable host). Previously a 1×1
-// transparent GIF was returned, which over the dark card background read as a
-// black/empty card AND suppressed the <img> error event (so the app's own
-// fallback never fired). Returning this real placeholder keeps the UI
-// consistent with the proxy's fallback SVG and never renders black.
-const PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><rect width="640" height="360" fill="#f3f4f6"/><rect x="260" y="140" width="120" height="80" rx="8" fill="#d1d5db" stroke="#9ca3af" stroke-width="2"/><path d="M300 180L340 160v40z" fill="#9ca3af"/><circle cx="285" cy="170" r="5" fill="#9ca3af"/><text x="320" y="260" text-anchor="middle" fill="#9ca3af" font-family="system-ui,sans-serif" font-size="14">Image unavailable</text></svg>`;
+// Theme-aware "Image unavailable" placeholder returned when a media request
+// fails at the network level (offline / CORS / unreachable host). A
+// `prefers-color-scheme` media query keeps it consistent with the app's
+// dark/light themes instead of being hardcoded light. Previously a 1×1
+// transparent GIF was returned, which read as a black card over the dark
+// background AND suppressed the <img> error event.
+const PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><style>.bg{fill:#f3f4f6}.frame{fill:#d1d5db;stroke:#9ca3af}.icon{fill:#9ca3af}.label{fill:#9ca3af}@media(prefers-color-scheme:dark){.bg{fill:#18181b}.frame{fill:#27272a;stroke:#52525b}.icon{fill:#52525b}.label{fill:#71717a}}</style><rect class="bg" width="640" height="360"/><rect class="frame" x="260" y="140" width="120" height="80" rx="8" stroke-width="2"/><path class="icon" d="M300 180L340 160v40z"/><circle class="icon" cx="285" cy="170" r="5"/><text class="label" x="320" y="260" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14">Image unavailable</text></svg>`;
 
 // ─── TTL detection ──────────────────────────────────────────────────────────
 

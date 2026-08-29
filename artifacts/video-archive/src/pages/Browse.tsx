@@ -14,16 +14,13 @@ import {
   getListRecordingsQueryKey,
   getListTagsQueryKey,
   ListRecordingsSort,
-  type RecordingListResponse,
 } from "@workspace/api-client-react";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
-import { preloadPreviewMedia } from "@/lib/preload-preview";
-import { preloadRecordingAssets } from "@/lib/preload-sprite";
-import { proxyUrl } from "@/lib/proxy-url";
+import { useContinuousPrefetch } from "@/hooks/use-continuous-prefetch";
 import {
   Search,
   X,
@@ -160,6 +157,30 @@ export default function Browse() {
   // waiting for a fresh fetch.
   usePreloadRecordings(recordings);
 
+  // ─── Continuous next-page media prefetch ───────────────────────────────
+  // Reuses the unified, connection-aware preload queue to warm the next page's
+  // thumbnails (first screen at high priority) + sprites/previews before the
+  // user scrolls, so navigating/hovering is instant. Data for the next page is
+  // still prefetched below via React Query.
+  const fetchNextPrefetchPage = useCallback(
+    async (page: number) => {
+      const res = await listRecordings({ ...recordingsParams, page });
+      return ((res as any)?.recordings ?? (res as any)?.data ?? []) as Array<{
+        id: string | number;
+        thumbnail_url?: string | null;
+        sprite_url?: string | null;
+        preview_url?: string | null;
+      }>;
+    },
+    [recordingsParams],
+  );
+  const { sentinelRef: continuousSentinelRef } = useContinuousPrefetch({
+    fetchPage: fetchNextPrefetchPage,
+    currentPage: recordingsParams.page,
+    prefetchAhead: 2,
+    eagerThumbs: 10,
+  });
+
   // ─── Next-page prefetch (data + previews) ─────────────────────────
   // When the user scrolls toward the bottom of the list, prefetch the next
   // page of recordings into the React Query cache and warm the preview clips
@@ -189,34 +210,6 @@ export default function Browse() {
         queryKey,
         queryFn: () => listRecordings(nextParams),
         staleTime: 5 * 60_000,
-      })
-      .then(() => {
-        // Skipped if a newer prefetch superseded this one (e.g. filters
-        // changed while the request was in flight).
-        if (prefetchedForRef.current !== guardKey) return;
-        // prefetchQuery resolves with void — read the prefetched page from cache.
-        const nextData = queryClient.getQueryData<RecordingListResponse>(queryKey);
-        const recs = nextData?.data;
-        if (!recs?.length) return;
-        // Warm sprites + thumbnails for the WHOLE next page — small, proxy-free
-        // pixhost images and the primary hover/grid media — so hover and
-        // rendering are instant right after navigating.
-        preloadRecordingAssets(recs);
-        // Seed the preview clips for the first row(s) still via <video>/<img>.
-        // Preload fewer on constrained connections.
-        const conn = (navigator as any).connection;
-        const constrained = !!(
-          conn &&
-          (conn.saveData ||
-            (typeof conn.effectiveType === "string" &&
-              ["slow-2g", "2g", "3g"].includes(conn.effectiveType)))
-        );
-        recs.slice(0, constrained ? 4 : 12).forEach((rec) =>
-          preloadPreviewMedia(proxyUrl(rec.preview_url ?? null)),
-        );
-      })
-      .catch(() => {
-        // Prefetch is best-effort — ignore failures.
       });
   }, [data, recordingsParams, queryClient]);
 
@@ -760,7 +753,7 @@ export default function Browse() {
                     <div key={rec.id}>
                       <VideoCard
                         recording={rec}
-                        fetchPriority={i < 2 ? "high" : undefined}
+                        fetchPriority={i < 10 ? "high" : undefined}
                         isWatched={recentlyWatched.has(rec.id)}
                       />
                     </div>
@@ -779,8 +772,17 @@ export default function Browse() {
                 )}
               </div>
 
-              {/* Scroll sentinel — triggers prefetch of the next page. */}
-              <div ref={sentinelRef} aria-hidden className="h-px w-full" />
+              {/* Scroll sentinel — triggers data + media prefetch of the next
+                  page (Browse's own observer prefetches data; the continuous
+                  prefetch hook warms media on the same element). */}
+              <div
+                ref={(el) => {
+                  sentinelRef.current = el;
+                  continuousSentinelRef.current = el;
+                }}
+                aria-hidden
+                className="h-px w-full"
+              />
             </>
           ) : (
             <div className="py-24 sm:py-32 text-center border border-border/30 rounded-2xl bg-secondary/10">
