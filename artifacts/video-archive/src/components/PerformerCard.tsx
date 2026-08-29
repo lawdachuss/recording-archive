@@ -1,12 +1,10 @@
 import { useMemo, memo } from "react";
 import { Link } from "wouter";
-import { OptimizedImage } from "@/components/ui/optimized-image";
+import { OptimizedImage, ImageUnavailable } from "@/components/ui/optimized-image";
 import { SpriteSlideshow } from "@/components/SpriteSlideshow";
 import { useHoverPreview } from "@/hooks/use-hover-preview";
 import { getSpriteGrid } from "@/lib/sprite-grid";
-import { Users } from "lucide-react";
 import { proxyUrl } from "@/lib/proxy-url";
-
 interface Performer {
   username: string;
   recording_count?: number;
@@ -178,18 +176,11 @@ const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { perf
               loading={fetchPriority === "high" ? "eager" : "lazy"}
               className="object-cover object-top"
               containerClassName="absolute inset-0 w-full h-full"
-              fallback={<div className="absolute inset-0 bg-secondary/60" />}
+              fallback={<ImageUnavailable initials={initial} />}
               noShimmer
             />
           ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-secondary/50 to-secondary/80">
-              <div className="w-12 h-12 rounded-full bg-primary/8 flex items-center justify-center mb-3">
-                <Users className="w-5 h-5 text-primary/30" />
-              </div>
-              <span className="text-sm font-bold text-muted-foreground/25 uppercase tracking-[0.15em]">
-                {initial}
-              </span>
-            </div>
+            <ImageUnavailable initials={initial} />
           )}
 
           <SpriteHover performer={performer} />

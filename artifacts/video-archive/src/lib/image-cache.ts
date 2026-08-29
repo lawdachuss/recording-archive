@@ -126,7 +126,7 @@ if (typeof window !== "undefined") {
 // ─── Config ─────────────────────────────────────────────────────────────────
 
 const DB_NAME = "vault-img-cache";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_NAME = "img-cache";
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const FRESHNESS_MS = 30 * 60 * 1000; // 30 minutes — skip re-fetch if cached within this window
@@ -217,8 +217,13 @@ function openDB(): Promise<IDBDatabase> {
   if (_db) return Promise.resolve(_db);
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = (event) => {
       const db = req.result;
+      // Force-clear stale entries (e.g. prior black fallback SVGs) when the
+      // schema version changes, so old corrupted/placeholder blobs don't linger.
+      if ((event.oldVersion > 0 && event.oldVersion < 3) && db.objectStoreNames.contains(STORE_NAME)) {
+        db.deleteObjectStore(STORE_NAME);
+      }
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         const store = db.createObjectStore(STORE_NAME, { keyPath: "url" });
         store.createIndex("cachedAt", "cachedAt", { unique: false });
@@ -495,6 +500,10 @@ async function _cacheImageInner(
     const contentType = res.headers.get("content-type") || "application/octet-stream";
     const contentLength = parseInt(res.headers.get("content-length") || "0", 10);
     if (contentLength > 10 * 1024 * 1024) return null;
+    // Never cache the proxy's "Image unavailable" placeholder — storing it as a
+    // real thumbnail would mask a recovered image and serve a broken placeholder
+    // from IDB for up to 7 days.
+    if (contentType.includes("image/svg+xml")) return null;
 
     const blob = await res.blob();
     if (blob.size === 0 || blob.size > 10 * 1024 * 1024) return null;

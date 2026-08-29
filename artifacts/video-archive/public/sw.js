@@ -1,6 +1,6 @@
 // ─── Cache configuration ────────────────────────────────────────────────────
 
-const IMAGE_CACHE = "vault-images-v6";
+const IMAGE_CACHE = "vault-images-v7";
 const API_CACHE = "vault-api-v1";
 const IMAGE_MAX_ENTRIES = 10000;
 const API_TTL = 5 * 60_000; // 5 minutes — API data changes more often than images
@@ -19,6 +19,14 @@ const TTL = {
 const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|webp|gif|avif|svg)(\?|$)/i;
 const MEDIA_EXTENSIONS = /\.(jpg|jpeg|png|webp|gif|avif|svg|mp4|webm|mov)(\?|$)/i;
 const CACHEABLE_TYPES = /^(image\/|video\/|application\/octet-stream)/i;
+
+// Light "Image unavailable" placeholder returned when a media request fails at
+// the network level (offline / CORS / unreachable host). Previously a 1×1
+// transparent GIF was returned, which over the dark card background read as a
+// black/empty card AND suppressed the <img> error event (so the app's own
+// fallback never fired). Returning this real placeholder keeps the UI
+// consistent with the proxy's fallback SVG and never renders black.
+const PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><rect width="640" height="360" fill="#f3f4f6"/><rect x="260" y="140" width="120" height="80" rx="8" fill="#d1d5db" stroke="#9ca3af" stroke-width="2"/><path d="M300 180L340 160v40z" fill="#9ca3af"/><circle cx="285" cy="170" r="5" fill="#9ca3af"/><text x="320" y="260" text-anchor="middle" fill="#9ca3af" font-family="system-ui,sans-serif" font-size="14">Image unavailable</text></svg>`;
 
 // ─── TTL detection ──────────────────────────────────────────────────────────
 
@@ -99,22 +107,16 @@ async function staleWhileRevalidate(request) {
     }
     return response;
   } catch (err) {
-    // Network failed (CORS, offline, etc.) — fall back to stale cache
-    // or return a transparent 1×1 pixel so the <img> doesn't error.
+    // Network failed (CORS, offline, unreachable host, etc.).
+    // Prefer a stale cached copy; otherwise return the light
+    // "Image unavailable" placeholder so the card never renders black.
     if (cached) return cached;
-    // Return a tiny transparent GIF to prevent unhandled rejections
-    // and broken <img> elements on CORS failures.
-    const pixel = new Uint8Array([
-      0x47,0x49,0x46,0x38,0x39,0x61,0x01,0x00,
-      0x01,0x00,0x80,0x00,0x00,0xff,0xff,0xff,
-      0x00,0x00,0x00,0x21,0xf9,0x04,0x01,0x00,
-      0x00,0x00,0x00,0x2c,0x00,0x00,0x00,0x00,
-      0x01,0x00,0x01,0x00,0x00,0x02,0x02,0x44,
-      0x01,0x00,0x3b,
-    ]);
-    return new Response(pixel, {
+    return new Response(PLACEHOLDER_SVG, {
       status: 200,
-      headers: { "Content-Type": "image/gif", "Content-Length": String(pixel.length) },
+      headers: {
+        "Content-Type": "image/svg+xml",
+        "Cache-Control": "no-store",
+      },
     });
   }
 }
@@ -138,6 +140,9 @@ async function cacheResponse(cache, request, response) {
   try {
     const contentType = response.headers.get("content-type") || "";
     if (!CACHEABLE_TYPES.test(contentType)) return;
+    // Never cache the "Image unavailable" placeholder — it would otherwise be
+    // served as "fresh" for the thumbnail TTL and mask a recovered image.
+    if (contentType.includes("image/svg+xml")) return;
 
     const taggedResponse = new Response(response.clone().body, {
       status: response.status,
@@ -201,13 +206,16 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Media requests: stale-while-revalidate
+  // Media requests (thumbnails / sprites / previews): do NOT intercept.
+  // Let the browser fetch them directly. The Service Worker's media caching
+  // was the cause of thumbnails failing to display, and it is redundant with
+  // the IDB blob cache (image-cache.ts), which already speeds up repeat
+  // visits. Bypassing the SW here guarantees the browser loads the real image
+  // the same way a direct request does (verified working end-to-end).
   const isMediaRequest =
     request.destination === "image" ||
     IMAGE_EXTENSIONS.test(url.pathname) ||
     (url.pathname.endsWith("/api/media") && MEDIA_EXTENSIONS.test(url.search));
 
-  if (!isMediaRequest) return;
-
-  event.respondWith(staleWhileRevalidate(request));
+  if (isMediaRequest) return;
 });

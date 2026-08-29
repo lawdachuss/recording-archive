@@ -84,11 +84,11 @@ function acquireHostGate(host: string): Promise<() => void> {
  * adapts to the document theme.
  */
 const FALLBACK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
-  <rect width="640" height="360" fill="%23f3f4f6"/>
-  <rect x="260" y="140" width="120" height="80" rx="8" fill="%23d1d5db" stroke="%239ca3af" stroke-width="2"/>
-  <path d="M300 180L340 160v40z" fill="%239ca3af"/>
-  <circle cx="285" cy="170" r="5" fill="%239ca3af"/>
-  <text x="320" y="260" text-anchor="middle" fill="%239ca3af" font-family="system-ui,sans-serif" font-size="14">Image unavailable</text>
+  <rect width="640" height="360" fill="#f3f4f6"/>
+  <rect x="260" y="140" width="120" height="80" rx="8" fill="#d1d5db" stroke="#9ca3af" stroke-width="2"/>
+  <path d="M300 180L340 160v40z" fill="#9ca3af"/>
+  <circle cx="285" cy="170" r="5" fill="#9ca3af"/>
+  <text x="320" y="260" text-anchor="middle" fill="#9ca3af" font-family="system-ui,sans-serif" font-size="14">Image unavailable</text>
 </svg>`;
 
 const FALLBACK_SVG_BUFFER = Buffer.from(FALLBACK_SVG);

@@ -199,6 +199,7 @@ class PriorityPreloadQueue {
   }
 
   enqueue(tasks: PreloadTask[]) {
+    this.done = false;
     this.queue.push(...tasks);
     this.pump();
   }
@@ -214,7 +215,8 @@ class PriorityPreloadQueue {
 
     // Process in priority order: 1 first, then 2, then 3
     for (let priority = 1; priority <= 3; priority++) {
-      for (let i = 0; i < this.queue.length && this.activeCount < maxActive; ) {
+      let i = 0;
+      while (i < this.queue.length && this.activeCount < maxActive) {
         const task = this.queue[i];
         if (task.priority !== priority) {
           i++;
@@ -230,7 +232,8 @@ class PriorityPreloadQueue {
           continue;
         }
 
-        // Dequeue and start
+        // Dequeue and start. Do NOT advance `i` after splicing — the next
+        // task shifts into this slot and must be considered this same pass.
         this.queue.splice(i, 1);
         this.lastOriginStart.set(origin, now);
         this.activeCount++;

@@ -15,14 +15,17 @@ interface OptimizedImageProps {
 }
 
 /**
- * Default placeholder rendered when the image fails to load and no custom
- * fallback is provided. Shows a subtle image icon on a muted background.
+ * Light "Image unavailable" placeholder — mirrors the SVG the media proxy
+ * returns for upstream failures (media-proxy.ts FALLBACK_SVG). Using the same
+ * light styling keeps every missing/errored thumbnail consistent: proxied
+ * failures already render light gray, so direct-load (catbox) failures must
+ * too instead of dropping to a near-black dark fallback.
  */
-function DefaultFallback() {
+export function ImageUnavailable({ initials, className }: { initials?: string; className?: string }) {
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-secondary/60">
+    <div className={cn("absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#f3f4f6]", className)}>
       <svg
-        className="w-8 h-8 text-muted-foreground/25"
+        className="w-8 h-8 text-[#9ca3af]"
         xmlns="http://www.w3.org/2000/svg"
         viewBox="0 0 24 24"
         fill="none"
@@ -35,11 +38,22 @@ function DefaultFallback() {
         <circle cx="8.5" cy="8.5" r="1.5" />
         <polyline points="21 15 16 10 5 21" />
       </svg>
-      <span className="text-[9px] font-medium tracking-wider uppercase text-muted-foreground/20">
-        No image
-      </span>
+      {initials ? (
+        <span className="text-[11px] font-bold uppercase tracking-wider text-[#6b7280]">
+          {initials}
+        </span>
+      ) : (
+        <span className="text-[9px] font-medium tracking-wider uppercase text-[#9ca3af]">
+          Image unavailable
+        </span>
+      )}
     </div>
   );
+}
+
+/** Default placeholder rendered when the image fails to load and no custom fallback is provided. */
+function DefaultFallback() {
+  return <ImageUnavailable />;
 }
 
 export const OptimizedImage = memo(function OptimizedImage({
