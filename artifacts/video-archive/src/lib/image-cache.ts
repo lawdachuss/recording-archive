@@ -138,42 +138,86 @@ const CONCURRENT_FETCHES = 8; // up from 6 — more parallelism for catalog warm
 
 export type CachePriority = 1 | 2 | 3; // 1=preview(cold), 2=sprite(warm), 3=thumbnail(hot)
 
-// ─── In-memory LRU cache ────────────────────────────────────────────────────
+// ─── In-memory LRU cache (reference-counted blob URLs) ──────────────────────
+//
+// A blob URL is shared by every card displaying the same thumbnail. We must
+// NOT revoke it while any card is still using it, otherwise the other cards'
+// <img> go blank. Each getCachedBlobUrl() ACQUIRES a reference; the caller
+// must call releaseBlobUrl() when done (unmount / src change). Eviction only
+// revokes URLs with zero references.
 
 const MEMORY_CACHE_MAX = 750; // up from 500 — holds ~3 pages of thumbnails + sprites
-interface MemoryRecord { blobUrl: string; size: number; }
-const memoryCache = new Map<string, MemoryRecord>(); // url → { blobUrl, size }
+interface MemoryRecord { blobUrl: string; size: number; refs: number; }
+const memoryCache = new Map<string, MemoryRecord>(); // url → { blobUrl, size, refs }
 
 // Track actual memory cache byte usage for accurate eviction
 let memoryCacheBytes = 0;
 const MEMORY_CACHE_MAX_BYTES = 50 * 1024 * 1024; // 50 MB soft cap for memory
 
-function memGet(url: string): string | null {
+function memHasEvictable(): boolean {
+  for (const rec of memoryCache.values()) if (rec.refs === 0) return true;
+  return false;
+}
+
+function memGet(url: string): MemoryRecord | null {
   const record = memoryCache.get(url);
   if (record !== undefined) {
     // Move to end (most recently used)
     memoryCache.delete(url);
     memoryCache.set(url, record);
-    trackHit("memory", url);
-    return record.blobUrl;
+    return record;
   }
   return null;
 }
 
-function memSet(url: string, blobUrl: string, sizeBytes: number) {
-  // Evict by count or byte usage — whichever limit is hit first
-  while (memoryCache.size >= MEMORY_CACHE_MAX || memoryCacheBytes >= MEMORY_CACHE_MAX_BYTES) {
-    const oldest = memoryCache.keys().next().value;
-    if (oldest !== undefined) {
-      const oldestRecord = memoryCache.get(oldest)!;
-      URL.revokeObjectURL(oldestRecord.blobUrl);
-      memoryCache.delete(oldest);
-      memoryCacheBytes = Math.max(0, memoryCacheBytes - oldestRecord.size);
-    } else {
-      break;
-    }
+/** Acquire a reference to a cached blob URL. Returns null if not cached. */
+function memAcquire(url: string): string | null {
+  const record = memoryCache.get(url);
+  if (!record) return null;
+  record.refs++;
+  return record.blobUrl;
+}
+
+/** Release a previously-acquired blob URL; revokes only when fully unused. */
+function memRelease(url: string): void {
+  const record = memoryCache.get(url);
+  if (!record) return;
+  record.refs = Math.max(0, record.refs - 1);
+  if (record.refs === 0) {
+    URL.revokeObjectURL(record.blobUrl);
+    memoryCacheBytes = Math.max(0, memoryCacheBytes - record.size);
+    memoryCache.delete(url);
   }
-  memoryCache.set(url, { blobUrl, size: sizeBytes });
+}
+
+function memSet(url: string, blobUrl: string, sizeBytes: number, refs = 0) {
+  const existing = memoryCache.get(url);
+  if (existing && existing.refs > 0) {
+    // A URL for this image is currently displayed by a mounted card. Don't
+    // clobber it (that would orphan the live object URL). Drop the freshly
+    // created one and keep serving the existing entry.
+    URL.revokeObjectURL(blobUrl);
+    return;
+  }
+  // Evict by count or byte usage — but NEVER revoke a URL still in use.
+  while (
+    (memoryCache.size >= MEMORY_CACHE_MAX || memoryCacheBytes >= MEMORY_CACHE_MAX_BYTES) &&
+    memHasEvictable()
+  ) {
+    const oldest = memoryCache.keys().next().value;
+    if (oldest === undefined) break;
+    const oldestRecord = memoryCache.get(oldest)!;
+    if (oldestRecord.refs > 0) {
+      // In use — move to end and keep scanning for an evictable entry.
+      memoryCache.delete(oldest);
+      memoryCache.set(oldest, oldestRecord);
+      continue;
+    }
+    URL.revokeObjectURL(oldestRecord.blobUrl);
+    memoryCache.delete(oldest);
+    memoryCacheBytes = Math.max(0, memoryCacheBytes - oldestRecord.size);
+  }
+  memoryCache.set(url, { blobUrl, size: sizeBytes, refs });
   memoryCacheBytes += sizeBytes;
 }
 
@@ -325,7 +369,9 @@ function enqueueWrite(entry: ImageCacheEntry): Promise<ImageCacheEntry | null> {
 function enqueueDelete(url: string): Promise<void> {
   return new Promise((resolve) => {
     deleteBatch.push({ url, resolve });
-    memDelete(url);
+    // Do NOT touch the in-memory entry here: it may still be displayed by a
+    // mounted card (reference counted). LRU eviction handles memory; this only
+    // removes the stale IDB copy so it gets re-fetched on the next miss.
     scheduleFlush();
   });
 }
@@ -397,8 +443,11 @@ export async function isFresh(url: string, maxAgeMs = FRESHNESS_MS): Promise<boo
  * The caller must revoke the returned URL when done to avoid memory leaks.
  */
 export async function getCachedBlobUrl(url: string): Promise<string | null> {
-  const memHit = memGet(url);
-  if (memHit !== null) return memHit;
+  const memRec = memGet(url);
+  if (memRec) {
+    trackHit("memory", url);
+    return memAcquire(url); // acquire a reference for the caller
+  }
 
   try {
     const db = await openDB();
@@ -419,7 +468,16 @@ export async function getCachedBlobUrl(url: string): Promise<string | null> {
         }
         trackHit("idb", url);
         const blobUrl = URL.createObjectURL(entry.blob);
-        memSet(url, blobUrl, entry.size || entry.blob.size || 0);
+        // Another concurrent reader may have populated memory while this IDB
+        // read was in flight — if so, reuse their (still-valid) blob URL and
+        // discard the one we just created to avoid a revoked-URL race.
+        const existing = memGet(url);
+        if (existing) {
+          URL.revokeObjectURL(blobUrl);
+          return resolve(memAcquire(url));
+        }
+        // Store acquired (refs=1) — the caller owns this reference.
+        memSet(url, blobUrl, entry.size || entry.blob.size || 0, 1);
         resolve(blobUrl);
       };
       req.onerror = () => resolve(null);
@@ -427,6 +485,17 @@ export async function getCachedBlobUrl(url: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Release a blob URL previously returned by getCachedBlobUrl(url). Safe to
+ * call multiple times and with a null/unknown url. The underlying object URL
+ * is only revoked once no caller holds a reference. Pass the ORIGINAL image
+ * url (the same string given to getCachedBlobUrl), not the blob: URL.
+ */
+export function releaseBlobUrl(url: string | null | undefined): void {
+  if (!url) return;
+  memRelease(url);
 }
 
 /**
@@ -472,6 +541,28 @@ export async function cacheImage(
   return promise;
 }
 
+/**
+ * Reject blobs that aren't actually images. Catches corrupt / HTML-error-body
+ * responses that arrived with a 200 + image content-type and would otherwise
+ * be cached for up to 7 days.
+ */
+function isValidImageMagic(head: Uint8Array): boolean {
+  if (head.length < 4) return false;
+  const jpeg = head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+  const png = head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47;
+  const gif = head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46; // GIF8
+  const webp =
+    head.length >= 12 &&
+    head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 && // RIFF
+    head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50; // WEBP
+  const avif =
+    head.length >= 12 &&
+    head[0] === 0x00 && head[1] === 0x00 && head[2] === 0x00 && head[3] === 0x18 && // size=24
+    head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70 && // ftyp
+    head[8] === 0x61 && head[9] === 0x76 && head[10] === 0x69 && head[11] === 0x66; // avif
+  return jpeg || png || gif || webp || avif;
+}
+
 async function _cacheImageInner(
   url: string,
   priority: CachePriority,
@@ -508,6 +599,10 @@ async function _cacheImageInner(
     const blob = await res.blob();
     if (blob.size === 0 || blob.size > 10 * 1024 * 1024) return null;
 
+    // Validate magic bytes so a corrupt / non-image body is never stored.
+    const head = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+    if (!isValidImageMagic(head)) return null;
+
     const entry: ImageCacheEntry = {
       url, blob, type: contentType,
       cachedAt: Date.now(), size: blob.size, priority,
@@ -536,6 +631,8 @@ export async function areCached(urls: string[]): Promise<Set<string>> {
 
   const idbCandidates: string[] = [];
   for (const url of urls) {
+    // Presence check only — do NOT create object URLs here (that would require
+    // reference counting we can't release from a Set return value).
     if (memGet(url) !== null) {
       result.add(url);
     } else {
@@ -554,11 +651,7 @@ export async function areCached(urls: string[]): Promise<Set<string>> {
         const req = store.get(url);
         req.onsuccess = () => {
           const entry = req.result as ImageCacheEntry | undefined;
-          if (entry && Date.now() - entry.cachedAt <= CACHE_TTL_MS) {
-            result.add(url);
-            const blobUrl = URL.createObjectURL(entry.blob);
-            memSet(url, blobUrl, entry.size || entry.blob.size || 0);
-          }
+          if (entry && Date.now() - entry.cachedAt <= CACHE_TTL_MS) result.add(url);
           if (--pending === 0) resolve();
         };
         req.onerror = () => { if (--pending === 0) resolve(); };

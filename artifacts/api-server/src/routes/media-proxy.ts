@@ -5,9 +5,30 @@ import { Resolver, lookup as systemLookup } from "node:dns/promises";
 import net from "node:net";
 import { Readable } from "node:stream";
 
+// Connection pooling: reuse TLS/TCP connections to upstream hosts instead of
+// opening a fresh handshake for every thumbnail. Without this, a burst of
+// first-screen thumbnails each paid a full TCP+TLS handshake, which slow hosts
+// throttle and which dominated the ~5-7s cold first-load time.
+const UPSTREAM_AGENT_HTTPS = new https.Agent({
+  keepAlive: true,
+  maxSockets: 64,
+  maxFreeSockets: 16,
+  keepAliveMsecs: 1000,
+});
+const UPSTREAM_AGENT_HTTP = new http.Agent({
+  keepAlive: true,
+  maxSockets: 64,
+  maxFreeSockets: 16,
+  keepAliveMsecs: 1000,
+});
+
 // ─── Configuration ────────────────────────────────────────────────
 
 const CONNECTION_TIMEOUT_MS = 20_000;
+// Images must not hang for the full connection timeout — a thumbnail that slow
+// is effectively broken for UX. Fail (and fall back to the placeholder) faster
+// so the per-host gate slot frees up for the next thumbnail.
+const IMAGE_TIMEOUT_MS = 12_000;
 const MAX_RETRIES = 3;
 const BASE_RETRY_DELAY_MS = 500;
 const MAX_REDIRECTS = 5;
@@ -20,8 +41,8 @@ const MAX_REDIRECTS = 5;
 // minimum gap between connection starts. Clients hit OUR origin as fast as they
 // want (HTTP/2 multiplexed, cached immutable); pixhost only ever sees a smooth,
 // parallel-but-bounded stream.
-const HOST_MAX_CONCURRENT = 5;
-const HOST_START_INTERVAL_MS = 70;
+const HOST_MAX_CONCURRENT = 10;
+const HOST_START_INTERVAL_MS = 20;
 
 interface HostGate {
   active: number;
@@ -75,6 +96,93 @@ function acquireHostGate(host: string): Promise<() => void> {
   });
 }
 
+// ─── In-memory single-flight + success cache (images only) ──────────────────
+// The grid card AND the background catalog warmer routinely request the same
+// first-screen thumbnails at the same moment. Without de-duplication each opens
+// its own upstream fetch and they compete for the per-host gate slots, which is
+// exactly what serializes the first screen. Here concurrent requests for one
+// URL share a single upstream fetch, and the result is held briefly so repeat
+// views (and the warmer + card pair) are served straight from memory.
+interface CachedImage {
+  buffer: Buffer;
+  contentType: string;
+  status: number;
+}
+
+const IMAGE_MEM_CACHE_TTL_MS = 5 * 60_000;
+const IMAGE_MEM_CACHE_MAX = 500;
+const imageMemCache = new Map<string, CachedImage & { expires: number }>();
+const imageInflight = new Map<string, Promise<CachedImage>>();
+
+function cacheImageInMemory(url: string, img: CachedImage): void {
+  imageMemCache.set(url, { ...img, expires: Date.now() + IMAGE_MEM_CACHE_TTL_MS });
+  if (imageMemCache.size > IMAGE_MEM_CACHE_MAX) {
+    // Evict the oldest entry (Map preserves insertion order).
+    const oldest = imageMemCache.keys().next().value;
+    if (oldest !== undefined) imageMemCache.delete(oldest);
+  }
+}
+
+async function fetchImageOnce(
+  urlStr: string,
+  upstreamHeaders: Record<string, string>,
+  log: any,
+): Promise<CachedImage> {
+  const release = await acquireHostGate(new URL(urlStr).hostname);
+  try {
+    const response = await fetchWithRetry(urlStr, upstreamHeaders, log, IMAGE_TIMEOUT_MS);
+    if (!response || !response.ok) {
+      throw new Error(response ? `upstream ${response.status}` : "upstream fetch failed");
+    }
+    const contentType = response.headers.get("content-type") || "image/jpeg";
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const img: CachedImage = { buffer, contentType, status: response.status };
+    cacheImageInMemory(urlStr, img);
+    return img;
+  } finally {
+    release();
+  }
+}
+
+/**
+ * Returns a buffered image Response for `urlStr`. Concurrent requests for the
+ * same URL share one upstream fetch (single-flight); recent successes are
+ * served from memory. Throws on upstream failure so the caller can return the
+ * placeholder SVG.
+ */
+async function getImage(
+  urlStr: string,
+  upstreamHeaders: Record<string, string>,
+  log: any,
+): Promise<Response> {
+  const cached = imageMemCache.get(urlStr);
+  if (cached && cached.expires > Date.now()) {
+    return new Response(cached.buffer, {
+      status: cached.status,
+      headers: {
+        "Content-Type": cached.contentType,
+        "Content-Length": String(cached.buffer.length),
+      },
+    });
+  }
+
+  let inflight = imageInflight.get(urlStr);
+  if (!inflight) {
+    inflight = fetchImageOnce(urlStr, upstreamHeaders, log).finally(() => {
+      imageInflight.delete(urlStr);
+    });
+    imageInflight.set(urlStr, inflight);
+  }
+  const img = await inflight;
+  return new Response(img.buffer, {
+    status: img.status,
+    headers: {
+      "Content-Type": img.contentType,
+      "Content-Length": String(img.buffer.length),
+    },
+  });
+}
+
 // ─── Failure cache ────────────────────────────────────────────────
 
 /**
@@ -83,12 +191,27 @@ function acquireHostGate(host: string): Promise<() => void> {
  * 502 error is logged to the console. The SVG uses currentColor so it
  * adapts to the document theme.
  */
+// Theme-aware placeholder: light by default, dark when the viewer's OS/browser
+// is in dark mode. Standalone SVGs can't read CSS variables, so we use a
+// `prefers-color-scheme` media query to match the app's dark/light themes.
 const FALLBACK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
-  <rect width="640" height="360" fill="#f3f4f6"/>
-  <rect x="260" y="140" width="120" height="80" rx="8" fill="#d1d5db" stroke="#9ca3af" stroke-width="2"/>
-  <path d="M300 180L340 160v40z" fill="#9ca3af"/>
-  <circle cx="285" cy="170" r="5" fill="#9ca3af"/>
-  <text x="320" y="260" text-anchor="middle" fill="#9ca3af" font-family="system-ui,sans-serif" font-size="14">Image unavailable</text>
+  <style>
+    .bg { fill: #f3f4f6; }
+    .frame { fill: #d1d5db; stroke: #9ca3af; }
+    .icon { fill: #9ca3af; }
+    .label { fill: #9ca3af; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #18181b; }
+      .frame { fill: #27272a; stroke: #52525b; }
+      .icon { fill: #52525b; }
+      .label { fill: #71717a; }
+    }
+  </style>
+  <rect class="bg" width="640" height="360"/>
+  <rect class="frame" x="260" y="140" width="120" height="80" rx="8" stroke-width="2"/>
+  <path class="icon" d="M300 180L340 160v40z"/>
+  <circle class="icon" cx="285" cy="170" r="5"/>
+  <text class="label" x="320" y="260" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14">Image unavailable</text>
 </svg>`;
 
 const FALLBACK_SVG_BUFFER = Buffer.from(FALLBACK_SVG);
@@ -135,21 +258,33 @@ customResolver.setServers(DNS_SERVERS);
  * Tries IPv4 first, then falls back to IPv6.
  * Returns the IP address or null if resolution fails.
  */
+const dnsCache = new Map<string, { ip: string; expires: number }>();
+const DNS_CACHE_TTL_MS = 5 * 60_000;
+
 async function resolveHostname(hostname: string): Promise<string | null> {
+  const cached = dnsCache.get(hostname);
+  if (cached && cached.expires > Date.now()) return cached.ip;
+
+  let ip: string | null = null;
   // Try IPv4 first
   try {
     const addresses = await customResolver.resolve4(hostname);
-    if (addresses?.[0]) return addresses[0];
+    if (addresses?.[0]) ip = addresses[0];
   } catch {
     // fall through to IPv6
   }
   // Try IPv6 as fallback
-  try {
-    const addresses = await customResolver.resolve6(hostname);
-    return addresses?.[0] ?? null;
-  } catch {
-    return null;
+  if (!ip) {
+    try {
+      const addresses = await customResolver.resolve6(hostname);
+      ip = addresses?.[0] ?? null;
+    } catch {
+      ip = null;
+    }
   }
+
+  if (ip) dnsCache.set(hostname, { ip, expires: Date.now() + DNS_CACHE_TTL_MS });
+  return ip;
 }
 
 // ─── SSRF guard ──────────────────────────────────────────────────
@@ -341,6 +476,7 @@ function directConnect(
         Host: parsedUrl.hostname,
       },
       servername: parsedUrl.hostname,
+      agent: protocol === https ? UPSTREAM_AGENT_HTTPS : UPSTREAM_AGENT_HTTP,
       lookup: (_host: string, _opts: any, cb: (err: Error | null, ip: string, fam: number) => void) => {
         cb(null, resolvedIp, family);
       },
@@ -372,6 +508,7 @@ async function fetchWithRetry(
   url: string,
   headers: Record<string, string>,
   log: any,
+  timeoutMs: number = CONNECTION_TIMEOUT_MS,
 ): Promise<Response | null> {
   // Check failure cache before attempting
   if (isCachedFailure(url)) {
@@ -381,10 +518,10 @@ async function fetchWithRetry(
 
   for (let attempt = 1; attempt <= 1 + MAX_RETRIES; attempt++) {
     const isFirst = attempt === 1;
-    const timeoutMs = CONNECTION_TIMEOUT_MS * (isFirst ? 1 : 1.5);
+    const attemptTimeout = timeoutMs * (isFirst ? 1 : 1.5);
 
     try {
-      let response = await fetchWithTimeout(url, headers, timeoutMs);
+      let response = await fetchWithTimeout(url, headers, attemptTimeout);
 
       // Follow redirects (3xx with Location header)
       let redirectCount = 0;
@@ -400,7 +537,7 @@ async function fetchWithRetry(
         // Follow with no referer for the redirect target
         const redirectHeaders = { ...headers };
         delete redirectHeaders["Referer"];
-        response = await fetchWithTimeout(redirectUrl, redirectHeaders, timeoutMs);
+        response = await fetchWithTimeout(redirectUrl, redirectHeaders, attemptTimeout);
         redirectCount++;
       }
 
@@ -563,11 +700,15 @@ router.get("/media", async (req, res) => {
     upstreamHeaders["Range"] = rangeHeader;
   }
 
-  // Video / Range requests are the player itself — don't queue them behind
-  // thumbnail fetches, playback must start immediately.
-  const release = rangeHeader ? null : await acquireHostGate(upstreamHostname);
+  // Video / Range requests are the player itself — stream straight through,
+  // never gated or de-duplicated (playback must start immediately). Images go
+  // through getImage(), which coalesces concurrent requests and serves recent
+  // successes from the in-memory cache so the first screen paints fast. The
+  // per-host upstream gate is released inside getImage().
   try {
-    const response = await fetchWithRetry(urlStr, upstreamHeaders, req.log);
+    const response = rangeHeader
+      ? await fetchWithRetry(urlStr, upstreamHeaders, req.log)
+      : await getImage(urlStr, upstreamHeaders, req.log);
 
     const isVideoRequest = !!rangeHeader;
 
@@ -622,7 +763,7 @@ router.get("/media", async (req, res) => {
       res.status(200).send(FALLBACK_SVG_BUFFER);
     }
   } finally {
-    release?.();
+    // Per-host gate slots are released inside getImage() / fetchWithRetry paths.
   }
 });
 

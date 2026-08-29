@@ -1004,7 +1004,7 @@ export default function VideoDetail() {
                           <OptimizedImage
                             src={proxyUrl(rec.thumbnail_url)!}
                             alt={rec.username}
-                            fetchPriority={i < 2 ? "high" : undefined}
+                            fetchPriority={i < 10 ? "high" : undefined}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                             containerClassName="w-full h-full"
                             fallback={

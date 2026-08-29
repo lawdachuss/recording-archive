@@ -241,7 +241,7 @@ export default function PerformerProfile() {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8">
               {pagedRecordings.map((rec, i) => (
                 <div key={rec.id} className="animate-fade-in-up" style={{ animationDelay: `${i * 30}ms` }}>
-                  <VideoCard recording={rec} fetchPriority={i < 2 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
+                  <VideoCard recording={rec} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
                 </div>
               ))}
             </div>

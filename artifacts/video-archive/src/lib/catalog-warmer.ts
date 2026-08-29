@@ -1,446 +1,200 @@
 /**
- * catalog-warmer.ts — Advanced catalog-wide media preloader
+ * catalog-warmer.ts — continuous, connection-aware catalog media preloader.
  *
- * Warms thumbnails, sprite sheets, and preview clips for the entire catalog
- * in the background after first paint. Uses:
+ * After first paint, warms thumbnails → sprites → previews for the catalog so
+ * that scrolling and repeat visits are instant. It now routes every preload
+ * through preload-sprite's single paced queue (preloadImage), so there is
+ * exactly one coordination point for outbound media requests — no second,
+ * uncoordinated queue competing with the grid for bandwidth.
  *
- *   - Parallel page fetching (3 concurrent API calls)
- *   - Priority tiers: thumbnails → sprites → previews (small → large)
- *   - Adaptive concurrency based on real download speed
- *   - Progress tracking (reactive state for UI display)
- *   - Idle-scheduled work that pauses when user is active
- *   - Service worker / HTTP cache fills for instant repeat visits
+ * - The first ~16 thumbnails are marked immediate + high priority so the first
+ *   screen paints as fast as the (often slow, direct-to-browser) host allows.
+ * - Remaining thumbnails, then sprites, then previews, are enqueued in priority
+ *   order; preload-sprite paces them per connection quality.
+ * - Pixhost thumbnails are written to the IDB blob cache (via cacheImage inside
+ *   preload-sprite) so repeat visits are instant; catbox thumbnails (which
+ *   block server-side hotlinking) are warmed in the browser HTTP cache only.
  */
 
 import { listRecordings } from "@workspace/api-client-react";
 import { proxyUrl } from "@/lib/proxy-url";
-import { isReachablePreviewUrl } from "@/lib/preload-sprite";
+import { preloadImage, isReachablePreviewUrl } from "@/lib/preload-sprite";
+import { preloadPreviewMedia } from "@/lib/preload-preview";
 import { evictIfNeeded } from "@/lib/image-cache";
 import { isConnectionConstrained } from "@/lib/connection";
 
-// ─── Configuration ──────────────────────────────────────────────────────────
-
+// ─── Config ────────────────────────────────────────────────────────────────
 const WARM_MARKER = "catalog.warmUntil";
 const WARM_REINTERVAL_MS = 6 * 60 * 60 * 1000; // re-warm at most every 6h
-const WARM_DELAY_MS = 1_500; // start 1.5s after first paint
+const WARM_DELAY_MS = 1_500; // wait for first paint before warming
 const PAGE_SIZE = 100;
-const MAX_PAGES = 10; // 1,000 recordings — enough for visible grid + scroll
-const PARALLEL_FETCHES = 3; // concurrent API page fetches
+const MAX_PAGES = 10; // ~1000 recordings; covers the catalog's hot set
+const PARALLEL_FETCHES = 3; // fetch 3 pages concurrently
+const FIRST_SCREEN_THUMBS = 16; // immediate + high priority
 
-// Adaptive concurrency thresholds
-const FAST_THRESHOLD_BPS = 5_000_000; // >5MB/s = fast
-const SLOW_THRESHOLD_BPS = 500_000; // <500KB/s = slow
-const CONCURRENCY_FAST = 12;
-const CONCURRENCY_MEDIUM = 6;
-const CONCURRENCY_SLOW = 2;
-
-// ─── Progress state (reactive) ──────────────────────────────────────────────
-
+// ─── Progress state (reactive) ─────────────────────────────────────────────
 export interface WarmProgress {
   phase: "idle" | "fetching" | "warming" | "done";
   pagesLoaded: number;
   totalPages: number;
-  recordingsProcessed: number;
-  totalRecordings: number;
-  thumbnailsLoaded: number;
-  spritesLoaded: number;
-  previewsLoaded: number;
-  currentConcurrency: number;
+  recordingsProcessed: number; // how many recordings we've scheduled media for
+  totalRecordings: number; // running estimate of total
+  thumbnailsLoaded: number; // thumbnails scheduled into the preload queue
+  spritesLoaded: number; // sprites scheduled
+  previewsLoaded: number; // previews scheduled
+  currentConcurrency: number; // reserved (paced by preload-sprite)
   startedAt: number;
 }
 
-type ProgressListener = (progress: WarmProgress) => void;
-
-const listeners = new Set<ProgressListener>();
 let progress: WarmProgress = {
   phase: "idle",
   pagesLoaded: 0,
-  totalPages: 0,
+  totalPages: MAX_PAGES,
   recordingsProcessed: 0,
-  totalRecordings: 0,
+  totalRecordings: MAX_PAGES * PAGE_SIZE,
   thumbnailsLoaded: 0,
   spritesLoaded: 0,
   previewsLoaded: 0,
-  currentConcurrency: CONCURRENCY_MEDIUM,
+  currentConcurrency: 0,
   startedAt: 0,
 };
 
+type ProgressListener = (p: WarmProgress) => void;
+const listeners = new Set<ProgressListener>();
+
 function updateProgress(patch: Partial<WarmProgress>) {
   progress = { ...progress, ...patch };
-  for (const listener of listeners) {
-    try { listener(progress); } catch { /* listener error — non-fatal */ }
-  }
+  listeners.forEach((l) => l(progress));
 }
 
-export function onWarmProgress(listener: ProgressListener): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+export function onWarmProgress(cb: ProgressListener): () => void {
+  listeners.add(cb);
+  cb(progress);
+  return () => listeners.delete(cb);
 }
 
 export function getWarmProgress(): WarmProgress {
   return progress;
 }
 
-// ─── Adaptive concurrency ───────────────────────────────────────────────────
-
-// Track recent download speeds to pick the right concurrency
-const speedSamples: number[] = [];
-const MAX_SPEED_SAMPLES = 20;
-
-function recordSpeed(bytesLoaded: number, durationMs: number) {
-  if (durationMs <= 0) return;
-  const bps = (bytesLoaded * 8) / (durationMs / 1000);
-  speedSamples.push(bps);
-  if (speedSamples.length > MAX_SPEED_SAMPLES) speedSamples.shift();
-}
-
-function getAdaptiveConcurrency(): number {
-  if (speedSamples.length < 3) return CONCURRENCY_MEDIUM;
-  // Use median speed for stability
-  const sorted = [...speedSamples].sort((a, b) => a - b);
-  const median = sorted[Math.floor(sorted.length / 2)];
-  if (median > FAST_THRESHOLD_BPS) return CONCURRENCY_FAST;
-  if (median < SLOW_THRESHOLD_BPS) return CONCURRENCY_SLOW;
-  return CONCURRENCY_MEDIUM;
-}
-
-function getMaxPages(): number {
-  if (isConnectionConstrained()) return 10; // 1000 recordings on slow
-  return MAX_PAGES;
-}
-
-// ─── Idle scheduling ────────────────────────────────────────────────────────
-
-function scheduleIdle(task: () => void, timeout = 1_000) {
-  const requestIdle =
-    window.requestIdleCallback ??
-    ((cb: IdleRequestCallback) => {
-      const id = window.setTimeout(
-        () => cb({ didTimeout: false, timeRemaining: () => 0 }),
-        timeout,
-      );
-      return id as unknown as number;
-    });
-  requestIdle(task, { timeout });
-}
-
-// ─── Parallel page fetcher ──────────────────────────────────────────────────
-
-/**
- * Fetch multiple pages from the API in parallel.
- * Returns pages in order — if page 3 finishes before page 2,
- * the caller still gets [page2, page3] in sequence.
- */
-async function fetchPagesInParallel(
-  startPage: number,
-  count: number,
-  maxPages: number,
-): Promise<Array<{ page: number; data: any[] }>> {
-  const results: Array<{ page: number; data: any[] }> = [];
-  const promises: Promise<void>[] = [];
-
-  for (let i = 0; i < count; i++) {
-    const pageNum = startPage + i;
-    if (pageNum > maxPages) break;
-
-    promises.push(
-      (async () => {
-        try {
-          const response = await listRecordings({
-            page: pageNum,
-            limit: PAGE_SIZE,
-            sort: "newest",
-          });
-          results.push({ page: pageNum, data: response.data ?? [] });
-        } catch {
-          // API hiccup — skip this page
-          results.push({ page: pageNum, data: [] });
-        }
-      })(),
-    );
-  }
-
-  await Promise.all(promises);
-
-  // Sort by page number to maintain order
-  results.sort((a, b) => a.page - b.page);
-  return results;
-}
-
-// ─── Priority preload engine ────────────────────────────────────────────────
-
-interface PreloadTask {
-  url: string;
-  priority: 1 | 2 | 3; // 1=thumbnail, 2=sprite, 3=preview
-  size: number; // estimated bytes for speed tracking
-}
-
-const PRIORITY_LABELS = { 1: "thumbnail", 2: "sprite", 3: "preview" } as const;
-
-/**
- * Adaptive priority queue that processes tasks in order:
- * - All priority 1 (thumbnails) before priority 2 (sprites)
- * - All priority 2 before priority 3 (previews)
- * - Within each priority, concurrent with adaptive concurrency
- */
-class PriorityPreloadQueue {
-  private queue: PreloadTask[] = [];
-  private activeCount = 0;
-  private done = false;
-  private pumpTimer: number | null = null;
-  private processed = { 1: 0, 2: 0, 3: 0 };
-  private onTaskComplete: ((priority: 1 | 2 | 3) => void) | null = null;
-  private lastOriginStart = new Map<string, number>();
-
-  constructor(private getConcurrency: () => number) {}
-
-  setOnTaskComplete(cb: (priority: 1 | 2 | 3) => void) {
-    this.onTaskComplete = cb;
-  }
-
-  enqueue(tasks: PreloadTask[]) {
-    this.done = false;
-    this.queue.push(...tasks);
-    this.pump();
-  }
-
-  private pump() {
-    if (this.pumpTimer !== null) {
-      window.clearTimeout(this.pumpTimer);
-      this.pumpTimer = null;
-    }
-
-    const maxActive = this.getConcurrency();
-    const now = performance.now();
-
-    // Process in priority order: 1 first, then 2, then 3
-    for (let priority = 1; priority <= 3; priority++) {
-      let i = 0;
-      while (i < this.queue.length && this.activeCount < maxActive) {
-        const task = this.queue[i];
-        if (task.priority !== priority) {
-          i++;
-          continue;
-        }
-
-        // Pace by origin (avoid hammering one host)
-        const origin = originOf(task.url);
-        const lastStart = this.lastOriginStart.get(origin) ?? 0;
-        const minGap = this.activeCount < 4 ? 30 : 80; // more aggressive when not busy
-        if (now - lastStart < minGap) {
-          i++;
-          continue;
-        }
-
-        // Dequeue and start. Do NOT advance `i` after splicing — the next
-        // task shifts into this slot and must be considered this same pass.
-        this.queue.splice(i, 1);
-        this.lastOriginStart.set(origin, now);
-        this.activeCount++;
-        this.startTask(task);
-      }
-    }
-
-    // Schedule next pump if queue has items
-    if (this.queue.length && this.pumpTimer === null) {
-      this.pumpTimer = window.setTimeout(() => this.pump(), 40);
-    }
-
-    // Signal done when queue is empty and no active tasks
-    if (this.queue.length === 0 && this.activeCount === 0 && !this.done) {
-      this.done = true;
-    }
-  }
-
-  private startTask(task: PreloadTask) {
-    const startTime = performance.now();
-    const img = new Image();
-    img.referrerPolicy = "no-referrer";
-    img.fetchPriority = "low";
-    img.decoding = "async";
-
-    img.onload = () => {
-      const elapsed = performance.now() - startTime;
-      recordSpeed(task.size, elapsed);
-      this.activeCount--;
-      this.processed[task.priority]++;
-      this.onTaskComplete?.(task.priority);
-      this.pump();
-    };
-
-    img.onerror = () => {
-      this.activeCount--;
-      this.pump();
-    };
-
-    img.src = task.url;
-  }
-
-  isComplete() {
-    return this.done;
-  }
-
-  getProcessed() {
-    return { ...this.processed };
-  }
-
-  getRemaining() {
-    return this.queue.length;
-  }
-}
-
-function originOf(url: string): string {
-  try {
-    return new URL(url).origin;
-  } catch {
-    return "";
-  }
-}
-
-// ─── Main warmup orchestrator ───────────────────────────────────────────────
-
+// ─── Cancellation ───────────────────────────────────────────────────────────
 let warmupAbort = false;
-
 export function cancelWarmup() {
   warmupAbort = true;
 }
 
+// ─── Page fetching (parallel, bounded) ──────────────────────────────────────
+// fetchPagesInParallel: fetch pages [startPage..startPage+count-1] concurrently.
+async function fetchPagesInParallel(
+  startPage: number,
+  count: number,
+  _maxPages: number,
+): Promise<Array<{ page: number; data: any[] }>> {
+  const tasks = Array.from({ length: count }, (_, i) => {
+    const page = startPage + i;
+    return listRecordings({ page, limit: PAGE_SIZE })
+      .then((res: any) => ({ page, data: res?.recordings ?? res?.data ?? [] }))
+      .catch(() => ({ page, data: [] as any[] }));
+  });
+  return Promise.all(tasks);
+}
+
+/**
+ * Start the background catalog warmup. Idempotent-ish via the warm marker:
+ * skips if warmed within the interval. Safe to call on every mount.
+ */
 export async function startCatalogWarmup(): Promise<void> {
   if (typeof window === "undefined") return;
-  // On slow connections, skip the catalog warmer entirely. Every MB of
-  // bandwidth should go to what the user is actually viewing, not to
-  // speculative preloading of recordings they may never see.
-  if (isConnectionConstrained()) return;
+  if (isConnectionConstrained()) return; // never warm on slow/metered links
 
-  // Check if we already warmed recently
   const last = Number(localStorage.getItem(WARM_MARKER) || 0);
   if (Date.now() - last < WARM_REINTERVAL_MS) return;
 
   warmupAbort = false;
-
   updateProgress({
     phase: "fetching",
     pagesLoaded: 0,
-    totalPages: 0,
     recordingsProcessed: 0,
-    totalRecordings: 0,
     thumbnailsLoaded: 0,
     spritesLoaded: 0,
     previewsLoaded: 0,
-    currentConcurrency: CONCURRENCY_MEDIUM,
     startedAt: Date.now(),
   });
 
-  // Only reaches here on fast connections (slow connections return early above).
-  const maxPages = getMaxPages();
-  const concurrency = getAdaptiveConcurrency();
-  const queue = new PriorityPreloadQueue(() => getAdaptiveConcurrency());
-  queue.setOnTaskComplete((priority) => {
-    const processed = queue.getProcessed();
-    updateProgress({
-      thumbnailsLoaded: processed[1],
-      spritesLoaded: processed[2],
-      previewsLoaded: processed[3],
-      currentConcurrency: getAdaptiveConcurrency(),
-    });
-  });
+  // Wait for first paint / idle before hammering the network
+  await new Promise((r) => setTimeout(r, WARM_DELAY_MS));
+  if (warmupAbort) return;
 
   let currentPage = 1;
-  let totalRecordings = 0;
-  let pagesLoaded = 0;
-  let done = false;
+  let firstScreenRemaining = FIRST_SCREEN_THUMBS;
 
-  while (currentPage <= maxPages && !warmupAbort && !done) {
-    // Fetch PARALLEL_FETCHES pages at once
-    const batchSize = Math.min(PARALLEL_FETCHES, maxPages - currentPage + 1);
-    const pages = await fetchPagesInParallel(currentPage, batchSize, maxPages);
-
+  while (currentPage <= MAX_PAGES && !warmupAbort) {
+    const batchSize = Math.min(PARALLEL_FETCHES, MAX_PAGES - currentPage + 1);
+    const pages = await fetchPagesInParallel(currentPage, batchSize, MAX_PAGES);
     updateProgress({ phase: "warming" });
+
+    let recordingsProcessed = progress.recordingsProcessed;
+    let thumbnailsLoaded = progress.thumbnailsLoaded;
+    let spritesLoaded = progress.spritesLoaded;
+    let previewsLoaded = progress.previewsLoaded;
+    let pagesLoaded = progress.pagesLoaded;
 
     for (const { data } of pages) {
       if (data.length === 0) {
-        done = true;
+        // Ran out of recordings — stop fetching further pages.
+        currentPage = MAX_PAGES + 1;
         break;
       }
-
-      totalRecordings += data.length;
-      pagesLoaded++;
-
-      // Build priority tasks for this page
-      const tasks: PreloadTask[] = [];
+      pagesLoaded += 1;
+      recordingsProcessed += data.length;
 
       for (const rec of data) {
-        // Priority 1: Thumbnails (small, critical for grid paint)
-        const thumbUrl = rec.thumbnail_url ? proxyUrl(rec.thumbnail_url) : null;
-        if (thumbUrl) {
-          tasks.push({
-            url: thumbUrl,
-            priority: 1,
-            size: 30_000, // ~30KB per thumbnail
-          });
+        if (rec.thumbnail_url) {
+          const immediate = firstScreenRemaining > 0;
+          if (immediate) firstScreenRemaining -= 1;
+          // Thumbnails get priority 3 (kept longest / evicted last).
+          preloadImage(proxyUrl(rec.thumbnail_url), { priority: 3, immediate });
+          thumbnailsLoaded += 1;
         }
-
-        // Priority 2: Sprites (medium, critical for hover preview)
-        const spriteUrl = rec.sprite_url ? proxyUrl(rec.sprite_url) : null;
-        if (spriteUrl) {
-          tasks.push({
-            url: spriteUrl,
-            priority: 2,
-            size: 300_000, // ~300KB per sprite sheet
-          });
+        if (rec.sprite_url) {
+          // Sprites get priority 2.
+          preloadImage(proxyUrl(rec.sprite_url), { priority: 2 });
+          spritesLoaded += 1;
         }
-
-        // Priority 3: Preview clips (large, nice-to-have)
-        // On slow connections, skip previews entirely — bandwidth is needed
-        // for thumbnails and sprites which are the grid/hover essentials.
         if (rec.preview_url && isReachablePreviewUrl(rec.preview_url)) {
-          const proxiedUrl = proxyUrl(rec.preview_url);
-          if (proxiedUrl) {
-            tasks.push({
-              url: proxiedUrl,
-              priority: 3,
-              size: 1_000_000, // ~1MB per preview clip
-            });
-          }
+          // Previews are preloaded eagerly via <link rel=preload>; they are
+          // large, so they don't go through the IDB queue (priority 1 = evict).
+          preloadPreviewMedia(proxyUrl(rec.preview_url));
+          previewsLoaded += 1;
         }
       }
-
-      // IDB persistence is handled by preload-sprite.ts img.onload → cacheImage().
-      // No separate fetch+cache loop needed — avoids double-fetching.
-
-      queue.enqueue(tasks);
-
-      updateProgress({
-        pagesLoaded,
-        totalPages: Math.max(pagesLoaded, maxPages),
-        recordingsProcessed: totalRecordings,
-        totalRecordings: Math.max(totalRecordings, maxPages * PAGE_SIZE),
-      });
     }
 
-    currentPage += batchSize;
+    updateProgress({
+      pagesLoaded,
+      totalPages: Math.max(pagesLoaded, MAX_PAGES),
+      recordingsProcessed,
+      totalRecordings: Math.max(recordingsProcessed, MAX_PAGES * PAGE_SIZE),
+      thumbnailsLoaded,
+      spritesLoaded,
+      previewsLoaded,
+    });
 
-    // Brief pause between batch fetches to not overwhelm the API
-    if (currentPage <= maxPages && !warmupAbort && !done) {
+    currentPage += batchSize;
+    if (currentPage <= MAX_PAGES && !warmupAbort) {
+      // Small gap so we don't fetch the whole catalog back-to-back.
       await new Promise((r) => setTimeout(r, 200));
     }
   }
 
-  // Wait for all queued preloads to finish (with timeout)
-  const WAIT_TIMEOUT_MS = 120_000;
-  const waitStart = Date.now();
-  while (!queue.isComplete() && !warmupAbort) {
-    if (Date.now() - waitStart > WAIT_TIMEOUT_MS) break;
-    await new Promise((r) => setTimeout(r, 500));
-  }
-
-  // Evict old IDB entries if cache is too large
+  // Reclaim space if we overshot the IDB budget during warming.
   evictIfNeeded();
 
-  // Mark as warmed
   try {
     localStorage.setItem(WARM_MARKER, String(Date.now()));
-  } catch { /* non-fatal */ }
+  } catch {
+    /* ignore */
+  }
 
-  updateProgress({ phase: "done" });
+  if (!warmupAbort) updateProgress({ phase: "done" });
 }

@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, memo } from "react";
 import { cn } from "@/lib/utils";
 import { proxyUrl } from "@/lib/proxy-url";
-import { getCachedBlobUrl, cacheImage } from "@/lib/image-cache";
+import { getCachedBlobUrl, cacheImage, releaseBlobUrl } from "@/lib/image-cache";
 
 interface OptimizedImageProps {
   src: string;
@@ -15,17 +15,16 @@ interface OptimizedImageProps {
 }
 
 /**
- * Light "Image unavailable" placeholder — mirrors the SVG the media proxy
- * returns for upstream failures (media-proxy.ts FALLBACK_SVG). Using the same
- * light styling keeps every missing/errored thumbnail consistent: proxied
- * failures already render light gray, so direct-load (catbox) failures must
- * too instead of dropping to a near-black dark fallback.
+ * Theme-aware "Image unavailable" placeholder — mirrors the SVG the media proxy
+ * returns for upstream failures (media-proxy.ts FALLBACK_SVG). Uses the app's
+ * `muted`/`muted-foreground` tokens so the placeholder follows the active
+ * theme (dark in dark mode, light in light mode) instead of being hardcoded.
  */
 export function ImageUnavailable({ initials, className }: { initials?: string; className?: string }) {
   return (
-    <div className={cn("absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#f3f4f6]", className)}>
+    <div className={cn("absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted text-muted-foreground/40", className)}>
       <svg
-        className="w-8 h-8 text-[#9ca3af]"
+        className="w-8 h-8"
         xmlns="http://www.w3.org/2000/svg"
         viewBox="0 0 24 24"
         fill="none"
@@ -39,11 +38,11 @@ export function ImageUnavailable({ initials, className }: { initials?: string; c
         <polyline points="21 15 16 10 5 21" />
       </svg>
       {initials ? (
-        <span className="text-[11px] font-bold uppercase tracking-wider text-[#6b7280]">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">
           {initials}
         </span>
       ) : (
-        <span className="text-[9px] font-medium tracking-wider uppercase text-[#9ca3af]">
+        <span className="text-[9px] font-medium tracking-wider uppercase text-muted-foreground/50">
           Image unavailable
         </span>
       )}
@@ -76,6 +75,8 @@ export const OptimizedImage = memo(function OptimizedImage({
 
   // Check IDB blob cache on mount and whenever src changes.
   // On repeat visits, serves from blob URL instantly (zero network).
+  // The returned blob URL is reference-counted — release it (not revoke) so
+  // other cards showing the same image aren't broken when this one unmounts.
   useEffect(() => {
     setLoaded(false);
     setError(false);
@@ -84,11 +85,11 @@ export const OptimizedImage = memo(function OptimizedImage({
     let cancelled = false;
     getCachedBlobUrl(resolvedSrc).then((blobUrl) => {
       if (cancelled) {
-        if (blobUrl) URL.revokeObjectURL(blobUrl);
+        if (blobUrl) releaseBlobUrl(resolvedSrc);
         return;
       }
       if (blobUrl) {
-        if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+        if (blobUrlRef.current) releaseBlobUrl(resolvedSrc);
         blobUrlRef.current = blobUrl;
         setDisplaySrc(blobUrl);
         // Stale-while-revalidate: update IDB in background (thumbnail = hot)
@@ -99,18 +100,14 @@ export const OptimizedImage = memo(function OptimizedImage({
         cacheImage(resolvedSrc, 3);
       }
     });
-    return () => { cancelled = true; };
-  }, [resolvedSrc]);
-
-  // Cleanup blob URL on unmount
-  useEffect(() => {
     return () => {
+      cancelled = true;
       if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
+        releaseBlobUrl(resolvedSrc);
         blobUrlRef.current = null;
       }
     };
-  }, []);
+  }, [resolvedSrc]);
 
   const [retryCount, setRetryCount] = useState(0);
   const onLoad = useCallback(() => {
@@ -120,7 +117,7 @@ export const OptimizedImage = memo(function OptimizedImage({
   const onError = useCallback(() => {
     // If displaying a stale blob URL, fall back to the original URL
     if (blobUrlRef.current && displaySrc.startsWith("blob:")) {
-      URL.revokeObjectURL(blobUrlRef.current);
+      releaseBlobUrl(resolvedSrc);
       blobUrlRef.current = null;
       if (retryCount === 0) {
         setRetryCount(1);
