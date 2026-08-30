@@ -215,7 +215,12 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   // its existing path (wsrv / /api/media / sprite).
   const catboxWebpWorkerUrl =
     isCatboxPreview && isWebpPreview ? catboxProxyUrl(getOriginalUrl(previewUrl)) : null;
-  const useWebpImg = isWebpPreview && !isCatboxPreview;
+  // Non-catbox webp preview files (iili.io .th.webp, pixhost .webp) are single
+  // static thumbnails — they can never animate. When a sprite sheet is
+  // available it IS the real looping preview, so don't overlay the static webp
+  // <img> on top (it would freeze the animation). Only fall back to the static
+  // webp <img> when there's no sprite to animate at all.
+  const useWebpImg = isWebpPreview && !isCatboxPreview && !spriteAvailable;
   const showCatboxWebpImg = !!catboxWebpWorkerUrl && usePreviewChain && showAnimatedImage && mediaFail === "none";
   const showWebpImg = useWebpImg && usePreviewChain && showAnimatedImage && mediaFail === "none";
   const showWebpVideoFallback = useWebpImg && usePreviewChain && showVideo && mediaFail === "video";
