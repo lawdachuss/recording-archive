@@ -160,9 +160,9 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   useEffect(() => {
     if (!previewUrl || isSlowConnection) return;
     const inspectUrl = getOriginalUrl(previewUrl) ?? previewUrl;
-    if (getExt(inspectUrl) !== ".webp") return;
-    // catbox webp previews are shown via the animating sprite instead of an
-    // <img> (wsrv flattens/404s them), so don't waste a fetch warming one here.
+    // Static webp previews (iili.io .th.webp, pixhost) are not shown and catbox
+    // webps load via the Worker proxy, so neither is warmed through this cache.
+    if (getExt(inspectUrl) === ".webp") return;
     if (/catbox\.moe/i.test(inspectUrl)) return;
     cacheImage(previewUrl, 1).catch(() => {}); // fire-and-forget — preview = cold, evict first
   }, [previewUrl, isSlowConnection]);
@@ -216,11 +216,11 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   const catboxWebpWorkerUrl =
     isCatboxPreview && isWebpPreview ? catboxProxyUrl(getOriginalUrl(previewUrl)) : null;
   // Non-catbox webp preview files (iili.io .th.webp, pixhost .webp) are single
-  // static thumbnails — they can never animate. When a sprite sheet is
-  // available it IS the real looping preview, so don't overlay the static webp
-  // <img> on top (it would freeze the animation). Only fall back to the static
-  // webp <img> when there's no sprite to animate at all.
-  const useWebpImg = isWebpPreview && !isCatboxPreview && !spriteAvailable;
+  // static thumbnails — they can never animate and have no hover value, so we
+  // skip them entirely. The looping sprite sheet provides the animation for
+  // these cards. Only catbox previews (genuinely animated webps fetched via
+  // the Worker proxy) are shown as an <img>.
+  const useWebpImg = false;
   const showCatboxWebpImg = !!catboxWebpWorkerUrl && usePreviewChain && showAnimatedImage && mediaFail === "none";
   const showWebpImg = useWebpImg && usePreviewChain && showAnimatedImage && mediaFail === "none";
   const showWebpVideoFallback = useWebpImg && usePreviewChain && showVideo && mediaFail === "video";
