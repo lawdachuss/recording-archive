@@ -34,6 +34,11 @@ function unwrapProxyUrl(url: string): string {
       const inner = parsed.searchParams.get("url");
       if (inner) return inner;
     }
+    // wsrv.nl re-encodes media under its own origin (`/?url=<encoded>`).
+    if (parsed.hostname.endsWith("wsrv.nl")) {
+      const inner = parsed.searchParams.get("url");
+      if (inner) return inner;
+    }
   } catch {
     // Not parseable — fall through to the raw string.
   }
@@ -113,7 +118,7 @@ export function preloadVideo(url: string): void {
   (v as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
   v.src = url;
   // Persist to IDB blob cache after load (fire-and-forget)
-  v.onloadeddata = () => { cacheImage(url, 1); };
+  v.onloadeddata = () => { cacheImage(url, 1).catch(() => {}); };
   preloadCache.set(url, v);
   videoKeys.push(url);
 }
@@ -136,7 +141,7 @@ export function preloadAnimatedImage(url: string): void {
   img.decoding = "async";
   img.onload = () => {
     // Persist to IDB blob cache for repeat-visit speed (fire-and-forget)
-    cacheImage(url, 1);
+    cacheImage(url, 1).catch(() => {});
   };
   img.onerror = () => {
     // Preload failed (DNS, CORS, network) — silently remove from cache
@@ -155,6 +160,11 @@ export function preloadAnimatedImage(url: string): void {
  */
 export function preloadPreviewMedia(url: string | null | undefined): void {
   if (!url) return;
+  // catbox .webp previews are shown via the animating sprite instead of an
+  // <img> (wsrv flattens/404s them), so don't waste bandwidth warming them
+  // through wsrv — that fetch 404s too. Real catbox MP4 videos still preload.
+  const upstream = unwrapProxyUrl(url);
+  if (getExt(upstream) === ".webp" && /catbox\.moe/i.test(upstream)) return;
   if (isVideoUrl(url)) preloadVideo(url);
   else if (isAnimatedImageUrl(url)) preloadAnimatedImage(url);
 }

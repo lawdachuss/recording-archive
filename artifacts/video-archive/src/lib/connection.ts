@@ -5,6 +5,9 @@
  * Uses the Network Information API (navigator.connection) where available.
  */
 
+import { isDataSaver } from "./data-saver";
+import { getAdaptiveTier, getAdaptiveImageWidth as getAdaptiveImageWidthImpl } from "./adaptive-quality";
+
 export type ConnectionQuality = "fast" | "medium" | "slow";
 
 /**
@@ -15,15 +18,20 @@ export type ConnectionQuality = "fast" | "medium" | "slow";
 export function isConnectionConstrained(): boolean {
   try {
     const conn = (navigator as any).connection;
-    if (!conn) return false;
-    if (conn.saveData) return true;
-    const slow = ["slow-2g", "2g", "3g"];
-    return (
-      typeof conn.effectiveType === "string" && slow.includes(conn.effectiveType)
-    );
+    if (conn) {
+      if (conn.saveData) return true;
+      const slow = ["slow-2g", "2g", "3g"];
+      if (typeof conn.effectiveType === "string" && slow.includes(conn.effectiveType)) {
+        return true;
+      }
+    }
   } catch {
-    return false;
+    /* ignore */
   }
+  // Data Saver (manual override) or automatically measured slow thumbnails
+  // both count as constrained: bandwidth should go only to what's visible.
+  if (isDataSaver()) return true;
+  return getAdaptiveTier() < 1200;
 }
 
 /**
@@ -59,9 +67,18 @@ export function getRecommendedPageSize(): number {
 }
 
 /**
+ * Width (px) to request from the image proxy for thumbnails. Delegates to the
+ * live, measurement-based controller in adaptive-quality (which also honors
+ * Data Saver). Smaller = less data + faster first paint on slow links.
+ */
+export function getAdaptiveImageWidth(): number {
+  return getAdaptiveImageWidthImpl();
+}
+
+/**
  * Whether to skip ALL speculative preloading (sprites, previews, catalog warmer).
- * On slow connections, bandwidth should go only to what the user is actually
- * viewing — not to what they MIGHT hover over or scroll to.
+ * On constrained connections (network API OR automatically measured slowness) or
+ * with Data Saver on, bandwidth should go only to what's actually visible.
  */
 export function shouldSkipPreloading(): boolean {
   return isConnectionConstrained();

@@ -29,25 +29,30 @@ export function useCachedImage(
     let cancelled = false;
 
     // Check IDB cache asynchronously
-    getCachedBlobUrl(url).then((cached) => {
-      if (cancelled) {
-        if (cached) URL.revokeObjectURL(cached);
-        return;
-      }
-      if (cached) {
-        // Revoke previous blob URL to avoid memory leak
-        if (revokeRef.current) URL.revokeObjectURL(revokeRef.current);
-        revokeRef.current = cached;
-        setBlobUrl(cached);
-        // Stale-while-revalidate: update IDB in background
-        cacheImage(url, 2);
-      } else {
-        // Not cached — return null so caller uses the original URL
-        setBlobUrl(null);
-        // Persist to IDB so the next visit is instant
-        cacheImage(url, 2);
-      }
-    });
+    getCachedBlobUrl(url)
+      .then((cached) => {
+        if (cancelled) {
+          if (cached) URL.revokeObjectURL(cached);
+          return;
+        }
+        if (cached) {
+          // Revoke previous blob URL to avoid memory leak
+          if (revokeRef.current) URL.revokeObjectURL(revokeRef.current);
+          revokeRef.current = cached;
+          setBlobUrl(cached);
+          // Stale-while-revalidate: update IDB in background
+          cacheImage(url, 2).catch(() => {});
+        } else {
+          // Not cached — return null so caller uses the original URL
+          setBlobUrl(null);
+          // Persist to IDB so the next visit is instant
+          cacheImage(url, 2).catch(() => {});
+        }
+      })
+      .catch(() => {
+        // IDB unavailable / errored — fall back to the original URL.
+        if (!cancelled) setBlobUrl(null);
+      });
 
     return () => {
       cancelled = true;

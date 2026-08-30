@@ -95,33 +95,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let unsub: (() => void) | null = null;
-    getSupabase().then((sb) => {
-      sb.auth.getSession().then(({ data: { session } }) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.access_token) {
-          setRole(null);
-          fetchRole(session.access_token).then(setRole);
-          applyPendingUsername(session.access_token);
-        }
+    getSupabase()
+      .then((sb) => {
+        sb.auth.getSession().then(({ data: { session } }) => {
+          setSession(session);
+          setUser(session?.user ?? null);
+          if (session?.access_token) {
+            setRole(null);
+            fetchRole(session.access_token).then(setRole);
+            applyPendingUsername(session.access_token);
+          }
+          setLoading(false);
+        });
+
+        const {
+          data: { subscription },
+        } = sb.auth.onAuthStateChange((_event, session) => {
+          setSession(session);
+          setUser(session?.user ?? null);
+          if (session?.access_token) {
+            setRole(null);
+            fetchRole(session.access_token).then(setRole);
+            applyPendingUsername(session.access_token);
+          } else {
+            setRole(null);
+          }
+        });
+        unsub = () => subscription.unsubscribe();
+      })
+      .catch(() => {
+        // Supabase SDK failed to load/init — drop out of the loading state
+        // so the app renders (unauthenticated) instead of hanging forever.
         setLoading(false);
       });
-
-      const {
-        data: { subscription },
-      } = sb.auth.onAuthStateChange((_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.access_token) {
-          setRole(null);
-          fetchRole(session.access_token).then(setRole);
-          applyPendingUsername(session.access_token);
-        } else {
-          setRole(null);
-        }
-      });
-      unsub = () => subscription.unsubscribe();
-    });
 
     return () => { unsub?.(); };
   }, []);

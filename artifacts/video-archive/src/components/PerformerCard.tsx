@@ -4,7 +4,7 @@ import { OptimizedImage, ImageUnavailable } from "@/components/ui/optimized-imag
 import { SpriteSlideshow } from "@/components/SpriteSlideshow";
 import { useHoverPreview } from "@/hooks/use-hover-preview";
 import { getSpriteGrid } from "@/lib/sprite-grid";
-import { proxyUrl } from "@/lib/proxy-url";
+import { proxyUrl, proxySpriteUrl } from "@/lib/proxy-url";
 interface Performer {
   username: string;
   recording_count?: number;
@@ -38,7 +38,7 @@ function formatCount(n: number): string {
 // at runtime, so hovering a portrait card plays the frames instead of a static
 // thumbnail. Preloads the sprite ~2 viewports early via useHoverPreview.
 function SpriteHover({ performer }: { performer: Performer }) {
-  const spriteUrl = performer.sprite_url ? proxyUrl(performer.sprite_url) : null;
+  const spriteUrl = performer.sprite_url ? proxySpriteUrl(performer.sprite_url) : null;
   const { isHovered, hoverHandlers, viewportRef } = useHoverPreview({
     thumbnailUrl: performer.latest_thumbnail,
     previewUrl: null,

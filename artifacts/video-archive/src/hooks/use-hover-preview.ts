@@ -7,9 +7,7 @@ import {
 } from "@/lib/preload-preview";
 import { preloadImage } from "@/lib/preload-sprite";
 import { isConnectionConstrained } from "@/lib/connection";
-
-const DEBUG = false;
-function dlog(...args: any[]) { if (DEBUG) console.log("[HoverPreview]", ...args); }
+import { dlog } from "@/lib/debug";
 
 
 
@@ -24,6 +22,12 @@ function getInspectUrl(url: string | null | undefined): string | null {
   try {
     const parsed = new URL(url, window.location.origin);
     if (parsed.pathname.startsWith("/api/media")) {
+      const inner = parsed.searchParams.get("url");
+      if (inner) return inner;
+    }
+    // wsrv.nl re-encodes media under its own origin (`/ ?url=<encoded>`).
+    // Unwrap so extension-based type detection still works.
+    if (parsed.hostname.endsWith("wsrv.nl")) {
       const inner = parsed.searchParams.get("url");
       if (inner) return inner;
     }
@@ -63,7 +67,7 @@ export function useHoverPreview({
   spriteUrl,
   enabled = true,
 }: UseHoverPreviewOptions): UseHoverPreviewReturn {
-  dlog("init", { thumbnailUrl, previewUrl, enabled });
+  dlog("hoverpreview", "init", { thumbnailUrl, previewUrl, spriteUrl, enabled });
   const [isHovered, setIsHovered] = useState(false);
   const intersectionPreloadedRef = useRef(false);
   const enterTimer = useRef<number | null>(null);
@@ -87,7 +91,7 @@ export function useHoverPreview({
         observer = null;
       }
       if (!el || !enabled || intersectionPreloadedRef.current) return;
-      dlog("viewportRef attached", { el });
+      dlog("hoverpreview", "viewport attached", { previewUrl, spriteUrl });
       observer = new IntersectionObserver(
         (entries) => {
           for (const entry of entries) {
@@ -99,8 +103,7 @@ export function useHoverPreview({
               if (spriteUrl) {
                 preloadImage(spriteUrl);
               }
-              const isCatbox = /catbox\.moe/i.test(previewUrl ?? "");
-              if (previewUrl && !isCatbox) {
+              if (previewUrl) {
                 preloadPreviewMedia(previewUrl);
               }
               observer?.disconnect();
@@ -115,17 +118,17 @@ export function useHoverPreview({
   }, [enabled, previewUrl, spriteUrl]);
 
   const onMouseEnter = useCallback(() => {
-    dlog("onMouseEnter");
+    dlog("hoverpreview", "onMouseEnter", { enabled, intentDelay });
     if (!enabled) return;
     if (enterTimer.current) window.clearTimeout(enterTimer.current);
     enterTimer.current = window.setTimeout(() => {
-      dlog("hover timeout -> setIsHovered(true)");
+      dlog("hoverpreview", "hover timeout -> setIsHovered(true)");
       setIsHovered(true);
     }, intentDelay);
   }, [enabled, intentDelay]);
 
   const onMouseLeave = useCallback(() => {
-    dlog("onMouseLeave");
+    dlog("hoverpreview", "onMouseLeave");
     if (enterTimer.current) {
       window.clearTimeout(enterTimer.current);
       enterTimer.current = null;
@@ -134,13 +137,13 @@ export function useHoverPreview({
   }, []);
 
   const onFocus = useCallback(() => {
-    dlog("onFocus");
+    dlog("hoverpreview", "onFocus");
     if (!enabled) return;
     setIsHovered(true);
   }, [enabled]);
 
   const onBlur = useCallback(() => {
-    dlog("onBlur");
+    dlog("hoverpreview", "onBlur");
     setIsHovered(false);
   }, []);
 
@@ -167,6 +170,18 @@ export function useHoverPreview({
   const isAnimatedImage = isAnimatedImageUrl(inspectUrl);
   const showVideo = isHovered && isPreviewVideo;
   const showAnimatedImage = isHovered && isAnimatedImage;
+
+  // Log which preview path resolves, so we can correlate with VideoCard.
+  useEffect(() => {
+    dlog("hoverpreview", "preview path", {
+      isHovered,
+      inspectUrl,
+      type: isPreviewVideo ? "video" : isAnimatedImage ? "webp" : "none",
+      showVideo,
+      showAnimatedImage,
+    });
+  }, [isHovered, showVideo, showAnimatedImage, inspectUrl, isPreviewVideo, isAnimatedImage]);
+
 
   return {
     isHovered,

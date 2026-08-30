@@ -7,6 +7,7 @@ import { getSoundEnabled, getVibrationEnabled, fetchSoundPreferences, saveSoundP
 import { getSupabase } from "@/lib/supabase";
 import { useCacheProfiler, type CacheProfile } from "@/hooks/use-cache-profiler";
 import { clearImageCache, getCacheStats } from "@/lib/image-cache";
+import { isDataSaver, setDataSaver as persistDataSaver } from "@/lib/data-saver";
 import {
   Settings as SettingsIcon, User, Lock, Save, AlertCircle, CheckCircle2,
   Bell, BellOff, Mail, Volume2, Smartphone, Database, Trash2, RefreshCw,
@@ -46,6 +47,8 @@ export default function Settings() {
   const [soundOn, setSoundOn] = useState(true);
   const [vibrateOn, setVibrateOn] = useState(true);
 
+  const [dataSaver, setDataSaver] = useState(false);
+
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [pwSaving, setPwSaving] = useState(false);
@@ -75,6 +78,8 @@ export default function Settings() {
       setSoundOn(prefs.sound_enabled);
       setVibrateOn(prefs.vibration_enabled);
     });
+
+    setDataSaver(isDataSaver());
   }, [user, loading]);
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -243,6 +248,53 @@ export default function Settings() {
               {saving ? "Saving…" : "Save profile"}
             </button>
           </form>
+        </section>
+
+        {/* Data Saver / Performance */}
+        <section className="mb-8 border border-border/40 rounded-xl p-5 sm:p-6 bg-card">
+          <div className="flex items-center gap-2 mb-5 pb-3 border-b border-border/30">
+            <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Database className="w-3.5 h-3.5 text-primary" />
+            </div>
+            <h2 className="text-sm font-semibold">Data saver</h2>
+          </div>
+
+          <label className="flex items-center justify-between px-3 py-3 rounded-lg bg-secondary/30 hover:bg-secondary/40 transition-colors cursor-pointer">
+            <div className="flex items-center gap-3 min-w-0 pr-4">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                dataSaver ? "bg-primary/10 text-primary" : "bg-muted/50 text-muted-foreground/50"
+              }`}>
+                <Database className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  Reduce image data
+                </p>
+                <p className="text-[11px] text-muted-foreground/60 mt-0.5">
+                  Loads smaller thumbnails and skips preloading. Useful on slow or metered connections.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={dataSaver}
+              onClick={() => {
+                const next = !dataSaver;
+                setDataSaver(next);
+                persistDataSaver(next);
+              }}
+              className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                dataSaver ? "bg-primary" : "bg-border hover:bg-border/80"
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-background shadow-sm ring-0 transition-transform duration-200 ${
+                  dataSaver ? "translate-x-4" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </label>
         </section>
 
         {/* Notification Preferences */}
