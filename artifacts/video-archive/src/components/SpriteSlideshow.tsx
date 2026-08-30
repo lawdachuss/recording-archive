@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, memo } from "react";
-import { getCachedBlobUrl } from "@/lib/image-cache";
+import { useEffect, useRef, useState, memo, useMemo } from "react";
 import { isConnectionConstrained } from "@/lib/connection";
+import { dlog, dtick } from "@/lib/debug";
 
 interface SpriteSlideshowProps {
   spriteUrl: string;
@@ -87,76 +87,67 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({
   const cbRef = useRef({ onLoaded, onError });
   cbRef.current = { onLoaded, onError };
 
-  // Use explicit layout if provided, otherwise auto-detect from image
-  const layout: SpriteLayout | null =
-    explicitCols && explicitRows
-      ? { cols: explicitCols, rows: explicitRows, totalFrames: explicitCols * explicitRows }
-      : detectedLayout;
+  // Use explicit layout if provided, otherwise auto-detect from image.
+  // Memoized so the object identity is stable across renders — otherwise the
+  // animation effect (which depends on `layout`) re-runs and resets the frame
+  // counter on every re-render, making the sprite appear to only advance a
+  // couple frames then stop instead of looping through the whole sheet.
+  const layout: SpriteLayout | null = useMemo(
+    () =>
+      explicitCols && explicitRows
+        ? { cols: explicitCols, rows: explicitRows, totalFrames: explicitCols * explicitRows }
+        : detectedLayout,
+    [explicitCols, explicitRows, detectedLayout]
+  );
 
   const hasExplicitLayout = !!(explicitCols && explicitRows);
 
-  // Load the sprite image. On repeat visits, check the IDB blob cache
-  // first for instant display — no network round-trip needed.
+  // Load the sprite image directly for dimension detection. The actual
+  // display uses the real spriteUrl (browser HTTP cache + SW serve it fast on
+  // repeat visits) — no IDB blob needed.
   useEffect(() => {
+    dlog("hoverpreview", "[SpriteSlideshow] mount", { spriteUrl, cols: explicitCols, rows: explicitRows, frameMs });
     setDetectedLayout(null);
     setImageLoaded(false);
     frameRef.current = 0;
 
     let cancelled = false;
-    const blobUrlRef: { current: string | null } = { current: null };
 
     function finishWithImage(img: HTMLImageElement) {
       if (cancelled) return;
+      const detected = hasExplicitLayout ? null : detectLayout(img.naturalWidth, img.naturalHeight);
       if (!hasExplicitLayout) {
-        setDetectedLayout(detectLayout(img.naturalWidth, img.naturalHeight));
+        setDetectedLayout(detected);
       }
+      dlog("hoverpreview", "[SpriteSlideshow] image loaded", {
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+        explicit: hasExplicitLayout,
+        detected,
+      });
       setImageLoaded(true);
       cbRef.current.onLoaded?.();
     }
 
-    // Try IDB blob cache first — instant on repeat visits
-    getCachedBlobUrl(spriteUrl).then((blobUrl) => {
-      if (cancelled) {
-        if (blobUrl) URL.revokeObjectURL(blobUrl);
-        return;
+    const img = new Image();
+    img.referrerPolicy = "no-referrer";
+    img.onload = () => finishWithImage(img);
+    img.onerror = () => {
+      dlog("hoverpreview", "[SpriteSlideshow] image error", { spriteUrl });
+      if (!cancelled) {
+        setImageLoaded(true);
+        cbRef.current.onError?.();
       }
-      if (blobUrl) {
-        blobUrlRef.current = blobUrl;
-        // Blob is cached — load from it for instant paint
-        const img = new Image();
-        img.referrerPolicy = "no-referrer";
-        img.onload = () => finishWithImage(img);
-        img.onerror = () => {
-          if (!cancelled) {
-            setImageLoaded(true);
-            cbRef.current.onError?.();
-          }
-        };
-        img.src = blobUrl;
-        return;
-      }
+    };
+    img.src = spriteUrl;
 
-      // Not in IDB — load from network (will be cached for next time by preload queue)
-      const img = new Image();
-      img.referrerPolicy = "no-referrer";
-      img.onload = () => finishWithImage(img);
-      img.onerror = () => {
-        if (!cancelled) {
-          setImageLoaded(true);
-          cbRef.current.onError?.();
-        }
-      };
-      img.src = spriteUrl;
-
-      // If already cached by browser HTTP cache, fire immediately
-      if (img.complete && img.naturalWidth > 0) {
-        finishWithImage(img);
-      }
-    });
+    // If already cached by browser HTTP cache, fire immediately
+    if (img.complete && img.naturalWidth > 0) {
+      finishWithImage(img);
+    }
 
     return () => {
       cancelled = true;
-      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
     };
   }, [spriteUrl, hasExplicitLayout]);
 
@@ -168,10 +159,29 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({
   // Direct DOM animation — no React state updates per frame
   useEffect(() => {
     const el = divRef.current;
-    if (!el || !layout || layout.totalFrames < 2 || !imageLoaded || !active) return;
+    if (!el || !layout || layout.totalFrames < 2 || !imageLoaded || !active) {
+      dlog("hoverpreview", "[SpriteSlideshow] animation skipped", {
+        hasEl: !!el,
+        layout,
+        imageLoaded,
+        active,
+      });
+      return;
+    }
 
     // Don't animate on slow/constrained connections
-    if (isConnectionConstrained()) return;
+    if (isConnectionConstrained()) {
+      dlog("hoverpreview", "[SpriteSlideshow] animation skipped (connection constrained)");
+      return;
+    }
+
+    dlog("hoverpreview", "[SpriteSlideshow] animation start", {
+      totalFrames: layout.totalFrames,
+      cols: layout.cols,
+      rows: layout.rows,
+      frameMs,
+      spriteUrl,
+    });
 
     frameRef.current = 0;
     const bgUrl = `url(${spriteUrl})`;
@@ -184,6 +194,7 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({
       const x = layout.cols <= 1 ? 0 : (col / (layout.cols - 1)) * 100;
       const y = layout.rows <= 1 ? 0 : (row / (layout.rows - 1)) * 100;
       el.style.backgroundPosition = `${x}% ${y}%`;
+      dtick("hoverpreview", `[SpriteSlideshow] frame ${frame}/${layout.totalFrames}`, { x, y });
       frameRef.current++;
     };
 
@@ -194,7 +205,13 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({
     update();
 
     const interval = setInterval(update, frameMs);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      dlog("hoverpreview", "[SpriteSlideshow] animation stopped", {
+        lastFrame: frameRef.current,
+        totalFrames: layout.totalFrames,
+      });
+    };
   }, [layout, spriteUrl, frameMs, imageLoaded, active]);
 
   return (

@@ -137,34 +137,39 @@ async function mediaCacheFirst(request) {
 
   if (cached) {
     const ct = cached.headers.get("content-type") || "";
-    const cachedAt = cached.headers.get("sw-cached-at");
-    const fresh =
-      cachedAt &&
-      Date.now() - Number(cachedAt) < getTtlForUrl(request.url);
     // Only serve the cached copy if it is a real image (never the svg
-    // placeholder), and revalidate in the background so it stays fresh.
+    // placeholder). We never cache opaque/cross-origin responses whose
+    // content-type we can't verify, so this guard is enough.
     if (ct.startsWith("image/") && !ct.includes("svg+xml")) {
+      const cachedAt = cached.headers.get("sw-cached-at");
+      const fresh =
+        cachedAt &&
+        Date.now() - Number(cachedAt) < getTtlForUrl(request.url);
+      if (fresh) return cached; // instant, no extra network traffic
+      // Stale but valid — serve it now and refresh in the background.
       revalidateInBackground(request, cache);
-      if (fresh) return cached;
+      return cached;
     }
   }
 
   try {
-    // catbox/litterbox serve `Access-Control-Allow-Origin: *`, so we can fetch
-    // them in CORS mode and actually read+cache the bytes. Plain <img> requests
-    // are no-cors (opaque) and can't be inspected/cached, so upgrade the mode
-    // for those hosts. Other hosts stay no-cors to avoid breaking them.
-    const host = new URL(request.url).hostname;
-    const isCorsHost = /(^|\.)catbox\.moe$/.test(host);
-    const init = isCorsHost ? { mode: "cors", credentials: "omit" } : undefined;
-    const response = await fetch(request, init);
+    // Default fetch (no mode upgrade): <img> requests are no-cors and must
+    // stay that way — upgrading to CORS would (a) mismatch the cache key and
+    // never hit, and (b) risk a thrown TypeError. catbox is cached by the IDB
+    // blob cache (image-cache.ts) which uses a readable CORS fetch; pixhost
+    // (/api/media, same-origin) is cached here. A hard timeout prevents a
+    // stalled upstream (catbox can hold connections open) from hanging the tab.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    const response = await fetch(request, { signal: controller.signal });
+    clearTimeout(timer);
     if (response.ok) {
       await cacheResponse(cache, request, response);
     }
     return response;
   } catch (err) {
-    // Offline / unreachable — fall back to a cached copy if we have one
-    // (it's guaranteed to be a real image), else the placeholder.
+    // Timed out / offline / unreachable — fall back to a cached copy if we
+    // have one (guaranteed to be a real image), else the placeholder.
     if (cached) return cached;
     return new Response(PLACEHOLDER_SVG, {
       status: 200,
@@ -180,12 +185,19 @@ async function mediaCacheFirst(request) {
 
 async function revalidateInBackground(request, cache) {
   try {
-    const response = await fetch(request, { cache: "no-cache" });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    const response = await fetch(request, {
+      cache: "no-cache",
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
     if (response.ok) {
       await cacheResponse(cache, request, response);
     }
   } catch {
-    // Background revalidation failed — no big deal, we have the stale copy
+    // Background revalidation failed / timed out — no big deal, we have the
+    // stale copy already served to the user.
   }
 }
 
@@ -264,19 +276,24 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Media requests (thumbnails / sprites / previews): cache-first via the SW.
-  // This is safe because cacheResponse() refuses to store the SVG placeholder
-  // or any non-image, and we only ever SERVE a cached entry whose
-  // content-type is a real image — so a broken/placeholder entry can never be
-  // returned. Combined with the IDB blob cache (image-cache.ts), repeat and
-  // pre-warmed loads are instant; the first load still pays origin latency.
+  // Media requests (thumbnails / sprites / previews).
+  // IMPORTANT: only same-origin media (/api/media — i.e. pixhost proxied
+  // through our server) is intercepted + cached by the SW. Cross-origin hosts
+  // such as catbox/litterbox serve the bytes directly to the browser and are
+  // THROTTLED when hit with many concurrent connections — if the SW also
+  // re-fetched them (and applied a 15s timeout that returned a placeholder on
+  // a slow response) it made the connection-reset problem far worse. So for
+  // cross-origin media we do a plain pass-through and let the browser handle
+  // timing/retries itself. The IDB blob cache (image-cache.ts) still caches
+  // cross-origin images client-side for repeat visits.
   const isMediaRequest =
     request.destination === "image" ||
     IMAGE_EXTENSIONS.test(url.pathname) ||
     (url.pathname.endsWith("/api/media") && MEDIA_EXTENSIONS.test(url.search));
 
-  if (isMediaRequest) {
+  if (isMediaRequest && url.origin === self.location.origin) {
     event.respondWith(mediaCacheFirst(request));
     return;
   }
+  // Cross-origin media (catbox etc.): pass through untouched.
 });

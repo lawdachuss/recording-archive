@@ -1,7 +1,7 @@
-import { useState, useCallback, useEffect, useRef, memo } from "react";
+import { useState, useCallback, useEffect, memo } from "react";
 import { cn } from "@/lib/utils";
 import { proxyUrl } from "@/lib/proxy-url";
-import { getCachedBlobUrl, cacheImage, releaseBlobUrl } from "@/lib/image-cache";
+import { cacheImage } from "@/lib/image-cache";
 
 interface OptimizedImageProps {
   src: string;
@@ -69,65 +69,36 @@ export const OptimizedImage = memo(function OptimizedImage({
   const resolvedSrc = proxyUrl(src) ?? src;
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
-  const prevSrcRef = useRef(resolvedSrc);
-  const blobUrlRef = useRef<string | null>(null);
-  const [displaySrc, setDisplaySrc] = useState<string>(resolvedSrc);
+  const [attempt, setAttempt] = useState(0);
 
-  // Check IDB blob cache on mount and whenever src changes.
-  // On repeat visits, serves from blob URL instantly (zero network).
-  // The returned blob URL is reference-counted — release it (not revoke) so
-  // other cards showing the same image aren't broken when this one unmounts.
+  // Warm the repeat-visit IDB cache (thumbnail = hot) so sprites/previews and
+  // the SW can reuse it — but the <img> itself uses the real proxy URL, not a
+  // blob URL. Blob URLs handed to a lazy-deferred <img> can be revoked by the
+  // memory-cache cleanup before the deferred load paints, yielding a flood of
+  // blob:ERR_FILE_NOT_FOUND during grid render. Browser HTTP cache + SW already
+  // make repeat visits near-instant, so we skip the blob path for these cards.
   useEffect(() => {
     setLoaded(false);
     setError(false);
-    prevSrcRef.current = resolvedSrc;
-
-    let cancelled = false;
-    getCachedBlobUrl(resolvedSrc).then((blobUrl) => {
-      if (cancelled) {
-        if (blobUrl) releaseBlobUrl(resolvedSrc);
-        return;
-      }
-      if (blobUrl) {
-        if (blobUrlRef.current) releaseBlobUrl(resolvedSrc);
-        blobUrlRef.current = blobUrl;
-        setDisplaySrc(blobUrl);
-        // Stale-while-revalidate: update IDB in background (thumbnail = hot)
-        cacheImage(resolvedSrc, 3);
-      } else {
-        setDisplaySrc(resolvedSrc);
-        // Not cached — persist for next visit after image loads
-        cacheImage(resolvedSrc, 3);
-      }
-    });
-    return () => {
-      cancelled = true;
-      if (blobUrlRef.current) {
-        releaseBlobUrl(resolvedSrc);
-        blobUrlRef.current = null;
-      }
-    };
+    setAttempt(0);
+    cacheImage(resolvedSrc, 3).catch(() => {});
   }, [resolvedSrc]);
 
-  const [retryCount, setRetryCount] = useState(0);
   const onLoad = useCallback(() => {
     setLoaded(true);
   }, []);
 
   const onError = useCallback(() => {
-    // If displaying a stale blob URL, fall back to the original URL
-    if (blobUrlRef.current && displaySrc.startsWith("blob:")) {
-      releaseBlobUrl(resolvedSrc);
-      blobUrlRef.current = null;
-      if (retryCount === 0) {
-        setRetryCount(1);
-        setDisplaySrc(resolvedSrc);
-        return;
-      }
+    if (attempt === 0) {
+      // One soft retry (e.g. a transient proxy failure) by re-keying the <img>
+      // (fresh fetch) — but only when src hasn't changed under us.
+      setAttempt((a) => a + 1);
+      cacheImage(resolvedSrc, 3).catch(() => {});
+      return;
     }
     setError(true);
     setLoaded(true);
-  }, [displaySrc, resolvedSrc, retryCount]);
+  }, [attempt, resolvedSrc]);
 
   if (error) {
     return fallback ?? <DefaultFallback />;
@@ -136,7 +107,8 @@ export const OptimizedImage = memo(function OptimizedImage({
   return (
     <div className={cn("relative overflow-hidden bg-secondary", containerClassName)}>
       <img
-        src={displaySrc}
+        key={`${resolvedSrc}-${attempt}`}
+        src={resolvedSrc}
         alt={alt}
         referrerPolicy="no-referrer"
         loading={loading ?? (fetchPriority === "high" ? "eager" : "lazy")}

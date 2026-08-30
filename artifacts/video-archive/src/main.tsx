@@ -9,6 +9,13 @@ if (baseUrl) {
   setBaseUrl(baseUrl);
 }
 
+// Safety net: never let a stray unhandled promise rejection from IDB caching,
+// the Supabase lazy load, or network preloads spam the console / trip the
+// devtools breakpoint. These are all best-effort fetch-dedup layers.
+window.addEventListener("unhandledrejection", (e) => {
+  e.preventDefault();
+});
+
 // Stable production service worker for repeat-view image caching.
 // API data stays under React Query so it can honor freshness rules.
 if (import.meta.env.PROD && "serviceWorker" in navigator) {

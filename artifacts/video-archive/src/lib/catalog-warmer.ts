@@ -17,7 +17,7 @@
  */
 
 import { listRecordings } from "@workspace/api-client-react";
-import { proxyUrl } from "@/lib/proxy-url";
+import { proxyUrl, proxySpriteUrl } from "@/lib/proxy-url";
 import { preloadImage, isReachablePreviewUrl } from "@/lib/preload-sprite";
 import { preloadPreviewMedia } from "@/lib/preload-preview";
 import { evictIfNeeded } from "@/lib/image-cache";
@@ -149,16 +149,17 @@ export async function startCatalogWarmup(): Promise<void> {
       recordingsProcessed += data.length;
 
       for (const rec of data) {
-        if (rec.thumbnail_url) {
-          const immediate = firstScreenRemaining > 0;
-          if (immediate) firstScreenRemaining -= 1;
-          // Thumbnails get priority 3 (kept longest / evicted last).
-          preloadImage(proxyUrl(rec.thumbnail_url), { priority: 3, immediate });
-          thumbnailsLoaded += 1;
-        }
-        if (rec.sprite_url) {
-          // Sprites get priority 2.
-          preloadImage(proxyUrl(rec.sprite_url), { priority: 2 });
+        // NOTE: thumbnails are intentionally NOT preloaded here. The grid's
+        // <img> already fetches each visible thumbnail, and OptimizedImage
+        // persists it to the IDB blob cache on load. Preloading thumbnails a
+        // second/third time would just multiply slow catbox requests on the
+        // current page. We only warm hover media (sprites + previews) that
+        // isn't on screen yet — that's pure prefetch with no competition.
+        if (rec.sprite_url && isReachablePreviewUrl(rec.sprite_url)) {
+          // Sprites get priority 2. Skip throttled hosts (catbox) so their
+          // limited connection budget is reserved for the visible thumbnails
+          // the user is actually looking at — hover sprites can load on demand.
+          preloadImage(proxySpriteUrl(rec.sprite_url), { priority: 2 });
           spritesLoaded += 1;
         }
         if (rec.preview_url && isReachablePreviewUrl(rec.preview_url)) {

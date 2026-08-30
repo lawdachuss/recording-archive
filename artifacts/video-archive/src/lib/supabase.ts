@@ -9,18 +9,25 @@ let _loadPromise: Promise<SupabaseClient> | null = null;
 function ensureClient(): Promise<SupabaseClient> {
   if (_client) return Promise.resolve(_client);
   if (!_loadPromise) {
-    _loadPromise = import("@supabase/supabase-js").then(({ createClient }) => {
-      const url =
-        (import.meta.env.VITE_SUPABASE_URL as string | undefined) ||
-        (import.meta.env.SUPABASE_URL as string | undefined) ||
-        "";
-      const key =
-        (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ||
-        (import.meta.env.SUPABASE_ANON_KEY as string | undefined) ||
-        "";
-      _client = createClient(url, key);
-      return _client;
-    });
+    _loadPromise = import("@supabase/supabase-js")
+      .then(({ createClient }) => {
+        const url =
+          (import.meta.env.VITE_SUPABASE_URL as string | undefined) ||
+          (import.meta.env.SUPABASE_URL as string | undefined) ||
+          "";
+        const key =
+          (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ||
+          (import.meta.env.SUPABASE_ANON_KEY as string | undefined) ||
+          "";
+        _client = createClient(url, key);
+        return _client;
+      })
+      .catch((err) => {
+        // Don't cache a rejected promise — allow a retry on next access
+        // instead of leaving an unhandled rejection poisoning all callers.
+        _loadPromise = null;
+        throw err;
+      });
   }
   return _loadPromise;
 }

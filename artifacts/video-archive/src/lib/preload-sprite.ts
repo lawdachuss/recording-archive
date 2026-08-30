@@ -21,7 +21,7 @@
  */
 
 import { preloadPreviewMedia } from "@/lib/preload-preview";
-import { proxyUrl } from "@/lib/proxy-url";
+import { proxyUrl, proxySpriteUrl } from "@/lib/proxy-url";
 import { cacheImage, type CachePriority } from "@/lib/image-cache";
 import { isConnectionConstrained } from "@/lib/connection";
 
@@ -63,7 +63,6 @@ const MAX_ACTIVE = 12;
 
 const queue: Array<{
   url: string;
-  img: HTMLImageElement;
   priority: CachePriority;
   immediate: boolean;
 }> = [];
@@ -75,32 +74,19 @@ function getConcurrency(): number {
   return MAX_ACTIVE;
 }
 
-function startRequest(url: string, img: HTMLImageElement, priority: CachePriority = 3) {
+// All preloads go through cacheImage() — the same single-flight, per-host
+// concurrency-limited fetch used by OptimizedImage's visible <img>. This means
+// a preload and the visible card for the SAME url share ONE network request
+// (no doubling), and catbox can never be burst with more than a few concurrent
+// connections no matter how many cards/preloads reference it.
+function startRequest(url: string, priority: CachePriority = 3) {
   activeCount++;
-
-  img.onload = () => {
-    activeCount--;
-    // Persist to IDB blob cache for instant repeat-visit loading. Priority
-    // controls eviction order: thumbnails(3) evicted last, previews(1) first.
-    cacheImage(url, priority); // fire-and-forget
-    pump();
-  };
-  img.onerror = () => {
-    activeCount--;
-    const now = Date.now();
-    const last = failedAt.get(url) ?? 0;
-    if (now - last < FAILED_RETRY_COOLDOWN_MS) {
-      // Failed recently — keep in the warmed set to avoid a retry storm.
-    } else {
-      // Record the failure and allow exactly one retry from a later preload
-      // pass (e.g. hover preload after the catalog warmer missed it). Once the
-      // cooldown elapses, preloadImage() will permit another attempt.
-      failedAt.set(url, now);
-      warmed.delete(url);
-    }
-    pump();
-  };
-  img.src = url;
+  cacheImage(url, priority)
+    .catch(() => {})
+    .finally(() => {
+      activeCount--;
+      pump();
+    });
 }
 
 function pump() {
@@ -117,7 +103,7 @@ function pump() {
   const maxActive = getConcurrency();
   while (queue.length > 0 && activeCount < maxActive) {
     const item = queue.shift()!;
-    startRequest(item.url, item.img, item.priority);
+    startRequest(item.url, item.priority);
   }
   // Re-pump after a short delay in case active slots freed up
   if (queue.length > 0 && pumpTimer === null) {
@@ -165,13 +151,7 @@ export function preloadImage(
     }
   }
   warmed.add(url);
-  const img = new Image();
-  img.referrerPolicy = "no-referrer";
-  // First-screen / high-priority thumbnails load at high browser priority;
-  // the long tail is best-effort "low" so it never competes with paint.
-  img.fetchPriority = immediate || priority >= 3 ? "high" : "low";
-  img.decoding = "async";
-  queue.push({ url, img, priority, immediate });
+  queue.push({ url, priority, immediate });
   pump();
 }
 
@@ -203,7 +183,7 @@ export function preloadRecordingAssets(
   const previews: (string | null | undefined)[] = [];
   for (const rec of recs) {
     if (rec.thumbnail_url) thumbs.push(proxyUrl(rec.thumbnail_url));
-    if (rec.sprite_url) sprites.push(proxyUrl(rec.sprite_url));
+    if (rec.sprite_url) sprites.push(proxySpriteUrl(rec.sprite_url));
     if (rec.preview_url && isReachablePreviewUrl(rec.preview_url)) {
       previews.push(proxyUrl(rec.preview_url));
     }
@@ -230,7 +210,7 @@ export function preloadRecordingSprites(
   const sprites: (string | null | undefined)[] = [];
   const previews: (string | null | undefined)[] = [];
   for (const rec of recs) {
-    if (rec.sprite_url) sprites.push(proxyUrl(rec.sprite_url));
+    if (rec.sprite_url) sprites.push(proxySpriteUrl(rec.sprite_url));
     if (rec.preview_url && isReachablePreviewUrl(rec.preview_url)) {
       previews.push(proxyUrl(rec.preview_url));
     }

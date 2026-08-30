@@ -7,9 +7,10 @@ import { OptimizedImage, ImageUnavailable } from "@/components/ui/optimized-imag
 import { useHoverPreview } from "@/hooks/use-hover-preview";
 import { SpriteSlideshow } from "@/components/SpriteSlideshow";
 import { cn } from "@/lib/utils";
-import { proxyUrl } from "@/lib/proxy-url";
+import { proxyUrl, proxySpriteUrl, catboxProxyUrl } from "@/lib/proxy-url";
 import { getSpriteGrid } from "@/lib/sprite-grid";
-import { getCachedBlobUrl, cacheImage } from "@/lib/image-cache";
+import { cacheImage } from "@/lib/image-cache";
+import { dlog } from "@/lib/debug";
 
 /**
  * Unwrap a media-proxy URL to extract the real upstream URL for
@@ -20,6 +21,12 @@ function getOriginalUrl(url: string | null | undefined): string | null {
   try {
     const parsed = new URL(url, window.location.origin);
     if (parsed.pathname.startsWith("/api/media")) {
+      const inner = parsed.searchParams.get("url");
+      if (inner) return inner;
+    }
+    // wsrv.nl re-encodes media under its own origin (`/?url=<encoded>`).
+    // Unwrap so extension-based type detection still works.
+    if (parsed.hostname.endsWith("wsrv.nl")) {
       const inner = parsed.searchParams.get("url");
       if (inner) return inner;
     }
@@ -62,7 +69,7 @@ interface VideoCardProps {
 export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemove, fetchPriority, isWatched, progress }: VideoCardProps) {
   const thumbnailUrl = useMemo(() => proxyUrl(recording.thumbnail_url), [recording.thumbnail_url]);
   const previewUrl = useMemo(() => proxyUrl(recording.preview_url), [recording.preview_url]);
-  const spriteUrl = useMemo(() => proxyUrl(recording.sprite_url), [recording.sprite_url]);
+  const spriteUrl = useMemo(() => proxySpriteUrl(recording.sprite_url), [recording.sprite_url]);
   const spriteGrid = useMemo(() => getSpriteGrid(recording.sprite_url), [recording.sprite_url]);
 
   // Disable hover previews on slow connections — they saturate the
@@ -139,41 +146,25 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     }
   }, [isHovered]);
 
-  // ── IDB blob cache for .webp previews ──────────────────────────────────
-  // On repeat visits, serve the .webp preview from IDB blob URL (instant)
-  // instead of re-fetching from network. The preload system stores .webp
-  // previews in IDB via preloadAnimatedImage -> cacheImage().
-  const [webpBlobUrl, setWebpBlobUrl] = useState<string | null>(null);
-  const webpBlobUrlRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!previewUrl) { setWebpBlobUrl(null); return; }
-    const inspectUrl = getOriginalUrl(previewUrl) ?? previewUrl;
-    const ext = getExt(inspectUrl);
-    if (ext !== ".webp") { setWebpBlobUrl(null); return; }
-    let cancelled = false;
-    getCachedBlobUrl(previewUrl).then((blobUrl) => {
-      if (cancelled) { if (blobUrl) URL.revokeObjectURL(blobUrl); return; }
-      if (webpBlobUrlRef.current) URL.revokeObjectURL(webpBlobUrlRef.current);
-      webpBlobUrlRef.current = blobUrl;
-      setWebpBlobUrl(blobUrl);
-    });
-    return () => { cancelled = true; };
-  }, [previewUrl]);
-  // Cleanup blob URL on unmount
-  useEffect(() => {
-    return () => {
-      if (webpBlobUrlRef.current) { URL.revokeObjectURL(webpBlobUrlRef.current); webpBlobUrlRef.current = null; }
-    };
-  }, []);
+  // Stable callbacks so SpriteSlideshow (memo) doesn't re-render on every
+  // VideoCard render, which would restart its animation via a changing prop.
+  const handleSpriteLoaded = useCallback(() => setSpriteReady(true), []);
+  const handleSpriteError = useCallback(() => setSpriteFailed(true), []);
 
-  // Eagerly cache .webp previews into IDB on mount so they're ready
-  // for instant hover. The preload queue handles sprites, but .webp
-  // previews need a separate fire-and-forget cacheImage call.
+  // ── .webp preview warm-up ──────────────────────────────────────────────
+  // Eagerly cache .webp previews into IDB on mount so they're ready for hover.
+  // The <img> itself uses the real proxied URL (not an IDB blob URL) — blob
+  // URLs handed to lazy/hover-deferred <img> can be revoked by the memory-cache
+  // cleanup before they paint, yielding blob:ERR_FILE_NOT_FOUND. Browser HTTP
+  // cache + SW already make repeat visits near-instant.
   useEffect(() => {
     if (!previewUrl || isSlowConnection) return;
     const inspectUrl = getOriginalUrl(previewUrl) ?? previewUrl;
     if (getExt(inspectUrl) !== ".webp") return;
-    cacheImage(previewUrl, 1); // fire-and-forget — preview = cold, evict first
+    // catbox webp previews are shown via the animating sprite instead of an
+    // <img> (wsrv flattens/404s them), so don't waste a fetch warming one here.
+    if (/catbox\.moe/i.test(inspectUrl)) return;
+    cacheImage(previewUrl, 1).catch(() => {}); // fire-and-forget — preview = cold, evict first
   }, [previewUrl, isSlowConnection]);
 
   // `canplay`/`loadeddata` fire as soon as bytes are buffered, which can be
@@ -210,19 +201,26 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   const usePreviewChain = previewAvailable && mediaFail !== "all";
   const useSprite = spriteAvailable && !spriteFailed;
 
-  // Catbox previews are unreliable — the host blocks datacenter IPs and
-  // many residential networks. Skip the .webp chain entirely for catbox
-  // URLs; the sprite (preloaded and instant) is the preview instead.
-  const isCatboxPreview = /catbox\.moe/i.test(previewUrl ?? "");
-
   // .webp URLs are images — load them as <img> first. If the image fails
   // (e.g. it's actually an MP4 with a misleading .webp extension), fall back
   // to <video>. For real video URLs (.mp4 etc.) keep the original order.
-  const isWebpPreview = !isCatboxPreview && getExt(getOriginalUrl(previewUrl) ?? "") === ".webp";
-  const showWebpImg = isWebpPreview && usePreviewChain && showAnimatedImage && mediaFail === "none";
-  const showWebpVideoFallback = isWebpPreview && usePreviewChain && showVideo && mediaFail === "video";
-  const showVideoEl = !isWebpPreview && usePreviewChain && showVideo && mediaFail === "none";
-  const showImgFallback = !isWebpPreview && usePreviewChain && showAnimatedImage && mediaFail === "video";
+  //
+  // Catbox .webp previews are unreachable from the browser (HTTP/2 reset) and
+  // every proxy except the Cloudflare Worker (catboxProxyUrl), which returns the
+  // real ANIMATED webp. So for catbox webp we load that Worker proxy URL into an
+  // <img>; if it ever fails, the fully-looping sprite underneath takes over.
+  const isCatboxPreview = /catbox\.moe/i.test(getOriginalUrl(previewUrl) ?? previewUrl ?? "");
+  const isWebpPreview = getExt(getOriginalUrl(previewUrl) ?? "") === ".webp";
+  // Only catbox webp image previews use the Worker proxy. Everything else keeps
+  // its existing path (wsrv / /api/media / sprite).
+  const catboxWebpWorkerUrl =
+    isCatboxPreview && isWebpPreview ? catboxProxyUrl(getOriginalUrl(previewUrl)) : null;
+  const useWebpImg = isWebpPreview && !isCatboxPreview;
+  const showCatboxWebpImg = !!catboxWebpWorkerUrl && usePreviewChain && showAnimatedImage && mediaFail === "none";
+  const showWebpImg = useWebpImg && usePreviewChain && showAnimatedImage && mediaFail === "none";
+  const showWebpVideoFallback = useWebpImg && usePreviewChain && showVideo && mediaFail === "video";
+  const showVideoEl = !useWebpImg && !isCatboxPreview && usePreviewChain && showVideo && mediaFail === "none";
+  const showImgFallback = !useWebpImg && !isCatboxPreview && usePreviewChain && showAnimatedImage && mediaFail === "video";
 
   const showSprite = isHovered && useSprite;
 
@@ -231,16 +229,58 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   // paints, the shimmer disappears — the user has real content.
   const showLoadingBar = isHovered && !spriteReady && !previewReady && (useSprite || usePreviewChain);
 
+  // Debug: log which preview branch is currently active so we can correlate
+  // with the on-hover behavior (sprite / webp img / video / fallbacks).
+  useEffect(() => {
+    dlog("hoverpreview", "[VideoCard] branch", {
+      id: recording.id,
+      isHovered,
+      previewUrl,
+      spriteUrl,
+      isCatbox: isCatboxPreview,
+      isWebp: isWebpPreview,
+      catboxWebpWorkerUrl,
+      mediaFail,
+      previewReady,
+      spriteReady,
+      showSprite,
+      showWebpImg,
+      showWebpVideoFallback,
+      showVideoEl,
+      showImgFallback,
+      showLoadingBar,
+      usePreviewChain,
+      useSprite,
+    });
+  }, [
+    isHovered, previewUrl, spriteUrl, isCatboxPreview, isWebpPreview, catboxWebpWorkerUrl, mediaFail,
+    previewReady, spriteReady, showSprite, showWebpImg, showWebpVideoFallback,
+    showVideoEl, showImgFallback, showLoadingBar, usePreviewChain, useSprite,
+    recording.id,
+  ]);
+
+
+  // Debug: log mediaFail / previewReady transitions explicitly (element errors,
+  // timeouts, first painted frame) to pinpoint where the preview breaks.
+  useEffect(() => {
+    dlog("hoverpreview", "[VideoCard] media state", {
+      id: recording.id,
+      mediaFail,
+      previewReady,
+      spriteReady,
+    });
+  }, [mediaFail, previewReady, spriteReady, recording.id]);
+
   // Fail-fast timer: unmount the hanging <video> / <img> after the timeout and
   // mark the preview failed, so the sprite/static fallback engages in seconds
   // instead of the browser's multi-minute connection timeout.
   useEffect(() => {
-    if (!(showVideoEl || showImgFallback || showWebpImg || showWebpVideoFallback) || previewReady) {
+    if (!(showVideoEl || showImgFallback || showWebpImg || showWebpVideoFallback || showCatboxWebpImg) || previewReady) {
       return;
     }
     const t = setTimeout(() => setMediaFail("all"), PREVIEW_TIMEOUT_MS);
     return () => clearTimeout(t);
-  }, [showVideoEl, showImgFallback, showWebpImg, showWebpVideoFallback, previewReady]);
+  }, [showVideoEl, showImgFallback, showWebpImg, showWebpVideoFallback, showCatboxWebpImg, previewReady]);
 
   const showDuration = (recording.duration ?? 0) > 0;
   const showFilesize = !!recording.filesize && !showDuration;
@@ -299,8 +339,8 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               rows={spriteGrid?.rows}
               className="absolute inset-0 w-full h-full transition-opacity duration-300"
               active={showSprite}
-              onLoaded={() => setSpriteReady(true)}
-              onError={() => setSpriteFailed(true)}
+              onLoaded={handleSpriteLoaded}
+              onError={handleSpriteError}
             />
           )}
 
@@ -308,7 +348,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               available. Fades in when the first frame is painted. */}
           {showWebpImg && animatedImageUrl && (
             <img
-              src={webpBlobUrl || animatedImageUrl}
+              src={animatedImageUrl}
               alt={recording.username}
               referrerPolicy="no-referrer"
               className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
@@ -317,16 +357,36 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               onError={() => setMediaFail("video")}
             />
           )}
+          {showCatboxWebpImg && catboxWebpWorkerUrl && (
+            <img
+              src={catboxWebpWorkerUrl}
+              alt={recording.username}
+              referrerPolicy="no-referrer"
+              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
+              style={{ opacity: previewReady ? 1 : 0 }}
+              onLoad={() => {
+                dlog("hoverpreview", "[VideoCard] catbox webp loaded (worker proxy)", { id: recording.id, src: catboxWebpWorkerUrl });
+                setPreviewReady(true);
+              }}
+              onError={(e) => {
+                dlog("hoverpreview", "[VideoCard] catbox webp failed (worker proxy)", { id: recording.id, src: catboxWebpWorkerUrl });
+                setMediaFail("all");
+              }}
+            />
+          )}
           {showWebpVideoFallback && videoUrl && (
             <video
               src={videoUrl}
               className={cn(
-                "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
+                "absolute inset-0 w-full h-full               object-cover transition-opacity duration-300",
                 previewReady ? "opacity-100" : "opacity-0"
               )}
-              autoPlay muted playsInline
+              autoPlay muted playsInline loop
               preload="auto"
               onCanPlay={onPreviewReady}
+              onLoadedData={() => dlog("hoverpreview", "[VideoCard] video fallback loadeddata", { id: recording.id, src: videoUrl })}
+              onPlaying={() => dlog("hoverpreview", "[VideoCard] video fallback playing", { id: recording.id, loop: true })}
+              onEnded={() => dlog("hoverpreview", "[VideoCard] video fallback ENDED (not looping?)", { id: recording.id })}
               onError={() => setMediaFail("all")}
               ref={(el) => {
                 if (el) (el as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
@@ -341,9 +401,12 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
                 "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
                 previewReady ? "opacity-100" : "opacity-0"
               )}
-              autoPlay muted playsInline
+              autoPlay muted playsInline loop
               preload="auto"
               onCanPlay={onPreviewReady}
+              onLoadedData={() => dlog("hoverpreview", "[VideoCard] video loadeddata", { id: recording.id, src: videoUrl })}
+              onPlaying={() => dlog("hoverpreview", "[VideoCard] video playing", { id: recording.id, loop: true })}
+              onEnded={() => dlog("hoverpreview", "[VideoCard] video ENDED (not looping?)", { id: recording.id })}
               onError={() => setMediaFail((f) => (f === "none" ? "video" : f))}
               ref={(el) => {
                 if (el) (el as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";

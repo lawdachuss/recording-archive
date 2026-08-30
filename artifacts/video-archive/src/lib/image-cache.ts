@@ -234,6 +234,71 @@ function memDelete(url: string) {
 
 const inflight = new Map<string, Promise<ImageCacheEntry | null>>();
 
+// ─── Per-host concurrency limiter ───────────────────────────────────────────
+// Catbox in particular resets HTTP/2 connections (ERR_HTTP2_PROTOCOL_ERROR)
+// when hit with too many concurrent requests. We cap how many in-flight
+// fetches a single host may have so a page of 24 catbox thumbnails trickles
+// through instead of bursting + resetting. Cross-origin hosts that send
+// `Access-Control-Allow-Origin` (catbox) are fetched client-side and cached;
+// same-origin /api/media (pixhost proxy) is unbounded-ish but still limited.
+
+const SLOW_HOST_RE = /(^|\.)catbox\.moe$|(^|\.)litterbox\.catbox\.moe$/;
+const HOST_MAX_CONCURRENT = 8;
+const SLOW_HOST_MAX_CONCURRENT = 3;
+
+const hostSemaphores = new Map<string, { running: number; waiters: (() => void)[] }>();
+
+function hostConcurrency(host: string): number {
+  return SLOW_HOST_RE.test(host) ? SLOW_HOST_MAX_CONCURRENT : HOST_MAX_CONCURRENT;
+}
+
+function acquireHost(host: string): Promise<void> {
+  let sem = hostSemaphores.get(host);
+  if (!sem) {
+    sem = { running: 0, waiters: [] };
+    hostSemaphores.set(host, sem);
+  }
+  return new Promise<void>((resolve) => {
+    const tryRun = () => {
+      if (sem!.running < hostConcurrency(host)) {
+        sem!.running++;
+        resolve();
+      } else {
+        sem!.waiters.push(tryRun);
+      }
+    };
+    tryRun();
+  });
+}
+
+function releaseHost(host: string): void {
+  const sem = hostSemaphores.get(host);
+  if (!sem) return;
+  sem.running = Math.max(0, sem.running - 1);
+  const next = sem.waiters.shift();
+  if (next) {
+    next();
+  } else if (sem.running === 0 && sem.waiters.length === 0) {
+    hostSemaphores.delete(host);
+  }
+}
+
+/**
+ * Public wrapper: holds a per-host concurrency slot for the duration of `task`
+ * and releases it afterwards. Used by OptimizedImage to throttle direct <img>
+ * loads through the same gate the preload paths use (so a full page of
+ * thumbnails never hammers an upstream like wsrv.nl with unbounded paralellism).
+ * Resolves to a release fn if you need to hold the slot past `task` (e.g. until
+ * the image actually finishes loading).
+ */
+export function acquireHostConcurrency(host: string): Promise<() => void> {
+  return acquireHost(host).then(() => () => releaseHost(host));
+}
+
+function hostOf(url: string): string {
+  try { return new URL(url).hostname; } catch { return "other"; }
+}
+
 // ─── IDB handle ─────────────────────────────────────────────────────────────
 
 /** Remove any IDB entries with 0-byte blobs (from cached failed fetches). */
@@ -542,6 +607,33 @@ export async function cacheImage(
 }
 
 /**
+ * Load an image and return a displayable blob: URL, caching it to IDB on the
+ * way. Deduplicated per-URL (concurrent callers share one fetch) and subject
+ * to the per-host concurrency limit. Throws if the image cannot be fetched or
+ * is not a real image — callers should fall back to a direct <img src>.
+ *
+ * The returned URL is reference-counted: the caller must call
+ * releaseBlobUrl(url) when done (unmount / src change).
+ */
+export async function loadImageBlobUrl(
+  url: string,
+  priority: CachePriority = 3,
+): Promise<string> {
+  const cached = await getCachedBlobUrl(url);
+  if (cached) return cached;
+  const entry = await cacheImage(url, priority);
+  const blob = await getCachedBlobUrl(url);
+  if (blob) return blob;
+  if (entry) {
+    // Cached but evicted from memory between the write and this read — refetch.
+    const blob2 = await getCachedBlobUrl(url);
+    if (blob2) return blob2;
+  }
+  releaseBlobUrl(url);
+  throw new Error("image load failed: " + url);
+}
+
+/**
  * Reject blobs that aren't actually images. Catches corrupt / HTML-error-body
  * responses that arrived with a 200 + image content-type and would otherwise
  * be cached for up to 7 days.
@@ -576,13 +668,21 @@ async function _cacheImageInner(
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: { "Accept": "image/*,video/*,*/*" },
-      credentials: url.startsWith("/") ? "same-origin" : "omit",
-      cache: "force-cache",
-    });
-    clearTimeout(timer);
+    // Cap concurrent in-flight requests to this host (catbox especially throttles).
+    const host = hostOf(url);
+    await acquireHost(host);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        signal: controller.signal,
+        headers: { "Accept": "image/*,video/*,*/*" },
+        credentials: url.startsWith("/") ? "same-origin" : "omit",
+        cache: "force-cache",
+      });
+    } finally {
+      clearTimeout(timer);
+      releaseHost(host);
+    }
     profile.fetchMs += performance.now() - fetchStart;
     profile.fetchCount++;
 
