@@ -362,8 +362,11 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               src={catboxWebpWorkerUrl}
               alt={recording.username}
               referrerPolicy="no-referrer"
+              loading="eager"
+              decoding="sync"
+              fetchPriority="high"
               className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
-              style={{ opacity: previewReady ? 1 : 0 }}
+              style={{ opacity: 1 }}
               onLoad={() => {
                 dlog("hoverpreview", "[VideoCard] catbox webp loaded (worker proxy)", { id: recording.id, src: catboxWebpWorkerUrl });
                 setPreviewReady(true);
