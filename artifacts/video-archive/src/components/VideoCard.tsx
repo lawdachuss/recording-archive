@@ -95,13 +95,27 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   const thumbnailFallbacks = useMemo(() => buildThumbnailFallbacks(recording), [recording.thumbnail_url, recording.thumbnail_mirrors]);
   const spriteFallbacks = useMemo(() => buildSpriteFallbacks(recording), [recording.sprite_url, recording.sprite_mirrors]);
 
+  // Filter preview fallbacks to only .webp / .mp4_preview URLs (animated images).
+  // If a .webp preview exists — even from a mirror — show it on hover.
+  // If no .webp exists, skip preview entirely and let sprites handle hover.
+  const webpFallbacks = useMemo(() => {
+    return previewFallbacks.filter(url => {
+      const original = getOriginalUrl(url) ?? url;
+      return isAnimatedImageUrl(original) && !isStaticThumbnailUrl(original);
+    });
+  }, [previewFallbacks]);
+
   // Mirror fallback state - track which fallback we're currently trying
   const [previewIndex, setPreviewIndex] = useState(0);
   const [thumbnailIndex, setThumbnailIndex] = useState(0);
   const [spriteIndex, setSpriteIndex] = useState(0);
 
   const thumbnailUrl = useMemo(() => thumbnailFallbacks[thumbnailIndex] ? proxyUrl(thumbnailFallbacks[thumbnailIndex]) : null, [thumbnailFallbacks, thumbnailIndex]);
-  const previewUrl = useMemo(() => previewFallbacks[previewIndex] ? proxyUrl(previewFallbacks[previewIndex]) : null, [previewFallbacks, previewIndex]);
+  // Use .webp preview if available (including mirrors); null means no animated preview exists.
+  const previewUrl = useMemo(() => {
+    if (webpFallbacks.length === 0) return null;
+    return proxyUrl(webpFallbacks[Math.min(previewIndex, webpFallbacks.length - 1)]);
+  }, [webpFallbacks, previewIndex]);
   const spriteUrl = useMemo(() => spriteFallbacks[spriteIndex] ? proxySpriteUrl(spriteFallbacks[spriteIndex]) : null, [spriteFallbacks, spriteIndex]);
   const spriteGrid = useMemo(() => getSpriteGrid(spriteFallbacks[spriteIndex] || null), [spriteFallbacks, spriteIndex]);
 
@@ -408,7 +422,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               style={{ opacity: previewReady ? 1 : 0 }}
               onLoad={() => setPreviewReady(true)}
               onError={() => {
-                if (previewIndex + 1 < previewFallbacks.length) {
+                if (previewIndex + 1 < webpFallbacks.length) {
                   setMediaFail("none");
                   setPreviewReady(false);
                   setPreviewIndex((i) => i + 1);
@@ -434,7 +448,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               }}
               onError={(e) => {
                 dlog("hoverpreview", "[VideoCard] catbox webp failed (worker proxy), trying next fallback", { id: recording.id, index: previewIndex });
-                if (previewIndex + 1 < previewFallbacks.length) {
+                if (previewIndex + 1 < webpFallbacks.length) {
                   setMediaFail("none");
                   setPreviewReady(false);
                   setPreviewIndex(i => i + 1);
@@ -459,7 +473,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               onPlaying={() => dlog("hoverpreview", "[VideoCard] video playing", { id: recording.id, loop: true })}
               onEnded={() => dlog("hoverpreview", "[VideoCard] video ENDED (not looping?)", { id: recording.id })}
               onError={() => {
-                if (previewIndex + 1 < previewFallbacks.length) {
+                if (previewIndex + 1 < webpFallbacks.length) {
                   setMediaFail("none");
                   setPreviewReady(false);
                   setPreviewIndex(i => i + 1);
@@ -477,10 +491,9 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               src={animatedImageUrl}
               alt={recording.username}
               referrerPolicy="no-referrer"
-              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
-              onLoad={() => setPreviewReady(true)}
+              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"              onLoad={() => setPreviewReady(true)}
               onError={() => {
-                if (previewIndex + 1 < previewFallbacks.length) {
+                if (previewIndex + 1 < webpFallbacks.length) {
                   setMediaFail("none");
                   setPreviewReady(false);
                   setPreviewIndex(i => i + 1);
@@ -490,6 +503,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               }}
             />
           )}
+
 
 
 
