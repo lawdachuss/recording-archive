@@ -91819,26 +91819,6 @@ async function getImage(urlStr, upstreamHeaders, log) {
     }
   });
 }
-var FALLBACK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
-  <style>
-    .bg { fill: #f3f4f6; }
-    .frame { fill: #d1d5db; stroke: #9ca3af; }
-    .icon { fill: #9ca3af; }
-    .label { fill: #9ca3af; }
-    @media (prefers-color-scheme: dark) {
-      .bg { fill: #18181b; }
-      .frame { fill: #27272a; stroke: #52525b; }
-      .icon { fill: #52525b; }
-      .label { fill: #71717a; }
-    }
-  </style>
-  <rect class="bg" width="640" height="360"/>
-  <rect class="frame" x="260" y="140" width="120" height="80" rx="8" stroke-width="2"/>
-  <path class="icon" d="M300 180L340 160v40z"/>
-  <circle class="icon" cx="285" cy="170" r="5"/>
-  <text class="label" x="320" y="260" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14">Image unavailable</text>
-</svg>`;
-var FALLBACK_SVG_BUFFER = Buffer.from(FALLBACK_SVG);
 var FAILURE_CACHE_TTL_MS = 10 * 60 * 1e3;
 var FAILURE_CACHE_MAX_SIZE = 500;
 var failureCache = /* @__PURE__ */ new Map();
@@ -92170,11 +92150,8 @@ router13.get("/media", async (req, res) => {
         res.status(502).end();
         return;
       }
-      req.log.warn({ url: urlStr }, "Media proxy returning fallback SVG \u2014 all retries exhausted");
-      res.setHeader("Content-Type", "image/svg+xml");
-      res.setHeader("Cache-Control", "public, max-age=300");
-      res.setHeader("X-Fallback", "true");
-      res.status(200).send(FALLBACK_SVG_BUFFER);
+      req.log.warn({ url: urlStr }, "Media proxy upstream failed");
+      res.status(404).end();
       return;
     }
     if (!response.ok && response.status !== 206) {
@@ -92188,24 +92165,18 @@ router13.get("/media", async (req, res) => {
         return;
       }
       const body = await response.text().catch(() => "");
-      req.log.warn({ url: urlStr, status: response.status, body: body.slice(0, 200) }, "Media proxy upstream error, returning fallback SVG");
+      req.log.warn({ url: urlStr, status: response.status, body: body.slice(0, 200) }, "Media proxy upstream error");
       markCachedFailure(urlStr);
-      res.setHeader("Content-Type", "image/svg+xml");
-      res.setHeader("Cache-Control", "public, max-age=300");
-      res.setHeader("X-Fallback", "true");
-      res.status(200).send(FALLBACK_SVG_BUFFER);
+      res.status(404).end();
       return;
     }
     streamResponse(response, res, req.log);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    req.log.error({ err, url: urlStr }, "Media proxy fetch error, returning fallback SVG");
+    req.log.error({ err, url: urlStr }, "Media proxy fetch error");
     if (!res.headersSent) {
       markCachedFailure(urlStr);
-      res.setHeader("Content-Type", "image/svg+xml");
-      res.setHeader("Cache-Control", "public, max-age=300");
-      res.setHeader("X-Fallback", "true");
-      res.status(200).send(FALLBACK_SVG_BUFFER);
+      res.status(502).end();
     }
   } finally {
   }
