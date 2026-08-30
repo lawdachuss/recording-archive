@@ -25,6 +25,9 @@ export interface Recording {
   created_at: string;
   updated_at?: string | null;
   links?: Record<string, string> | null;
+  thumbnail_mirrors?: Record<string, string> | null;
+  sprite_mirrors?: Record<string, string> | null;
+  preview_mirrors?: Record<string, string> | null;
 }
 
 export interface Performer {

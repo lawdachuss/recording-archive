@@ -512,7 +512,7 @@ router.get(
       const { username } = parsed.data;
 
       const SELECT_COLS =
-        "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at";
+        "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at,thumbnail_mirrors,sprite_mirrors,preview_mirrors";
       const { data: validRecordings, error } = await supabase
         .from("recordings_with_links")
         .select(SELECT_COLS)
