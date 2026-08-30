@@ -91655,12 +91655,25 @@ import http from "node:http";
 import { Resolver, lookup as systemLookup } from "node:dns/promises";
 import net from "node:net";
 import { Readable } from "node:stream";
+var UPSTREAM_AGENT_HTTPS = new https.Agent({
+  keepAlive: true,
+  maxSockets: 64,
+  maxFreeSockets: 16,
+  keepAliveMsecs: 1e3
+});
+var UPSTREAM_AGENT_HTTP = new http.Agent({
+  keepAlive: true,
+  maxSockets: 64,
+  maxFreeSockets: 16,
+  keepAliveMsecs: 1e3
+});
 var CONNECTION_TIMEOUT_MS = 2e4;
+var IMAGE_TIMEOUT_MS = 12e3;
 var MAX_RETRIES = 3;
 var BASE_RETRY_DELAY_MS = 500;
 var MAX_REDIRECTS = 5;
-var HOST_MAX_CONCURRENT = 5;
-var HOST_START_INTERVAL_MS = 70;
+var HOST_MAX_CONCURRENT = 10;
+var HOST_START_INTERVAL_MS = 20;
 var hostGates = /* @__PURE__ */ new Map();
 function getHostGate(host) {
   let gate = hostGates.get(host);
@@ -91700,12 +91713,78 @@ function acquireHostGate(host) {
     scheduleHostGate(gate);
   });
 }
+var IMAGE_MEM_CACHE_TTL_MS = 5 * 6e4;
+var IMAGE_MEM_CACHE_MAX = 500;
+var imageMemCache = /* @__PURE__ */ new Map();
+var imageInflight = /* @__PURE__ */ new Map();
+function cacheImageInMemory(url2, img) {
+  imageMemCache.set(url2, { ...img, expires: Date.now() + IMAGE_MEM_CACHE_TTL_MS });
+  if (imageMemCache.size > IMAGE_MEM_CACHE_MAX) {
+    const oldest = imageMemCache.keys().next().value;
+    if (oldest !== void 0) imageMemCache.delete(oldest);
+  }
+}
+async function fetchImageOnce(urlStr, upstreamHeaders, log) {
+  const release = await acquireHostGate(new URL(urlStr).hostname);
+  try {
+    const response = await fetchWithRetry(urlStr, upstreamHeaders, log, IMAGE_TIMEOUT_MS);
+    if (!response || !response.ok) {
+      throw new Error(response ? `upstream ${response.status}` : "upstream fetch failed");
+    }
+    const contentType = response.headers.get("content-type") || "image/jpeg";
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const img = { buffer, contentType, status: response.status };
+    cacheImageInMemory(urlStr, img);
+    return img;
+  } finally {
+    release();
+  }
+}
+async function getImage(urlStr, upstreamHeaders, log) {
+  const cached2 = imageMemCache.get(urlStr);
+  if (cached2 && cached2.expires > Date.now()) {
+    return new Response(cached2.buffer, {
+      status: cached2.status,
+      headers: {
+        "Content-Type": cached2.contentType,
+        "Content-Length": String(cached2.buffer.length)
+      }
+    });
+  }
+  let inflight = imageInflight.get(urlStr);
+  if (!inflight) {
+    inflight = fetchImageOnce(urlStr, upstreamHeaders, log).finally(() => {
+      imageInflight.delete(urlStr);
+    });
+    imageInflight.set(urlStr, inflight);
+  }
+  const img = await inflight;
+  return new Response(img.buffer, {
+    status: img.status,
+    headers: {
+      "Content-Type": img.contentType,
+      "Content-Length": String(img.buffer.length)
+    }
+  });
+}
 var FALLBACK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
-  <rect width="640" height="360" fill="#f3f4f6"/>
-  <rect x="260" y="140" width="120" height="80" rx="8" fill="#d1d5db" stroke="#9ca3af" stroke-width="2"/>
-  <path d="M300 180L340 160v40z" fill="#9ca3af"/>
-  <circle cx="285" cy="170" r="5" fill="#9ca3af"/>
-  <text x="320" y="260" text-anchor="middle" fill="#9ca3af" font-family="system-ui,sans-serif" font-size="14">Image unavailable</text>
+  <style>
+    .bg { fill: #f3f4f6; }
+    .frame { fill: #d1d5db; stroke: #9ca3af; }
+    .icon { fill: #9ca3af; }
+    .label { fill: #9ca3af; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #18181b; }
+      .frame { fill: #27272a; stroke: #52525b; }
+      .icon { fill: #52525b; }
+      .label { fill: #71717a; }
+    }
+  </style>
+  <rect class="bg" width="640" height="360"/>
+  <rect class="frame" x="260" y="140" width="120" height="80" rx="8" stroke-width="2"/>
+  <path class="icon" d="M300 180L340 160v40z"/>
+  <circle class="icon" cx="285" cy="170" r="5"/>
+  <text class="label" x="320" y="260" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14">Image unavailable</text>
 </svg>`;
 var FALLBACK_SVG_BUFFER = Buffer.from(FALLBACK_SVG);
 var FAILURE_CACHE_TTL_MS = 10 * 60 * 1e3;
@@ -91731,18 +91810,27 @@ var router13 = (0, import_express13.Router)();
 var DNS_SERVERS = ["8.8.8.8", "1.1.1.1", "9.9.9.9", "208.67.222.222"];
 var customResolver = new Resolver();
 customResolver.setServers(DNS_SERVERS);
+var dnsCache = /* @__PURE__ */ new Map();
+var DNS_CACHE_TTL_MS = 5 * 6e4;
 async function resolveHostname(hostname2) {
+  const cached2 = dnsCache.get(hostname2);
+  if (cached2 && cached2.expires > Date.now()) return cached2.ip;
+  let ip = null;
   try {
     const addresses = await customResolver.resolve4(hostname2);
-    if (addresses?.[0]) return addresses[0];
+    if (addresses?.[0]) ip = addresses[0];
   } catch {
   }
-  try {
-    const addresses = await customResolver.resolve6(hostname2);
-    return addresses?.[0] ?? null;
-  } catch {
-    return null;
+  if (!ip) {
+    try {
+      const addresses = await customResolver.resolve6(hostname2);
+      ip = addresses?.[0] ?? null;
+    } catch {
+      ip = null;
+    }
   }
+  if (ip) dnsCache.set(hostname2, { ip, expires: Date.now() + DNS_CACHE_TTL_MS });
+  return ip;
 }
 function ipv4ToInt(ip) {
   return ip.split(".").reduce((acc, octet) => (acc << 8) + Number(octet), 0) >>> 0;
@@ -91869,6 +91957,7 @@ function directConnect(protocol, parsedUrl, headers, resolvedIp, family, timeout
         Host: parsedUrl.hostname
       },
       servername: parsedUrl.hostname,
+      agent: protocol === https ? UPSTREAM_AGENT_HTTPS : UPSTREAM_AGENT_HTTP,
       lookup: (_host, _opts, cb) => {
         cb(null, resolvedIp, family);
       },
@@ -91887,16 +91976,16 @@ function directConnect(protocol, parsedUrl, headers, resolvedIp, family, timeout
     req.end();
   });
 }
-async function fetchWithRetry(url2, headers, log) {
+async function fetchWithRetry(url2, headers, log, timeoutMs = CONNECTION_TIMEOUT_MS) {
   if (isCachedFailure(url2)) {
     log.warn({ url: url2 }, "Media proxy skipping cached failure");
     return null;
   }
   for (let attempt = 1; attempt <= 1 + MAX_RETRIES; attempt++) {
     const isFirst = attempt === 1;
-    const timeoutMs = CONNECTION_TIMEOUT_MS * (isFirst ? 1 : 1.5);
+    const attemptTimeout = timeoutMs * (isFirst ? 1 : 1.5);
     try {
-      let response = await fetchWithTimeout(url2, headers, timeoutMs);
+      let response = await fetchWithTimeout(url2, headers, attemptTimeout);
       let redirectCount = 0;
       while (redirectCount < MAX_REDIRECTS && response.status >= 300 && response.status < 400) {
         const location2 = response.headers.get("location");
@@ -91909,7 +91998,7 @@ async function fetchWithRetry(url2, headers, log) {
         }
         const redirectHeaders = { ...headers };
         delete redirectHeaders["Referer"];
-        response = await fetchWithTimeout(redirectUrl, redirectHeaders, timeoutMs);
+        response = await fetchWithTimeout(redirectUrl, redirectHeaders, attemptTimeout);
         redirectCount++;
       }
       if (response.status >= 500 && response.status < 600 && attempt <= MAX_RETRIES) {
@@ -92021,9 +92110,8 @@ router13.get("/media", async (req, res) => {
   if (rangeHeader) {
     upstreamHeaders["Range"] = rangeHeader;
   }
-  const release = rangeHeader ? null : await acquireHostGate(upstreamHostname);
   try {
-    const response = await fetchWithRetry(urlStr, upstreamHeaders, req.log);
+    const response = rangeHeader ? await fetchWithRetry(urlStr, upstreamHeaders, req.log) : await getImage(urlStr, upstreamHeaders, req.log);
     const isVideoRequest = !!rangeHeader;
     if (!response) {
       if (isVideoRequest) {
@@ -92068,7 +92156,6 @@ router13.get("/media", async (req, res) => {
       res.status(200).send(FALLBACK_SVG_BUFFER);
     }
   } finally {
-    release?.();
   }
 });
 var media_proxy_default = router13;
