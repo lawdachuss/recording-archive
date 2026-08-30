@@ -1,4 +1,5 @@
 // ─── Cache configuration ────────────────────────────────────────────────────
+// v8: force SW update to drop stale JS bundles
 
 const IMAGE_CACHE = "vault-images-v7";
 const API_CACHE = "vault-api-v1";
