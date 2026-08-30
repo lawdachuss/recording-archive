@@ -71,7 +71,11 @@ export function isVideoUrl(url: string | null | undefined): boolean {
 
 export function isAnimatedImageUrl(url: string | null | undefined): boolean {
   if (!url) return false;
-  return getExt(unwrapProxyUrl(url)) === ".webp";
+  const unwrapped = unwrapProxyUrl(url) ?? url;
+  const ext = getExt(unwrapped);
+  // `.webp` is a genuine animated WebP. `.mp4_preview` is a misleadingly-named
+  // file that is actually animated WEBP content (observed on catbox mirrors).
+  return ext === ".webp" || ext === ".mp4_preview" || /\.mp4_preview$/i.test(unwrapped);
 }
 
 /**

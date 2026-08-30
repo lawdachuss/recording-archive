@@ -428,6 +428,21 @@ components:
           description: JSON object mapping host names to embed URLs (e.g., {"Streamtape": "https://...", "Mixdrop": "https://..."})
           additionalProperties:
             type: string
+        thumbnail_mirrors:
+          type: ["object", "null"]
+          description: JSON object mapping host names to thumbnail URL mirrors for fallback
+          additionalProperties:
+            type: string
+        sprite_mirrors:
+          type: ["object", "null"]
+          description: JSON object mapping host names to sprite URL mirrors for fallback
+          additionalProperties:
+            type: string
+        preview_mirrors:
+          type: ["object", "null"]
+          description: JSON object mapping host names to preview URL mirrors for fallback
+          additionalProperties:
+            type: string
 
     RecordingListResponse:
       type: object

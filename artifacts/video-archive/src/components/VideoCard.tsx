@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { proxyUrl, proxySpriteUrl, catboxProxyUrl } from "@/lib/proxy-url";
 import { getSpriteGrid } from "@/lib/sprite-grid";
 import { cacheImage } from "@/lib/image-cache";
+import { buildPreviewFallbacks, buildThumbnailFallbacks, buildSpriteFallbacks } from "@/lib/mirrors";
 import { dlog } from "@/lib/debug";
 
 /**
@@ -50,6 +51,28 @@ function getExt(url: string): string {
   }
 }
 
+/**
+ * True when a URL is a STATIC single-frame thumbnail. These carry a `.th.webp`
+ * or `_thumb.` marker (iili.io / freeimage.host). They never animate, so they
+ * are skipped in favour of the looping sprite. Everything else that looks like
+ * an image (`.webp`, and the misleadingly-named `.mp4_preview` which is really
+ * animated WEBP content) is treated as genuinely animated.
+ */
+function isStaticThumbnailUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return /\.th\.webp$/i.test(url) || /[_-]thumb\./i.test(url);
+}
+
+/**
+ * True when the URL is an animated image — `.webp`, or `.mp4_preview` which is
+ * actually WEBP content served with a misleading extension (observed on catbox).
+ */
+function isAnimatedImageUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  const ext = getExt(url);
+  return ext === ".webp" || ext === ".mp4_preview" || /\.mp4_preview$/i.test(url);
+}
+
 // If a hover preview hasn't produced its first frame within this window,
 // treat the source as unreachable and fall back (files.catbox.moe consistently
 // times out for minutes on this network; the browser would otherwise leave the
@@ -67,10 +90,20 @@ interface VideoCardProps {
 }
 
 export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemove, fetchPriority, isWatched, progress }: VideoCardProps) {
-  const thumbnailUrl = useMemo(() => proxyUrl(recording.thumbnail_url), [recording.thumbnail_url]);
-  const previewUrl = useMemo(() => proxyUrl(recording.preview_url), [recording.preview_url]);
-  const spriteUrl = useMemo(() => proxySpriteUrl(recording.sprite_url), [recording.sprite_url]);
-  const spriteGrid = useMemo(() => getSpriteGrid(recording.sprite_url), [recording.sprite_url]);
+  // Build mirror fallback URLs for preview, thumbnail, and sprite
+  const previewFallbacks = useMemo(() => buildPreviewFallbacks(recording), [recording.preview_url, recording.preview_mirrors]);
+  const thumbnailFallbacks = useMemo(() => buildThumbnailFallbacks(recording), [recording.thumbnail_url, recording.thumbnail_mirrors]);
+  const spriteFallbacks = useMemo(() => buildSpriteFallbacks(recording), [recording.sprite_url, recording.sprite_mirrors]);
+
+  // Mirror fallback state - track which fallback we're currently trying
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const [thumbnailIndex, setThumbnailIndex] = useState(0);
+  const [spriteIndex, setSpriteIndex] = useState(0);
+
+  const thumbnailUrl = useMemo(() => thumbnailFallbacks[thumbnailIndex] ? proxyUrl(thumbnailFallbacks[thumbnailIndex]) : null, [thumbnailFallbacks, thumbnailIndex]);
+  const previewUrl = useMemo(() => previewFallbacks[previewIndex] ? proxyUrl(previewFallbacks[previewIndex]) : null, [previewFallbacks, previewIndex]);
+  const spriteUrl = useMemo(() => spriteFallbacks[spriteIndex] ? proxySpriteUrl(spriteFallbacks[spriteIndex]) : null, [spriteFallbacks, spriteIndex]);
+  const spriteGrid = useMemo(() => getSpriteGrid(spriteFallbacks[spriteIndex] || null), [spriteFallbacks, spriteIndex]);
 
   // Disable hover previews on slow connections — they saturate the
   // bandwidth and make the grid feel unresponsive. Users see static
@@ -100,12 +133,9 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
 
   const showPreview = isHovered && (showVideo || showAnimatedImage);
 
-  // Preview playback fallback chain:
-  //   For .webp:   <img> -> (on error) <video> -> (on error) static thumbnail.
-  //   For .mp4 etc: <video> -> (on error) <img> -> (on error) static thumbnail.
-  // .webp files are images and should be loaded as <img> first; some .webp
-  // URLs in the DB are actually MP4 clips with a misleading extension, so
-  // we fall back to <video> if the image fails.
+  // Preview playback with mirror fallback: the primary preview URL is tried
+  // first; on error we advance to the next mirror host (sprite stays underneath
+  // as the guaranteed animation). Static .th.webp thumbnails are skipped.
   const [mediaFail, setMediaFail] = useState<"none" | "video" | "all">("none");
   // The preview is only swapped over the thumbnail once it actually has frames
   // (`onLoadedData`) — until then the thumbnail stays visible with a loading
@@ -149,7 +179,15 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   // Stable callbacks so SpriteSlideshow (memo) doesn't re-render on every
   // VideoCard render, which would restart its animation via a changing prop.
   const handleSpriteLoaded = useCallback(() => setSpriteReady(true), []);
-  const handleSpriteError = useCallback(() => setSpriteFailed(true), []);
+  const handleSpriteError = useCallback(() => {
+    if (spriteIndex + 1 < spriteFallbacks.length) {
+      setSpriteFailed(false);
+      setSpriteReady(false);
+      setSpriteIndex(i => i + 1);
+    } else {
+      setSpriteFailed(true);
+    }
+  }, [spriteIndex, spriteFallbacks.length]);
 
   // ── .webp preview warm-up ──────────────────────────────────────────────
   // Eagerly cache .webp previews into IDB on mount so they're ready for hover.
@@ -201,33 +239,30 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   const usePreviewChain = previewAvailable && mediaFail !== "all";
   const useSprite = spriteAvailable && !spriteFailed;
 
-  // .webp URLs are images — load them as <img> first. If the image fails
-  // (e.g. it's actually an MP4 with a misleading .webp extension), fall back
-  // to <video>. For real video URLs (.mp4 etc.) keep the original order.
-  //
-  // Catbox .webp previews are unreachable from the browser (HTTP/2 reset) and
-  // every proxy except the Cloudflare Worker (catboxProxyUrl), which returns the
-  // real ANIMATED webp. So for catbox webp we load that Worker proxy URL into an
-  // <img>; if it ever fails, the fully-looping sprite underneath takes over.
-  const isCatboxPreview = /catbox\.moe/i.test(getOriginalUrl(previewUrl) ?? previewUrl ?? "");
-  const isWebpPreview = getExt(getOriginalUrl(previewUrl) ?? "") === ".webp";
-  // Only catbox webp image previews use the Worker proxy. Everything else keeps
-  // its existing path (wsrv / /api/media / sprite).
-  const catboxWebpWorkerUrl =
-    isCatboxPreview && isWebpPreview ? catboxProxyUrl(getOriginalUrl(previewUrl)) : null;
-  // Non-catbox webp preview files (iili.io .th.webp, pixhost .webp) are single
-  // static thumbnails — they can never animate and have no hover value, so we
-  // skip them entirely. The looping sprite sheet provides the animation for
-  // these cards. Only catbox previews (genuinely animated webps fetched via
-  // the Worker proxy) are shown as an <img>.
-  // .webp previews are IMAGES — never load them into a <video> and never show
-  // a static webp <img> fallback. Non-catbox webp preview files (iili.io .th.webp,
-  // pixhost .webp) are single static frames that freeze on hover, so we skip
-  // them entirely; the looping sprite provides the animation. Catbox webps are
-  // genuinely animated and play via the Worker proxy <img> above.
-  const showCatboxWebpImg = !!catboxWebpWorkerUrl && usePreviewChain && showAnimatedImage && mediaFail === "none";
-  const showVideoEl = !isWebpPreview && !isCatboxPreview && usePreviewChain && showVideo && mediaFail === "none";
-  const showImgFallback = !isWebpPreview && !isCatboxPreview && usePreviewChain && showAnimatedImage && mediaFail === "video";
+  // Determine the current preview's real upstream URL (unwrapped) for accurate
+  // type detection across mirror fallbacks (each host may use a different ext).
+  const originalPreviewUrl = getOriginalUrl(previewUrl) ?? previewUrl;
+  const isCatboxPreview = /catbox\.moe/i.test(originalPreviewUrl ?? "");
+  const isStaticThumb = isStaticThumbnailUrl(originalPreviewUrl);
+  // Animated image: .webp OR .mp4_preview (misleadingly-named, actually WEBP).
+  const isAnimatedImg = isAnimatedImageUrl(originalPreviewUrl);
+  const previewExt = getExt(originalPreviewUrl ?? "");
+  // Only true for genuine video previews (mp4/webm/mov), never .webp/.mp4_preview.
+  const isRealVideo = previewExt === ".mp4" || previewExt === ".webm" || previewExt === ".mov";
+
+  // catbox animated images must route through the Cloudflare Worker (catbox is
+  // unreachable from the browser / Vercel). Non-catbox animated webp (pixhost)
+  // loads through the normal /api/media proxy.
+  const catboxWorkerUrl =
+    isCatboxPreview && isAnimatedImg && !isStaticThumb ? catboxProxyUrl(originalPreviewUrl) : null;
+
+  // Static thumbnails (.th.webp) never animate — the looping sprite provides the
+  // hover animation, so skip them entirely. Animated images show as <img> (catbox
+  // via Worker). Genuine videos show as <video>.
+  const showCatboxWebpImg = !!catboxWorkerUrl && usePreviewChain && showAnimatedImage && mediaFail === "none";
+  const showWebpImg = isAnimatedImg && !isStaticThumb && !isCatboxPreview && usePreviewChain && showAnimatedImage && mediaFail === "none";
+  const showVideoEl = isRealVideo && usePreviewChain && showVideo && mediaFail === "none";
+  const showImgFallback = isRealVideo && usePreviewChain && showAnimatedImage && mediaFail === "video";
 
   const showSprite = isHovered && useSprite;
 
@@ -245,12 +280,15 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
       previewUrl,
       spriteUrl,
       isCatbox: isCatboxPreview,
-      isWebp: isWebpPreview,
-      catboxWebpWorkerUrl,
+      isStaticThumb,
+      isAnimatedImg,
+      previewExt,
+      catboxWorkerUrl,
       mediaFail,
       previewReady,
       spriteReady,
       showSprite,
+      showWebpImg,
       showVideoEl,
       showImgFallback,
       showLoadingBar,
@@ -258,8 +296,8 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
       useSprite,
     });
   }, [
-    isHovered, previewUrl, spriteUrl, isCatboxPreview, isWebpPreview, catboxWebpWorkerUrl, mediaFail,
-    previewReady, spriteReady, showSprite,
+    isHovered, previewUrl, spriteUrl, isCatboxPreview, isStaticThumb, isAnimatedImg, previewExt, catboxWorkerUrl, mediaFail,
+    previewReady, spriteReady, showSprite, showWebpImg,
     showVideoEl, showImgFallback, showLoadingBar, usePreviewChain, useSprite,
     recording.id,
   ]);
@@ -303,7 +341,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
           {/* Hidden preload video — warms the HTTP cache for instant hover
               playback. Only for actual video files (.mp4 etc.), NOT for .webp
               images (loading a .webp into <video> wastes a connection slot). */}
-          {usePreviewChain && preloadVideoUrl && !isSlowConnection && !isWebpPreview && (
+          {usePreviewChain && preloadVideoUrl && !isSlowConnection && isRealVideo && (
             <video
               src={preloadVideoUrl}
               className="hidden"
@@ -328,6 +366,11 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
                 containerClassName="absolute inset-0 w-full h-full"
                 fallback={<ImageUnavailable initials={initials} />}
                 noShimmer
+                onError={() => {
+                  if (thumbnailIndex + 1 < thumbnailFallbacks.length) {
+                    setThumbnailIndex((i) => i + 1);
+                  }
+                }}
               />
             </div>
           ) : (
@@ -350,11 +393,34 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
           )}
 
           {/* Layer 3: Preview video/image — loads on top of sprite when
-              available. Non-catbox webp previews are skipped (static); only
-              catbox animated webps load here via the Worker proxy. */}
-          {showCatboxWebpImg && catboxWebpWorkerUrl && (
+              available. Static thumbnails (.th.webp) are skipped; animated
+              webp (catbox via Worker, pixhost via proxy) and real videos load
+              here. */}
+          {showWebpImg && animatedImageUrl && (
             <img
-              src={catboxWebpWorkerUrl}
+              src={animatedImageUrl}
+              alt={recording.username}
+              referrerPolicy="no-referrer"
+              loading="eager"
+              decoding="sync"
+              fetchPriority="high"
+              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
+              style={{ opacity: previewReady ? 1 : 0 }}
+              onLoad={() => setPreviewReady(true)}
+              onError={() => {
+                if (previewIndex + 1 < previewFallbacks.length) {
+                  setMediaFail("none");
+                  setPreviewReady(false);
+                  setPreviewIndex((i) => i + 1);
+                } else {
+                  setMediaFail("all");
+                }
+              }}
+            />
+          )}
+          {showCatboxWebpImg && catboxWorkerUrl && (
+            <img
+              src={catboxWorkerUrl}
               alt={recording.username}
               referrerPolicy="no-referrer"
               loading="eager"
@@ -363,12 +429,18 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
               style={{ opacity: 1 }}
               onLoad={() => {
-                dlog("hoverpreview", "[VideoCard] catbox webp loaded (worker proxy)", { id: recording.id, src: catboxWebpWorkerUrl });
+                dlog("hoverpreview", "[VideoCard] catbox webp loaded (worker proxy)", { id: recording.id, src: catboxWorkerUrl });
                 setPreviewReady(true);
               }}
               onError={(e) => {
-                dlog("hoverpreview", "[VideoCard] catbox webp failed (worker proxy)", { id: recording.id, src: catboxWebpWorkerUrl });
-                setMediaFail("all");
+                dlog("hoverpreview", "[VideoCard] catbox webp failed (worker proxy), trying next fallback", { id: recording.id, index: previewIndex });
+                if (previewIndex + 1 < previewFallbacks.length) {
+                  setMediaFail("none");
+                  setPreviewReady(false);
+                  setPreviewIndex(i => i + 1);
+                } else {
+                  setMediaFail("all");
+                }
               }}
             />
           )}
@@ -386,7 +458,15 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               onLoadedData={() => dlog("hoverpreview", "[VideoCard] video loadeddata", { id: recording.id, src: videoUrl })}
               onPlaying={() => dlog("hoverpreview", "[VideoCard] video playing", { id: recording.id, loop: true })}
               onEnded={() => dlog("hoverpreview", "[VideoCard] video ENDED (not looping?)", { id: recording.id })}
-              onError={() => setMediaFail((f) => (f === "none" ? "video" : f))}
+              onError={() => {
+                if (previewIndex + 1 < previewFallbacks.length) {
+                  setMediaFail("none");
+                  setPreviewReady(false);
+                  setPreviewIndex(i => i + 1);
+                } else {
+                  setMediaFail("all");
+                }
+              }}
               ref={(el) => {
                 if (el) (el as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
               }}
@@ -399,7 +479,15 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               referrerPolicy="no-referrer"
               className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
               onLoad={() => setPreviewReady(true)}
-              onError={() => setMediaFail("all")}
+              onError={() => {
+                if (previewIndex + 1 < previewFallbacks.length) {
+                  setMediaFail("none");
+                  setPreviewReady(false);
+                  setPreviewIndex(i => i + 1);
+                } else {
+                  setMediaFail("all");
+                }
+              }}
             />
           )}
 

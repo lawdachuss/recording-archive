@@ -46,6 +46,12 @@ export interface Recording {
   updated_at?: string | null;
   /** @nullable */
   links?: Record<string, string> | null;
+  /** @nullable */
+  thumbnail_mirrors?: Record<string, string> | null;
+  /** @nullable */
+  sprite_mirrors?: Record<string, string> | null;
+  /** @nullable */
+  preview_mirrors?: Record<string, string> | null;
 }
 
 export interface RecordingListResponse {

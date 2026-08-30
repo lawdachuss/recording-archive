@@ -12,6 +12,8 @@ interface OptimizedImageProps {
   fetchPriority?: "high" | "low" | "auto";
   loading?: "eager" | "lazy";
   noShimmer?: boolean;
+  /** Called after the internal retry also fails — lets the parent advance to a mirror URL. */
+  onError?: () => void;
 }
 
 /**
@@ -64,6 +66,7 @@ export const OptimizedImage = memo(function OptimizedImage({
   fetchPriority,
   loading,
   noShimmer = false,
+  onError: onErrorProp,
 }: OptimizedImageProps) {
   // Route the image through the media proxy unless it's local / already proxied.
   const resolvedSrc = proxyUrl(src) ?? src;
@@ -98,7 +101,8 @@ export const OptimizedImage = memo(function OptimizedImage({
     }
     setError(true);
     setLoaded(true);
-  }, [attempt, resolvedSrc]);
+    onErrorProp?.();
+  }, [attempt, resolvedSrc, onErrorProp]);
 
   if (error) {
     return fallback ?? <DefaultFallback />;

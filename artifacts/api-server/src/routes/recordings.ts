@@ -10,9 +10,9 @@ import { cache } from "../middleware/cache.js";
 
 const router = Router();
 
-const LIST_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at";
-const RELATED_COLS = "id,username,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,preview_url";
-const POOL_COLS = "id,username,tags,gender,timestamp,viewers,thumbnail_url,sprite_url,preview_url";
+const LIST_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at,thumbnail_mirrors,sprite_mirrors,preview_mirrors";
+const RELATED_COLS = "id,username,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,preview_url,thumbnail_mirrors,sprite_mirrors,preview_mirrors";
+const POOL_COLS = "id,username,tags,gender,timestamp,viewers,thumbnail_url,sprite_url,preview_url,thumbnail_mirrors,sprite_mirrors,preview_mirrors";
 
 // ─── LIST RECORDINGS ────────────────────────────────────────────────────────
 
