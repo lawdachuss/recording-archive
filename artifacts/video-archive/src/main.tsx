@@ -22,6 +22,11 @@ if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     const base = import.meta.env.BASE_URL;
     navigator.serviceWorker.register(`${base}sw.js`, { scope: base }).catch(() => {});
+    // When an updated Service Worker takes control, force a single reload so
+    // clients drop any stale hashed JS bundle and pick up the new deployment.
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      window.location.reload();
+    });
   });
 }
 
