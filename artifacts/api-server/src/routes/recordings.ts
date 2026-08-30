@@ -14,6 +14,43 @@ const LIST_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,vie
 const RELATED_COLS = "id,username,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,preview_url";
 const POOL_COLS = "id,username,tags,gender,timestamp,viewers,thumbnail_url,sprite_url,preview_url";
 
+// ─── Mirror enrichment ─────────────────────────────────────────────────────
+// The recordings_with_links view doesn't include mirror columns, but the
+// base recordings table does. Fetch mirrors separately and merge them in.
+const MIRROR_COLS = "id,thumbnail_mirrors,sprite_mirrors,preview_mirrors";
+const MIRROR_COLS_SINGLE = "thumbnail_mirrors,sprite_mirrors,preview_mirrors";
+
+async function fetchMirrors(ids: string[]): Promise<Map<string, { thumbnail_mirrors: any; sprite_mirrors: any; preview_mirrors: any }>> {
+  const mirrorMap = new Map();
+  if (ids.length === 0) return mirrorMap;
+  // Batch in chunks of 100 to avoid PostgREST IN-clause limits
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const { data } = await supabase.from("recordings").select(MIRROR_COLS).in("id", chunk);
+    if (data) for (const row of data) mirrorMap.set(row.id, row);
+  }
+  return mirrorMap;
+}
+
+/** Enrich an array of recordings with mirror data from the base table */
+async function enrichWithMirrors(rows: any[]): Promise<any[]> {
+  const ids = rows.map(r => r.id).filter(Boolean);
+  const mirrorMap = await fetchMirrors(ids);
+  return rows.map(r => {
+    const mirrors = mirrorMap.get(r.id);
+    if (!mirrors) return r;
+    return { ...r, ...mirrors };
+  });
+}
+
+/** Enrich a single recording object with mirror data */
+async function enrichSingleWithMirrors(row: any): Promise<any> {
+  if (!row?.id) return row;
+  const { data } = await supabase.from("recordings").select(MIRROR_COLS_SINGLE).eq("id", row.id).single();
+  if (!data) return row;
+  return { ...row, ...data };
+}
+
 // ─── LIST RECORDINGS ────────────────────────────────────────────────────────
 
 router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["recordings", "search"] }), async (req, res) => {
@@ -55,8 +92,10 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
       return;
     }
 
+    const enriched = await enrichWithMirrors(data ?? []);
+
     res.json({
-      data: data ?? [],
+      data: enriched,
       total: count ?? 0,
       page: normalizedPage,
       limit: normalizedLimit,
@@ -222,8 +261,9 @@ router.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds: 
     const safePage = Math.min(page, totalPages);
     const offset = (safePage - 1) * limit;
     const pageRows = diversified.slice(offset, offset + limit).map(({ _score, ...r }: any) => r);
+    const enriched = await enrichWithMirrors(pageRows);
 
-    res.json({ data: pageRows, total: totalItems, page: safePage, limit, totalPages });
+    res.json({ data: enriched, total: totalItems, page: safePage, limit, totalPages });
   } catch (err) {
     req.log.error({ err }, "GET /recordings/recommendations unexpected error");
     res.status(500).json({ error: "Failed to get recommendations" });
@@ -366,7 +406,8 @@ router.get("/recordings/related", cache({ ttlSeconds: 120, staleSeconds: 300, ta
       for (const r of (data ?? [])) { if (merged.length >= limit) break; if (!seen.has(r.id)) { seen.add(r.id); merged.push(r); } }
     }
 
-    res.json(merged.slice(0, limit));
+    const enriched = await enrichWithMirrors(merged.slice(0, limit));
+    res.json(enriched);
   } catch (err) {
     req.log.error({ err, id: req.query.id }, "GET /recordings/related unexpected error");
     res.status(500).json({ error: "Failed to get related recordings" });
@@ -394,7 +435,8 @@ router.get("/recordings/:id", cache({ ttlSeconds: 600, staleSeconds: 900, tags: 
     }
     if (!data) { res.status(404).json({ error: "Recording not found" }); return; }
 
-    res.json(data);
+    const enriched = await enrichSingleWithMirrors(data);
+    res.json(enriched);
   } catch (err) {
     req.log.error({ err, id: req.params.id }, "GET /recordings/:id unexpected error");
     res.status(500).json({ error: "Failed to fetch recording" });

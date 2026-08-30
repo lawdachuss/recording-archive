@@ -185,6 +185,30 @@ function performerExistsOnStripchat(html: string, username: string): boolean {
 
 const router = Router();
 
+// ─── Mirror enrichment ─────────────────────────────────────────────────────
+const MIRROR_COLS = "id,thumbnail_mirrors,sprite_mirrors,preview_mirrors";
+
+async function fetchMirrors(ids: string[]): Promise<Map<string, any>> {
+  const mirrorMap = new Map();
+  if (ids.length === 0) return mirrorMap;
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const { data } = await supabase.from("recordings").select(MIRROR_COLS).in("id", chunk);
+    if (data) for (const row of data) mirrorMap.set(row.id, row);
+  }
+  return mirrorMap;
+}
+
+async function enrichWithMirrors(rows: any[]): Promise<any[]> {
+  const ids = rows.map(r => r.id).filter(Boolean);
+  const mirrorMap = await fetchMirrors(ids);
+  return rows.map(r => {
+    const mirrors = mirrorMap.get(r.id);
+    if (!mirrors) return r;
+    return { ...r, ...mirrors };
+  });
+}
+
 router.get(
   "/performers/lookup",
   cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["performers", "search"] }),
@@ -536,11 +560,12 @@ router.get(
         return;
       }
 
+      const enriched = await enrichWithMirrors(validRecordings);
       res.json({
         username,
-        recording_count: validRecordings.length,
-        gender: validRecordings[0].gender ?? null,
-        recordings: validRecordings,
+        recording_count: enriched.length,
+        gender: enriched[0].gender ?? null,
+        recordings: enriched,
       });
     } catch (err) {
       req.log.error(

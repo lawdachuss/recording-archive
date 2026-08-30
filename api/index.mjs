@@ -70491,6 +70491,33 @@ var router2 = (0, import_express2.Router)();
 var LIST_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at";
 var RELATED_COLS = "id,username,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,preview_url";
 var POOL_COLS = "id,username,tags,gender,timestamp,viewers,thumbnail_url,sprite_url,preview_url";
+var MIRROR_COLS = "id,thumbnail_mirrors,sprite_mirrors,preview_mirrors";
+var MIRROR_COLS_SINGLE = "thumbnail_mirrors,sprite_mirrors,preview_mirrors";
+async function fetchMirrors(ids) {
+  const mirrorMap = /* @__PURE__ */ new Map();
+  if (ids.length === 0) return mirrorMap;
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const { data } = await supabase.from("recordings").select(MIRROR_COLS).in("id", chunk);
+    if (data) for (const row of data) mirrorMap.set(row.id, row);
+  }
+  return mirrorMap;
+}
+async function enrichWithMirrors(rows) {
+  const ids = rows.map((r) => r.id).filter(Boolean);
+  const mirrorMap = await fetchMirrors(ids);
+  return rows.map((r) => {
+    const mirrors = mirrorMap.get(r.id);
+    if (!mirrors) return r;
+    return { ...r, ...mirrors };
+  });
+}
+async function enrichSingleWithMirrors(row) {
+  if (!row?.id) return row;
+  const { data } = await supabase.from("recordings").select(MIRROR_COLS_SINGLE).eq("id", row.id).single();
+  if (!data) return row;
+  return { ...row, ...data };
+}
 router2.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["recordings", "search"] }), async (req, res) => {
   try {
     const parsed = ListRecordingsQueryParams.safeParse(req.query);
@@ -70523,8 +70550,9 @@ router2.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["re
       res.status(500).json({ error: "Failed to fetch recordings" });
       return;
     }
+    const enriched = await enrichWithMirrors(data ?? []);
     res.json({
-      data: data ?? [],
+      data: enriched,
       total: count ?? 0,
       page: normalizedPage,
       limit: normalizedLimit,
@@ -70689,7 +70717,8 @@ router2.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds:
     const safePage = Math.min(page, totalPages);
     const offset = (safePage - 1) * limit;
     const pageRows = diversified.slice(offset, offset + limit).map(({ _score, ...r }) => r);
-    res.json({ data: pageRows, total: totalItems, page: safePage, limit, totalPages });
+    const enriched = await enrichWithMirrors(pageRows);
+    res.json({ data: enriched, total: totalItems, page: safePage, limit, totalPages });
   } catch (err) {
     req.log.error({ err }, "GET /recordings/recommendations unexpected error");
     res.status(500).json({ error: "Failed to get recommendations" });
@@ -70825,7 +70854,8 @@ router2.get("/recordings/related", cache({ ttlSeconds: 120, staleSeconds: 300, t
         }
       }
     }
-    res.json(merged.slice(0, limit));
+    const enriched = await enrichWithMirrors(merged.slice(0, limit));
+    res.json(enriched);
   } catch (err) {
     req.log.error({ err, id: req.query.id }, "GET /recordings/related unexpected error");
     res.status(500).json({ error: "Failed to get related recordings" });
@@ -70857,7 +70887,8 @@ router2.get("/recordings/:id", cache({ ttlSeconds: 600, staleSeconds: 900, tags:
       res.status(404).json({ error: "Recording not found" });
       return;
     }
-    res.json(data);
+    const enriched = await enrichSingleWithMirrors(data);
+    res.json(enriched);
   } catch (err) {
     req.log.error({ err, id: req.params.id }, "GET /recordings/:id unexpected error");
     res.status(500).json({ error: "Failed to fetch recording" });
@@ -89517,6 +89548,26 @@ function performerExistsOnStripchat(html, username) {
   return false;
 }
 var router3 = (0, import_express3.Router)();
+var MIRROR_COLS2 = "id,thumbnail_mirrors,sprite_mirrors,preview_mirrors";
+async function fetchMirrors2(ids) {
+  const mirrorMap = /* @__PURE__ */ new Map();
+  if (ids.length === 0) return mirrorMap;
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const { data } = await supabase.from("recordings").select(MIRROR_COLS2).in("id", chunk);
+    if (data) for (const row of data) mirrorMap.set(row.id, row);
+  }
+  return mirrorMap;
+}
+async function enrichWithMirrors2(rows) {
+  const ids = rows.map((r) => r.id).filter(Boolean);
+  const mirrorMap = await fetchMirrors2(ids);
+  return rows.map((r) => {
+    const mirrors = mirrorMap.get(r.id);
+    if (!mirrors) return r;
+    return { ...r, ...mirrors };
+  });
+}
 router3.get(
   "/performers/lookup",
   cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["performers", "search"] }),
@@ -89783,11 +89834,12 @@ router3.get(
         res.status(404).json({ error: "Performer not found" });
         return;
       }
+      const enriched = await enrichWithMirrors2(validRecordings);
       res.json({
         username,
-        recording_count: validRecordings.length,
-        gender: validRecordings[0].gender ?? null,
-        recordings: validRecordings
+        recording_count: enriched.length,
+        gender: enriched[0].gender ?? null,
+        recordings: enriched
       });
     } catch (err) {
       req.log.error(
