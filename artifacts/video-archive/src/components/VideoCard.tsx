@@ -220,12 +220,14 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   // skip them entirely. The looping sprite sheet provides the animation for
   // these cards. Only catbox previews (genuinely animated webps fetched via
   // the Worker proxy) are shown as an <img>.
-  const useWebpImg = false;
+  // .webp previews are IMAGES — never load them into a <video> and never show
+  // a static webp <img> fallback. Non-catbox webp preview files (iili.io .th.webp,
+  // pixhost .webp) are single static frames that freeze on hover, so we skip
+  // them entirely; the looping sprite provides the animation. Catbox webps are
+  // genuinely animated and play via the Worker proxy <img> above.
   const showCatboxWebpImg = !!catboxWebpWorkerUrl && usePreviewChain && showAnimatedImage && mediaFail === "none";
-  const showWebpImg = useWebpImg && usePreviewChain && showAnimatedImage && mediaFail === "none";
-  const showWebpVideoFallback = useWebpImg && usePreviewChain && showVideo && mediaFail === "video";
-  const showVideoEl = !useWebpImg && !isCatboxPreview && usePreviewChain && showVideo && mediaFail === "none";
-  const showImgFallback = !useWebpImg && !isCatboxPreview && usePreviewChain && showAnimatedImage && mediaFail === "video";
+  const showVideoEl = !isWebpPreview && !isCatboxPreview && usePreviewChain && showVideo && mediaFail === "none";
+  const showImgFallback = !isWebpPreview && !isCatboxPreview && usePreviewChain && showAnimatedImage && mediaFail === "video";
 
   const showSprite = isHovered && useSprite;
 
@@ -249,8 +251,6 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
       previewReady,
       spriteReady,
       showSprite,
-      showWebpImg,
-      showWebpVideoFallback,
       showVideoEl,
       showImgFallback,
       showLoadingBar,
@@ -259,7 +259,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     });
   }, [
     isHovered, previewUrl, spriteUrl, isCatboxPreview, isWebpPreview, catboxWebpWorkerUrl, mediaFail,
-    previewReady, spriteReady, showSprite, showWebpImg, showWebpVideoFallback,
+    previewReady, spriteReady, showSprite,
     showVideoEl, showImgFallback, showLoadingBar, usePreviewChain, useSprite,
     recording.id,
   ]);
@@ -280,12 +280,12 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   // mark the preview failed, so the sprite/static fallback engages in seconds
   // instead of the browser's multi-minute connection timeout.
   useEffect(() => {
-    if (!(showVideoEl || showImgFallback || showWebpImg || showWebpVideoFallback || showCatboxWebpImg) || previewReady) {
+    if (!(showVideoEl || showImgFallback || showCatboxWebpImg) || previewReady) {
       return;
     }
     const t = setTimeout(() => setMediaFail("all"), PREVIEW_TIMEOUT_MS);
     return () => clearTimeout(t);
-  }, [showVideoEl, showImgFallback, showWebpImg, showWebpVideoFallback, showCatboxWebpImg, previewReady]);
+  }, [showVideoEl, showImgFallback, showCatboxWebpImg, previewReady]);
 
   const showDuration = (recording.duration ?? 0) > 0;
   const showFilesize = !!recording.filesize && !showDuration;
@@ -350,18 +350,8 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
           )}
 
           {/* Layer 3: Preview video/image — loads on top of sprite when
-              available. Fades in when the first frame is painted. */}
-          {showWebpImg && animatedImageUrl && (
-            <img
-              src={animatedImageUrl}
-              alt={recording.username}
-              referrerPolicy="no-referrer"
-              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
-              style={{ opacity: previewReady ? 1 : 0 }}
-              onLoad={() => setPreviewReady(true)}
-              onError={() => setMediaFail("video")}
-            />
-          )}
+              available. Non-catbox webp previews are skipped (static); only
+              catbox animated webps load here via the Worker proxy. */}
           {showCatboxWebpImg && catboxWebpWorkerUrl && (
             <img
               src={catboxWebpWorkerUrl}
@@ -379,25 +369,6 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               onError={(e) => {
                 dlog("hoverpreview", "[VideoCard] catbox webp failed (worker proxy)", { id: recording.id, src: catboxWebpWorkerUrl });
                 setMediaFail("all");
-              }}
-            />
-          )}
-          {showWebpVideoFallback && videoUrl && (
-            <video
-              src={videoUrl}
-              className={cn(
-                "absolute inset-0 w-full h-full               object-cover transition-opacity duration-300",
-                previewReady ? "opacity-100" : "opacity-0"
-              )}
-              autoPlay muted playsInline loop
-              preload="auto"
-              onCanPlay={onPreviewReady}
-              onLoadedData={() => dlog("hoverpreview", "[VideoCard] video fallback loadeddata", { id: recording.id, src: videoUrl })}
-              onPlaying={() => dlog("hoverpreview", "[VideoCard] video fallback playing", { id: recording.id, loop: true })}
-              onEnded={() => dlog("hoverpreview", "[VideoCard] video fallback ENDED (not looping?)", { id: recording.id })}
-              onError={() => setMediaFail("all")}
-              ref={(el) => {
-                if (el) (el as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
               }}
             />
           )}
