@@ -52,6 +52,27 @@ function getExt(url: string): string {
 }
 
 /**
+ * Hosts whose animated previews are empirically unreliable/expired (iili.io /
+ * freeimage.host return 403 for older uploads). They are excluded from the
+ * hover preview fallback chain — the looping sprite sheet is already layered
+ * underneath and carries the hover animation, while iili.io STATIC thumbnails
+ * (.md.jpg) are still kept for the thumbnail path (those still serve 200).
+ */
+const UNRELIABLE_PREVIEW_HOSTS = ["iili.io", "freeimage.host"];
+
+function isUnreliablePreviewHost(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const hostname = new URL(url, window.location.origin).hostname;
+    return UNRELIABLE_PREVIEW_HOSTS.some(
+      (h) => hostname === h || hostname.endsWith(`.${h}`)
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * True when a URL is a STATIC single-frame thumbnail. These carry a `.th.webp`
  * or `_thumb.` marker (iili.io / freeimage.host). They never animate, so they
  * are skipped in favour of the looping sprite. Everything else that looks like
@@ -98,10 +119,13 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   // Filter preview fallbacks to only .webp / .mp4_preview URLs (animated images).
   // If a .webp preview exists — even from a mirror — show it on hover.
   // If no .webp exists, skip preview entirely and let sprites handle hover.
+  // iili.io / freeimage.host .webp previews are excluded: they are the least
+  // reliable host and older uploads are expired (403), which would otherwise
+  // spawn a useless network request on every hover. The sprite covers those.
   const webpFallbacks = useMemo(() => {
     return previewFallbacks.filter(url => {
       const original = getOriginalUrl(url) ?? url;
-      return isAnimatedImageUrl(original) && !isStaticThumbnailUrl(original);
+      return isAnimatedImageUrl(original) && !isStaticThumbnailUrl(original) && !isUnreliablePreviewHost(original);
     });
   }, [previewFallbacks]);
 
