@@ -6,45 +6,39 @@ const router = Router();
 
 router.get("/stats", cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["stats", "recordings"] }), async (req, res) => {
   try {
-    // Use SQL aggregation instead of loading all rows into memory.
-    // With 8,000+ recordings, fetching every row just to count is extremely slow.
-    const [countResult, sizeResult, newestResult, performersResult, tagsResult] = await Promise.all([
-      // Total recordings with links
-      db.execute(sql`
-        SELECT COUNT(*)::int AS count FROM recordings_with_links WHERE links IS NOT NULL
-      `),
-      // Total storage
-      db.execute(sql`
-        SELECT COALESCE(SUM(filesize), 0)::bigint AS total FROM recordings_with_links WHERE links IS NOT NULL
-      `),
-      // Newest recording timestamp
-      db.execute(sql`
-        SELECT MAX(timestamp) AS newest FROM recordings_with_links WHERE links IS NOT NULL
-      `),
-      // Unique performers count
-      db.execute(sql`
-        SELECT COUNT(DISTINCT username)::int AS count FROM recordings_with_links WHERE links IS NOT NULL
-      `),
-      // Unique tags count — unnest the tags array and count distinct values
-      db.execute(sql`
-        SELECT COUNT(DISTINCT tag)::int AS count FROM (
-          SELECT unnest(tags) AS tag FROM recordings_with_links WHERE links IS NOT NULL AND tags IS NOT NULL
-        ) sub
-      `),
-    ]);
+    // Single query for all stats — the recordings_with_links view is expensive
+    // (JOIN + GROUP BY), so running 5 parallel queries exhausts the connection
+    // pool and times out. One query with conditional aggregation is faster and
+    // more reliable.
+    const result = await db.execute(sql`
+      SELECT
+        COUNT(*)::int AS total_recordings,
+        COUNT(DISTINCT username)::int AS total_performers,
+        COALESCE(SUM(filesize), 0)::bigint AS total_size_bytes,
+        MAX(timestamp) AS newest_recording,
+        (
+          SELECT COUNT(DISTINCT tag)::int
+          FROM unnest(tags) AS tag
+          WHERE tag IS NOT NULL AND tag != ''
+        ) AS total_tags
+      FROM recordings_with_links
+      WHERE links IS NOT NULL
+    `);
 
-    const countRow = countResult.rows[0] as { count: number } | undefined;
-    const sizeRow = sizeResult.rows[0] as { total: number } | undefined;
-    const newestRow = newestResult.rows[0] as { newest: string | null } | undefined;
-    const performersRow = performersResult.rows[0] as { count: number } | undefined;
-    const tagsRow = tagsResult.rows[0] as { count: number } | undefined;
+    const row = result.rows[0] as {
+      total_recordings: number;
+      total_performers: number;
+      total_size_bytes: number | string;
+      newest_recording: string | null;
+      total_tags: number;
+    } | undefined;
 
     res.json({
-      total_recordings: countRow?.count ?? 0,
-      total_performers: performersRow?.count ?? 0,
-      total_tags: tagsRow?.count ?? 0,
-      total_size_bytes: Number(sizeRow?.total ?? 0),
-      newest_recording: newestRow?.newest ?? null,
+      total_recordings: row?.total_recordings ?? 0,
+      total_performers: row?.total_performers ?? 0,
+      total_tags: row?.total_tags ?? 0,
+      total_size_bytes: Number(row?.total_size_bytes ?? 0),
+      newest_recording: row?.newest_recording ?? null,
     });
   } catch (err) {
     req.log.error({ err }, "GET /stats unexpected error");

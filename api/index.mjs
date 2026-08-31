@@ -89882,41 +89882,27 @@ var import_express5 = __toESM(require_express2(), 1);
 var router5 = (0, import_express5.Router)();
 router5.get("/stats", cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["stats", "recordings"] }), async (req, res) => {
   try {
-    const [countResult, sizeResult, newestResult, performersResult, tagsResult] = await Promise.all([
-      // Total recordings with links
-      db.execute(sql`
-        SELECT COUNT(*)::int AS count FROM recordings_with_links WHERE links IS NOT NULL
-      `),
-      // Total storage
-      db.execute(sql`
-        SELECT COALESCE(SUM(filesize), 0)::bigint AS total FROM recordings_with_links WHERE links IS NOT NULL
-      `),
-      // Newest recording timestamp
-      db.execute(sql`
-        SELECT MAX(timestamp) AS newest FROM recordings_with_links WHERE links IS NOT NULL
-      `),
-      // Unique performers count
-      db.execute(sql`
-        SELECT COUNT(DISTINCT username)::int AS count FROM recordings_with_links WHERE links IS NOT NULL
-      `),
-      // Unique tags count — unnest the tags array and count distinct values
-      db.execute(sql`
-        SELECT COUNT(DISTINCT tag)::int AS count FROM (
-          SELECT unnest(tags) AS tag FROM recordings_with_links WHERE links IS NOT NULL AND tags IS NOT NULL
-        ) sub
-      `)
-    ]);
-    const countRow = countResult.rows[0];
-    const sizeRow = sizeResult.rows[0];
-    const newestRow = newestResult.rows[0];
-    const performersRow = performersResult.rows[0];
-    const tagsRow = tagsResult.rows[0];
+    const result = await db.execute(sql`
+      SELECT
+        COUNT(*)::int AS total_recordings,
+        COUNT(DISTINCT username)::int AS total_performers,
+        COALESCE(SUM(filesize), 0)::bigint AS total_size_bytes,
+        MAX(timestamp) AS newest_recording,
+        (
+          SELECT COUNT(DISTINCT tag)::int
+          FROM unnest(tags) AS tag
+          WHERE tag IS NOT NULL AND tag != ''
+        ) AS total_tags
+      FROM recordings_with_links
+      WHERE links IS NOT NULL
+    `);
+    const row = result.rows[0];
     res.json({
-      total_recordings: countRow?.count ?? 0,
-      total_performers: performersRow?.count ?? 0,
-      total_tags: tagsRow?.count ?? 0,
-      total_size_bytes: Number(sizeRow?.total ?? 0),
-      newest_recording: newestRow?.newest ?? null
+      total_recordings: row?.total_recordings ?? 0,
+      total_performers: row?.total_performers ?? 0,
+      total_tags: row?.total_tags ?? 0,
+      total_size_bytes: Number(row?.total_size_bytes ?? 0),
+      newest_recording: row?.newest_recording ?? null
     });
   } catch (err) {
     req.log.error({ err }, "GET /stats unexpected error");
