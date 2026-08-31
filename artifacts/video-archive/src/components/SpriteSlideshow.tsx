@@ -2,6 +2,20 @@ import { useEffect, useRef, useState, memo, useMemo } from "react";
 import { isConnectionConstrained } from "@/lib/connection";
 import { dlog, dtick } from "@/lib/debug";
 
+/**
+ * Extract the original upstream URL from a wsrv.nl proxy URL.
+ * Returns null if the URL is not a wsrv.nl proxy URL.
+ */
+function extractOriginalFromWsrv(proxiedUrl: string): string | null {
+  try {
+    const parsed = new URL(proxiedUrl);
+    if (!parsed.hostname.endsWith("wsrv.nl")) return null;
+    return parsed.searchParams.get("url") || null;
+  } catch {
+    return null;
+  }
+}
+
 interface SpriteSlideshowProps {
   spriteUrl: string;
   /** Explicit sprite grid columns — skip auto-detection from image dimensions */
@@ -132,7 +146,17 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({
     const img = new Image();
     img.referrerPolicy = "no-referrer";
     img.onload = () => finishWithImage(img);
+    // If wsrv.nl is down, fall back to the original URL (loaded directly
+    // from the browser). This handles wsrv.nl outages gracefully.
+    const directUrl = extractOriginalFromWsrv(spriteUrl);
+    let triedDirect = false;
     img.onerror = () => {
+      if (!triedDirect && directUrl) {
+        dlog("hoverpreview", "[SpriteSlideshow] wsrv.nl failed, trying direct", { spriteUrl, directUrl });
+        triedDirect = true;
+        img.src = directUrl;
+        return;
+      }
       dlog("hoverpreview", "[SpriteSlideshow] image error", { spriteUrl });
       if (!cancelled) {
         setImageLoaded(true);

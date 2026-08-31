@@ -57,6 +57,22 @@ function DefaultFallback() {
   return <ImageUnavailable />;
 }
 
+/**
+ * Extract the original upstream URL from a wsrv.nl proxy URL.
+ * wsrv.nl format: https://wsrv.nl/?url=<encoded>&w=1200
+ * Returns null if the URL is not a wsrv.nl proxy URL.
+ */
+function extractOriginalFromWsrv(proxiedUrl: string): string | null {
+  try {
+    const parsed = new URL(proxiedUrl);
+    if (!parsed.hostname.endsWith("wsrv.nl")) return null;
+    const inner = parsed.searchParams.get("url");
+    return inner || null;
+  } catch {
+    return null;
+  }
+}
+
 export const OptimizedImage = memo(function OptimizedImage({
   src,
   alt,
@@ -70,6 +86,9 @@ export const OptimizedImage = memo(function OptimizedImage({
 }: OptimizedImageProps) {
   // Route the image through the media proxy unless it's local / already proxied.
   const resolvedSrc = proxyUrl(src) ?? src;
+  // When the proxy URL is wsrv.nl, remember the original so we can fall back
+  // to loading directly if wsrv.nl is down (returns 404).
+  const directSrc = extractOriginalFromWsrv(resolvedSrc);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -99,10 +118,17 @@ export const OptimizedImage = memo(function OptimizedImage({
       cacheImage(resolvedSrc, 3).catch(() => {});
       return;
     }
+    // If this was a wsrv.nl proxy URL and we haven't tried the direct URL yet,
+    // fall back to loading the original URL directly from the browser.
+    // This handles wsrv.nl outages — catbox etc. can often be reached directly.
+    if (directSrc && attempt === 1) {
+      setAttempt((a) => a + 1);
+      return;
+    }
     setError(true);
     setLoaded(true);
     onErrorProp?.();
-  }, [attempt, resolvedSrc, onErrorProp]);
+  }, [attempt, resolvedSrc, directSrc, onErrorProp]);
 
   if (error) {
     return fallback ?? <DefaultFallback />;
@@ -112,7 +138,7 @@ export const OptimizedImage = memo(function OptimizedImage({
     <div className={cn("relative overflow-hidden bg-secondary", containerClassName)}>
       <img
         key={`${resolvedSrc}-${attempt}`}
-        src={resolvedSrc}
+        src={attempt >= 2 && directSrc ? directSrc : resolvedSrc}
         alt={alt}
         referrerPolicy="no-referrer"
         loading={loading ?? (fetchPriority === "high" ? "eager" : "lazy")}
