@@ -26,6 +26,11 @@ const NO_PROXY_HOSTS: string[] = [
   // is no longer observed.
   "catbox.moe",
   "litter.catbox.moe",
+  // iili.io / freeimage.host: old URLs are expired (403 hotlink placeholder),
+  // new URLs work through the server proxy but aren't worth the 502 noise.
+  // Loading directly avoids the server proxy 502 for expired URLs.
+  "iili.io",
+  "freeimage.host",
   // imgchest.com: returns 502 when proxied through /api/media (server can't
   // reach it) and 403 when loaded directly. Loading directly avoids the 502.
   "imgchest.com",
