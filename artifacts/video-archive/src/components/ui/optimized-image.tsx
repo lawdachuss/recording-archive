@@ -103,17 +103,7 @@ export const OptimizedImage = memo(function OptimizedImage({
     setLoaded(false);
     setError(false);
     setAttempt(0);
-    // Only warm the IDB cache for same-origin URLs. Cross-origin URLs
-    // (iili.io etc.) trigger CORS errors from the fetch() inside cacheImage
-    // — harmless but noisy. Browser HTTP cache + SW handle repeat visits.
-    try {
-      if (new URL(resolvedSrc).origin === window.location.origin) {
-        cacheImage(resolvedSrc, 3).catch(() => {});
-      }
-    } catch {
-      // Relative URL or parse error — try caching anyway
-      cacheImage(resolvedSrc, 3).catch(() => {});
-    }
+    cacheImage(resolvedSrc, 3).catch(() => {});
   }, [resolvedSrc]);
 
   const onLoad = useCallback(() => {
@@ -125,13 +115,7 @@ export const OptimizedImage = memo(function OptimizedImage({
       // One soft retry (e.g. a transient proxy failure) by re-keying the <img>
       // (fresh fetch) — but only when src hasn't changed under us.
       setAttempt((a) => a + 1);
-      try {
-        if (new URL(resolvedSrc).origin === window.location.origin) {
-          cacheImage(resolvedSrc, 3).catch(() => {});
-        }
-      } catch {
-        cacheImage(resolvedSrc, 3).catch(() => {});
-      }
+      cacheImage(resolvedSrc, 3).catch(() => {});
       return;
     }
     // If this was a wsrv.nl proxy URL and we haven't tried the direct URL yet,
