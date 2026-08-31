@@ -2,31 +2,13 @@ import { getApiBaseUrl } from "./api-base";
 
 const PROXY_PATH = "/api/media";
 
-// Cloudflare Worker that fetches catbox (which is unreachable from the browser,
-// Vercel, and ordinary datacenter egress). It forces HTTP/1.1 + a Safari UA —
-// catbox breaks over HTTP/2 and with a Chrome UA — and returns the original
-// bytes (content-type preserved, no re-encode/flatten). Serves with ACAO:* and
-// caches at the Cloudflare edge + browser.
-const CATBOX_PROXY_ORIGIN = "https://catbox-proxy.stream-bate-media-proxy.workers.dev";
-const CATBOX_PROXY_PATH = "/proxy";
-
 /**
- * Build a Cloudflare-Worker proxy URL for a catbox-hosted file. Returns the
- * original URL unchanged for non-catbox hosts so the caller can use this as a
- * drop-in replacement.
+ * Proxy URL for catbox-hosted animated webp images. Catbox loads directly
+ * from the browser now (wsrv.nl DNS broken, server proxy 502, Worker 405),
+ * so this returns the original URL unchanged. Kept for API compatibility.
  */
 export function catboxProxyUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return url;
-  }
-  const hostname = parsed.hostname;
-  const isCatbox = hostname === "catbox.moe" || hostname.endsWith(".catbox.moe");
-  if (!isCatbox) return url;
-  return `${CATBOX_PROXY_ORIGIN}${CATBOX_PROXY_PATH}?url=${encodeURIComponent(url)}`;
+  return url ?? null;
 }
 
 /**
@@ -37,47 +19,24 @@ export function catboxProxyUrl(url: string | null | undefined): string | null {
  * the only way its previews can load.
  */
 const NO_PROXY_HOSTS: string[] = [
+  // catbox.moe + subdomains: wsrv.nl can't resolve catbox DNS (returns 404),
+  // the server proxy can't reach catbox (returns 502), and the Cloudflare
+  // Worker is broken (returns 405). Loading directly from the browser with
+  // referrerPolicy="no-referrer" works (200). The old HTTP/2 reset issue
+  // is no longer observed.
+  "catbox.moe",
+  "litter.catbox.moe",
   // imgchest.com: returns 502 when proxied through /api/media (server can't
   // reach it) and 403 when loaded directly. Loading directly avoids the 502.
   "imgchest.com",
-  // (kept for forward-compat) pixhost used to load directly, but a page-full
-  // of thumbnails + sprites opened dozens of parallel connections to its CDN
-  // and it rate-limited (429 / HTTP2 protocol errors). It now goes through
-  // /api/media instead.
 ];
 
 function isNoProxyHost(hostname: string): boolean {
   return NO_PROXY_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
 }
 
-const WSRV_HOSTS = [
-  "catbox.moe",
-  "files.catbox.moe",
-  "litter.catbox.moe",
-  "files.litterbox.catbox.moe",
-];
-// wsrv.nl can re-encode catbox (halving the byte size) at the source's native width,
-// but its RESIZE pipeline 404s on catbox (libvips-specific), so we never request
-// a smaller width here. The browser displays the thumbnail at CSS size regardless.
-// Sprite sheets keep aspect.
-const WSRV_BASE = "https://wsrv.nl/?url=";
-// Fixed pass-through width. wsrv can re-encode at w=1200 (harvests bytes from
-// the native width), but its RESIZE pipeline 404s on catbox. So we fix w=1200
-// (pass-through / re-encode) and fall back to the no-&w form when 404'd.
-const WSRV_PARAMS = "&w=1200";
-
-function isWsrvHost(hostname: string): boolean {
-  return WSRV_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
-}
-
-/**
- * Pure pass-through form of a wsrv.nl URL (drops the &w= resize param),
- // useful as a fallback when the &w= form 404s (wsrv's resize pipeline is
- // per-file inconsistent — some catbox files only load without &w).
- */
-function altWsrvUrl(url: string): string {
-  return url.replace(/&w=\d+/, "");
-}
+// wsrv.nl routing is currently unused — catbox moved to NO_PROXY_HOSTS
+// (wsrv.nl can't resolve catbox DNS). Kept as a comment for reference.
 
 /**
  * Returns the hostname of the API server. When VITE_API_URL is set we compare
@@ -135,12 +94,6 @@ export function proxyUrl(url: string | null | undefined): string | null {
     return url;
   }
 
-  // catbox/litterbox: route through wsrv.nl (HTTP/1.1 fetch of catbox under
-  // the hood) to avoid their broken HTTP/2 connection resets in browsers.
-  if (isWsrvHost(parsed.hostname)) {
-    return `${WSRV_BASE}${encodeURIComponent(url)}${WSRV_PARAMS}`;
-  }
-
   // Some hosts refuse proxied/server fetches entirely — load them directly.
   if (isNoProxyHost(parsed.hostname)) return url;
 
@@ -154,37 +107,13 @@ export function proxyUrl(url: string | null | undefined): string | null {
   return base ? `${base}${path}` : path;
 }
 
-/**
- * Returns an alternate wsrv URL without the &w= resize param, for use when
- * the primary &w= form 404s (wsrv's resize pipeline is per-file inconsistent).
- */
-export function getAlternateWsrvUrl(url: string): string {
-  return altWsrvUrl(url);
-}
+
 
 /**
- * Proxy URL for SPRITE SHEETS.
- *
- * Sprites are divided into a grid of frames; each frame is shown by shifting
- * a background-position sized at `cols*100% × rows*100%`. Detecting that grid
- * relies on the sprite's NATIVE pixel dimensions (see SpriteSlideshow's
- * detectLayout). catbox sprites are routed through wsrv.nl to dodge catbox's
- * broken HTTP/2, but MUST keep their native size — adding &w= resizes the sheet
- * and breaks grid detection, causing all frames to show together / misaligned.
- * For catbox we therefore pass through wsrv WITHOUT the resize param. All other
- * hosts fall back to the regular proxyUrl (which preserves dimensions anyway).
+ * Proxy URL for SPRITE SHEETS. Same as proxyUrl — sprites load directly
+ * from the browser (catbox in NO_PROXY_HOSTS) or through the server proxy
+ * (pixhost). Native dimensions are preserved.
  */
 export function proxySpriteUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return url;
-  }
-  if (isWsrvHost(parsed.hostname)) {
-    // Pass the sheet through wsrv untouched (no &w=) so native dims survive.
-    return `${WSRV_BASE}${encodeURIComponent(url)}`;
-  }
   return proxyUrl(url);
 }
