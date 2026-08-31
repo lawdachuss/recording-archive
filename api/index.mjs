@@ -89883,18 +89883,22 @@ var router5 = (0, import_express5.Router)();
 router5.get("/stats", cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["stats", "recordings"] }), async (req, res) => {
   try {
     const result = await db.execute(sql`
+      WITH base AS (
+        SELECT username, timestamp, filesize, tags
+        FROM recordings_with_links
+        WHERE links IS NOT NULL
+      ),
+      tag_stats AS (
+        SELECT COUNT(DISTINCT tag)::int AS total_tags
+        FROM base, unnest(tags) AS tag
+        WHERE tag IS NOT NULL AND tag != ''
+      )
       SELECT
-        COUNT(*)::int AS total_recordings,
-        COUNT(DISTINCT username)::int AS total_performers,
-        COALESCE(SUM(filesize), 0)::bigint AS total_size_bytes,
-        MAX(timestamp) AS newest_recording,
-        (
-          SELECT COUNT(DISTINCT tag)::int
-          FROM unnest(tags) AS tag
-          WHERE tag IS NOT NULL AND tag != ''
-        ) AS total_tags
-      FROM recordings_with_links
-      WHERE links IS NOT NULL
+        (SELECT COUNT(*)::int FROM base) AS total_recordings,
+        (SELECT COUNT(DISTINCT username)::int FROM base) AS total_performers,
+        (SELECT COALESCE(SUM(filesize), 0)::bigint FROM base) AS total_size_bytes,
+        (SELECT MAX(timestamp) FROM base) AS newest_recording,
+        (SELECT total_tags FROM tag_stats) AS total_tags
     `);
     const row = result.rows[0];
     res.json({
