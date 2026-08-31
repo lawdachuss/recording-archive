@@ -597,6 +597,16 @@ export async function cacheImage(
   url: string,
   priority: CachePriority = 2,
 ): Promise<ImageCacheEntry | null> {
+  // Skip cross-origin URLs — fetch() triggers CORS errors for hosts that
+  // don't send Access-Control-Allow-Origin (iili.io etc.). The errors are
+  // harmless but noisy. Browser HTTP cache + SW handle repeat visits.
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.origin !== window.location.origin) return null;
+  } catch {
+    // Relative URL — proceed normally
+  }
+
   const existing = inflight.get(url);
   if (existing) { trackHit("dedup", url); return existing; }
 
