@@ -37,6 +37,11 @@ export function catboxProxyUrl(url: string | null | undefined): string | null {
  * the only way its previews can load.
  */
 const NO_PROXY_HOSTS: string[] = [
+  // iili.io / freeimage.host: blocks datacenter/server IPs, returns 502 when
+  // proxied through the API server. Must load directly from the browser with
+  // referrerPolicy="no-referrer" on the media element.
+  "iili.io",
+  "freeimage.host",
   // (kept for forward-compat) pixhost used to load directly, but a page-full
   // of thumbnails + sprites opened dozens of parallel connections to its CDN
   // and it rate-limited (429 / HTTP2 protocol errors). It now goes through
