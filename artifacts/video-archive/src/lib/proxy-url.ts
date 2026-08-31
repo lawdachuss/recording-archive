@@ -2,18 +2,11 @@ import { getApiBaseUrl } from "./api-base";
 
 const PROXY_PATH = "/api/media";
 
-// Cloudflare Worker that fetches catbox (which is unreachable from the browser,
-// Vercel, and ordinary datacenter egress). It forces HTTP/1.1 + a Safari UA —
-// catbox breaks over HTTP/2 and with a Chrome UA — and returns the original
-// bytes (content-type preserved, no re-encode/flatten). Serves with ACAO:* and
-// caches at the Cloudflare edge + browser.
-const CATBOX_PROXY_ORIGIN = "https://catbox-proxy.stream-bate-media-proxy.workers.dev";
-const CATBOX_PROXY_PATH = "/proxy";
-
 /**
- * Build a Cloudflare-Worker proxy URL for a catbox-hosted file. Returns the
- * original URL unchanged for non-catbox hosts so the caller can use this as a
- * drop-in replacement.
+ * Proxy URL for catbox-hosted animated webp images. The Cloudflare Worker
+ * proxy is currently broken (405), so we route through wsrv.nl instead,
+ * which handles catbox fetches via HTTP/1.1 + cache. Returns the original
+ * URL unchanged for non-catbox hosts.
  */
 export function catboxProxyUrl(url: string | null | undefined): string | null {
   if (!url) return null;
@@ -26,7 +19,7 @@ export function catboxProxyUrl(url: string | null | undefined): string | null {
   const hostname = parsed.hostname;
   const isCatbox = hostname === "catbox.moe" || hostname.endsWith(".catbox.moe");
   if (!isCatbox) return url;
-  return `${CATBOX_PROXY_ORIGIN}${CATBOX_PROXY_PATH}?url=${encodeURIComponent(url)}`;
+  return `${WSRV_BASE}${encodeURIComponent(url)}`;
 }
 
 /**
@@ -37,11 +30,6 @@ export function catboxProxyUrl(url: string | null | undefined): string | null {
  * the only way its previews can load.
  */
 const NO_PROXY_HOSTS: string[] = [
-  // iili.io / freeimage.host: blocks datacenter/server IPs, returns 502 when
-  // proxied through the API server. Must load directly from the browser with
-  // referrerPolicy="no-referrer" on the media element.
-  "iili.io",
-  "freeimage.host",
   // (kept for forward-compat) pixhost used to load directly, but a page-full
   // of thumbnails + sprites opened dozens of parallel connections to its CDN
   // and it rate-limited (429 / HTTP2 protocol errors). It now goes through
@@ -57,6 +45,8 @@ const WSRV_HOSTS = [
   "files.catbox.moe",
   "litter.catbox.moe",
   "files.litterbox.catbox.moe",
+  "iili.io",
+  "freeimage.host",
 ];
 // wsrv.nl can re-encode catbox (halving the byte size) at the source's native width,
 // but its RESIZE pipeline 404s on catbox (libvips-specific), so we never request
