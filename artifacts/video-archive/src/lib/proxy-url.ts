@@ -37,13 +37,13 @@ export function catboxProxyUrl(url: string | null | undefined): string | null {
  * the only way its previews can load.
  */
 const NO_PROXY_HOSTS: string[] = [
-  // iili.io / freeimage.host: return 502 when proxied through /api/media
-  // (server can't reach them) and 403 when loaded directly from browser.
-  // Loading directly avoids the 502 — the browser gets a hotlink placeholder
-  // but at least doesn't produce a console error. wsrv.nl is also down
-  // (returns 404), so NO_PROXY is the least-bad option right now.
+  // These hosts return 502 when proxied through /api/media (Vercel server
+  // can't reach them) and 403 when loaded directly from browser (hotlink
+  // protection). Loading directly avoids the 502 — the browser gets a
+  // hotlink placeholder but at least doesn't produce a console error.
   "iili.io",
   "freeimage.host",
+  "imgchest.com",
   // (kept for forward-compat) pixhost used to load directly, but a page-full
   // of thumbnails + sprites opened dozens of parallel connections to its CDN
   // and it rate-limited (429 / HTTP2 protocol errors). It now goes through
