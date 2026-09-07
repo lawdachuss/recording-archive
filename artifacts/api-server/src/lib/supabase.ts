@@ -11,7 +11,35 @@ if (!supabaseUrl || !supabaseKey) {
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+let _supabase: SupabaseClient | null = null;
+let _supabasePromise: Promise<SupabaseClient> | null = null;
+
+function getSupabase(): SupabaseClient {
+  if (_supabase) return _supabase;
+  if (_supabasePromise) return _supabasePromise;
+  _supabasePromise = createClient(supabaseUrl, supabaseKey)
+    .then((c) => {
+      _supabase = c;
+      _supabasePromise = null;
+      return c;
+    })
+    .catch((err) => {
+      _supabasePromise = null;
+      throw err;
+    });
+  return _supabasePromise;
+}
+
+/**
+ * Refresh the Supabase schema cache by creating a new client.
+ * Call this when PostgREST returns PGRST205 (table not in schema cache).
+ */
+export function refreshSupabaseSchema(): Promise<SupabaseClient> {
+  _supabase = null;
+  _supabasePromise = null;
+  return getSupabase();
+}
+export const supabase = getSupabase();
 
 /**
  * Creates a Supabase client authenticated as a specific user.
