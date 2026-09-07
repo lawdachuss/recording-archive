@@ -75,15 +75,29 @@ function detectHostLabel(url: string): string {
     if (hostname.includes("earnvids")) return "EarnVids";
     if (hostname.includes("seek") || hostname.includes("embedseek") || hostname.includes("seeks.cloud")) return "SeekStreaming";
     if (hostname.includes("upns")) return "UPNshare";
+    if (hostname.includes("anonmp4")) return "AnonMP4";
     return hostname.replace(/^www\./, "");
   } catch {
     return "Server";
   }
 }
 
+function isAnonMP4(url: string): boolean {
+  try {
+    return new URL(url).hostname.includes("anonmp4");
+  } catch {
+    return false;
+  }
+}
+
 function isEmbedUrl(url: string): boolean {
   try {
     const { pathname, hostname } = new URL(url);
+    // AnonMP4 rejects cross-origin iframe playback with "Forbidden: Playback
+    // ticket already used or invalid session." — never iframe it, only link out.
+    if (hostname.includes("anonmp4")) {
+      return false;
+    }
     // Path-based detection for common embed patterns
     if (pathname.includes("/e/") || pathname.includes("/embed/") || pathname.includes("/player/") || pathname.includes("/v/")) {
       return true;
@@ -149,7 +163,7 @@ function deriveServers(
     let hostDuplicate = false;
     try { hostDuplicate = seenHosts.has(new URL(embedUrl).hostname); } catch {}
     if (!hostDuplicate) {
-      servers.push({ label: detectHostLabel(embedUrl), src: embedUrl, type: "iframe" });
+      servers.push({ label: detectHostLabel(embedUrl), src: embedUrl, type: isAnonMP4(embedUrl) ? "link" : "iframe" });
       seen.add(embedUrl);
     }
   }
@@ -495,7 +509,7 @@ export default function VideoDetail() {
 
   const handleCopyEmbed = async () => {
     if (!currentServer?.src) return;
-    const code = `<iframe src="${currentServer.src}" width="960" height="540" frameborder="0" allowfullscreen allow="autoplay; fullscreen"></iframe>`;
+    const code = `<iframe src="${currentServer.src}" width="960" height="540" frameborder="0" allow="autoplay; fullscreen; picture-in-picture"></iframe>`;
     try {
       await navigator.clipboard.writeText(code);
       setEmbedCopied(true);
@@ -643,7 +657,6 @@ export default function VideoDetail() {
                     key={`${currentServer.src}-${activeServer}`}
                     src={currentServer.src}
                     className="w-full h-full border-0"
-                    allowFullScreen
                     allow="autoplay; fullscreen; picture-in-picture"
                     title={video.room_title || video.filename}
                   />
