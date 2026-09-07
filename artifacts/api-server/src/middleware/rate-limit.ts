@@ -90,15 +90,22 @@ async function redisIncrement(key: string): Promise<{ count: number; resetAt: nu
 // ─── Identity helpers ─────────────────────────────────────────────
 
 export function clientIp(req: Request): string {
-  const realIp = req.headers["x-real-ip"];
-  if (typeof realIp === "string" && realIp.length > 0) return realIp.trim();
+  try {
+    const realIp = req.headers?.["x-real-ip"];
+    if (typeof realIp === "string" && realIp.length > 0) return realIp.trim();
 
-  const xff = req.headers["x-forwarded-for"];
-  if (typeof xff === "string" && xff.length > 0) {
-    // Vercel appends the real client edge IP; the leftmost entry is the client.
-    return xff.split(",")[0]!.trim();
+    const xff = req.headers?.["x-forwarded-for"];
+    if (typeof xff === "string" && xff.length > 0) {
+      // Vercel appends the real client edge IP; the leftmost entry is the client.
+      return xff.split(",")[0]!.trim();
+    }
+    if (req.socket?.remoteAddress) return req.socket.remoteAddress;
+    if ((req as any).connection?.remoteAddress) return (req as any).connection.remoteAddress;
+    if (req.ip) return req.ip;
+  } catch {
+    /* safely fallback when running in serverless environments */
   }
-  return req.socket.remoteAddress ?? "unknown";
+  return "unknown";
 }
 
 /** Stable per-token key without decoding the JWT — hash it. */

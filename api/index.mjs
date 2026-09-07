@@ -72323,13 +72323,19 @@ async function redisIncrement(key) {
   }
 }
 function clientIp(req) {
-  const realIp = req.headers["x-real-ip"];
-  if (typeof realIp === "string" && realIp.length > 0) return realIp.trim();
-  const xff = req.headers["x-forwarded-for"];
-  if (typeof xff === "string" && xff.length > 0) {
-    return xff.split(",")[0].trim();
+  try {
+    const realIp = req.headers?.["x-real-ip"];
+    if (typeof realIp === "string" && realIp.length > 0) return realIp.trim();
+    const xff = req.headers?.["x-forwarded-for"];
+    if (typeof xff === "string" && xff.length > 0) {
+      return xff.split(",")[0].trim();
+    }
+    if (req.socket?.remoteAddress) return req.socket.remoteAddress;
+    if (req.connection?.remoteAddress) return req.connection.remoteAddress;
+    if (req.ip) return req.ip;
+  } catch {
   }
-  return req.socket.remoteAddress ?? "unknown";
+  return "unknown";
 }
 function sendLimited(res, limit, resetAt, bucket) {
   const retryAfter = Math.max(1, Math.ceil((resetAt - Date.now()) / 1e3));
