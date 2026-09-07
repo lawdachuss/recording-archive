@@ -99,14 +99,14 @@ router.get("/stats", cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["stats",
       }
     } catch (err) {
       req.log.error({ err }, "Stats aggregation error");
-      res.status(500).json({ error: "Failed to fetch stats" });
+      res.status(500).json({ error: "Failed to fetch stats", details: (err as any)?.message ?? String(err) });
       return;
     }
 
     res.json(stats);
   } catch (err) {
     req.log.error({ err }, "GET /stats unexpected error");
-    res.status(500).json({ error: "Failed to fetch stats" });
+    res.status(500).json({ error: "Failed to fetch stats", details: (err as any)?.message ?? String(err) });
   }
 });
 
