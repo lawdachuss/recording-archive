@@ -1,15 +1,18 @@
 /**
- * cache.ts — two-tier storage cache
+ * cache.ts — three-tier edge-aware storage cache
  *
+ * Tier 0 (fastest): Edge Cache API  — https://supabase.chuglii.in/functions/v1/cache
  * Tier 1: localStorage — small JSON payloads (< 100KB serialized).
  * Tier 2: IndexedDB — large blobs, images, big response bodies.
  *
  * All entries have a TTL. Expired entries are lazily evicted on read.
- * A periodic cleanup sweep runs once per minute.
+ * The edge cache is best-effort: if it fails, local tiers still work.
  */
 
 const CLEANUP_INTERVAL_MS = 60_000;
 const LS_SIZE_WARN = 100 * 1024; // warn if serialized payload exceeds 100KB
+
+const EDGE_CACHE_URL = "https://supabase.chuglii.in/functions/v1/cache";
 
 // ─── IndexedDB setup ──────────────────────────────────────────────
 
@@ -45,6 +48,62 @@ interface CacheEntry<T> {
   key: string;
   data: T;
   expiresAt: number;
+}
+
+// ─── Edge cache tier ──────────────────────────────────────────────
+
+interface EdgeCacheResult {
+  found: boolean;
+  data: unknown;
+  ttl: number | null;
+}
+
+async function edgeGet(key: string): Promise<EdgeCacheResult | null> {
+  try {
+    const res = await fetch(EDGE_CACHE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, action: "get" }),
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { success?: boolean; data?: unknown; key?: string; ttl?: number | null; error?: string };
+    if (!json.success) return null;
+    return { found: true, data: json.data ?? json.key, ttl: json.ttl ?? null };
+  } catch {
+    return null;
+  }
+}
+
+async function edgeSet(key: string, value: unknown, ttlMs?: number): Promise<boolean> {
+  try {
+    const body: Record<string, unknown> = { key, value, action: "set" };
+    if (ttlMs) body.ttl = Math.round(ttlMs / 1000);
+    const res = await fetch(EDGE_CACHE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return false;
+    const json = (await res.json()) as { success?: boolean };
+    return !!json.success;
+  } catch {
+    return false;
+  }
+}
+
+async function edgeDelete(key: string): Promise<boolean> {
+  try {
+    const res = await fetch(EDGE_CACHE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, action: "delete" }),
+    });
+    if (!res.ok) return false;
+    const json = (await res.json()) as { success?: boolean };
+    return !!json.success;
+  } catch {
+    return false;
+  }
 }
 
 // ─── localStorage tier ────────────────────────────────────────────
@@ -195,7 +254,15 @@ export function initCache() {
 // ─── Public API ───────────────────────────────────────────────────
 
 export async function cacheGet<T>(key: string): Promise<T | undefined> {
-  // Try localStorage first (fastest)
+  // Try edge cache first (cross-device shared cache)
+  const edge = await edgeGet(key);
+  if (edge?.found) {
+    // Re-warm local tiers so next read is instant
+    const data = edge.data as T;
+    lsSet(key, data, CACHE_TTL.SHORT);
+    return data;
+  }
+  // Try localStorage (fastest local)
   const ls = lsGet<T>(key);
   if (ls !== undefined) return ls;
   // Fallback to IndexedDB
@@ -207,10 +274,11 @@ export function cacheGetSync<T>(key: string): T | undefined {
 }
 
 export async function cacheSet<T>(key: string, data: T, ttlMs: number): Promise<void> {
+  // Push to edge cache (best-effort, fire-and-forget-ish)
+  const ttlSec = Math.max(1, Math.round(ttlMs / 1000));
+  edgeSet(key, data, ttlMs).catch(() => {});
+  // Persist locally
   if (!lsSet(key, data, ttlMs)) {
-    // Too large for LS — store in IndexedDB. Also clear any previous (smaller)
-    // LS entry for this key so a stale local copy never shadows the newer IDB
-    // value on subsequent cacheGet (which checks LS first).
     lsDelete(key);
     await idbSet(key, data, ttlMs);
   }
@@ -219,6 +287,7 @@ export async function cacheSet<T>(key: string, data: T, ttlMs: number): Promise<
 export async function cacheDelete(key: string): Promise<void> {
   lsDelete(key);
   await idbDelete(key);
+  edgeDelete(key).catch(() => {});
 }
 
 export async function cacheClear(): Promise<void> {
