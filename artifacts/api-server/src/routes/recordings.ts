@@ -83,7 +83,32 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     query = query.order(sortCol, { ascending, nullsFirst: false });
 
     const offset = (normalizedPage - 1) * normalizedLimit;
-    const { data, error, count } = await query.range(offset, offset + normalizedLimit - 1);
+    let data: unknown[] | null = null;
+    let error: unknown = null;
+    let count: number | null = null;
+
+    try {
+      const result = await query.range(offset, offset + normalizedLimit - 1);
+      data = result.data;
+      error = result.error;
+      count = result.count;
+    } catch (e) {
+      error = e;
+    }
+
+    // PGRST205: table not in PostgREST schema cache — refresh and retry once
+    if (error && typeof error === "object" && (error as any).code === "PGRST205") {
+      req.log.warn("Schema cache miss (PGRST205), refreshing and retrying");
+      await import("../lib/supabase.js").then((m) => (m as any).refreshSupabaseSchema());
+      const refreshed = supabase.from("recordings_with_links").select(LIST_COLS, { count: "exact" }).not("links", "is", "null");
+      const ascending = sort === "oldest";
+      const sortCol = sort === "largest" ? "filesize" : sort === "popular" ? "viewers" : "timestamp";
+      const retryQuery = refreshed.order(sortCol, { ascending, nullsFirst: false }).range(offset, offset + normalizedLimit - 1);
+      const retryResult = await retryQuery;
+      data = retryResult.data;
+      error = retryResult.error;
+      count = retryResult.count;
+    }
 
     if (error) {
       req.log.error({ err: error }, "Supabase error listing recordings");
