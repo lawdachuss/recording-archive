@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { useConnectionConstrained } from "@/hooks/use-connection-quality";
+import { buildThumbnailFallbacks } from "@/lib/mirrors";
 import { Search, ArrowRight, TrendingUp, Star, Clock, Heart, Bookmark, ThumbsUp, Users, Tags, Clapperboard } from "lucide-react";
 
 type Tab = "recent" | "popular";
@@ -32,6 +33,13 @@ function VideoSkeleton() {
       <Skeleton className="h-3 w-1/2" />
     </div>
   );
+}
+
+function hasThumbnail(recording: {
+  thumbnail_url?: string | null;
+  thumbnail_mirrors?: Record<string, string> | null;
+}): boolean {
+  return buildThumbnailFallbacks(recording).length > 0;
 }
 
 interface ActivityEvent {
@@ -160,13 +168,14 @@ export default function Home() {
     { limit: 8, exclude: excludeIds },
     { enabled: true, placeholderData: keepPreviousData, staleTime: 30_000 },
   );
-  const recommendations = recData?.data ?? [];
+  const recommendations = (recData?.data ?? []).filter(hasThumbnail);
 
   const { data: topPerformersData, isLoading: performersLoading } = useListPerformers(undefined, { staleTime: 30_000 });
   const topPerformers = topPerformersData?.performers ?? [];
   const { data: tags } = useListTags({ query: { queryKey: getListTagsQueryKey(), staleTime: 30_000 } });
 
-  const recordings = tab === "recent" ? recentData?.data : popularData?.data;
+  const recordings = (tab === "recent" ? recentData?.data : popularData?.data)?.filter(hasThumbnail);
+  const continueWithThumbnails = continueWatching.filter((item) => hasThumbnail(cloudItemToRecording(parseCloudItem(item))));
   const loading = tab === "recent" ? recentLoading : popularLoading;
 
   usePreloadRecordings(recordings);
@@ -227,7 +236,7 @@ export default function Home() {
       </section>
 
       {/* Continue Watching */}
-      {user && continueWatching.length > 0 && (
+      {user && continueWithThumbnails.length > 0 && (
         <section className="px-4 sm:px-6 py-10 relative overflow-hidden">
           <div className="container mx-auto">
             <div className="flex items-center justify-between mb-6">
@@ -239,7 +248,7 @@ export default function Home() {
               </div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-6">
-              {continueWatching.map((item, i) => {
+              {continueWithThumbnails.map((item, i) => {
                 const rec = cloudItemToRecording(parseCloudItem(item));
                 return (
                   <div key={item.recording_id}>
