@@ -18,6 +18,7 @@ import { OptimizedImage } from "@/components/ui/optimized-image";
 import { formatBytes, formatRelativeTime, formatDuration } from "@/lib/formatters";
 import { getSessionId } from "@/lib/session";
 import { trackView, useListRecommendations } from "@/lib/api";
+import { trackActivity } from "@/lib/rum";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, recordingToMeta, type CloudCollection } from "@/lib/user-api";
 import { addWatchedId } from "@/lib/watched-storage";
@@ -209,6 +210,11 @@ export default function VideoDetail() {
   // Track watch progress (time spent, resume position, completion %)
   useWatchProgress({ video, durationSeconds: video?.duration });
 
+  // Analytics: recording detail view (once per recording mount).
+  useEffect(() => {
+    if (id) trackActivity("recording_view", { meta: { recording_id: id } });
+  }, [id]);
+
   const { data: related, isLoading: relatedLoading } = useListRelatedRecordings(
     { id: id || "", limit: 12 },
     { query: { enabled: !!id, queryKey: getListRelatedRecordingsQueryKey({ id: id || "", limit: 12 }) } },
@@ -286,6 +292,8 @@ export default function VideoDetail() {
     const meta = getVideoMeta();
     if (!meta || !user) return;
     await userApi.addCollectionItem(colId, meta.id, recordingToMeta(meta));
+    // Analytics: recording added to an existing collection.
+    trackActivity("collection_item_add", { meta: { collection_id: colId, recording_id: meta.id } });
     setAddedToCol(colId);
     setTimeout(() => {
       setCollectionOpen(false);
@@ -299,6 +307,8 @@ export default function VideoDetail() {
     if (!meta) return;
     const col = await userApi.createCollection(newColName.trim());
     await userApi.addCollectionItem(col.id, meta.id, recordingToMeta(meta));
+    // Analytics: collection created (with a recording added in one action).
+    trackActivity("collection_create", { meta: { collection_id: col.id, recording_id: meta.id } });
     setCloudCollections((prev) => [{ ...col, item_count: 1 }, ...prev]);
     setAddedToCol(col.id);
     setNewColName("");
@@ -371,6 +381,9 @@ export default function VideoDetail() {
 
   const handleReaction = (type: "like" | "dislike") => {
     if (!id) return;
+
+    // Analytics: reaction toggle (like/dislike).
+    trackActivity("reaction", { meta: { recording_id: id, type } });
 
     const queryKey = getGetReactionsQueryKey({ recording_id: id, session_id: sessionId });
 
@@ -446,6 +459,8 @@ export default function VideoDetail() {
       } else {
         await userApi.addSaved(video.id, recordingToMeta(savedRec));
       }
+      // Analytics: bookmark add/remove.
+      trackActivity("bookmark", { meta: { recording_id: video.id, action: isCurrently ? "remove" : "add" } });
     } catch {
       // Revert optimistic toggle on failure
       bookmarkedRef.current = isCurrently;
@@ -478,6 +493,8 @@ export default function VideoDetail() {
       } else {
         await userApi.addWatchLater(video.id, recordingToMeta(savedRec));
       }
+      // Analytics: watch-later add/remove.
+      trackActivity("watch_later", { meta: { recording_id: video.id, action: isCurrently ? "remove" : "add" } });
     } catch {
       // Revert optimistic toggle on failure
       watchLaterRef.current = isCurrently;

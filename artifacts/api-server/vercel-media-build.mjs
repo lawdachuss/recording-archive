@@ -95,6 +95,9 @@ async function main() {
       "electron",
     ],
     sourcemap: false,
+    define: {
+      "process.env.NODE_ENV": '"production"',
+    },
     banner: {
       js: `import { createRequire as __bannerCrReq } from 'node:module';
 import __bannerPath from 'node:path';

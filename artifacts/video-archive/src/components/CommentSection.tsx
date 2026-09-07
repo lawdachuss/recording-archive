@@ -11,6 +11,7 @@ import {
 import type { Comment, ListCommentsSort } from "@workspace/api-client-react";
 import { getSessionId } from "@/lib/session";
 import { formatRelativeTime } from "@/lib/formatters";
+import { trackActivity } from "@/lib/rum";
 import { useAuth } from "@/contexts/AuthContext";
 import { MessageSquare, ThumbsUp, Reply, ChevronDown, ChevronUp, Loader2, Send, LogIn } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -121,9 +122,11 @@ const CommentNode = memo(function CommentNode({ comment, depth = 0, recordingId,
       commentId: comment.id,
       data: { author, content, session_id: sessionId },
     });
+    // Analytics: reply posted.
+    trackActivity("comment_reply", { meta: { comment_id: String(comment.id), recording_id: recordingId } });
     setShowReply(false);
     onReplyPosted();
-  }, [createReply, comment.id, sessionId, onReplyPosted]);
+  }, [createReply, comment.id, recordingId, sessionId, onReplyPosted]);
 
   const hasReplies = (comment.replies?.length ?? 0) > 0;
   const initials = (comment.author || "A").slice(0, 2).toUpperCase();
@@ -239,12 +242,16 @@ export function CommentSection({ recordingId }: CommentSectionProps) {
       commentId,
       data: { session_id: sessionId },
     });
-  }, [toggleCommentLike, sessionId]);
+    // Analytics: comment like toggle.
+    trackActivity("comment_like", { meta: { comment_id: String(commentId), recording_id: recordingId } });
+  }, [toggleCommentLike, sessionId, recordingId]);
 
   const handlePost = useCallback(async (author: string, content: string) => {
     await createComment.mutateAsync({
       data: { recording_id: recordingId, author, content, session_id: sessionId },
     });
+    // Analytics: comment posted.
+    trackActivity("comment", { meta: { recording_id: recordingId } });
     invalidate();
   }, [createComment, recordingId, sessionId, invalidate]);
 

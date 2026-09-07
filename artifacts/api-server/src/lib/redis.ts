@@ -3,28 +3,16 @@
 
 import { logger } from "./logger.js";
 
-let cachedClient: Redis | null = null;
-
-function tryImportRedis(): typeof import("ioredis") | null {
+function tryImportRedis(): any {
   try {
-    return require("ioredis") as typeof import("ioredis");
+    return require("ioredis");
   } catch {
     return null;
   }
 }
 
-interface RedisModule {
-  Redis: new (url: string, opts?: Record<string, unknown>) => {
-    on(event: string, cb: (...args: unknown[]) => void): void;
-    connect(): Promise<void>;
-    status: string;
-  };
-}
-
-let _Redis: RedisModule["Redis"] | null = null;
-
 const redisUrl = process.env.REDIS_URL;
-let client: InstanceType<RedisModule["Redis"]> | null = null;
+let client: any = null;
 let isConnected = false;
 
 if (redisUrl) {
@@ -32,8 +20,8 @@ if (redisUrl) {
   if (!mod) {
     logger.warn("ioredis not available, Redis caching disabled");
   } else {
-    _Redis = mod.Redis;
-    client = new _Redis(redisUrl, {
+    const Redis = mod.Redis || mod;
+    client = new Redis(redisUrl, {
       maxRetriesPerRequest: 3,
       retryStrategy(times: number) {
         const delay = Math.min(100 * Math.pow(3, times - 1), 5000);

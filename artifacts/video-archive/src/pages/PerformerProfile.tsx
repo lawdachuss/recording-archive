@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, type PerformerFollow } from "@/lib/user-api";
+import { trackActivity } from "@/lib/rum";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { AlertCircle, ArrowLeft, Heart, LogIn, Users, Film } from "lucide-react";
@@ -87,6 +88,8 @@ export default function PerformerProfile() {
     } else {
       follow.mutate();
     }
+    // Analytics: performer follow/unfollow.
+    trackActivity("follow", { meta: { username, action: isFollowing ? "unfollow" : "follow" } });
   };
 
   if (isError) {

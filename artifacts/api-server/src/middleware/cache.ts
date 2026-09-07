@@ -333,7 +333,7 @@ async function writeEntry(cacheKey: string, entry: CacheEntry, ttlSeconds: numbe
   // Fire-and-forget: don't await Redis writes to avoid blocking the response.
   // The memory cache is always populated synchronously, so subsequent requests
   // get cache hits immediately while Redis catches up asynchronously.
-  redis.setex(cacheKey, redisTtl, JSON.stringify(entry)).catch((err) =>
+  redis.setex(cacheKey, redisTtl, JSON.stringify(entry)).catch((err: unknown) =>
     logger.error({ err, cacheKey }, "Redis write error")
   );
 
@@ -343,7 +343,7 @@ async function writeEntry(cacheKey: string, entry: CacheEntry, ttlSeconds: numbe
       pipeline.sadd(`${TAG_PREFIX}:${tag}`, cacheKey);
       pipeline.expire(`${TAG_PREFIX}:${tag}`, redisTtl);
     }
-    pipeline.exec().catch((err) =>
+    pipeline.exec().catch((err: unknown) =>
       logger.error({ err, cacheKey }, "Redis tag write error")
     );
   }
