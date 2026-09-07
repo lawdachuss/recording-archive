@@ -12,7 +12,6 @@ import cacheAdminRouter from "./cache-admin.js";
 import adminRouter from "./admin.js";
 import searchRouter from "./search.js";
 import mediaProxyRouter from "./media-proxy.js";
-import migrateAuthRouter from "./migrate-auth.js";
 import viewsRouter from "./views.js";
 
 const router: IRouter = Router();
@@ -30,7 +29,6 @@ router.use(cacheAdminRouter);
 router.use(adminRouter);
 router.use(searchRouter);
 router.use(mediaProxyRouter);
-router.use(migrateAuthRouter);
 router.use(viewsRouter);
 
 export default router;

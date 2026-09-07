@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, sql } from "@workspace/db";
+import { supabase, fetchAll } from "../lib/supabase.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { getCacheStats, getCacheMetrics, invalidateTags, invalidatePattern, purgeAllCache } from "../middleware/cache.js";
 import { getRedis, isRedisConnected, getRedisStatus } from "../lib/redis.js";
@@ -9,14 +9,58 @@ const router: IRouter = Router();
 
 const admin = requireRole("admin");
 
+const REQUEST_COLS =
+  "id,user_id,platform,performer_username,stream_link,notes,priority,status,created_at";
+
+/** Fetch user_profiles rows for a set of user ids (chunked to avoid IN-clause limits). */
+async function fetchProfiles(userIds: string[]) {
+  const profiles = new Map<string, { display_name: string | null; username: string | null; email: string | null }>();
+  const ids = [...new Set(userIds)].filter(Boolean);
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const { data, error } = await supabase
+      .from("user_profiles")
+      .select("user_id,display_name,username,email")
+      .in("user_id", chunk);
+    if (error) throw error;
+    for (const row of data ?? []) {
+      profiles.set(row.user_id, {
+        display_name: row.display_name ?? null,
+        username: row.username ?? null,
+        email: row.email ?? null,
+      });
+    }
+  }
+  return profiles;
+}
+
+/** Fetch roles for a set of user ids (chunked). */
+async function fetchRoles(userIds: string[]) {
+  const roles = new Map<string, string>();
+  const ids = [...new Set(userIds)].filter(Boolean);
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const { data, error } = await supabase
+      .from("user_roles")
+      .select("user_id,role")
+      .in("user_id", chunk);
+    if (error) throw error;
+    for (const row of data ?? []) roles.set(row.user_id, row.role);
+  }
+  return roles;
+}
+
 // ─── Dashboard Stats ─────────────────────────────────────────────────────────
 
 router.get("/admin/stats", ...admin, async (_req: Request, res: Response) => {
-  const count = async (label: string, query: ReturnType<typeof sql>) => {
+  const safeCount = async (
+    label: string,
+    run: () => Promise<{ count: number | null; error: unknown }>,
+  ) => {
     try {
-      const result = await db.execute(query);
-      const row = result.rows[0] as { count?: unknown } | undefined;
-      return Number(row?.count ?? 0);
+      const { count, error } = await run();
+      if (error) throw error;
+      return count ?? 0;
     } catch (err) {
       _req.log?.error?.({ err, stat: label }, "GET /admin/stats count failed");
       return 0;
@@ -26,34 +70,50 @@ router.get("/admin/stats", ...admin, async (_req: Request, res: Response) => {
   const requests = async () => {
     const fallback = { total: 0, pending: 0, approved: 0, rejected: 0, done: 0 };
     try {
-      const result = await db.execute(sql`
-        SELECT
-          COUNT(*)::int AS total,
-          COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END)::int, 0) AS pending,
-          COALESCE(SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END)::int, 0) AS approved,
-          COALESCE(SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END)::int, 0) AS rejected,
-          COALESCE(SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END)::int, 0) AS done
-        FROM requests
-      `);
-      return (result.rows[0] ?? fallback) as typeof fallback;
+      const { data, error } = await fetchAll((start, end) =>
+        supabase.from("requests").select("status").range(start, end),
+      );
+      if (error) throw error;
+      const counts = { total: 0, pending: 0, approved: 0, rejected: 0, done: 0 };
+      counts.total = (data ?? []).length;
+      for (const r of data ?? []) {
+        if (r.status === "pending") counts.pending++;
+        else if (r.status === "approved") counts.approved++;
+        else if (r.status === "rejected") counts.rejected++;
+        else if (r.status === "done") counts.done++;
+      }
+      return counts;
     } catch (err) {
       _req.log?.error?.({ err, stat: "requests" }, "GET /admin/stats requests count failed");
       return fallback;
     }
   };
 
-  const [users, requestCounts, recordings, performers] = await Promise.all([
-    count("users", sql`SELECT COUNT(*)::int AS count FROM user_profiles`),
+  const performers = async () => {
+    try {
+      const { data, error } = await fetchAll((start, end) =>
+        supabase
+          .from("recordings_with_links")
+          .select("username")
+          .not("links", "is", "null")
+          .range(start, end),
+      );
+      if (error) throw error;
+      return new Set((data ?? []).map((r) => r.username).filter(Boolean)).size;
+    } catch (err) {
+      _req.log?.error?.({ err, stat: "performers" }, "GET /admin/stats performers count failed");
+      return 0;
+    }
+  };
+
+  const [users, requestCounts, recordings, performerCount] = await Promise.all([
+    safeCount("users", async () => supabase.from("user_profiles").select("user_id", { count: "exact", head: true })),
     requests(),
-    count("recordings", sql`SELECT COUNT(*)::int AS count FROM recordings`),
-    count("performers", sql`
-        SELECT COUNT(DISTINCT username)::int AS count
-        FROM recordings_with_links
-        WHERE links IS NOT NULL
-      `),
+    safeCount("recordings", async () => supabase.from("recordings").select("id", { count: "exact", head: true })),
+    performers(),
   ]);
 
-  res.json({ users, recordings, performers, requests: requestCounts });
+  res.json({ users, recordings, performers: performerCount, requests: requestCounts });
 });
 
 // ─── Requests Management ──────────────────────────────────────────────────────
@@ -63,24 +123,36 @@ router.get("/admin/requests", ...admin, async (req: Request, res: Response) => {
     const status = req.query.status as string | undefined;
     const validStatuses = ["pending", "approved", "rejected", "done"];
 
-    let query = sql`
-      SELECT r.id, r.user_id, r.platform, r.performer_username, r.stream_link,
-             r.notes, r.priority, r.status, r.created_at,
-             up.display_name, up.username, up.email
-      FROM requests r
-      LEFT JOIN user_profiles up ON r.user_id = up.user_id
-    `;
+    let query = supabase
+      .from("requests")
+      .select(REQUEST_COLS)
+      .order("created_at", { ascending: false })
+      .limit(500);
 
     if (status && validStatuses.includes(status)) {
-      query = sql`
-        ${query} WHERE r.status = ${status}
-      `;
+      query = query.eq("status", status);
     }
 
-    query = sql`${query} ORDER BY r.created_at DESC LIMIT 500`;
+    const { data, error } = await query;
+    if (error) {
+      req.log?.error?.({ err: error }, "GET /admin/requests supabase error");
+      res.status(500).json({ error: "Failed to fetch requests" });
+      return;
+    }
 
-    const result = await db.execute(query);
-    res.json(result.rows);
+    const rows = data ?? [];
+    const profiles = await fetchProfiles(rows.map((r) => r.user_id));
+    res.json(
+      rows.map((r) => {
+        const p = profiles.get(r.user_id);
+        return {
+          ...r,
+          display_name: p?.display_name ?? null,
+          username: p?.username ?? null,
+          email: p?.email ?? null,
+        };
+      }),
+    );
   } catch (err) {
     req.log?.error?.({ err }, "GET /admin/requests error");
     res.status(500).json({ error: "Failed to fetch requests" });
@@ -98,23 +170,20 @@ router.patch("/admin/requests/:id/status", ...admin, async (req: Request, res: R
   }
 
   try {
-    const result = await db.execute(sql`
-      UPDATE requests SET status = ${status} WHERE id = ${id}
-      RETURNING id, user_id, platform, performer_username, stream_link, notes, priority, status, created_at
-    `);
+    const { data: updated, error } = await supabase
+      .from("requests")
+      .update({ status })
+      .eq("id", id)
+      .select(REQUEST_COLS)
+      .single();
 
-    if (!result.rows.length) {
-      res.status(404).json({ error: "Request not found" });
-      return;
+    if (error) {
+      if (error.code === "PGRST116") {
+        res.status(404).json({ error: "Request not found" });
+        return;
+      }
+      throw error;
     }
-
-    const updated = result.rows[0] as {
-      id: number;
-      user_id: string;
-      platform: string;
-      performer_username: string | null;
-      status: string;
-    };
 
     logger.info({ requestId: id, newStatus: status, adminId: req.user!.id }, "Request status updated by admin");
 
@@ -130,24 +199,21 @@ router.patch("/admin/requests/:id/status", ...admin, async (req: Request, res: R
     const message = `Your request for @${performerName} on ${updated.platform} has been ${newLabel}.`;
 
     try {
-      const [prefRow] = (await db.execute(sql`
-        SELECT enabled FROM user_notification_preferences
-        WHERE user_id = ${updated.user_id} AND notification_type = 'request_status'
-        LIMIT 1
-      `)).rows;
+      const { data: prefRow } = await supabase
+        .from("user_notification_preferences")
+        .select("enabled")
+        .eq("user_id", updated.user_id)
+        .eq("notification_type", "request_status")
+        .maybeSingle();
       const enabled = prefRow ? prefRow.enabled : true; // default: enabled
       if (enabled) {
-        await db.execute(sql`
-          INSERT INTO user_notifications (user_id, type, message, related_id, is_read, created_at)
-          VALUES (
-            ${updated.user_id},
-            'request_status',
-            ${message},
-            ${String(updated.id)},
-            false,
-            NOW()
-          )
-        `);
+        await supabase.from("user_notifications").insert({
+          user_id: updated.user_id,
+          type: "request_status",
+          message,
+          related_id: String(updated.id),
+          is_read: false,
+        });
       }
     } catch (notifErr) {
       // Non-critical — don't fail the whole request if notification insert fails
@@ -165,12 +231,14 @@ router.delete("/admin/requests/:id", ...admin, async (req: Request, res: Respons
   const id = parseInt(String(req.params.id), 10);
 
   try {
-    const result = await db.execute(sql`
-      DELETE FROM requests WHERE id = ${id}
-      RETURNING id
-    `);
+    const { data, error } = await supabase
+      .from("requests")
+      .delete()
+      .eq("id", id)
+      .select("id");
 
-    if (!result.rows.length) {
+    if (error) throw error;
+    if (!data || data.length === 0) {
       res.status(404).json({ error: "Request not found" });
       return;
     }
@@ -187,22 +255,26 @@ router.delete("/admin/requests/:id", ...admin, async (req: Request, res: Respons
 
 router.get("/admin/users", ...admin, async (req: Request, res: Response) => {
   try {
-    const result = await db.execute(sql`
-      SELECT
-        up.user_id,
-        up.display_name,
-        up.username,
-        up.email,
-        up.avatar_url,
-        up.created_at,
-        COALESCE(ur.role, 'user') AS role
-      FROM user_profiles up
-      LEFT JOIN user_roles ur ON up.user_id = ur.user_id
-      ORDER BY up.created_at DESC
-      LIMIT 500
-    `);
+    const { data, error } = await supabase
+      .from("user_profiles")
+      .select("user_id,display_name,username,email,avatar_url,created_at")
+      .order("created_at", { ascending: false })
+      .limit(500);
 
-    res.json(result.rows);
+    if (error) {
+      req.log?.error?.({ err: error }, "GET /admin/users supabase error");
+      res.status(500).json({ error: "Failed to fetch users" });
+      return;
+    }
+
+    const rows = data ?? [];
+    const roles = await fetchRoles(rows.map((r) => r.user_id));
+    res.json(
+      rows.map((r) => ({
+        ...r,
+        role: roles.get(r.user_id) ?? "user",
+      })),
+    );
   } catch (err) {
     req.log?.error?.({ err }, "GET /admin/users error");
     res.status(500).json({ error: "Failed to fetch users" });
@@ -220,11 +292,15 @@ router.patch("/admin/users/:id/role", ...admin, async (req: Request, res: Respon
   }
 
   try {
-    await db.execute(sql`
-      INSERT INTO user_roles (user_id, role, created_at)
-      VALUES (${id}, ${role}, NOW())
-      ON CONFLICT (user_id) DO UPDATE SET role = ${role}
-    `);
+    const { error } = await supabase
+      .from("user_roles")
+      .upsert({ user_id: id, role }, { onConflict: "user_id" });
+
+    if (error) {
+      req.log?.error?.({ err: error }, "PATCH /admin/users/:id/role supabase error");
+      res.status(500).json({ error: "Failed to update role" });
+      return;
+    }
 
     logger.info({ targetUserId: id, newRole: role, adminId: req.user!.id }, "User role updated by admin");
     res.json({ ok: true, role });
@@ -243,21 +319,27 @@ router.delete("/admin/users/:id", ...admin, async (req: Request, res: Response) 
       return;
     }
 
-    // Use a transaction so a failure mid-way doesn't leave the user
-    // partially deleted (e.g. profile gone but history still orphaned).
-    await db.transaction(async (tx) => {
-      await tx.execute(sql`DELETE FROM user_roles WHERE user_id = ${id}`);
-      await tx.execute(sql`DELETE FROM saved_videos WHERE user_id = ${id}`);
-      await tx.execute(sql`DELETE FROM watch_history WHERE user_id = ${id}`);
-      await tx.execute(sql`DELETE FROM watch_later_items WHERE user_id = ${id}`);
-      await tx.execute(sql`DELETE FROM user_collection_items WHERE collection_id IN (SELECT id FROM user_collections WHERE user_id = ${id})`);
-      await tx.execute(sql`DELETE FROM user_collections WHERE user_id = ${id}`);
-      await tx.execute(sql`DELETE FROM performer_follows WHERE user_id = ${id}`);
-      await tx.execute(sql`DELETE FROM user_notifications WHERE user_id = ${id}`);
-      await tx.execute(sql`DELETE FROM user_notification_preferences WHERE user_id = ${id}`);
-      await tx.execute(sql`DELETE FROM requests WHERE user_id = ${id}`);
-      await tx.execute(sql`DELETE FROM user_profiles WHERE user_id = ${id}`);
-    });
+    // Supabase REST has no transactions, so delete related rows in dependency
+    // order. A failure mid-way leaves a partial delete rather than rolling back.
+    await supabase.from("user_roles").delete().eq("user_id", id);
+    await supabase.from("saved_videos").delete().eq("user_id", id);
+    await supabase.from("watch_history").delete().eq("user_id", id);
+    await supabase.from("watch_later_items").delete().eq("user_id", id);
+
+    // Collections must have their items removed before the collections row itself.
+    const { data: collections } = await supabase.from("user_collections").select("id").eq("user_id", id);
+    const collectionIds = (collections ?? []).map((c) => c.id);
+    for (let i = 0; i < collectionIds.length; i += 100) {
+      const chunk = collectionIds.slice(i, i + 100);
+      await supabase.from("user_collection_items").delete().in("collection_id", chunk);
+    }
+    await supabase.from("user_collections").delete().eq("user_id", id);
+
+    await supabase.from("performer_follows").delete().eq("user_id", id);
+    await supabase.from("user_notifications").delete().eq("user_id", id);
+    await supabase.from("user_notification_preferences").delete().eq("user_id", id);
+    await supabase.from("requests").delete().eq("user_id", id);
+    await supabase.from("user_profiles").delete().eq("user_id", id);
 
     logger.info({ targetUserId: id, adminId: req.user!.id }, "User deleted by admin");
     res.json({ ok: true });

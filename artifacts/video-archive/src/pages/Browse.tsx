@@ -21,6 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { useContinuousPrefetch } from "@/hooks/use-continuous-prefetch";
+import { isConnectionConstrained } from "@/lib/connection";
 import {
   Search,
   X,
@@ -63,7 +64,10 @@ const RESOLUTION_OPTIONS = [
   { value: "360p", label: "360p" },
 ];
 
-const ITEMS_PER_PAGE = 40;
+// Slow/constrained links get a lighter browsing grid (12 items vs 40) so the
+// first page of thumbnails doesn't saturate the connection. Evaluated once at
+// module load so pagination state stays consistent for the whole session.
+const ITEMS_PER_PAGE = isConnectionConstrained() ? 12 : 40;
 
 function parseTagList(raw: string): string[] {
   return raw

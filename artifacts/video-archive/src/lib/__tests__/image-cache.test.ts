@@ -138,7 +138,7 @@ const mockIDB = {
     // Use queueMicrotask so the callbacks fire after the current
     // synchronous code completes, allowing the promise chain to resolve.
     queueMicrotask(() => {
-      req.onupgradeneeded?.();
+      req.onupgradeneeded?.({ oldVersion: 0, target: req } as unknown as IDBVersionChangeEvent);
       req.onsuccess?.();
     });
     return req;
@@ -179,9 +179,15 @@ afterEach(() => {
 // ─── Test Helpers ─────────────────────────────────────────────────
 
 function createMockBlob(sizeBytes: number): Blob {
-  // Create a blob of approximate size
-  const content = "x".repeat(sizeBytes);
-  return new Blob([content], { type: "image/png" });
+  // Prepend a valid PNG signature so image-cache's magic-byte validation
+  // (isValidImageMagic) accepts the blob — otherwise cacheImage refuses to
+  // store anything and the memory/IDB counters never populate. The signature
+  // lives INSIDE the requested size so byte-tracking assertions stay exact.
+  const total = Math.max(sizeBytes, 8);
+  const bytes = new Uint8Array(total);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]); // PNG8
+  bytes.fill(0x78, 8);
+  return new Blob([bytes], { type: "image/png" });
 }
 
 // ─── Tests ────────────────────────────────────────────────────────
@@ -695,6 +701,53 @@ describe("image-cache", () => {
       // Restore original budget
       imageCache.setCacheBudget({ maxTotalBytes: 200 * 1024 * 1024 });
       globalThis.fetch = originalFetch;
+    });
+  });
+
+  describe("cacheImage — cross-origin allowlist", () => {
+    it("caches catbox.moe previews (CORS-enabled host) from a different origin", async () => {
+      // Simulate a real browser: window.location.origin is defined and the
+      // app origin differs from catbox. catbox sends Access-Control-Allow-Origin
+      // so the fetch() succeeds and the body persists to IDB.
+      const prevLocation = (globalThis as any).window?.location;
+      (globalThis as any).window.location = { origin: "https://chuglii.in" };
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        headers: new Map([["content-type", "image/webp"], ["content-length", "1000"]]),
+        blob: () => Promise.resolve(createMockBlob(1000)),
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(1000)),
+      });
+
+      const entry = await imageCache.cacheImage("https://files.catbox.moe/abc.webp", 3);
+      expect(entry).not.toBeNull();
+      expect(await imageCache.isCached("https://files.catbox.moe/abc.webp")).toBe(true);
+
+      globalThis.fetch = originalFetch;
+      if (prevLocation === undefined) delete (globalThis as any).window.location;
+      else (globalThis as any).window.location = prevLocation;
+    });
+
+    it("skips non-CORS cross-origin hosts entirely", async () => {
+      const prevLocation = (globalThis as any).window?.location;
+      (globalThis as any).window.location = { origin: "https://chuglii.in" };
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        headers: new Map([["content-type", "image/jpeg"], ["content-length", "1000"]]),
+        blob: () => Promise.resolve(createMockBlob(1000)),
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(1000)),
+      });
+
+      const entry = await imageCache.cacheImage("https://iili.io/xyz.jpg", 3);
+      expect(entry).toBeNull();
+      expect(await imageCache.isCached("https://iili.io/xyz.jpg")).toBe(false);
+
+      globalThis.fetch = originalFetch;
+      if (prevLocation === undefined) delete (globalThis as any).window.location;
+      else (globalThis as any).window.location = prevLocation;
     });
   });
 });

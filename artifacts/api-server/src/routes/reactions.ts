@@ -1,36 +1,70 @@
 import { Router } from "express";
-import { db, sql } from "@workspace/db";
+import { supabase, fetchAll } from "../lib/supabase.js";
 import { cache, invalidateOnSuccess } from "../middleware/cache.js";
 
-interface ReactionCountRow {
-  likes: number;
-  dislikes: number;
-}
-
-interface ReactionRow {
-  id: number;
-  type: string;
-}
-
 async function getReactionCounts(recordingId: string) {
-  const result = await db.execute(sql`
-    SELECT
-      COUNT(*) FILTER (WHERE type = 'like') AS likes,
-      COUNT(*) FILTER (WHERE type = 'dislike') AS dislikes
-    FROM reactions
-    WHERE recording_id = ${recordingId}
-  `);
-  const row = result.rows[0] as unknown as ReactionCountRow | undefined;
-  return { likes: Number(row?.likes ?? 0), dislikes: Number(row?.dislikes ?? 0) };
+  const { data, error } = await fetchAll((start, end) =>
+    supabase
+      .from("reactions")
+      .select("type")
+      .eq("recording_id", recordingId)
+      .range(start, end),
+  );
+  if (error) throw error;
+
+  let likes = 0;
+  let dislikes = 0;
+  for (const r of data ?? []) {
+    if (r.type === "like") likes++;
+    else if (r.type === "dislike") dislikes++;
+  }
+  return { likes, dislikes };
 }
 
 async function getUserReaction(recordingId: string, sessionId: string): Promise<string | null> {
-  const result = await db.execute(sql`
-    SELECT type FROM reactions
-    WHERE recording_id = ${recordingId} AND session_id = ${sessionId}
-  `);
-  const row = result.rows[0] as unknown as ReactionRow | undefined;
-  return row?.type ?? null;
+  const { data } = await supabase
+    .from("reactions")
+    .select("type")
+    .eq("recording_id", recordingId)
+    .eq("session_id", sessionId)
+    .maybeSingle();
+  return (data?.type as string | null) ?? null;
+}
+
+/**
+ * Like/dislike toggle. The unique constraint (recording_id, session_id) is the
+ * source of truth for conflicts, mirroring the old transaction-based toggle.
+ */
+async function toggleReaction(recordingId: string, type: string, sessionId: string) {
+  const { data: existing } = await supabase
+    .from("reactions")
+    .select("id, type")
+    .eq("recording_id", recordingId)
+    .eq("session_id", sessionId)
+    .maybeSingle();
+
+  if (existing) {
+    if (existing.type === type) {
+      const { error } = await supabase
+        .from("reactions")
+        .delete()
+        .eq("recording_id", recordingId)
+        .eq("session_id", sessionId);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from("reactions")
+        .update({ type })
+        .eq("recording_id", recordingId)
+        .eq("session_id", sessionId);
+      if (error) throw error;
+    }
+  } else {
+    const { error } = await supabase
+      .from("reactions")
+      .insert({ recording_id: recordingId, session_id: sessionId, type });
+    if (error) throw error;
+  }
 }
 
 const router = Router();
@@ -70,36 +104,7 @@ router.post("/reactions", invalidateOnSuccess(["reactions", "stats"]), async (re
       return;
     }
 
-    // `FOR UPDATE` inside a transaction is a common source of transient 500s
-    // (serialization failures / lock timeouts) under concurrent load for a
-    // low-contention like-toggle. We instead rely on the unique constraint
-    // (recording_id, session_id) and retry on conflict.
-    await db.transaction(async (tx) => {
-      const existing = await tx.execute(sql`
-        SELECT id, type FROM reactions
-        WHERE recording_id = ${recording_id} AND session_id = ${session_id}
-      `);
-      const existingRow = existing.rows[0] as unknown as ReactionRow | undefined;
-
-      if (existingRow) {
-        if (existingRow.type === type) {
-          await tx.execute(sql`
-            DELETE FROM reactions
-            WHERE recording_id = ${recording_id} AND session_id = ${session_id}
-          `);
-        } else {
-          await tx.execute(sql`
-            UPDATE reactions SET type = ${type}
-            WHERE recording_id = ${recording_id} AND session_id = ${session_id}
-          `);
-        }
-      } else {
-        await tx.execute(sql`
-          INSERT INTO reactions (recording_id, session_id, type)
-          VALUES (${recording_id}, ${session_id}, ${type})
-        `);
-      }
-    });
+    await toggleReaction(recording_id, type, session_id);
 
     const counts = await getReactionCounts(recording_id);
     const user_reaction = await getUserReaction(recording_id, session_id);
@@ -107,8 +112,6 @@ router.post("/reactions", invalidateOnSuccess(["reactions", "stats"]), async (re
     res.json({ ...counts, user_reaction });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    // Transient DB/pooler errors (connection reset, serialization failure)
-    // should not surface a raw 500 to the client.
     req.log?.error?.({ err, body: req.body, recording_id: req.body?.recording_id }, "POST /reactions error");
     if (/connection|timeout|terminated|serializ|deadlock|lock/i.test(msg)) {
       res.status(503).json({ error: "Temporary service issue, please try again" });
@@ -148,32 +151,7 @@ router.post("/recordings/:recording_id/reactions", invalidateOnSuccess(["reactio
       return;
     }
 
-    await db.transaction(async (tx) => {
-      const existing = await tx.execute(sql`
-        SELECT id, type FROM reactions
-        WHERE recording_id = ${recording_id} AND session_id = ${session_id}
-      `);
-      const existingRow = existing.rows[0] as unknown as ReactionRow | undefined;
-
-      if (existingRow) {
-        if (existingRow.type === type) {
-          await tx.execute(sql`
-            DELETE FROM reactions
-            WHERE recording_id = ${recording_id} AND session_id = ${session_id}
-          `);
-        } else {
-          await tx.execute(sql`
-            UPDATE reactions SET type = ${type}
-            WHERE recording_id = ${recording_id} AND session_id = ${session_id}
-          `);
-        }
-      } else {
-        await tx.execute(sql`
-          INSERT INTO reactions (recording_id, session_id, type)
-          VALUES (${recording_id}, ${session_id}, ${type})
-        `);
-      }
-    });
+    await toggleReaction(recording_id, type, session_id);
 
     const counts = await getReactionCounts(recording_id);
     const user_reaction = await getUserReaction(recording_id, session_id);

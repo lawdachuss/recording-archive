@@ -16,7 +16,7 @@ A modern, dark-themed video archive site for Chaturbate recordings, backed by an
 - Frontend: React + Vite, Tailwind CSS v4, shadcn/ui, wouter, TanStack Query
 - API: Express 5 + Supabase JS client (proxying existing Supabase DB)
 - DB: Existing Supabase PostgreSQL (no Replit-managed DB)
-- Validation: Zod (`zod/v4`), `drizzle-zod`
+- Validation: Zod (`zod/v4`)
 - API codegen: Orval (from OpenAPI spec)
 - Build: esbuild (CJS bundle)
 
@@ -54,6 +54,7 @@ Fields: `id`, `username`, `filename`, `timestamp`, `room_title`, `tags[]`, `view
 ## Environment variables
 
 - `SUPABASE_URL` — Supabase project URL (shared)
+- `SUPABASE_SERVICE_ROLE_KEY` — Supabase service-role key (server-side operations, bypasses RLS)
 - `SUPABASE_ANON_KEY` — Supabase anon key (shared)
 - `VITE_SUPABASE_URL` — Same URL, exposed to frontend (shared)
 - `VITE_SUPABASE_ANON_KEY` — Same anon key, exposed to frontend (shared)

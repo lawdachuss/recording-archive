@@ -21,7 +21,7 @@
  */
 
 import { preloadPreviewMedia } from "@/lib/preload-preview";
-import { proxyUrl, proxySpriteUrl } from "@/lib/proxy-url";
+import { proxyImageUrl, proxyUrl, proxySpriteUrl } from "@/lib/proxy-url";
 import { cacheImage, type CachePriority } from "@/lib/image-cache";
 import { isConnectionConstrained } from "@/lib/connection";
 
@@ -82,7 +82,17 @@ function getConcurrency(): number {
 function startRequest(url: string, priority: CachePriority = 3) {
   activeCount++;
   cacheImage(url, priority)
-    .catch(() => {})
+    .then(() => {
+      // Note: cacheImage resolving null is NOT a failure — null also means
+      // "skipped" (already fresh within the revalidate window, oversized/
+      // corrupt body, or a deliberately non-cached cross-origin URL). Those
+      // must NOT be treated as failures or the URL is needlessly blacklisted
+      // from re-warming for the cooldown period. Only a rejected promise is a
+      // real failure worth a delayed retry.
+    })
+    .catch(() => {
+      failedAt.set(url, Date.now());
+    })
     .finally(() => {
       activeCount--;
       pump();
@@ -182,7 +192,7 @@ export function preloadRecordingAssets(
   const sprites: (string | null | undefined)[] = [];
   const previews: (string | null | undefined)[] = [];
   for (const rec of recs) {
-    if (rec.thumbnail_url) thumbs.push(proxyUrl(rec.thumbnail_url));
+    if (rec.thumbnail_url) thumbs.push(proxyImageUrl(rec.thumbnail_url));
     if (rec.sprite_url) sprites.push(proxySpriteUrl(rec.sprite_url));
     if (rec.preview_url && isReachablePreviewUrl(rec.preview_url)) {
       previews.push(proxyUrl(rec.preview_url));
@@ -198,28 +208,24 @@ export function preloadRecordingAssets(
 }
 
 /**
- * Warm only the hover media (sprites + reachable previews) for a list of
- * recordings. Used for page-level preloads where the DOM <img> tags already
- * fetch thumbnails themselves — preloading them again would double the
- * requests and compete with grid paint.
+ * Warm only hover sprites for a list of recordings. Used for page-level
+ * preloads where the DOM <img> tags already fetch thumbnails themselves —
+ * preloading them again would double the requests and compete with grid paint.
+ *
+ * Preview media is deliberately NOT preloaded here. Previews are multi-MB
+ * files; warming a whole page of them saturated the connection and slowed the
+ * grid. Cards near the viewport preload their own preview via useHoverPreview,
+ * which preload-preview.ts caps to a few concurrent downloads.
  */
 export function preloadRecordingSprites(
   recs: Array<{ sprite_url?: string | null; preview_url?: string | null }>,
   opts: PreloadOptions = {},
 ): void {
   const sprites: (string | null | undefined)[] = [];
-  const previews: (string | null | undefined)[] = [];
   for (const rec of recs) {
     if (rec.sprite_url) sprites.push(proxySpriteUrl(rec.sprite_url));
-    if (rec.preview_url && isReachablePreviewUrl(rec.preview_url)) {
-      previews.push(proxyUrl(rec.preview_url));
-    }
   }
   preloadImages(sprites, { ...opts, priority: 2 });
-  // Eager preload — <link rel="preload"> is lightweight.
-  if (previews.length) {
-    previews.forEach((p) => preloadPreviewMedia(p));
-  }
 }
 
 /** @deprecated alias — use preloadImage */

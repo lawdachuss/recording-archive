@@ -1,5 +1,5 @@
 -- ============================================================
--- Restored DB objects for new Supabase project dydfzytjwhrqozuiexbb
+-- Restored DB objects for the live Supabase project (custom domain: supabase.chuglii.in)
 -- Extracted from database/schema.sql (git HEAD) and applied 2026-07-31.
 -- Idempotent — safe to re-run in the Supabase SQL Editor.
 --

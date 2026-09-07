@@ -6,6 +6,11 @@
  * next-page rendering start instantly. Preload elements are created detached;
  * the browser still fetches their source and the service worker caches media
  * responses for repeat visits.
+ *
+ * Every speculative preview download is capped to MAX_CONCURRENT_PRELOADS
+ * simultaneous loads. Preview files are multi-MB; without a cap, page-level
+ * warmers + viewport preloads fired dozens of full downloads at once and
+ * starved the grid's visible thumbnails. Excess requests wait FIFO for a slot.
  */
 
 import { cacheImage } from "@/lib/image-cache";
@@ -17,11 +22,62 @@ const preloadCache = new Map<string, HTMLVideoElement | HTMLImageElement | true>
 // Each preview video holds a reference to the decoded media in memory.
 const MAX_VIDEO_ELEMENTS = 20;
 
+// Cap on detached <img> preview elements kept alive for the page lifetime.
+// Without this, every newly-hovered .webp preview adds a permanently-pinned
+// <img> to memory and the map grows unboundedly over a long session.
+const MAX_IMAGE_ELEMENTS = 40;
+
 // Separate queue tracking video URLs for O(1) eviction (FIFO order).
 const videoKeys: string[] = [];
+// FIFO tracker for <img> entries so the animated-image subset stays bounded.
+const imageKeys: string[] = [];
 
+// ─── Global concurrency cap for speculative preview loads ─────────────────
+const MAX_CONCURRENT_PRELOADS = 3;
+let activePreloads = 0;
+const preloadWaiters: Array<() => void> = [];
 
+/** Resolve a download slot once one frees up. Returns a release function. */
+function acquirePreloadSlot(): Promise<() => void> {
+  return new Promise((resolve) => {
+    const tryRun = () => {
+      if (activePreloads >= MAX_CONCURRENT_PRELOADS) {
+        preloadWaiters.push(tryRun);
+        return;
+      }
+      activePreloads++;
+      let released = false;
+      resolve(() => {
+        if (released) return;
+        released = true;
+        activePreloads--;
+        const next = preloadWaiters.shift();
+        if (next) next();
+      });
+    };
+    tryRun();
+  });
+}
 
+/**
+ * Release a preload slot once the resource has loaded (or failed/stalled).
+ * A 15s timeout keeps a stuck host (catbox can hold connections open) from
+ * holding a slot forever and blocking the queue behind it.
+ */
+function releaseOnSettle(el: HTMLVideoElement | HTMLImageElement, release: () => void): void {
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    window.clearTimeout(timer);
+    release();
+  };
+  const timer = window.setTimeout(finish, 15_000);
+  el.addEventListener("loadeddata", finish, { once: true });
+  el.addEventListener("load", finish, { once: true });
+  el.addEventListener("error", finish, { once: true });
+  el.addEventListener("abort", finish, { once: true });
+}
 /**
  * Unwrap a media-proxy URL (`/api/media?url=<encoded>`) to extract the
  * real upstream URL. Extension-based type detection needs the original
@@ -105,6 +161,19 @@ function evictOldestVideo(): void {
   preloadCache.delete(oldestKey);
 }
 
+/**
+ * Evict the oldest detached <img> from the preload cache to bound memory.
+ */
+function evictOldestImage(): void {
+  const oldestKey = imageKeys.shift();
+  if (!oldestKey) return;
+  const el = preloadCache.get(oldestKey);
+  if (el instanceof HTMLImageElement) {
+    el.src = ""; // Release the decoded bitmap
+  }
+  preloadCache.delete(oldestKey);
+}
+
 export function preloadVideo(url: string): void {
   if (preloadCache.has(url)) return;
   // Don't preload on slow/constrained connections — the bandwidth is needed
@@ -116,15 +185,38 @@ export function preloadVideo(url: string): void {
     evictOldestVideo();
   }
 
-  const v = document.createElement("video");
-  v.muted = true;
-  v.preload = "auto";
-  (v as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
-  v.src = url;
-  // Persist to IDB blob cache after load (fire-and-forget)
-  v.onloadeddata = () => { cacheImage(url, 1).catch(() => {}); };
-  preloadCache.set(url, v);
-  videoKeys.push(url);
+  // Cap concurrent speculative downloads (see global gate above) so a
+  // page-full of previews can't saturate the connection.
+  void acquirePreloadSlot().then((release) => {
+    // Re-check: another caller may have warmed this URL while we waited.
+    if (preloadCache.has(url)) {
+      release();
+      return;
+    }
+    const v = document.createElement("video");
+    v.muted = true;
+    // Full download ("auto"), NOT metadata. preloadVideo is only called for
+    // cards already near the viewport (useHoverPreview's IO, gated by the
+    // global 3-concurrent cap), so fetching the full preview now makes the
+    // hover instant AND lets onloadeddata persist the whole file to the IDB
+    // blob cache for zero-network repeat hovers. Metadata-only left the actual
+    // bytes to re-fetch on every hover.
+    v.preload = "auto";
+    (v as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
+    v.src = url;
+    // Persist to IDB blob cache after load (fire-and-forget)
+    v.onloadeddata = () => { cacheImage(url, 1).catch(() => {}); };
+    // Drop failed videos so they don't pin memory or consume the video-element
+    // budget; a future hover can retry them.
+    v.onerror = () => {
+      preloadCache.delete(url);
+      const i = videoKeys.indexOf(url);
+      if (i >= 0) videoKeys.splice(i, 1);
+    };
+    releaseOnSettle(v, release);
+    preloadCache.set(url, v);
+    videoKeys.push(url);
+  });
 }
 
 /**
@@ -135,25 +227,43 @@ export function preloadVideo(url: string): void {
  *  2. Some browsers don't reliably cache preload responses for <img> reuse.
  *  3. new Image() is proven for sprites and thumbnails in preload-sprite.ts.
  */
-export function preloadAnimatedImage(url: string): void {
+export function preloadAnimatedImage(url: string, cors = false): void {
   if (preloadCache.has(url)) return;
   // On slow connections, skip entirely — bandwidth is needed for the grid
   if (isConnectionConstrained()) return;
 
-  const img = new Image();
-  img.referrerPolicy = "no-referrer";
-  img.decoding = "async";
-  img.onload = () => {
-    // Persist to IDB blob cache for repeat-visit speed (fire-and-forget)
-    cacheImage(url, 1).catch(() => {});
-  };
-  img.onerror = () => {
-    // Preload failed (DNS, CORS, network) — silently remove from cache
-    // so a future attempt can retry.
-    preloadCache.delete(url);
-  };
-  preloadCache.set(url, img);
-  img.src = url;
+  // Cap concurrent speculative downloads (see global gate above).
+  void acquirePreloadSlot().then((release) => {
+    if (preloadCache.has(url)) {
+      release();
+      return;
+    }
+    // Bound detached <img> memory — evict the oldest once at capacity.
+    if (imageKeys.length >= MAX_IMAGE_ELEMENTS) {
+      evictOldestImage();
+    }
+    const img = new Image();
+    img.referrerPolicy = "no-referrer";
+    img.decoding = "async";
+    // CORS-mode loads (catbox) share their HTTP-cache entry with cacheImage's
+    // fetch(), avoiding a duplicate download when persisting to IDB.
+    if (cors) img.crossOrigin = "anonymous";
+    img.onload = () => {
+      // Persist to IDB blob cache for repeat-visit speed (fire-and-forget)
+      cacheImage(url, 1).catch(() => {});
+    };
+    img.onerror = () => {
+      // Preload failed (DNS, CORS, network) — silently remove from cache
+      // so a future attempt can retry.
+      preloadCache.delete(url);
+      const i = imageKeys.indexOf(url);
+      if (i >= 0) imageKeys.splice(i, 1);
+    };
+    releaseOnSettle(img, release);
+    preloadCache.set(url, img);
+    imageKeys.push(url);
+    img.src = url;
+  });
 }
 
 /**
@@ -164,11 +274,17 @@ export function preloadAnimatedImage(url: string): void {
  */
 export function preloadPreviewMedia(url: string | null | undefined): void {
   if (!url) return;
-  // catbox .webp previews are shown via the animating sprite instead of an
-  // <img> (wsrv flattens/404s them), so don't waste bandwidth warming them
-  // through wsrv — that fetch 404s too. Real catbox MP4 videos still preload.
+  // catbox .webp previews are rendered DIRECTLY from the browser (catbox is in
+  // NO_PROXY_HOSTS and wsrv flattens/404s animated webp), so we must preload
+  // the RAW catbox URL — the exact URL the <img> uses. preloadAnimatedImage
+  // downloads it into the browser cache and persists it to the IDB blob cache
+  // (catbox sends CORS for images), so the first hover is instant and repeat
+  // hovers are zero-network. Gated by the global concurrency cap.
   const upstream = unwrapProxyUrl(url);
-  if (getExt(upstream) === ".webp" && /catbox\.moe/i.test(upstream)) return;
+  if (getExt(upstream) === ".webp" && /catbox\.moe/i.test(upstream)) {
+    preloadAnimatedImage(url, true);
+    return;
+  }
   if (isVideoUrl(url)) preloadVideo(url);
   else if (isAnimatedImageUrl(url)) preloadAnimatedImage(url);
 }

@@ -12,13 +12,17 @@
  */
 
 import { useState, useEffect, useRef } from "react";
-import { getCachedBlobUrl, cacheImage } from "@/lib/image-cache";
+import { getCachedBlobUrl, cacheImage, releaseBlobUrl } from "@/lib/image-cache";
 
 export function useCachedImage(
   url: string | null | undefined,
 ): string | null {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const revokeRef = useRef<string | null>(null);
+  // The ORIGINAL image url (not the blob URL) that currently holds a
+  // reference-counted IDB blob URL. We must release via releaseBlobUrl(url)
+  // — NOT URL.revokeObjectURL — so shared blob URLs used by other cards are
+  // not revoked out from under them.
+  const heldUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!url) {
@@ -32,18 +36,26 @@ export function useCachedImage(
     getCachedBlobUrl(url)
       .then((cached) => {
         if (cancelled) {
-          if (cached) URL.revokeObjectURL(cached);
+          // We acquired a reference for this lookup — release it.
+          if (cached) releaseBlobUrl(url);
           return;
         }
         if (cached) {
-          // Revoke previous blob URL to avoid memory leak
-          if (revokeRef.current) URL.revokeObjectURL(revokeRef.current);
-          revokeRef.current = cached;
+          // Release the previous held reference before taking a new one.
+          if (heldUrlRef.current && heldUrlRef.current !== url) {
+            releaseBlobUrl(heldUrlRef.current);
+          }
+          heldUrlRef.current = url;
           setBlobUrl(cached);
           // Stale-while-revalidate: update IDB in background
           cacheImage(url, 2).catch(() => {});
         } else {
-          // Not cached — return null so caller uses the original URL
+          // Not cached — return null so caller uses the original URL.
+          // Release any previously held reference.
+          if (heldUrlRef.current) {
+            releaseBlobUrl(heldUrlRef.current);
+            heldUrlRef.current = null;
+          }
           setBlobUrl(null);
           // Persist to IDB so the next visit is instant
           cacheImage(url, 2).catch(() => {});
@@ -56,15 +68,22 @@ export function useCachedImage(
 
     return () => {
       cancelled = true;
+      // When url changes (not unmount), release the reference held for the
+      // previous url so it isn't left dangling.
+      if (heldUrlRef.current && heldUrlRef.current !== url) {
+        releaseBlobUrl(heldUrlRef.current);
+        heldUrlRef.current = null;
+      }
     };
   }, [url]);
 
-  // Cleanup blob URL on unmount
+  // Cleanup blob URL on unmount — via the ref-counting release, never a raw
+  // revoke, so a shared blob URL still referenced by sibling cards survives.
   useEffect(() => {
     return () => {
-      if (revokeRef.current) {
-        URL.revokeObjectURL(revokeRef.current);
-        revokeRef.current = null;
+      if (heldUrlRef.current) {
+        releaseBlobUrl(heldUrlRef.current);
+        heldUrlRef.current = null;
       }
     };
   }, []);

@@ -208,7 +208,10 @@ export function cacheGetSync<T>(key: string): T | undefined {
 
 export async function cacheSet<T>(key: string, data: T, ttlMs: number): Promise<void> {
   if (!lsSet(key, data, ttlMs)) {
-    // Too large for LS — store in IndexedDB
+    // Too large for LS — store in IndexedDB. Also clear any previous (smaller)
+    // LS entry for this key so a stale local copy never shadows the newer IDB
+    // value on subsequent cacheGet (which checks LS first).
+    lsDelete(key);
     await idbSet(key, data, ttlMs);
   }
 }

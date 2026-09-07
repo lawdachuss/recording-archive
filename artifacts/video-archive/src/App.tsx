@@ -188,11 +188,13 @@ function App() {
       restoreQueryCache(queryClient);
     });
 
-    // Catalog warmup: starts 2s after first paint, fetches pages in parallel,
-    // and preloads thumbnails → sprites → previews with adaptive concurrency.
+    // Catalog warmup: starts ~20s after first paint (idle-gated) and only
+    // warms hover sprites for the catalog's first page. It never runs during
+    // initial load — visible thumbnails and the user's first scrolls always
+    // get the connection to themselves.
     const warmTimer = window.setTimeout(() => {
       scheduleIdleWork(() => startCatalogWarmup(), 1_000);
-    }, 2_000);
+    }, 20_000);
 
     const persist = () => persistQueryCache(queryClient);
     window.addEventListener("pagehide", persist);

@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, memo, useMemo } from "react";
-import { isConnectionConstrained } from "@/lib/connection";
 import { dlog, dtick } from "@/lib/debug";
 
 /**
@@ -193,12 +192,11 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({
       return;
     }
 
-    // Don't animate on slow/constrained connections
-    if (isConnectionConstrained()) {
-      dlog("hoverpreview", "[SpriteSlideshow] animation skipped (connection constrained)");
-      return;
-    }
-
+    // Animate on every connection. The sprite is a single already-loaded image;
+    // advancing frames is a pure client-side background-position change, so it
+    // costs zero extra bandwidth even on slow links. Previously animation was
+    // skipped on constrained connections, which left hover previews blank right
+    // when the cheap sprite fallback was most needed.
     dlog("hoverpreview", "[SpriteSlideshow] animation start", {
       totalFrames: layout.totalFrames,
       cols: layout.cols,

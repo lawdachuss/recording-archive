@@ -1,5 +1,4 @@
 import { Router } from "express";
-import { db, sql } from "@workspace/db";
 import { supabase } from "../lib/supabase.js";
 import { logger } from "../lib/logger.js";
 
@@ -87,22 +86,42 @@ router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search"
       }
     }
 
-    // 3. Tag suggestions — use db.execute (cloud pooler has tags populated)
+    // 3. Tag suggestions — scan tag arrays from Supabase REST (PostgREST can't
+    //    substring-match inside arrays). Stop once 4 distinct matches are found.
     {
       try {
         const lowerQ = q.toLowerCase();
-        const tagResult = await db.execute(sql`
-          SELECT DISTINCT tag
-          FROM (
-            SELECT unnest(tags) AS tag
-            FROM recordings_with_links
-            WHERE links IS NOT NULL
-          ) sub
-          WHERE LOWER(tag) LIKE ${`%${lowerQ}%`}
-          LIMIT 4
-        `);
-        for (const row of tagResult.rows) {
-          const tag = row.tag as string;
+        const seenTags = new Set<string>();
+        const matchedTags: string[] = [];
+        const PAGE_SIZE = 1000;
+
+        for (let start = 0; ; start += PAGE_SIZE) {
+          const { data, error } = await supabase
+            .from("recordings_with_links")
+            .select("tags")
+            .not("links", "is", "null")
+            .not("tags", "is", "null")
+            .range(start, start + PAGE_SIZE - 1);
+
+          if (error) break;
+          if (!data || data.length === 0) break;
+
+          for (const r of data) {
+            for (const tag of r.tags ?? []) {
+              if (!tag || seenTags.has(tag)) continue;
+              seenTags.add(tag);
+              if (tag.toLowerCase().includes(lowerQ)) {
+                matchedTags.push(tag);
+                if (matchedTags.length >= 4) break;
+              }
+            }
+            if (matchedTags.length >= 4) break;
+          }
+          if (matchedTags.length >= 4) break;
+          if (data.length < PAGE_SIZE) break;
+        }
+
+        for (const tag of matchedTags) {
           suggestions.push({
             type: "tag",
             label: tag,
