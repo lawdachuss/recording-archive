@@ -19,6 +19,7 @@ import { userApi, parseCloudItem, cloudItemToRecording, type PerformerFollow } f
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
+import { useConnectionConstrained } from "@/hooks/use-connection-quality";
 import { Search, ArrowRight, TrendingUp, Star, Clock, Heart, Bookmark, ThumbsUp, Users, Tags, Clapperboard } from "lucide-react";
 
 type Tab = "recent" | "popular";
@@ -47,6 +48,11 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<Tab>("recent");
   const { user } = useAuth();
+
+  // Slow links get a lighter grid: 12 items instead of 24. Re-evaluates live
+  // (Network API change / measured thumbnail speed / Data Saver toggle).
+  const isConstrained = useConnectionConstrained();
+  const pageSize = isConstrained ? 12 : 24;
 
   const { data: stats } = useGetStats({ query: { queryKey: getGetStatsQueryKey(), staleTime: 30_000 } });
 
@@ -138,12 +144,12 @@ export default function Home() {
     follow: "text-pink-500",
     like: "text-green-500",
   };
-  const recentParams = { limit: 24, sort: "newest" as const };
+  const recentParams = { limit: pageSize, sort: "newest" as const };
   const { data: recentData, isLoading: recentLoading } = useListRecordings(
     recentParams,
     { query: { queryKey: getListRecordingsQueryKey(recentParams), staleTime: 30_000, placeholderData: keepPreviousData } },
   );
-  const popularParams = { limit: 24, sort: "popular" as const };
+  const popularParams = { limit: pageSize, sort: "popular" as const };
   const { data: popularData, isLoading: popularLoading } = useListRecordings(
     popularParams,
     { query: { queryKey: getListRecordingsQueryKey(popularParams), staleTime: 30_000, placeholderData: keepPreviousData } },

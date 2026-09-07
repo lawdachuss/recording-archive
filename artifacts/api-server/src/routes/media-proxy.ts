@@ -145,25 +145,19 @@ async function fetchImageOnce(
 }
 
 /**
- * Returns a buffered image Response for `urlStr`. Concurrent requests for the
- * same URL share one upstream fetch (single-flight); recent successes are
- * served from memory. Throws on upstream failure so the caller can return the
- * placeholder SVG.
+ * Returns the buffered image (`CachedImage`) for `urlStr`. Concurrent requests
+ * for the same URL share one upstream fetch (single-flight); recent successes
+ * are served from memory. Throws on upstream failure so the caller can return
+ * the placeholder SVG.
  */
 async function getImage(
   urlStr: string,
   upstreamHeaders: Record<string, string>,
   log: any,
-): Promise<Response> {
+): Promise<CachedImage> {
   const cached = imageMemCache.get(urlStr);
   if (cached && cached.expires > Date.now()) {
-    return new Response(cached.buffer, {
-      status: cached.status,
-      headers: {
-        "Content-Type": cached.contentType,
-        "Content-Length": String(cached.buffer.length),
-      },
-    });
+    return cached;
   }
 
   let inflight = imageInflight.get(urlStr);
@@ -173,14 +167,102 @@ async function getImage(
     });
     imageInflight.set(urlStr, inflight);
   }
-  const img = await inflight;
-  return new Response(img.buffer, {
-    status: img.status,
-    headers: {
-      "Content-Type": img.contentType,
-      "Content-Length": String(img.buffer.length),
-    },
-  });
+  return inflight;
+}
+
+// ─── Server-side image transform (resize / modern format) ─────────────────
+// The adaptive-quality tiers (400/800/1200px) tell us how big a thumbnail the
+// browser actually needs, but until now the proxy served the FULL-resolution
+// upstream file regardless — on a slow connection that single full-size JPEG
+// is the dominant factor in grid first-paint time. Here the response is
+// optionally resized (and converted to webp, ~half the bytes again) right
+// before it leaves the server. Transformed variants are cached in memory like
+// the full-size images, and the response is marked immutable so the Vercel
+// edge caches each `url | width | format` combination separately.
+
+const TRANSFORM_CACHE_TTL_MS = 30 * 60_000;
+const TRANSFORM_CACHE_MAX = 300;
+
+interface TransformedImage {
+  buffer: Buffer;
+  contentType: string;
+}
+
+const transformMemCache = new Map<string, TransformedImage & { expires: number }>();
+const transformInflight = new Map<string, Promise<TransformedImage>>();
+
+function transformCacheKey(url: string, width: number, fmt: string | null): string {
+  return `${url}|${fmt ?? ""}|${width}`;
+}
+
+function cacheTransform(key: string, img: TransformedImage): void {
+  transformMemCache.set(key, { ...img, expires: Date.now() + TRANSFORM_CACHE_TTL_MS });
+  if (transformMemCache.size > TRANSFORM_CACHE_MAX) {
+    const oldest = transformMemCache.keys().next().value;
+    if (oldest !== undefined) transformMemCache.delete(oldest);
+  }
+}
+
+/**
+ * Resize `buffer` to `width` (never upscales) and optionally convert to webp.
+ * Falls back to the original bytes on ANY failure so a transform problem can
+ * never take thumbnails offline — it just serves full size as before.
+ */
+async function transformImage(
+  buffer: Buffer,
+  contentType: string,
+  width: number,
+  fmt: string | null,
+  log: any,
+): Promise<TransformedImage> {
+  // Only static raster formats — never GIF (animated) or passthrough payloads.
+  const isRaster = contentType.startsWith("image/") && !contentType.includes("gif");
+  if (!isRaster) return { buffer, contentType };
+  try {
+    // sharp is a native module kept OUTSIDE the esbuild bundle. If it ever
+    // isn't available on the runtime (missing platform binary, stripped
+    // node_modules, ...) we degrade to passthrough instead of erroring.
+    const { default: sharp } = await import("sharp");
+    const pipeline = sharp(buffer, { failOn: "none" }).rotate().resize({
+      width,
+      withoutEnlargement: true,
+    });
+    if (fmt === "webp") {
+      const out = await pipeline
+        .webp({ quality: 78, effort: 2 })
+        .toBuffer({ resolveWithObject: true });
+      return { buffer: out.data, contentType: "image/webp" };
+    }
+    const out = await pipeline.toBuffer({ resolveWithObject: true });
+    return { buffer: out.data, contentType: `image/${out.info.format}` };
+  } catch (err) {
+    log?.warn?.({ err }, "Media proxy transform failed; serving original");
+    return { buffer, contentType };
+  }
+}
+
+/** Single-flight + cached server-side resize of an already-fetched image. */
+async function getTransformedImage(
+  urlStr: string,
+  img: CachedImage,
+  width: number,
+  fmt: string | null,
+  log: any,
+): Promise<TransformedImage> {
+  const key = transformCacheKey(urlStr, width, fmt);
+  const cached = transformMemCache.get(key);
+  if (cached && cached.expires > Date.now()) return cached;
+  let inflight = transformInflight.get(key);
+  if (!inflight) {
+    inflight = transformImage(img.buffer, img.contentType, width, fmt, log)
+      .then((result) => {
+        cacheTransform(key, result);
+        return result;
+      })
+      .finally(() => transformInflight.delete(key));
+    transformInflight.set(key, inflight);
+  }
+  return inflight;
 }
 
 // ─── Failure cache ────────────────────────────────────────────────
@@ -675,17 +757,53 @@ router.get("/media", async (req, res) => {
     upstreamHeaders["Range"] = rangeHeader;
   }
 
+  const isVideoRequest = !!rangeHeader;
+
+  // Optional server-side resize/format for IMAGE requests only. The frontend
+  // sends the adaptive tier width (400/800/1200) so thumbnails download as a
+  // few tens of KB instead of full-res; `fmt=webp` converts for ~half the
+  // bytes again. Malformed values are silently ignored (passthrough) so an
+  // old/stale URL can never take thumbnails offline.
+  const rawWidth = isVideoRequest ? undefined : req.query.w;
+  const width =
+    typeof rawWidth === "string" && /^\d{2,4}$/.test(rawWidth) && !rawWidth.startsWith("0")
+      ? Math.min(2000, Math.max(200, parseInt(rawWidth, 10)))
+      : null;
+  const rawFmt = isVideoRequest ? undefined : req.query.fmt;
+  const fmt = typeof rawFmt === "string" && rawFmt === "webp" ? "webp" : null;
+
   // Video / Range requests are the player itself — stream straight through,
   // never gated or de-duplicated (playback must start immediately). Images go
   // through getImage(), which coalesces concurrent requests and serves recent
   // successes from the in-memory cache so the first screen paints fast. The
   // per-host upstream gate is released inside getImage().
   try {
-    const response = rangeHeader
-      ? await fetchWithRetry(urlStr, upstreamHeaders, req.log)
-      : await getImage(urlStr, upstreamHeaders, req.log);
-
-    const isVideoRequest = !!rangeHeader;
+    let response: Response | null;
+    if (isVideoRequest) {
+      response = await fetchWithRetry(urlStr, upstreamHeaders, req.log);
+    } else {
+      const img = await getImage(urlStr, upstreamHeaders, req.log);
+      if (width !== null || fmt !== null) {
+        // Resized / converted variant — cached separately so every width and
+        // format is single-flight and the edge caches each one independently.
+        const variant = await getTransformedImage(urlStr, img, width ?? 2000, fmt, req.log);
+        response = new Response(variant.buffer, {
+          status: img.status,
+          headers: {
+            "Content-Type": variant.contentType,
+            "Content-Length": String(variant.buffer.length),
+          },
+        });
+      } else {
+        response = new Response(img.buffer, {
+          status: img.status,
+          headers: {
+            "Content-Type": img.contentType,
+            "Content-Length": String(img.buffer.length),
+          },
+        });
+      }
+    }
 
     if (!response) {
       if (isVideoRequest) {

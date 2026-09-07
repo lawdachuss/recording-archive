@@ -20,7 +20,7 @@ export function isConnectionConstrained(): boolean {
     const conn = (navigator as any).connection;
     if (conn) {
       if (conn.saveData) return true;
-      const slow = ["slow-2g", "2g", "3g"];
+      const slow = ["slow-2g", "2g"];
       if (typeof conn.effectiveType === "string" && slow.includes(conn.effectiveType)) {
         return true;
       }

@@ -1,17 +1,22 @@
 import type { Request, Response, NextFunction } from "express";
-import { db, sql } from "@workspace/db";
+import { supabase } from "../lib/supabase.js";
 import { requireAuth } from "./auth.js";
 
 const ROLE_HIERARCHY = { user: 0, moderator: 1, admin: 2 } as const;
 
+async function getUserRole(userId: string): Promise<string> {
+  const { data } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .maybeSingle();
+  return (data?.role as string | undefined) ?? "user";
+}
+
 export function requireRole(minimumRole: "moderator" | "admin") {
   return [requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await db.execute(sql`
-        SELECT role FROM user_roles WHERE user_id = ${req.user!.id}
-      `);
-
-      const userRole = (result.rows[0]?.role ?? "user") as keyof typeof ROLE_HIERARCHY;
+      const userRole = (await getUserRole(req.user!.id)) as keyof typeof ROLE_HIERARCHY;
       const userLevel = ROLE_HIERARCHY[userRole] ?? 0;
       const requiredLevel = ROLE_HIERARCHY[minimumRole] ?? 0;
 

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, sql } from "@workspace/db";
+import { supabase } from "../lib/supabase.js";
 import { invalidateOnSuccess } from "../middleware/cache.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/requireRole.js";
@@ -8,16 +8,23 @@ const router = Router();
 
 const admin = requireRole("admin");
 
+const REQUEST_COLS = "id,user_id,platform,performer_username,stream_link,notes,priority,status,created_at";
+
 router.get("/requests", requireAuth, async (req, res) => {
   try {
-    const result = await db.execute(sql`
-      SELECT id, user_id, platform, performer_username, stream_link, notes, priority, status, created_at
-      FROM requests
-      WHERE user_id = ${req.user!.id}
-      ORDER BY created_at DESC
-      LIMIT 200
-    `);
-    res.json(result.rows);
+    const { data, error } = await supabase
+      .from("requests")
+      .select(REQUEST_COLS)
+      .eq("user_id", req.user!.id)
+      .order("created_at", { ascending: false })
+      .limit(200);
+
+    if (error) {
+      req.log?.error?.({ err: error }, "GET /requests supabase error");
+      res.json([]);
+      return;
+    }
+    res.json(data ?? []);
   } catch {
     res.json([]);
   }
@@ -48,13 +55,14 @@ router.post("/requests", requireAuth, async (req, res) => {
   // immediately — there's nothing to capture.
   if (performer_username) {
     try {
-      const existingCount = await db.execute(sql`
-        SELECT COUNT(*)::int AS count
-        FROM recordings_with_links
-        WHERE LOWER(username) = LOWER(${performer_username})
-          AND links IS NOT NULL
-      `);
-      const recordingCount = (existingCount.rows[0] as { count: number })?.count ?? 0;
+      const { count, error } = await supabase
+        .from("recordings_with_links")
+        .select("id", { count: "exact", head: true })
+        .ilike("username", performer_username)
+        .not("links", "is", "null");
+
+      if (error) throw error;
+      const recordingCount = count ?? 0;
       if (recordingCount > 0) {
         res.status(409).json({
           error: `@${performer_username} already has ${recordingCount} recording${recordingCount === 1 ? "" : "s"} in the archive.`,
@@ -74,23 +82,15 @@ router.post("/requests", requireAuth, async (req, res) => {
   //
   // NOTE: The database has a UNIQUE INDEX (not a named CONSTRAINT) on
   // (user_id, platform, COALESCE(performer_username,''), COALESCE(stream_link,'')),
-  // so we cannot use ON CONFLICT ON CONSTRAINT. Instead we rely on the pre-insert
+  // so we cannot use ON CONFLICT ON CONSTRAINT. We instead rely on the pre-insert
   // dedupe check + the UNIQUE INDEX to catch race conditions, with a fallback
   // that looks up the existing row in the error path.
   const dedupeKey = performer_username ? performer_username : stream_link;
   if (dedupeKey) {
     try {
-      const existing = await db.execute(sql`
-        SELECT id, user_id, platform, performer_username, stream_link, notes, priority, status, created_at
-        FROM requests
-        WHERE user_id = ${req.user!.id}
-          AND platform = ${platform}
-          AND COALESCE(performer_username, '') = COALESCE(${performer_username ?? null}, '')
-          AND COALESCE(stream_link, '') = COALESCE(${stream_link ?? null}, '')
-        LIMIT 1
-      `);
-      if (existing.rows.length > 0) {
-        res.status(200).json(existing.rows[0]);
+      const existing = await findDuplicate(req.user!.id, platform, performer_username, stream_link);
+      if (existing) {
+        res.status(200).json(existing);
         return;
       }
     } catch {
@@ -99,52 +99,38 @@ router.post("/requests", requireAuth, async (req, res) => {
   }
 
   try {
-    // Simple INSERT without ON CONFLICT — the unique index handles duplicate
-    // rejection, and we catch unique-violation errors in the catch block below.
-    const result = await db.execute(sql`
-      INSERT INTO requests (user_id, platform, performer_username, stream_link, notes, priority, status, created_at)
-      VALUES (
-        ${req.user!.id},
-        ${platform},
-        ${performer_username ?? null},
-        ${stream_link ?? null},
-        ${notes ?? null},
-        ${validPriority},
-        'pending',
-        NOW()
-      )
-      RETURNING id, user_id, platform, performer_username, stream_link, notes, priority, status, created_at
-    `);
+    // Simple INSERT — the unique index handles duplicate rejection, and we
+    // catch unique-violation errors in the catch block below.
+    const { data: created, error } = await supabase
+      .from("requests")
+      .insert({
+        user_id: req.user!.id,
+        platform,
+        performer_username: performer_username ?? null,
+        stream_link: stream_link ?? null,
+        notes: notes ?? null,
+        priority: validPriority,
+        status: "pending",
+      })
+      .select(REQUEST_COLS)
+      .single();
 
-    const created = result.rows[0] as {
-      id: number;
-      user_id: string;
-      platform: string;
-      performer_username: string | null;
-    };
+    if (error) throw error;
 
     // Create a confirmation notification for the requester (if enabled)
     try {
-      const [prefRow] = (await db.execute(sql`
-        SELECT enabled FROM user_notification_preferences
-        WHERE user_id = ${created.user_id} AND notification_type = 'request_submitted'
-        LIMIT 1
-      `)).rows;
-      const enabled = prefRow ? prefRow.enabled : true; // default: enabled
+      const pref = await getNotificationPref(created.user_id, "request_submitted");
+      const enabled = pref.enabled; // default: enabled (true)
       if (enabled) {
         const performerName = created.performer_username ?? "a performer";
         const message = `Your request for @${performerName} on ${created.platform} has been submitted and is pending review.`;
-        await db.execute(sql`
-          INSERT INTO user_notifications (user_id, type, message, related_id, is_read, created_at)
-          VALUES (
-            ${created.user_id},
-            'request_submitted',
-            ${message},
-            ${String(created.id)},
-            false,
-            NOW()
-          )
-        `);
+        await supabase.from("user_notifications").insert({
+          user_id: created.user_id,
+          type: "request_submitted",
+          message,
+          related_id: String(created.id),
+          is_read: false,
+        });
       }
     } catch {
       // Non-critical — don't fail the request if notification insert fails
@@ -155,17 +141,9 @@ router.post("/requests", requireAuth, async (req, res) => {
     // Catch: unique-violation from the index, or any other error.
     // Return the existing row if this was a duplicate.
     try {
-      const existing = await db.execute(sql`
-        SELECT id, user_id, platform, performer_username, stream_link, notes, priority, status, created_at
-        FROM requests
-        WHERE user_id = ${req.user!.id}
-          AND platform = ${platform}
-          AND COALESCE(performer_username, '') = COALESCE(${performer_username ?? null}, '')
-          AND COALESCE(stream_link, '') = COALESCE(${stream_link ?? null}, '')
-        LIMIT 1
-      `);
-      if (existing.rows.length > 0) {
-        res.status(200).json(existing.rows[0]);
+      const existing = await findDuplicate(req.user!.id, platform, performer_username, stream_link);
+      if (existing) {
+        res.status(200).json(existing);
         return;
       }
     } catch {
@@ -175,6 +153,47 @@ router.post("/requests", requireAuth, async (req, res) => {
   }
 });
 
+/** Look up a request matching the (user, platform, performer/stream) dedupe key. */
+async function findDuplicate(
+  userId: string,
+  platform: string,
+  performerUsername?: string,
+  streamLink?: string,
+) {
+  let query = supabase
+    .from("requests")
+    .select(REQUEST_COLS)
+    .eq("user_id", userId)
+    .eq("platform", platform);
+
+  // COALESCE(col, '') = COALESCE($param, '') → null matches the empty string.
+  if (performerUsername) {
+    query = query.eq("performer_username", performerUsername);
+  } else {
+    query = query.or(`performer_username.is.null,performer_username.eq.`);
+  }
+
+  if (streamLink) {
+    query = query.eq("stream_link", streamLink);
+  } else {
+    query = query.or(`stream_link.is.null,stream_link.eq.`);
+  }
+
+  const { data } = await query.limit(1).maybeSingle();
+  return data;
+}
+
+/** Read a notification preference, defaulting to enabled when unset. */
+async function getNotificationPref(userId: string, type: string): Promise<{ enabled: boolean }> {
+  const { data } = await supabase
+    .from("user_notification_preferences")
+    .select("enabled")
+    .eq("user_id", userId)
+    .eq("notification_type", type)
+    .maybeSingle();
+  return { enabled: data?.enabled ?? true };
+}
+
 router.delete("/requests/:id", requireAuth, async (req, res) => {
   try {
     const id = parseInt(String(req.params.id), 10);
@@ -183,26 +202,32 @@ router.delete("/requests/:id", requireAuth, async (req, res) => {
       return;
     }
 
-    const result = await db.execute(sql`
-      DELETE FROM requests
-      WHERE id = ${id}
-        AND user_id = ${req.user!.id}
-      RETURNING id
-    `);
+    const { data, error } = await supabase
+      .from("requests")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", req.user!.id)
+      .select("id");
 
-    if (!result.rows.length) {
+    if (error) {
+      req.log?.error?.({ err: error }, "DELETE /requests/:id supabase error");
+      res.status(500).json({ error: "Failed to delete request" });
+      return;
+    }
+
+    if (!data || data.length === 0) {
       res.status(404).json({ error: "Request not found or not yours to delete" });
       return;
     }
 
     // Also clean up related notifications
     try {
-      await db.execute(sql`
-        DELETE FROM user_notifications
-        WHERE user_id = ${req.user!.id}
-          AND related_id = ${String(id)}
-          AND (type = 'request_status' OR type = 'request_submitted')
-      `);
+      await supabase
+        .from("user_notifications")
+        .delete()
+        .eq("user_id", req.user!.id)
+        .eq("related_id", String(id))
+        .in("type", ["request_status", "request_submitted"]);
     } catch {
       // Non-critical — don't fail the request if notification cleanup fails
     }
@@ -224,15 +249,21 @@ router.patch("/requests/:id/status", ...admin, invalidateOnSuccess(["performers"
   }
 
   try {
-    const result = await db.execute(sql`
-      UPDATE requests SET status = ${status} WHERE id = ${id}
-      RETURNING id, user_id, platform, performer_username, stream_link, notes, priority, status, created_at
-    `);
-    if (!result.rows.length) {
-      res.status(404).json({ error: "Request not found" });
-      return;
+    const { data, error } = await supabase
+      .from("requests")
+      .update({ status })
+      .eq("id", id)
+      .select(REQUEST_COLS)
+      .single();
+
+    if (error) {
+      if (error.code === "PGRST116") {
+        res.status(404).json({ error: "Request not found" });
+        return;
+      }
+      throw error;
     }
-    res.json(result.rows[0]);
+    res.json(data);
   } catch {
     res.status(500).json({ error: "Failed to update status" });
   }

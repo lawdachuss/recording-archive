@@ -165,7 +165,14 @@ async function mediaCacheFirst(request) {
     const response = await fetch(request, { signal: controller.signal });
     clearTimeout(timer);
     if (response.ok) {
-      await cacheResponse(cache, request, response);
+      // Do NOT await the cache write. cache.put() consumes the whole body, so
+      // awaiting it here would withhold the response until the entire file is
+      // downloaded AND stored — the page's streamed progress (sprite / webp
+      // preview bytes in useProgressiveImage) would only ever jump 0 → 100 in
+      // one flash instead of ticking in real time. cacheResponse() reads a
+      // cloned (teed) body, so writing the cache in the background never
+      // consumes the response being returned to the page.
+      cacheResponse(cache, request, response).catch(() => {});
     }
     return response;
   } catch (err) {

@@ -1,4 +1,4 @@
-import { useMemo, memo } from "react";
+import { useMemo, memo, useState, useEffect } from "react";
 import { Link } from "wouter";
 import { OptimizedImage, ImageUnavailable } from "@/components/ui/optimized-image";
 import { SpriteSlideshow } from "@/components/SpriteSlideshow";
@@ -12,6 +12,8 @@ interface Performer {
   sprite_url?: string | null;
   gender?: string | null;
   latest_timestamp?: string | null;
+  /** Ordered image fallback chain from the API: thumbnail + its mirrors + sprite. */
+  fallback_images?: string[] | null;
 }
 
 interface PerformerCardProps {
@@ -97,10 +99,37 @@ function GroupCards({ performers }: { performers: Performer[] }) {
   );
 }
 
+/**
+ * Ordered candidate images for a performer card. The API sends
+ * `fallback_images` — the chosen thumbnail, its mirrors on other hosts, then
+ * the sprite. Cards walk the chain on load failure so an image shows whenever
+ * the performer has any reachable copy (e.g. catbox primary blocked → pixhost
+ * mirror loads). Older clients fall back to [thumbnail, sprite].
+ */
+function usePerformerImageCandidates(performer: Performer) {
+  const candidates = useMemo(() => {
+    const raw =
+      performer.fallback_images && performer.fallback_images.length > 0
+        ? performer.fallback_images
+        : [performer.latest_thumbnail, performer.sprite_url];
+    return raw
+      .map((u) => proxyUrl(u))
+      .filter((u): u is string => !!u);
+  }, [performer.fallback_images, performer.latest_thumbnail, performer.sprite_url]);
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    setIndex(0);
+  }, [performer.username]);
+  const imageUrl = candidates[Math.min(index, candidates.length - 1)] ?? null;
+  const onImageError = () => {
+    if (index + 1 < candidates.length) setIndex((i) => i + 1);
+  };
+  return { imageUrl, onImageError };
+}
+
 function CircleCard({ performer, fetchPriority }: { performer: Performer; fetchPriority: "high" | "low" | "auto" }) {
   const initial = performer.username.charAt(0).toUpperCase();
-  // Pick best available image: thumbnail first, then sprite as fallback
-  const imageUrl = proxyUrl(performer.latest_thumbnail) || (performer.sprite_url ? proxyUrl(performer.sprite_url) : null);
+  const { imageUrl, onImageError } = usePerformerImageCandidates(performer);
   return (
     <Link href={`/performers/${performer.username}`} className="group block outline-none w-full circle-bloom-hover">
       <div className="flex flex-col items-center gap-2.5">
@@ -118,6 +147,7 @@ function CircleCard({ performer, fetchPriority }: { performer: Performer; fetchP
                 loading={fetchPriority === "high" ? "eager" : "lazy"}
                 className="w-full h-full object-cover object-top group-hover:scale-110"
                 containerClassName="w-full h-full"
+                onError={onImageError}
               />
             ) : (
               <div className="w-full h-full bg-secondary flex items-center justify-center">
@@ -154,8 +184,7 @@ export const PerformerCard = memo(function PerformerCard({ performer, performers
 });
 
 const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { performer: Performer; fetchPriority: "high" | "low" | "auto" }) {
-  // Pick best available image: thumbnail first, then sprite as fallback
-  const imageUrl = proxyUrl(performer.latest_thumbnail) || (performer.sprite_url ? proxyUrl(performer.sprite_url) : null);
+  const { imageUrl, onImageError } = usePerformerImageCandidates(performer);
   const initial = useMemo(() => performer.username.charAt(0).toUpperCase(), [performer.username]);
   const recCount = performer.recording_count ?? 0;
 
@@ -178,6 +207,7 @@ const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { perf
               containerClassName="absolute inset-0 w-full h-full"
               fallback={<ImageUnavailable initials={initial} />}
               noShimmer
+              onError={onImageError}
             />
           ) : (
             <ImageUnavailable initials={initial} />

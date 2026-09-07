@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { supabase } from "../lib/supabase.js";
-import { db, sql } from "@workspace/db";
 
 const router = Router();
 
@@ -140,14 +139,17 @@ router.put("/user/profile", async (req, res) => {
 router.get("/user/role", async (req, res) => {
   try {
     const userId = req.user!.id;
-    const result = await db.execute(sql`
-      SELECT role FROM user_roles WHERE user_id = ${userId}
-    `);
+    const { data, error } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .maybeSingle();
 
-    const role = result.rows[0]?.role;
+    const role = (data?.role as string | undefined) ?? "user";
     res.json({
       role: role === "admin" || role === "moderator" || role === "user" ? role : "user",
     });
+    if (error) req.log.error({ err: error }, "GET /user/role supabase error");
   } catch (err) {
     req.log.error({ err }, "GET /user/role unexpected error");
     res.status(500).json({ error: "Internal server error" });

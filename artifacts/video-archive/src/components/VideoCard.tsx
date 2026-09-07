@@ -5,11 +5,13 @@ import { formatBytes, formatRelativeTime, formatViewers, formatDuration } from "
 import { Eye, HardDrive, Clock, CheckCircle } from "lucide-react";
 import { OptimizedImage, ImageUnavailable } from "@/components/ui/optimized-image";
 import { useHoverPreview } from "@/hooks/use-hover-preview";
+import { useProgressiveImage } from "@/hooks/use-progressive-image";
+import { useCachedMediaSrc } from "@/hooks/use-cached-media-src";
+import { useConnectionConstrained } from "@/hooks/use-connection-quality";
 import { SpriteSlideshow } from "@/components/SpriteSlideshow";
 import { cn } from "@/lib/utils";
 import { proxyUrl, proxySpriteUrl, catboxProxyUrl } from "@/lib/proxy-url";
 import { getSpriteGrid } from "@/lib/sprite-grid";
-import { cacheImage } from "@/lib/image-cache";
 import { buildPreviewFallbacks, buildThumbnailFallbacks, buildSpriteFallbacks } from "@/lib/mirrors";
 import { dlog } from "@/lib/debug";
 
@@ -143,16 +145,13 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   const spriteUrl = useMemo(() => spriteFallbacks[spriteIndex] ? proxySpriteUrl(spriteFallbacks[spriteIndex]) : null, [spriteFallbacks, spriteIndex]);
   const spriteGrid = useMemo(() => getSpriteGrid(spriteFallbacks[spriteIndex] || null), [spriteFallbacks, spriteIndex]);
 
-  // Disable hover previews on slow connections — they saturate the
-  // bandwidth and make the grid feel unresponsive. Users see static
-  // thumbnails and click to watch full videos.
-  const isSlowConnection = useMemo(() => {
-    try {
-      const conn = (navigator as any).connection;
-      if (conn && (conn.saveData || (typeof conn.effectiveType === 'string' && ['slow-2g', '2g', '3g'].includes(conn.effectiveType)))) return true;
-    } catch {}
-    return false;
-  }, []);
+  // On constrained connections we downgrade the hover preview to the cheap
+  // sprite sheet only (no multi-MB video/webp overlay), so hovering ALWAYS
+  // gives instant visual feedback without saturating a slow link. This uses
+  // the shared detector (Network Information API + Data Saver + measured
+  // thumbnail speed) and re-evaluates LIVE as the connection quality,
+  // measured speed, or Data Saver toggle changes.
+  const isSlowConnection = useConnectionConstrained();
 
   const {
     isHovered,
@@ -163,11 +162,15 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     hoverHandlers,
     viewportRef,
     preloadVideoUrl,
-  } = useHoverPreview({ thumbnailUrl, previewUrl, spriteUrl, enabled: !isSlowConnection });
+  } = useHoverPreview({ thumbnailUrl, previewUrl, spriteUrl });
 
   const staticImage = thumbnailUrl;
   const hasStaticImage = !!staticImage;
   const initials = useMemo(() => recording.username?.slice(0, 2).toUpperCase() ?? "??", [recording.username]);
+
+  // Resolve the hover video to its IDB-cached blob when already warmed (by
+  // preloadVideo), so hover playback starts instantly with zero re-fetch.
+  const previewVideoSrc = useCachedMediaSrc(videoUrl);
 
   const showPreview = isHovered && (showVideo || showAnimatedImage);
 
@@ -227,21 +230,12 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     }
   }, [spriteIndex, spriteFallbacks.length]);
 
-  // ── .webp preview warm-up ──────────────────────────────────────────────
-  // Eagerly cache .webp previews into IDB on mount so they're ready for hover.
-  // The <img> itself uses the real proxied URL (not an IDB blob URL) — blob
-  // URLs handed to lazy/hover-deferred <img> can be revoked by the memory-cache
-  // cleanup before they paint, yielding blob:ERR_FILE_NOT_FOUND. Browser HTTP
-  // cache + SW already make repeat visits near-instant.
-  useEffect(() => {
-    if (!previewUrl || isSlowConnection) return;
-    const inspectUrl = getOriginalUrl(previewUrl) ?? previewUrl;
-    // Static webp previews (iili.io .th.webp, pixhost) are not shown and catbox
-    // webps load via the Worker proxy, so neither is warmed through this cache.
-    if (getExt(inspectUrl) === ".webp") return;
-    if (/catbox\.moe/i.test(inspectUrl)) return;
-    cacheImage(previewUrl, 1).catch(() => {}); // fire-and-forget — preview = cold, evict first
-  }, [previewUrl, isSlowConnection]);
+  // NOTE: no mount-time preview warming here. An eager cacheImage() on mount
+  // downloaded a full preview per card (unbounded by the preload cap) and
+  // competed with grid paint — the very problem the catalog-warmer taming
+  // removed. Preview bytes arrive via the viewport preload (capped to 3
+  // concurrent) and the hover-time progressive stream, both of which also
+  // warm IDB.
 
   // `canplay`/`loadeddata` fire as soon as bytes are buffered, which can be
   // well before the first frame is actually painted to the screen. Flipping
@@ -297,17 +291,70 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   // Static thumbnails (.th.webp) never animate — the looping sprite provides the
   // hover animation, so skip them entirely. Animated images show as <img> (catbox
   // via Worker). Genuine videos show as <video>.
-  const showCatboxWebpImg = !!catboxWorkerUrl && usePreviewChain && showAnimatedImage && mediaFail === "none";
-  const showWebpImg = isAnimatedImg && !isStaticThumb && !isCatboxPreview && usePreviewChain && showAnimatedImage && mediaFail === "none";
-  const showVideoEl = isRealVideo && usePreviewChain && showVideo && mediaFail === "none";
-  const showImgFallback = isRealVideo && usePreviewChain && showAnimatedImage && mediaFail === "video";
+  // On constrained connections the heavy video/webp overlay is skipped entirely
+  // so only the cheap sprite sheet renders on hover — the sprite image is
+  // already-cached and animating it costs no extra bandwidth.
+  const heavyPreviewEnabled = !isSlowConnection;
+  const showCatboxWebpImg = !!catboxWorkerUrl && heavyPreviewEnabled && usePreviewChain && showAnimatedImage && mediaFail === "none";
+  const showWebpImg = heavyPreviewEnabled && isAnimatedImg && !isStaticThumb && !isCatboxPreview && usePreviewChain && showAnimatedImage && mediaFail === "none";
+  const showVideoEl = heavyPreviewEnabled && isRealVideo && usePreviewChain && showVideo && mediaFail === "none";
+  const showImgFallback = heavyPreviewEnabled && isRealVideo && usePreviewChain && showAnimatedImage && mediaFail === "video";
 
   const showSprite = isHovered && useSprite;
 
-  // Show loading shimmer whenever the user is hovering and something is
-  // loading but nothing is visually playing yet. Once the sprite or preview
-  // paints, the shimmer disappears — the user has real content.
-  const showLoadingBar = isHovered && !spriteReady && !previewReady && (useSprite || usePreviewChain);
+  // ── Real-time hover progress ────────────────────────────────────────────
+  // The sprite sheet is streamed through useProgressiveImage, which reports
+  // byte-level download progress (or an instant blob URL when cached). Real
+  // video previews report buffered/duration progress via the <video> element.
+  // Together they drive a thin progress bar so the user sees the hover media
+  // actually loading instead of an indeterminate shimmer.
+  const spriteProgressive = useProgressiveImage(spriteUrl, showSprite);
+  // The animated-webp preview is streamed the same way as the sprite — an
+  // <img> exposes no download progress, so without this the bar would sit
+  // idle while the (often slowest) preview downloads on top of an already-warm
+  // sprite. Streams BOTH the proxied pixhost webp AND catbox webp (loaded
+  // directly from the browser with CORS); on any stream failure the hook falls
+  // back to the original URL and the <img> error/fallback chain takes over.
+  const showAnyWebpImg = showWebpImg || showCatboxWebpImg;
+  const previewProgressive = useProgressiveImage(
+    showAnyWebpImg ? animatedImageUrl : null,
+    showAnyWebpImg,
+  );
+  const [videoProgress, setVideoProgress] = useState<number | null>(null);
+  useEffect(() => {
+    setVideoProgress(null);
+  }, [previewUrl]);
+  useEffect(() => {
+    if (!isHovered) setVideoProgress(null);
+  }, [isHovered]);
+  // A failed <video> may have left a stale buffered % — drop it so the bar
+  // doesn't sit on a misleading value while the mirror fallback loads.
+  useEffect(() => {
+    setVideoProgress(null);
+  }, [mediaFail]);
+
+  const hoverProgress: number | null =
+    spriteProgressive.progress !== null ||
+    videoProgress !== null ||
+    previewProgressive.progress !== null
+      ? Math.min(
+          99,
+          Math.max(
+            spriteProgressive.progress ?? 0,
+            videoProgress ?? 0,
+            previewProgressive.progress ?? 0,
+          ),
+        )
+      : null;
+
+  // Still loading: the user is hovering and something is downloading but
+  // nothing has painted yet — the sprite, or the preview media. Once either
+  // paints (sprite ready) the bar keeps reporting the preview's own progress
+  // until its first frame is shown.
+  const showLoadingBar =
+    isHovered &&
+    !previewReady &&
+    ((useSprite && !spriteReady) || (usePreviewChain && !previewReady));
 
   // Debug: log which preview branch is currently active so we can correlate
   // with the on-hover behavior (sprite / webp img / video / fallbacks).
@@ -355,13 +402,19 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   // Fail-fast timer: unmount the hanging <video> / <img> after the timeout and
   // mark the preview failed, so the sprite/static fallback engages in seconds
   // instead of the browser's multi-minute connection timeout.
+  // For streamed webp previews this only applies while NOTHING has arrived yet
+  // (progress null — e.g. waiting on first bytes or a stuck native fallback
+  // <img>). A stream that is actively delivering bytes keeps its slot until the
+  // stall watchdog in useProgressiveImage fires instead.
+  const webpStuck =
+    (showWebpImg || showCatboxWebpImg) && previewProgressive.progress === null;
   useEffect(() => {
-    if (!(showVideoEl || showImgFallback || showCatboxWebpImg) || previewReady) {
+    if (!(showVideoEl || showImgFallback || webpStuck) || previewReady) {
       return;
     }
     const t = setTimeout(() => setMediaFail("all"), PREVIEW_TIMEOUT_MS);
     return () => clearTimeout(t);
-  }, [showVideoEl, showImgFallback, showCatboxWebpImg, previewReady]);
+  }, [showVideoEl, showImgFallback, webpStuck, previewReady]);
 
   const showDuration = (recording.duration ?? 0) > 0;
   const showFilesize = !!recording.filesize && !showDuration;
@@ -416,11 +469,13 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
           )}
 
           {/* Layer 2: Sprite sheet — instant hover preview, fades in smoothly
-              on top of the thumbnail. No need to hide the thumbnail because
-              the sprite covers it when ready. */}
-          {showSprite && spriteUrl && (
+              on top of the thumbnail. The sprite is streamed through
+              useProgressiveImage: a blob URL once its bytes are here (so the
+              browser never double-fetches), or the original URL when streaming
+              isn't possible and the native load + fallback chain takes over. */}
+          {showSprite && spriteProgressive.src && (
             <SpriteSlideshow
-              spriteUrl={spriteUrl}
+              spriteUrl={spriteProgressive.src}
               cols={spriteGrid?.cols}
               rows={spriteGrid?.rows}
               className="absolute inset-0 w-full h-full transition-opacity duration-300"
@@ -434,9 +489,9 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               available. Static thumbnails (.th.webp) are skipped; animated
               webp (catbox via Worker, pixhost via proxy) and real videos load
               here. */}
-          {showWebpImg && animatedImageUrl && (
+          {showWebpImg && previewProgressive.src && (
             <img
-              src={animatedImageUrl}
+              src={previewProgressive.src}
               alt={recording.username}
               referrerPolicy="no-referrer"
               loading="eager"
@@ -456,22 +511,22 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               }}
             />
           )}
-          {showCatboxWebpImg && catboxWorkerUrl && (
+          {showCatboxWebpImg && previewProgressive.src && (
             <img
-              src={catboxWorkerUrl}
+              src={previewProgressive.src}
               alt={recording.username}
               referrerPolicy="no-referrer"
               loading="eager"
               decoding="sync"
               fetchPriority="high"
               className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
-              style={{ opacity: 1 }}
+              style={{ opacity: previewReady ? 1 : 0 }}
               onLoad={() => {
-                dlog("hoverpreview", "[VideoCard] catbox webp loaded (worker proxy)", { id: recording.id, src: catboxWorkerUrl });
+                dlog("hoverpreview", "[VideoCard] catbox webp loaded", { id: recording.id, src: previewProgressive.src });
                 setPreviewReady(true);
               }}
-              onError={(e) => {
-                dlog("hoverpreview", "[VideoCard] catbox webp failed (worker proxy), trying next fallback", { id: recording.id, index: previewIndex });
+              onError={() => {
+                dlog("hoverpreview", "[VideoCard] catbox webp failed, trying next fallback", { id: recording.id, index: previewIndex });
                 if (previewIndex + 1 < webpFallbacks.length) {
                   setMediaFail("none");
                   setPreviewReady(false);
@@ -482,9 +537,9 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               }}
             />
           )}
-          {showVideoEl && videoUrl && (
+          {showVideoEl && previewVideoSrc && (
             <video
-              src={videoUrl}
+              src={previewVideoSrc}
               poster={hasStaticImage ? staticImage! : undefined}
               className={cn(
                 "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
@@ -492,6 +547,17 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               )}
               autoPlay muted playsInline loop
               preload="auto"
+              onProgress={(e) => {
+                // Real-time buffered progress (bytes on disk vs duration).
+                const v = e.currentTarget;
+                if (v.buffered.length > 0 && v.duration > 0 && isFinite(v.duration)) {
+                  const pct = Math.min(
+                    99,
+                    (v.buffered.end(v.buffered.length - 1) / v.duration) * 100,
+                  );
+                  setVideoProgress((prev) => (prev === null || pct > prev ? pct : prev));
+                }
+              }}
               onCanPlay={onPreviewReady}
               onLoadedData={() => dlog("hoverpreview", "[VideoCard] video loadeddata", { id: recording.id, src: videoUrl })}
               onPlaying={() => dlog("hoverpreview", "[VideoCard] video playing", { id: recording.id, loop: true })}
@@ -531,12 +597,21 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
 
 
 
-          {/* Shimmer + pulse animation while the preview loads — replaces
-              the old thin progress bar with a more attractive effect. */}
+          {/* Hover feedback while media loads: a subtle glass shine sweep
+              across the card plus the real-time progress bar driven by actual
+              bytes received (sprite stream / video buffered ranges). No
+              spinner/loader circle — progress is shown by the bar itself. */}
           {showLoadingBar && (
             <>
               <div className="preview-loading-shimmer" />
-              <div className="preview-loading-pulse" />
+              {hoverProgress !== null && (
+                <div className="absolute bottom-0 left-0 right-0 z-20 h-[3px] bg-black/40 pointer-events-none">
+                  <div
+                    className="h-full bg-primary/90 transition-[width] duration-150 ease-out"
+                    style={{ width: `${hoverProgress}%` }}
+                  />
+                </div>
+              )}
             </>
           )}
 

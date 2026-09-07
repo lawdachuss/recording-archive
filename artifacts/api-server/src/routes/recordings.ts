@@ -5,7 +5,6 @@ import {
   ListRelatedRecordingsQueryParams,
 } from "@workspace/api-zod";
 import { supabase } from "../lib/supabase.js";
-import { db, sql } from "@workspace/db";
 import { cache } from "../middleware/cache.js";
 
 const router = Router();

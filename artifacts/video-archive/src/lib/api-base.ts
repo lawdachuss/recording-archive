@@ -5,7 +5,7 @@
  */
 export function getApiBaseUrl(): string {
   const url = import.meta.env.VITE_API_URL as string | undefined;
-  return url ? url.replace(/\/+$/, "") : "";
+  return url && url.trim() ? url.replace(/\/+$/, "") : "";
 }
 
 /**

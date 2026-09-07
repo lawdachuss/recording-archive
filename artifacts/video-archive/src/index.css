@@ -529,9 +529,10 @@
   }
 }
 
-/* ── Hover-preview loading shimmer ──────────────────────────────────
-   A diagonal shimmer sweep across the card while the preview loads.
-   Much more attractive than a thin progress bar. */
+/* ── Hover-preview glass shine ────────────────────────────────────
+   A subtle diagonal glass sweep across the card while hover media loads.
+   The real-time progress bar (bottom edge) reports actual bytes received;
+   there is deliberately NO spinner/loader circle — progress is the bar. */
 @keyframes preview-shimmer {
   0% { transform: translateX(-100%) skewX(-15deg); }
   100% { transform: translateX(200%) skewX(-15deg); }
@@ -559,27 +560,6 @@
     transparent 70%
   );
   animation: preview-shimmer 1.5s ease-in-out infinite;
-}
-
-/* Subtle pulsing ring at center */
-@keyframes preview-pulse {
-  0%, 100% { opacity: 0.4; transform: scale(0.95); }
-  50% { opacity: 1; transform: scale(1.05); }
-}
-
-.preview-loading-pulse {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 11;
-  pointer-events: none;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.25);
-  border-top-color: rgba(255, 255, 255, 0.8);
-  animation: preview-pulse 1.2s ease-in-out infinite;
 }
 
 /* ── Circle performer card hover bloom ────────────────── */

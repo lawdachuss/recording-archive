@@ -131,8 +131,8 @@ const STORE_NAME = "img-cache";
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const FRESHNESS_MS = 30 * 60 * 1000; // 30 minutes — skip re-fetch if cached within this window
 const MAX_CACHE_BYTES = 200 * 1024 * 1024; // 200 MB — up from 150 MB to hold more sprites
-const FETCH_TIMEOUT_MS = 10_000; // 10s — down from 15s for faster fallback
-const CONCURRENT_FETCHES = 8; // up from 6 — more parallelism for catalog warmer
+const FETCH_TIMEOUT_MS = 15_000; // 15s — HTTP/2 resets (ERR_HTTP2_PROTOCOL_ERROR) on some hosts timeout prematurely; give them room to recover
+const CONCURRENT_FETCHES = 4; // limit parallelism to reduce HTTP/2 connection resets on slow hosts
 
 // ─── Priority types ─────────────────────────────────────────────────────────
 
@@ -224,6 +224,13 @@ function memSet(url: string, blobUrl: string, sizeBytes: number, refs = 0) {
 function memDelete(url: string) {
   const record = memoryCache.get(url);
   if (record !== undefined) {
+    if (record.refs > 0) {
+      // A mounted card is still displaying this blob URL — revoking it now
+      // would blank that image. Keep the memory record alive (it is released
+      // and revoked once the last reference drops in memRelease); only the
+      // IDB entry is gone, so the next cache miss refetches.
+      return;
+    }
     URL.revokeObjectURL(record.blobUrl);
     memoryCache.delete(url);
     memoryCacheBytes = Math.max(0, memoryCacheBytes - record.size);
@@ -243,13 +250,23 @@ const inflight = new Map<string, Promise<ImageCacheEntry | null>>();
 // same-origin /api/media (pixhost proxy) is unbounded-ish but still limited.
 
 const SLOW_HOST_RE = /(^|\.)catbox\.moe$|(^|\.)litterbox\.catbox\.moe$/;
+const HTTP2_RESET_HOSTS = new Set([
+  "files.catbox.moe",
+  "catbox.moe",
+  "litter.catbox.moe",
+]);
 const HOST_MAX_CONCURRENT = 8;
 const SLOW_HOST_MAX_CONCURRENT = 3;
 
 const hostSemaphores = new Map<string, { running: number; waiters: (() => void)[] }>();
 
+function isHttp2ResetHost(host: string): boolean {
+  return HTTP2_RESET_HOSTS.has(host) || HTTP2_RESET_HOSTS.has(host.replace(/^www\./, ""));
+}
+
 function hostConcurrency(host: string): number {
-  return SLOW_HOST_RE.test(host) ? SLOW_HOST_MAX_CONCURRENT : HOST_MAX_CONCURRENT;
+  if (SLOW_HOST_RE.test(host) || isHttp2ResetHost(host)) return SLOW_HOST_MAX_CONCURRENT;
+  return HOST_MAX_CONCURRENT;
 }
 
 function acquireHost(host: string): Promise<void> {
@@ -385,6 +402,16 @@ let flushTimer: number | null = null;
 const FLUSH_DELAY_MS = 50;
 const FLUSH_BATCH_MAX = 50;
 
+// Running estimate of the IDB cache size, kept incrementally in-sync as
+// entries are written/deleted. Avoids a full cursor scan on every flush to
+// decide whether to auto-evict. Refreshed authoritatively by evictIfNeeded()
+// (which scans anyway) so it can't drift.
+let idbSizeEstimate = 0;
+let idbEstimateInitialized = false;
+// Set after a flush pushes the estimate over budget — triggers a single
+// coalesced eviction pass rather than evicting on every write.
+let evictionScheduled = false;
+
 function scheduleFlush() {
   if (writeBatch.length + deleteBatch.length >= FLUSH_BATCH_MAX) {
     flushNow();
@@ -416,11 +443,39 @@ async function flushNow() {
       tx.onabort = () => reject(tx.error);
     });
 
+    // Keep the running size estimate in sync with what was actually written.
+    for (const { entry } of writes) {
+      idbSizeEstimate += entry.size;
+      idbEstimateInitialized = true;
+    }
+    // Deletes shrink the estimate. When the deleted URL also exists in the
+    // memory cache we know its size — subtract that so overwrites (delete +
+    // re-write of a changed URL) don't drift the estimate upward.
+    for (const { url } of deletes) {
+      const memRec = memoryCache.get(url);
+      if (memRec) idbSizeEstimate = Math.max(0, idbSizeEstimate - memRec.size);
+    }
+
     for (const { resolve } of writes) resolve(null);
     for (const { resolve } of deletes) resolve();
   } catch {
     for (const { resolve } of writes) resolve(null);
     for (const { resolve } of deletes) resolve();
+    return;
+  }
+
+  // Coalesced auto-eviction: once our estimate is over budget, run a single
+  // eviction pass (debounced) instead of reacting to every write.
+  if (
+    idbEstimateInitialized &&
+    idbSizeEstimate > MAX_CACHE_BYTES &&
+    !evictionScheduled
+  ) {
+    evictionScheduled = true;
+    window.setTimeout(() => {
+      evictionScheduled = false;
+      void evictIfNeeded();
+    }, 1000);
   }
 }
 
@@ -451,7 +506,10 @@ function enqueueDelete(url: string): Promise<void> {
  * the memory cache. Use getCachedBlobUrl() when you need the actual data.
  */
 export async function isCached(url: string): Promise<boolean> {
-  if (memGet(url) !== null) return true;
+  if (memGet(url) !== null) {
+    trackHit("memory", url);
+    return true;
+  }
   try {
     const db = await openDB();
     return new Promise((resolve) => {
@@ -593,16 +651,38 @@ export async function getCachedBlob(url: string): Promise<Blob | null> {
  * Deduplicates concurrent calls — only one fetch per URL.
  * Skips re-fetching if the IDB entry is fresh (< 1 hour old).
  */
+// Cross-origin hosts that send `Access-Control-Allow-Origin`, so the browser
+// can fetch() them in CORS mode and we can persist the body to IDB. catbox
+// family is the only one we cache this way: it blocks the server proxy (502),
+// wsrv flattens its animated webp, and its previews are served DIRECT from the
+// browser — persisting them to IDB is what makes hover instant / zero-network.
+// All other cross-origin hosts are skipped client-side (they don't send CORS,
+// so fetch() throws noisy-but-harmless CORS errors; their media goes through
+// the same-origin /api/media proxy or the browser HTTP cache instead).
+const CORS_FETCHABLE_HOSTS = [
+  "catbox.moe",
+  "litter.catbox.moe",
+];
+
+function isCorsFetchable(url: string): boolean {
+  try {
+    const hostname = new URL(url, window.location.origin).hostname.toLowerCase();
+    return CORS_FETCHABLE_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
+  } catch {
+    return false;
+  }
+}
+
 export async function cacheImage(
   url: string,
   priority: CachePriority = 2,
 ): Promise<ImageCacheEntry | null> {
-  // Skip cross-origin URLs — fetch() triggers CORS errors for hosts that
-  // don't send Access-Control-Allow-Origin (iili.io etc.). The errors are
-  // harmless but noisy. Browser HTTP cache + SW handle repeat visits.
+  // Skip cross-origin URLs EXCEPT hosts known to send Access-Control-Allow-Origin
+  // (catbox). For non-CORS hosts fetch() would trigger noisy CORS errors; their
+  // media is handled by the browser HTTP cache + SW / same-origin proxy instead.
   try {
     const parsed = new URL(url, window.location.origin);
-    if (parsed.origin !== window.location.origin) return null;
+    if (parsed.origin !== window.location.origin && !isCorsFetchable(url)) return null;
   } catch {
     // Relative URL — proceed normally
   }
@@ -662,7 +742,15 @@ function isValidImageMagic(head: Uint8Array): boolean {
     head[0] === 0x00 && head[1] === 0x00 && head[2] === 0x00 && head[3] === 0x18 && // size=24
     head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70 && // ftyp
     head[8] === 0x61 && head[9] === 0x76 && head[10] === 0x69 && head[11] === 0x66; // avif
-  return jpeg || png || gif || webp || avif;
+  // MP4: ISO-BMFF "ftyp" at offset 4 (isom/mp42/avc1/M4V/mp41...).
+  const mp4 =
+    head.length >= 12 &&
+    head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70;
+  // WebM / Matroska: EBML header 0x1A45DFA3.
+  const webm =
+    head.length >= 4 &&
+    head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3;
+  return jpeg || png || gif || webp || avif || mp4 || webm;
 }
 
 async function _cacheImageInner(
@@ -700,14 +788,19 @@ async function _cacheImageInner(
 
     const contentType = res.headers.get("content-type") || "application/octet-stream";
     const contentLength = parseInt(res.headers.get("content-length") || "0", 10);
-    if (contentLength > 10 * 1024 * 1024) return null;
+    // Previews/videos can be tens of MB — allow a much larger cap for media
+    // that isn't a small image. Images stay capped small (a multi-MB "image"
+    // is almost certainly a mis-detected video being fetched as a thumbnail).
+    const isVideoType = /video\//i.test(contentType) || /\/mp4$|\.webm|video\//i.test(url);
+    const sizeCap = isVideoType ? 80 * 1024 * 1024 : 10 * 1024 * 1024;
+    if (contentLength > sizeCap) return null;
     // Never cache the proxy's "Image unavailable" placeholder — storing it as a
     // real thumbnail would mask a recovered image and serve a broken placeholder
     // from IDB for up to 7 days.
     if (contentType.includes("image/svg+xml")) return null;
 
     const blob = await res.blob();
-    if (blob.size === 0 || blob.size > 10 * 1024 * 1024) return null;
+    if (blob.size === 0 || blob.size > sizeCap) return null;
 
     // Validate magic bytes so a corrupt / non-image body is never stored.
     const head = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
@@ -841,6 +934,11 @@ export async function getCacheSize(): Promise<number> {
 export async function evictIfNeeded(): Promise<void> {
   try {
     const size = await getCacheSize();
+    // Re-sync the running estimate with the authoritative scan so it can't
+    // drift over time (it's an approximation that can accumulate error from
+    // deletes without known sizes).
+    idbSizeEstimate = size;
+    idbEstimateInitialized = true;
     if (size <= MAX_CACHE_BYTES) return;
 
     const db = await openDB();
@@ -908,6 +1006,9 @@ export async function clearImageCache(): Promise<void> {
   for (const record of memoryCache.values()) URL.revokeObjectURL(record.blobUrl);
   memoryCache.clear();
   memoryCacheBytes = 0;
+  // Re-sync the running IDB size estimate — the store is about to be emptied.
+  idbSizeEstimate = 0;
+  idbEstimateInitialized = true;
 
   try {
     const db = await openDB();
@@ -1008,8 +1109,23 @@ export function setCacheBudget(budget: Partial<CacheBudget>): void {
 }
 
 /**
+ * Typical size (bytes) used when estimating how much a preload of this
+ * priority will consume. Priorities map to media type: previews (1) are
+ * multi-hundred-KB to multi-MB, sprites (2) are ~200-400KB, thumbnails (3)
+ * are tiny (~30KB). This lets budget gating allocate fairly instead of
+ * assuming everything is a 30KB thumbnail.
+ */
+const PRIORITY_ESTIMATE_BYTES: Record<CachePriority, number> = {
+  1: 500_000,  // preview — large
+  2: 200_000,  // sprite — medium
+  3: 30_000,   // thumbnail — small
+};
+
+/**
  * Preload images with budget awareness. Checks if adding these images
- * would exceed the budget and evicts old entries if needed.
+ * would exceed the budget and evicts old entries if needed. The estimated
+ * cost of each item scales with its priority (previews are far larger than
+ * thumbnails), so budget gating doesn't over- or under-allocate.
  *
  * @returns Number of images successfully cached
  */
@@ -1031,13 +1147,14 @@ export async function preloadWithBudget(
     return 0;
   }
   
-  // Estimate total size of URLs to preload (rough: 30KB per thumbnail)
-  const estimatedSize = urls.length * 30_000;
+  // Estimate total size using priority-appropriate per-item cost.
+  const estPerItem = PRIORITY_ESTIMATE_BYTES[priority];
+  const estimatedSize = urls.length * estPerItem;
   const remainingBudget = afterEviction.maxTotalBytes - afterEviction.totalBytesUsed;
   
   if (estimatedSize > remainingBudget) {
-    // Only preload what fits in the remaining budget
-    const maxUrls = Math.floor(remainingBudget / 30_000);
+    // Only preload what fits in the remaining budget.
+    const maxUrls = Math.max(0, Math.floor(remainingBudget / estPerItem));
     urls = urls.slice(0, maxUrls);
   }
   

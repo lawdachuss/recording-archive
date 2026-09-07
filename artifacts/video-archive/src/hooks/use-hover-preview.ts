@@ -100,8 +100,13 @@ export function useHoverPreview({
               // Always preload the sprite — it's the instant hover effect.
               // Also preload the preview media when reachable (skip catbox
               // which blocks datacenter IPs and many residential networks).
+              // On a constrained connection the sprite is the ONLY hover
+              // preview we still render (heavy video/webp is disabled), so it
+              // must warm even when slow. Marking it immediate bypasses the
+              // constrained skip while keeping the visible thumbnails' own
+              // <img> path (cacheImage) untouched.
               if (spriteUrl) {
-                preloadImage(spriteUrl);
+                preloadImage(spriteUrl, { immediate: isConnectionConstrained() });
               }
               if (previewUrl) {
                 preloadPreviewMedia(previewUrl);

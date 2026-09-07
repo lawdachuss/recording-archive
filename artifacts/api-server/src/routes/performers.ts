@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { GetPerformerParams } from "@workspace/api-zod";
-import { supabase } from "../lib/supabase.js";
-import { db, sql } from "@workspace/db";
+import { supabase, fetchAll } from "../lib/supabase.js";
 import { cache } from "../middleware/cache.js";
 import { logger } from "../lib/logger.js";
 
@@ -408,6 +407,147 @@ router.get(
   },
 );
 
+// ─── Performer list (archive stats per performer) ─────────────────────────
+// PostgREST can't express COUNT(DISTINCT)/DISTINCT ON, so aggregate the view
+// rows in JS. Result is cached for 10 minutes.
+//
+// Thumbnail host preference: pixhost-hosted thumbnails are served to the
+// browser through our own /api/media proxy (reachable everywhere the site
+// is), while catbox thumbnails load DIRECTLY from the browser and are blocked/
+// unreliable on many networks. So for the card image we prefer the newest
+// pixhost thumbnail; the newest thumbnail of any host is the fallback.
+interface PerformerAgg {
+  username: string;
+  recording_count: number;
+  gender: string | null;
+  latest_timestamp: string | null;
+  latest_thumbnail: string | null;
+  sprite_url: string | null;
+  // id of the row chosen for the card image — used to fetch its thumbnail
+  // mirrors (same image on other hosts) for the fallback chain.
+  pickId: string | null;
+}
+
+type RowLike = {
+  id: string | null;
+  username: string | null;
+  gender: string | null;
+  timestamp: string | null;
+  thumbnail_url: string | null;
+  sprite_url: string | null;
+};
+
+/** Hosts served through the always-reachable /api/media proxy. */
+function isProxiedThumbHost(url: string): boolean {
+  try {
+    const host = new URL(url).hostname;
+    return host === "pixhost.to" || host.endsWith(".pixhost.to");
+  } catch {
+    return false;
+  }
+}
+
+/** Newest of `cur` and `candidate` (by ISO timestamp; null timestamps lose). */
+function newerRow(cur: RowLike | null, candidate: RowLike): RowLike {
+  if (!cur) return candidate;
+  if (!candidate.timestamp) return cur;
+  if (!cur.timestamp) return candidate;
+  return candidate.timestamp > cur.timestamp ? candidate : cur;
+}
+
+async function fetchPerformers(): Promise<PerformerAgg[]> {
+  const { data, error } = await fetchAll((start, end) =>
+    supabase
+      .from("recordings_with_links")
+      .select("id,username,gender,timestamp,thumbnail_url,sprite_url")
+      .not("links", "is", "null")
+      .range(start, end),
+  );
+  if (error) throw error;
+
+  const byName = new Map<
+    string,
+    {
+      count: number;
+      gender: string | null;
+      latestTs: string | null;
+      // Most recent row that has any thumbnail at all.
+      thumbRow: RowLike | null;
+      // Most recent row whose thumbnail is on a proxied (always-reachable) host.
+      proxiedThumbRow: RowLike | null;
+      // Most recent row overall (sprite_url fallback source).
+      latestRow: RowLike | null;
+    }
+  >();
+
+  for (const r of data ?? []) {
+    if (!r.username) continue;
+    const row: RowLike = r;
+    let agg = byName.get(r.username);
+    if (!agg) {
+      agg = { count: 0, gender: null, latestTs: null, thumbRow: null, proxiedThumbRow: null, latestRow: null };
+      byName.set(r.username, agg);
+    }
+    agg.count++;
+    if (row.gender && !agg.gender) agg.gender = row.gender;
+    if (row.timestamp && (!agg.latestTs || row.timestamp > agg.latestTs)) agg.latestTs = row.timestamp;
+    if (row.thumbnail_url) {
+      agg.thumbRow = newerRow(agg.thumbRow, row);
+      if (isProxiedThumbHost(row.thumbnail_url)) {
+        agg.proxiedThumbRow = newerRow(agg.proxiedThumbRow, row);
+      }
+    }
+    agg.latestRow = newerRow(agg.latestRow, row);
+  }
+
+  const performers: PerformerAgg[] = [];
+  for (const [username, agg] of byName) {
+    // Card image: newest proxied (pixhost) thumbnail when one exists — it is
+    // guaranteed to load through /api/media. Otherwise fall back to the most
+    // recent thumbnail of any host, then to the newest row's sprite.
+    const imgRow = agg.proxiedThumbRow ?? agg.thumbRow ?? agg.latestRow;
+    performers.push({
+      username,
+      recording_count: agg.count,
+      gender: agg.gender,
+      latest_timestamp: agg.latestTs,
+      latest_thumbnail: imgRow?.thumbnail_url ?? imgRow?.sprite_url ?? null,
+      // Keep the hover sprite on the same (preferred, proxied) row when it has
+      // one, so the avatar and its hover animation are both reachable.
+      sprite_url: imgRow?.sprite_url ?? agg.latestRow?.sprite_url ?? null,
+      pickId: imgRow?.id ?? null,
+    });
+  }
+  return performers;
+}
+
+// ─── Mirror fallback chain for the card image ─────────────────────────────
+// Mirrors store the SAME image on other hosts ({ Host: url }). Order mirrors
+// so a card image keeps showing even when the primary host fails to load:
+// pixhost mirrors first (served through our /api/media proxy — reachable
+// everywhere the site is), then catbox (direct, unreliable on many networks),
+// then the rest.
+const MIRROR_HOST_PRIORITY = ["Pixhost", "Catbox", "ImgChest", "freeimage.host"];
+
+function buildFallbackImages(
+  primary: string | null | undefined,
+  mirrors: Record<string, string> | null | undefined,
+  sprite: string | null | undefined,
+): string[] {
+  const out: string[] = [];
+  const push = (u: string | null | undefined) => {
+    if (u && /^https?:\/\//i.test(u) && !out.includes(u)) out.push(u);
+  };
+  push(primary);
+  if (mirrors && typeof mirrors === "object") {
+    for (const host of MIRROR_HOST_PRIORITY) push(mirrors[host]);
+    for (const u of Object.values(mirrors)) push(u);
+  }
+  // Sprite is a different image — last resort so the card still has an image.
+  push(sprite);
+  return out;
+}
+
 router.get(
   "/performers",
   cache({
@@ -429,80 +569,53 @@ router.get(
       const gender = (req.query.gender as string) || "";
       const sort = (req.query.sort as string) || "count";
 
-      const genderFilter = gender
-        ? sql`WHERE gender = ${gender}`
-        : sql``;
-      const searchFilter = search
-        ? sql`AND LOWER(username) LIKE ${`%${search.toLowerCase()}%`}`
-        : sql``;
+      let performers = await fetchPerformers();
 
-      const countResult = await db.execute(sql`
-        SELECT COUNT(DISTINCT username)::int AS count
-        FROM recordings_with_links
-        WHERE links IS NOT NULL
-        ${genderFilter}
-        ${searchFilter}
-      `);
-      const totalPerformers =
-        (countResult.rows[0] as any)?.count ?? 0;
+      if (gender) {
+        performers = performers.filter((p) => p.gender === gender);
+      }
+      if (search) {
+        const lower = search.toLowerCase();
+        performers = performers.filter((p) => p.username.toLowerCase().includes(lower));
+      }
 
-      const sortClause =
-        sort === "name"
-          ? sql`ORDER BY username ASC`
-          : sql`ORDER BY recording_count DESC, username ASC`;
+      const totalPerformers = performers.length;
 
-      const result = await db.execute(sql`
-        WITH performer_stats AS (
-          SELECT
-            username,
-            gender,
-            COUNT(*)::int AS recording_count,
-            MAX(timestamp) AS latest_timestamp
-          FROM recordings_with_links
-          WHERE links IS NOT NULL
-          ${genderFilter}
-          ${searchFilter}
-          GROUP BY username, gender
-        ),
-        latest_recordings AS (
-          SELECT DISTINCT ON (r.username)
-            r.username,
-            r.thumbnail_url,
-            r.sprite_url
-          FROM recordings_with_links r
-          WHERE r.links IS NOT NULL
-          ORDER BY r.username,
-            CASE WHEN r.thumbnail_url IS NOT NULL THEN 0 ELSE 1 END,
-            r.timestamp DESC
-        )
-        SELECT
-          ps.username,
-          ps.recording_count,
-          ps.gender,
-          ps.latest_timestamp,
-          lr.thumbnail_url AS latest_thumbnail,
-          lr.sprite_url
-        FROM performer_stats ps
-        LEFT JOIN latest_recordings lr ON lr.username = ps.username
-        ${sortClause}
-        LIMIT ${limit} OFFSET ${(page - 1) * limit}
-      `);
+      if (sort === "name") {
+        performers.sort((a, b) => a.username.localeCompare(b.username));
+      } else {
+        performers.sort(
+          (a, b) =>
+            b.recording_count - a.recording_count ||
+            a.username.localeCompare(b.username),
+        );
+      }
 
-      const performers = result.rows.map((r: any) => ({
-        username: r.username as string,
-        recording_count: r.recording_count as number,
-        latest_thumbnail:
-          (r.latest_thumbnail || r.sprite_url) as string | null,
-        sprite_url: r.sprite_url as string | null,
-        gender: r.gender as string | null,
-        latest_timestamp: r.latest_timestamp as string | null,
-      }));
+      const offset = (page - 1) * limit;
+      const pageRows = performers.slice(offset, offset + limit);
+      const totalPages = Math.ceil(totalPerformers / limit) || 1;
 
-      const totalPages =
-        Math.ceil(totalPerformers / limit) || 1;
+      // Mirror fallbacks for the returned page: fetch thumbnail_mirrors of the
+      // exact row each performer's card image came from (same image, other
+      // hosts) so the card keeps showing an image when a host fails.
+      const mirrorMap = await fetchMirrors(
+        pageRows.map((p) => p.pickId).filter((id): id is string => !!id),
+      );
 
       res.json({
-        performers,
+        performers: pageRows.map((p) => {
+          const primary = p.latest_thumbnail || p.sprite_url;
+          const mirrors = p.pickId ? mirrorMap.get(p.pickId)?.thumbnail_mirrors ?? null : null;
+          return {
+            username: p.username,
+            recording_count: p.recording_count,
+            latest_thumbnail: primary,
+            sprite_url: p.sprite_url,
+            gender: p.gender,
+            latest_timestamp: p.latest_timestamp,
+            fallback_images: buildFallbackImages(primary, mirrors, p.sprite_url),
+          };
+        }),
         total: totalPerformers,
         page,
         limit,

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
-import { proxyUrl } from "@/lib/proxy-url";
-import { preloadImage, preloadRecordingSprites, isReachablePreviewUrl } from "@/lib/preload-sprite";
+import { proxyImageUrl } from "@/lib/proxy-url";
+import { preloadImage, preloadRecordingSprites } from "@/lib/preload-sprite";
 import { isConnectionConstrained } from "@/lib/connection";
 
 export interface ContinuousPrefetchOptions {
@@ -58,15 +58,14 @@ export function useContinuousPrefetch({
           // Eagerly warm the first screen of thumbnails at high priority.
           recs.slice(0, eagerThumbs).forEach((rec) => {
             if (rec.thumbnail_url) {
-              preloadImage(proxyUrl(rec.thumbnail_url), { priority: 3, immediate: true });
+              preloadImage(proxyImageUrl(rec.thumbnail_url), { priority: 3, immediate: true });
             }
           });
-          // Sprites + previews for the whole page (best-effort, lower priority).
+          // Sprites for the whole page (best-effort, lower priority). Preview
+          // media is NOT prefetched here — it's multi-MB and would compete with
+          // the grid; near-viewport cards preload their own preview via
+          // useHoverPreview (capped by preload-preview.ts).
           preloadRecordingSprites(recs.slice(eagerThumbs));
-          recs
-            .filter((r) => r.preview_url && isReachablePreviewUrl(r.preview_url))
-            .slice(0, eagerThumbs)
-            .forEach((r) => preloadImage(proxyUrl(r.preview_url), { priority: 1 }));
           lastPrefetched.current = target;
           page = target;
         }
