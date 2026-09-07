@@ -13,6 +13,7 @@ import {
 import { addRecentSearch, getRecentSearches, clearRecentSearches } from "@/lib/bookmarks";
 import { useSearchSuggestions, useListTags, useListPerformers, type SearchSuggestion } from "@/lib/api";
 import { proxyImageUrl } from "@/lib/proxy-url";
+import { trackActivity } from "@/lib/rum";
 
 interface SearchDropdownProps {
   /** Controlled: whether the search bar is expanded */
@@ -97,6 +98,7 @@ export function SearchDropdown({ open, onOpenChange }: SearchDropdownProps) {
     (q: string) => {
       if (q.trim()) {
         addRecentSearch(q.trim());
+        trackActivity("search", { meta: { q: q.trim().slice(0, 200) } });
         setLocation(`/browse?search=${encodeURIComponent(q.trim())}`);
       } else {
         setLocation("/browse");

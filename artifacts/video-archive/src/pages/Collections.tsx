@@ -6,6 +6,7 @@ import { Layout } from "@/components/Layout";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, type CloudCollection } from "@/lib/user-api";
+import { trackActivity } from "@/lib/rum";
 import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
 import {
   FolderOpen, Plus, Trash2, Film, ListVideo, ChevronRight,
@@ -43,6 +44,8 @@ export default function Collections() {
     setCreating(true);
     try {
       await userApi.createCollection(newName.trim(), newDesc.trim() || undefined);
+      // Analytics: collection created.
+      trackActivity("collection_create", { meta: { name: newName.trim().slice(0, 100) } });
       queryClient.invalidateQueries({ queryKey: ["user", "collections"] });
       setNewName("");
       setNewDesc("");

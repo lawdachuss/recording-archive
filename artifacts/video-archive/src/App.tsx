@@ -1,5 +1,5 @@
 import { Component, lazy, Suspense, useEffect, type ErrorInfo, type ReactNode } from "react";
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { AlertCircle, RefreshCw } from "lucide-react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -10,6 +10,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { createQueryClient, restoreQueryCache, persistQueryCache } from "@/lib/query-client";
 import { initCache } from "@/lib/cache";
 import { startCatalogWarmup, onWarmProgress, getWarmProgress } from "@/lib/catalog-warmer";
+import { trackActivity } from "@/lib/rum";
 
 // Home is eagerly imported for instant first paint (landing page)
 // All other pages are lazy-loaded — fetched on-demand when navigated to
@@ -117,10 +118,21 @@ class GlobalErrorBoundary extends Component<{ children: ReactNode }, { hasError:
   }
 }
 
+// Fires a page_view activity event on every route change (SPA navigation).
+// The full path (including query string) is captured for search/filter routes.
+function TrackPageView() {
+  const [location] = useLocation();
+  useEffect(() => {
+    trackActivity("page_view", { meta: { path: location.slice(0, 256) } });
+  }, [location]);
+  return null;
+}
+
 function Router() {
   return (
     <Suspense fallback={<PageLoading />}>
       <GlobalErrorBoundary>
+      <TrackPageView />
       <Switch>
         <Route path="/" component={Home} />
         <Route path="/browse" component={Browse} />

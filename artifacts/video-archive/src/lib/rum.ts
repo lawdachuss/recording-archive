@@ -1,29 +1,44 @@
 /**
- * rum.ts — Real-user monitoring, zero dependencies.
+ * rum.ts — real-user monitoring + activity tracking, zero dependencies.
  *
- * Collects Core Web Vitals (LCP, INP via event timing, CLS) plus a periodic
- * resource-timing summary, and ships them to the API with `navigator.sendBeacon`
- * so reporting never blocks navigation. Best-effort: every failure is swallowed.
+ * One shared batched beacon pipeline:
+ *   - `trackActivity(name, { value, meta })` — structured events (page views,
+ *     recording views, searches). Sent fire-and-forget via sendBeacon, so
+ *     they never block navigation.
+ *   - Core Web Vitals (LCP, INP proxy, CLS) + a resource-timing summary are
+ *     collected on top, 10% session-sampled to keep ingest proportional.
  *
- * The ingest endpoint is fire-and-forget on the server side (see routes/rum.ts)
- * — this data must never slow the site down or break anything if it fails.
+ * Everything ships to POST /api/rum, which routes into the Redis Stream →
+ * batched Postgres pipeline (Stage 1). Every failure is swallowed — this
+ * layer must never break the page.
  */
 
 const ENDPOINT = "/api/rum";
 
+export interface ActivityMeta {
+  [key: string]: string | number | boolean | null;
+}
+
+export interface TrackOptions {
+  /** Numeric payload (defaults to 1). */
+  value?: number;
+  /** Structured attributes stored as jsonb (e.g. { recording_id }). */
+  meta?: ActivityMeta;
+}
+
 interface RumMetric {
   name: string;
   value: number;
-  rating?: string;
   path: string;
   ts: number;
+  meta?: ActivityMeta;
 }
 
 const queue: RumMetric[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let sessionSampled: boolean | null = null;
 
-/** Sample 10% of sessions to keep ingest volume proportional, not per-pageload. */
+/** Sample 10% of sessions to keep RUM (CWV) volume proportional. */
 function isSampled(): boolean {
   if (sessionSampled === null) {
     try {
@@ -44,7 +59,6 @@ function currentPath(): string {
 }
 
 function enqueue(metric: RumMetric): void {
-  if (!isSampled()) return;
   queue.push(metric);
   if (queue.length >= 10) {
     flush();
@@ -76,11 +90,29 @@ function flush(): void {
       }).catch(() => {});
     }
   } catch {
-    /* never let RUM break the page */
+    /* never let tracking break the page */
   }
 }
 
-// ─── Core Web Vitals (minimal inline implementations) ─────────────
+/**
+ * Track a structured activity event. Unsampled (unlike CWV metrics) — views,
+ * searches and navigation are lower-volume and worth capturing fully.
+ */
+export function trackActivity(name: string, options: TrackOptions = {}): void {
+  if (typeof window === "undefined") return;
+  if (!import.meta.env.PROD) return; // never track in dev
+  if (!name || name.length === 0) return;
+
+  enqueue({
+    name: name.slice(0, 64),
+    value: typeof options.value === "number" && Number.isFinite(options.value) ? options.value : 1,
+    path: currentPath(),
+    ts: Date.now(),
+    ...(options.meta && Object.keys(options.meta).length > 0 ? { meta: options.meta } : {}),
+  });
+}
+
+// ─── Core Web Vitals (10% session-sampled) ───────────────────────
 
 /** Largest Contentful Paint. */
 function observeLcp(): void {
@@ -161,8 +193,6 @@ function observeResources(): void {
       if (count > 0) {
         enqueue({ name: "resources", value: count, path: currentPath(), ts: Date.now() });
         enqueue({ name: "resource_bytes", value: bytes, path: currentPath(), ts: Date.now() });
-        // clearResourceTimings keeps the buffer from growing unbounded on
-        // long sessions; metrics for the interval are already captured.
         performance.clearResourceTimings();
       }
     }, 30_000);
@@ -173,12 +203,16 @@ function observeResources(): void {
 
 export function initRum(): void {
   if (typeof window === "undefined") return;
-  // Never run in dev.
   if (!import.meta.env.PROD) return;
-  observeLcp();
-  observeCls();
-  observeInpProxy();
+
+  // CWV metrics are session-sampled (10%); activity events are not.
+  if (isSampled()) {
+    observeLcp();
+    observeCls();
+    observeInpProxy();
+  }
   observeResources();
+
   // Final flush on unload.
   addEventListener("pagehide", flush, { once: true });
 }

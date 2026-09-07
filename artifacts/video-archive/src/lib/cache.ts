@@ -60,15 +60,13 @@ interface EdgeCacheResult {
 
 async function edgeGet(key: string): Promise<EdgeCacheResult | null> {
   try {
-    const res = await fetch(EDGE_CACHE_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key, action: "get" }),
+    const res = await fetch(`${EDGE_CACHE_URL}?key=${encodeURIComponent(key)}`, {
+      method: "GET",
     });
     if (!res.ok) return null;
-    const json = (await res.json()) as { success?: boolean; data?: unknown; key?: string; ttl?: number | null; error?: string };
-    if (!json.success) return null;
-    return { found: true, data: json.data ?? json.key, ttl: json.ttl ?? null };
+    const json = (await res.json()) as { exists?: boolean; value?: unknown; ttl?: number | null };
+    if (!json.exists || json.value === undefined || json.value === null) return null;
+    return { found: true, data: json.value, ttl: json.ttl ?? null };
   } catch {
     return null;
   }
@@ -76,8 +74,8 @@ async function edgeGet(key: string): Promise<EdgeCacheResult | null> {
 
 async function edgeSet(key: string, value: unknown, ttlMs?: number): Promise<boolean> {
   try {
-    const body: Record<string, unknown> = { key, value, action: "set" };
-    if (ttlMs) body.ttl = Math.round(ttlMs / 1000);
+    const body: Record<string, unknown> = { key, value };
+    if (ttlMs) body.ttl = Math.max(1, Math.round(ttlMs / 1000));
     const res = await fetch(EDGE_CACHE_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -93,10 +91,8 @@ async function edgeSet(key: string, value: unknown, ttlMs?: number): Promise<boo
 
 async function edgeDelete(key: string): Promise<boolean> {
   try {
-    const res = await fetch(EDGE_CACHE_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key, action: "delete" }),
+    const res = await fetch(`${EDGE_CACHE_URL}?key=${encodeURIComponent(key)}`, {
+      method: "DELETE",
     });
     if (!res.ok) return false;
     const json = (await res.json()) as { success?: boolean };

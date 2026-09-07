@@ -18565,7 +18565,7 @@ var require_finalhandler = __commonJS({
     module.exports = finalhandler;
     function finalhandler(req, res, options) {
       var opts = options || {};
-      var env = opts.env || process.env.NODE_ENV || "development";
+      var env = opts.env || "production";
       var onerror = opts.onerror;
       return function(err) {
         var headers;
@@ -20927,7 +20927,7 @@ var require_application = __commonJS({
       });
     };
     app2.defaultConfiguration = function defaultConfiguration() {
-      var env = process.env.NODE_ENV || "development";
+      var env = "production";
       this.enable("x-powered-by");
       this.set("etag", "weak");
       this.set("env", env);
@@ -29353,6 +29353,5022 @@ var require_main = __commonJS({
   }
 });
 
+// ../../node_modules/.pnpm/@supabase+postgrest-js@2.107.0/node_modules/@supabase/postgrest-js/dist/index.mjs
+function sleep(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal === null || signal === void 0 ? void 0 : signal.aborted) {
+      resolve();
+      return;
+    }
+    const id = setTimeout(() => {
+      signal === null || signal === void 0 || signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(id);
+      resolve();
+    }
+    signal === null || signal === void 0 || signal.addEventListener("abort", onAbort);
+  });
+}
+function shouldRetry(method, status, attemptCount, retryEnabled) {
+  if (!retryEnabled || attemptCount >= DEFAULT_MAX_RETRIES) return false;
+  if (!RETRYABLE_METHODS.includes(method)) return false;
+  if (!RETRYABLE_STATUS_CODES.includes(status)) return false;
+  return true;
+}
+function _typeof(o) {
+  "@babel/helpers - typeof";
+  return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function(o$1) {
+    return typeof o$1;
+  } : function(o$1) {
+    return o$1 && "function" == typeof Symbol && o$1.constructor === Symbol && o$1 !== Symbol.prototype ? "symbol" : typeof o$1;
+  }, _typeof(o);
+}
+function toPrimitive(t, r) {
+  if ("object" != _typeof(t) || !t) return t;
+  var e = t[Symbol.toPrimitive];
+  if (void 0 !== e) {
+    var i = e.call(t, r || "default");
+    if ("object" != _typeof(i)) return i;
+    throw new TypeError("@@toPrimitive must return a primitive value.");
+  }
+  return ("string" === r ? String : Number)(t);
+}
+function toPropertyKey(t) {
+  var i = toPrimitive(t, "string");
+  return "symbol" == _typeof(i) ? i : i + "";
+}
+function _defineProperty(e, r, t) {
+  return (r = toPropertyKey(r)) in e ? Object.defineProperty(e, r, {
+    value: t,
+    enumerable: true,
+    configurable: true,
+    writable: true
+  }) : e[r] = t, e;
+}
+function ownKeys2(e, r) {
+  var t = Object.keys(e);
+  if (Object.getOwnPropertySymbols) {
+    var o = Object.getOwnPropertySymbols(e);
+    r && (o = o.filter(function(r$1) {
+      return Object.getOwnPropertyDescriptor(e, r$1).enumerable;
+    })), t.push.apply(t, o);
+  }
+  return t;
+}
+function _objectSpread2(e) {
+  for (var r = 1; r < arguments.length; r++) {
+    var t = null != arguments[r] ? arguments[r] : {};
+    r % 2 ? ownKeys2(Object(t), true).forEach(function(r$1) {
+      _defineProperty(e, r$1, t[r$1]);
+    }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys2(Object(t)).forEach(function(r$1) {
+      Object.defineProperty(e, r$1, Object.getOwnPropertyDescriptor(t, r$1));
+    });
+  }
+  return e;
+}
+var DEFAULT_MAX_RETRIES, getRetryDelay, RETRYABLE_STATUS_CODES, RETRYABLE_METHODS, PostgrestError, PostgrestBuilder, PostgrestTransformBuilder, PostgrestReservedCharsRegexp, PostgrestFilterBuilder, PostgrestQueryBuilder, PostgrestClient;
+var init_dist = __esm({
+  "../../node_modules/.pnpm/@supabase+postgrest-js@2.107.0/node_modules/@supabase/postgrest-js/dist/index.mjs"() {
+    DEFAULT_MAX_RETRIES = 3;
+    getRetryDelay = (attemptIndex) => Math.min(1e3 * 2 ** attemptIndex, 3e4);
+    RETRYABLE_STATUS_CODES = [520, 503];
+    RETRYABLE_METHODS = [
+      "GET",
+      "HEAD",
+      "OPTIONS"
+    ];
+    PostgrestError = class extends Error {
+      /**
+      * @example
+      * ```ts
+      * import PostgrestError from '@supabase/postgrest-js'
+      *
+      * throw new PostgrestError({
+      *   message: 'Row level security prevented the request',
+      *   details: 'RLS denied the insert',
+      *   hint: 'Check your policies',
+      *   code: 'PGRST301',
+      * })
+      * ```
+      */
+      constructor(context) {
+        super(context.message);
+        this.name = "PostgrestError";
+        this.details = context.details;
+        this.hint = context.hint;
+        this.code = context.code;
+      }
+      toJSON() {
+        return {
+          name: this.name,
+          message: this.message,
+          details: this.details,
+          hint: this.hint,
+          code: this.code
+        };
+      }
+    };
+    PostgrestBuilder = class {
+      /**
+      * Creates a builder configured for a specific PostgREST request.
+      *
+      * @example Using supabase-js (recommended)
+      * ```ts
+      * import { createClient } from '@supabase/supabase-js'
+      *
+      * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
+      * const { data, error } = await supabase.from('users').select('*')
+      * ```
+      *
+      * @category Database
+      *
+      * @example Standalone import for bundle-sensitive environments
+      * ```ts
+      * import { PostgrestQueryBuilder } from '@supabase/postgrest-js'
+      *
+      * const builder = new PostgrestQueryBuilder(
+      *   new URL('https://xyzcompany.supabase.co/rest/v1/users'),
+      *   { headers: new Headers({ apikey: 'your-publishable-key' }) }
+      * )
+      * ```
+      */
+      constructor(builder) {
+        var _builder$shouldThrowO, _builder$isMaybeSingl, _builder$shouldStripN, _builder$urlLengthLim, _builder$retry;
+        this.shouldThrowOnError = false;
+        this.retryEnabled = true;
+        this.method = builder.method;
+        this.url = builder.url;
+        this.headers = new Headers(builder.headers);
+        this.schema = builder.schema;
+        this.body = builder.body;
+        this.shouldThrowOnError = (_builder$shouldThrowO = builder.shouldThrowOnError) !== null && _builder$shouldThrowO !== void 0 ? _builder$shouldThrowO : false;
+        this.signal = builder.signal;
+        this.isMaybeSingle = (_builder$isMaybeSingl = builder.isMaybeSingle) !== null && _builder$isMaybeSingl !== void 0 ? _builder$isMaybeSingl : false;
+        this.shouldStripNulls = (_builder$shouldStripN = builder.shouldStripNulls) !== null && _builder$shouldStripN !== void 0 ? _builder$shouldStripN : false;
+        this.urlLengthLimit = (_builder$urlLengthLim = builder.urlLengthLimit) !== null && _builder$urlLengthLim !== void 0 ? _builder$urlLengthLim : 8e3;
+        this.retryEnabled = (_builder$retry = builder.retry) !== null && _builder$retry !== void 0 ? _builder$retry : true;
+        if (builder.fetch) this.fetch = builder.fetch;
+        else this.fetch = fetch;
+      }
+      /**
+      * If there's an error with the query, throwOnError will reject the promise by
+      * throwing the error instead of returning it as part of a successful response.
+      *
+      * {@link https://github.com/supabase/supabase-js/issues/92}
+      *
+      * @category Database
+      */
+      throwOnError() {
+        this.shouldThrowOnError = true;
+        return this;
+      }
+      /**
+      * Strip null values from the response data. Properties with `null` values
+      * will be omitted from the returned JSON objects.
+      *
+      * Requires PostgREST 11.2.0+.
+      *
+      * {@link https://docs.postgrest.org/en/stable/references/api/resource_representation.html#stripped-nulls}
+      *
+      * @category Database
+      * @subcategory Using modifiers
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select()
+      *   .stripNulls()
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text, bio text);
+      *
+      * insert into
+      *   characters (id, name, bio)
+      * values
+      *   (1, 'Luke', null),
+      *   (2, 'Leia', 'Princess of Alderaan');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "name": "Luke"
+      *     },
+      *     {
+      *       "id": 2,
+      *       "name": "Leia",
+      *       "bio": "Princess of Alderaan"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      stripNulls() {
+        if (this.headers.get("Accept") === "text/csv") throw new Error("stripNulls() cannot be used with csv()");
+        this.shouldStripNulls = true;
+        return this;
+      }
+      /**
+      * Set an HTTP header for the request.
+      *
+      * @category Database
+      */
+      setHeader(name, value) {
+        this.headers = new Headers(this.headers);
+        this.headers.set(name, value);
+        return this;
+      }
+      /**
+      * @category Database
+      *
+      * Configure retry behavior for this request.
+      *
+      * By default, retries are enabled for idempotent requests (GET, HEAD, OPTIONS)
+      * that fail with network errors or specific HTTP status codes (503, 520).
+      * Retries use exponential backoff (1s, 2s, 4s) with a maximum of 3 attempts.
+      *
+      * @param enabled - Whether to enable retries for this request
+      *
+      * @example
+      * ```ts
+      * // Disable retries for a specific query
+      * const { data, error } = await supabase
+      *   .from('users')
+      *   .select()
+      *   .retry(false)
+      * ```
+      */
+      retry(enabled) {
+        this.retryEnabled = enabled;
+        return this;
+      }
+      then(onfulfilled, onrejected) {
+        var _this = this;
+        if (this.schema === void 0) {
+        } else if (["GET", "HEAD"].includes(this.method)) this.headers.set("Accept-Profile", this.schema);
+        else this.headers.set("Content-Profile", this.schema);
+        if (this.method !== "GET" && this.method !== "HEAD") this.headers.set("Content-Type", "application/json");
+        if (this.shouldStripNulls) {
+          const currentAccept = this.headers.get("Accept");
+          if (currentAccept === "application/vnd.pgrst.object+json") this.headers.set("Accept", "application/vnd.pgrst.object+json;nulls=stripped");
+          else if (!currentAccept || currentAccept === "application/json") this.headers.set("Accept", "application/vnd.pgrst.array+json;nulls=stripped");
+        }
+        const _fetch = this.fetch;
+        const executeWithRetry = async () => {
+          let attemptCount = 0;
+          while (true) {
+            const requestHeaders = new Headers(_this.headers);
+            if (attemptCount > 0) requestHeaders.set("X-Retry-Count", String(attemptCount));
+            let res$1;
+            try {
+              res$1 = await _fetch(_this.url.toString(), {
+                method: _this.method,
+                headers: requestHeaders,
+                body: JSON.stringify(_this.body, (_, value) => typeof value === "bigint" ? value.toString() : value),
+                signal: _this.signal
+              });
+            } catch (fetchError) {
+              if ((fetchError === null || fetchError === void 0 ? void 0 : fetchError.name) === "AbortError" || (fetchError === null || fetchError === void 0 ? void 0 : fetchError.code) === "ABORT_ERR") throw fetchError;
+              if (!RETRYABLE_METHODS.includes(_this.method)) throw fetchError;
+              if (_this.retryEnabled && attemptCount < DEFAULT_MAX_RETRIES) {
+                const delay = getRetryDelay(attemptCount);
+                attemptCount++;
+                await sleep(delay, _this.signal);
+                continue;
+              }
+              throw fetchError;
+            }
+            if (shouldRetry(_this.method, res$1.status, attemptCount, _this.retryEnabled)) {
+              var _res$headers$get, _res$headers;
+              const retryAfterHeader = (_res$headers$get = (_res$headers = res$1.headers) === null || _res$headers === void 0 ? void 0 : _res$headers.get("Retry-After")) !== null && _res$headers$get !== void 0 ? _res$headers$get : null;
+              const delay = retryAfterHeader !== null ? Math.max(0, parseInt(retryAfterHeader, 10) || 0) * 1e3 : getRetryDelay(attemptCount);
+              await res$1.text();
+              attemptCount++;
+              await sleep(delay, _this.signal);
+              continue;
+            }
+            return await _this.processResponse(res$1);
+          }
+        };
+        let res = executeWithRetry();
+        if (!this.shouldThrowOnError) res = res.catch((fetchError) => {
+          var _fetchError$name2;
+          let errorDetails = "";
+          let hint = "";
+          let code = "";
+          const cause = fetchError === null || fetchError === void 0 ? void 0 : fetchError.cause;
+          if (cause) {
+            var _cause$message, _cause$code, _fetchError$name, _cause$name;
+            const causeMessage = (_cause$message = cause === null || cause === void 0 ? void 0 : cause.message) !== null && _cause$message !== void 0 ? _cause$message : "";
+            const causeCode = (_cause$code = cause === null || cause === void 0 ? void 0 : cause.code) !== null && _cause$code !== void 0 ? _cause$code : "";
+            errorDetails = `${(_fetchError$name = fetchError === null || fetchError === void 0 ? void 0 : fetchError.name) !== null && _fetchError$name !== void 0 ? _fetchError$name : "FetchError"}: ${fetchError === null || fetchError === void 0 ? void 0 : fetchError.message}`;
+            errorDetails += `
+
+Caused by: ${(_cause$name = cause === null || cause === void 0 ? void 0 : cause.name) !== null && _cause$name !== void 0 ? _cause$name : "Error"}: ${causeMessage}`;
+            if (causeCode) errorDetails += ` (${causeCode})`;
+            if (cause === null || cause === void 0 ? void 0 : cause.stack) errorDetails += `
+${cause.stack}`;
+          } else {
+            var _fetchError$stack;
+            errorDetails = (_fetchError$stack = fetchError === null || fetchError === void 0 ? void 0 : fetchError.stack) !== null && _fetchError$stack !== void 0 ? _fetchError$stack : "";
+          }
+          const urlLength = this.url.toString().length;
+          if ((fetchError === null || fetchError === void 0 ? void 0 : fetchError.name) === "AbortError" || (fetchError === null || fetchError === void 0 ? void 0 : fetchError.code) === "ABORT_ERR") {
+            code = "";
+            hint = "Request was aborted (timeout or manual cancellation)";
+            if (urlLength > this.urlLengthLimit) hint += `. Note: Your request URL is ${urlLength} characters, which may exceed server limits. If selecting many fields, consider using views. If filtering with large arrays (e.g., .in('id', [many IDs])), consider using an RPC function to pass values server-side.`;
+          } else if ((cause === null || cause === void 0 ? void 0 : cause.name) === "HeadersOverflowError" || (cause === null || cause === void 0 ? void 0 : cause.code) === "UND_ERR_HEADERS_OVERFLOW") {
+            code = "";
+            hint = "HTTP headers exceeded server limits (typically 16KB)";
+            if (urlLength > this.urlLengthLimit) hint += `. Your request URL is ${urlLength} characters. If selecting many fields, consider using views. If filtering with large arrays (e.g., .in('id', [200+ IDs])), consider using an RPC function instead.`;
+          }
+          return {
+            success: false,
+            error: {
+              message: `${(_fetchError$name2 = fetchError === null || fetchError === void 0 ? void 0 : fetchError.name) !== null && _fetchError$name2 !== void 0 ? _fetchError$name2 : "FetchError"}: ${fetchError === null || fetchError === void 0 ? void 0 : fetchError.message}`,
+              details: errorDetails,
+              hint,
+              code
+            },
+            data: null,
+            count: null,
+            status: 0,
+            statusText: ""
+          };
+        });
+        return res.then(onfulfilled, onrejected);
+      }
+      /**
+      * Process a fetch response and return the standardized postgrest response.
+      */
+      async processResponse(res) {
+        var _this2 = this;
+        let error = null;
+        let data = null;
+        let count = null;
+        let status = res.status;
+        let statusText = res.statusText;
+        if (res.ok) {
+          var _this$headers$get2, _res$headers$get2;
+          if (_this2.method !== "HEAD") {
+            var _this$headers$get;
+            const body = await res.text();
+            if (body === "") {
+            } else if (_this2.headers.get("Accept") === "text/csv") data = body;
+            else if (_this2.headers.get("Accept") && ((_this$headers$get = _this2.headers.get("Accept")) === null || _this$headers$get === void 0 ? void 0 : _this$headers$get.includes("application/vnd.pgrst.plan+text"))) data = body;
+            else try {
+              data = JSON.parse(body);
+            } catch (_unused) {
+              error = { message: body };
+              data = null;
+              if (_this2.shouldThrowOnError) throw new PostgrestError({
+                message: body,
+                details: "",
+                hint: "",
+                code: ""
+              });
+            }
+          }
+          const countHeader = (_this$headers$get2 = _this2.headers.get("Prefer")) === null || _this$headers$get2 === void 0 ? void 0 : _this$headers$get2.match(/count=(exact|planned|estimated)/);
+          const contentRange = (_res$headers$get2 = res.headers.get("content-range")) === null || _res$headers$get2 === void 0 ? void 0 : _res$headers$get2.split("/");
+          if (countHeader && contentRange && contentRange.length > 1) count = parseInt(contentRange[1]);
+          if (_this2.isMaybeSingle && Array.isArray(data)) if (data.length > 1) {
+            error = {
+              code: "PGRST116",
+              details: `Results contain ${data.length} rows, application/vnd.pgrst.object+json requires 1 row`,
+              hint: null,
+              message: "JSON object requested, multiple (or no) rows returned"
+            };
+            data = null;
+            count = null;
+            status = 406;
+            statusText = "Not Acceptable";
+          } else if (data.length === 1) data = data[0];
+          else data = null;
+        } else {
+          const body = await res.text();
+          try {
+            error = JSON.parse(body);
+            if (Array.isArray(error) && res.status === 404) {
+              data = [];
+              error = null;
+              status = 200;
+              statusText = "OK";
+            }
+          } catch (_unused2) {
+            if (res.status === 404 && body === "") {
+              status = 204;
+              statusText = "No Content";
+            } else error = { message: body };
+          }
+          if (error && _this2.shouldThrowOnError) throw new PostgrestError(error);
+        }
+        return {
+          success: error === null,
+          error,
+          data,
+          count,
+          status,
+          statusText
+        };
+      }
+      /**
+      * Override the type of the returned `data`.
+      *
+      * @typeParam NewResult - The new result type to override with
+      * @deprecated Use overrideTypes<yourType, { merge: false }>() method at the end of your call chain instead
+      *
+      * @category Database
+      */
+      returns() {
+        return this;
+      }
+      /**
+      * Override the type of the returned `data` field in the response.
+      *
+      * @typeParam NewResult - The new type to cast the response data to
+      * @typeParam Options - Optional type configuration (defaults to { merge: true })
+      * @typeParam Options.merge - When true, merges the new type with existing return type. When false, replaces the existing types entirely (defaults to true)
+      * @example
+      * ```typescript
+      * // Merge with existing types (default behavior)
+      * const query = supabase
+      *   .from('users')
+      *   .select()
+      *   .overrideTypes<{ custom_field: string }>()
+      *
+      * // Replace existing types completely
+      * const replaceQuery = supabase
+      *   .from('users')
+      *   .select()
+      *   .overrideTypes<{ id: number; name: string }, { merge: false }>()
+      * ```
+      * @returns A PostgrestBuilder instance with the new type
+      *
+      * @category Database
+      * @subcategory Using modifiers
+      *
+      * @example Complete Override type of successful response
+      * ```ts
+      * const { data } = await supabase
+      *   .from('countries')
+      *   .select()
+      *   .overrideTypes<Array<MyType>, { merge: false }>()
+      * ```
+      *
+      * @exampleResponse Complete Override type of successful response
+      * ```ts
+      * let x: typeof data // MyType[]
+      * ```
+      *
+      * @example Complete Override type of object response
+      * ```ts
+      * const { data } = await supabase
+      *   .from('countries')
+      *   .select()
+      *   .maybeSingle()
+      *   .overrideTypes<MyType, { merge: false }>()
+      * ```
+      *
+      * @exampleResponse Complete Override type of object response
+      * ```ts
+      * let x: typeof data // MyType | null
+      * ```
+      *
+      * @example Partial Override type of successful response
+      * ```ts
+      * const { data } = await supabase
+      *   .from('countries')
+      *   .select()
+      *   .overrideTypes<Array<{ status: "A" | "B" }>>()
+      * ```
+      *
+      * @exampleResponse Partial Override type of successful response
+      * ```ts
+      * let x: typeof data // Array<CountryRowProperties & { status: "A" | "B" }>
+      * ```
+      *
+      * @example Partial Override type of object response
+      * ```ts
+      * const { data } = await supabase
+      *   .from('countries')
+      *   .select()
+      *   .maybeSingle()
+      *   .overrideTypes<{ status: "A" | "B" }>()
+      * ```
+      *
+      * @exampleResponse Partial Override type of object response
+      * ```ts
+      * let x: typeof data // CountryRowProperties & { status: "A" | "B" } | null
+      * ```
+      *
+      * @example Merge vs replace existing types
+      * ```typescript
+      * // Merge with existing types (default behavior)
+      * const query = supabase
+      *   .from('users')
+      *   .select()
+      *   .overrideTypes<{ custom_field: string }>()
+      *
+      * // Replace existing types completely
+      * const replaceQuery = supabase
+      *   .from('users')
+      *   .select()
+      *   .overrideTypes<{ id: number; name: string }, { merge: false }>()
+      * ```
+      */
+      overrideTypes() {
+        return this;
+      }
+    };
+    PostgrestTransformBuilder = class extends PostgrestBuilder {
+      /**
+      * Perform a SELECT on the query result.
+      *
+      * By default, `.insert()`, `.update()`, `.upsert()`, and `.delete()` do not
+      * return modified rows. By calling this method, modified rows are returned in
+      * `data`.
+      *
+      * @param columns - The columns to retrieve, separated by commas
+      *
+      * @category Database
+      * @subcategory Using modifiers
+      *
+      * @example With `upsert()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .upsert({ id: 1, name: 'Han Solo' })
+      *   .select()
+      * ```
+      *
+      * @exampleSql With `upsert()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Han');
+      * ```
+      *
+      * @exampleResponse With `upsert()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "name": "Han Solo"
+      *     }
+      *   ],
+      *   "status": 201,
+      *   "statusText": "Created"
+      * }
+      * ```
+      */
+      select(columns) {
+        let quoted = false;
+        const cleanedColumns = (columns !== null && columns !== void 0 ? columns : "*").split("").map((c) => {
+          if (/\s/.test(c) && !quoted) return "";
+          if (c === '"') quoted = !quoted;
+          return c;
+        }).join("");
+        this.url.searchParams.set("select", cleanedColumns);
+        this.headers.append("Prefer", "return=representation");
+        return this;
+      }
+      /**
+      * Order the query result by `column`.
+      *
+      * You can call this method multiple times to order by multiple columns.
+      *
+      * You can order referenced tables, but it only affects the ordering of the
+      * parent table if you use `!inner` in the query.
+      *
+      * @param column - The column to order by
+      * @param options - Named parameters
+      * @param options.ascending - If `true`, the result will be in ascending order
+      * @param options.nullsFirst - If `true`, `null`s appear first. If `false`,
+      * `null`s appear last.
+      * @param options.referencedTable - Set this to order a referenced table by
+      * its columns
+      * @param options.foreignTable - Deprecated, use `options.referencedTable`
+      * instead
+      *
+      * @category Database
+      * @subcategory Using modifiers
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select('id, name')
+      *   .order('id', { ascending: false })
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 3,
+      *       "name": "Han"
+      *     },
+      *     {
+      *       "id": 2,
+      *       "name": "Leia"
+      *     },
+      *     {
+      *       "id": 1,
+      *       "name": "Luke"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @exampleDescription On a referenced table
+      * Ordering with `referencedTable` doesn't affect the ordering of the
+      * parent table.
+      *
+      * @example On a referenced table
+      * ```ts
+      *   const { data, error } = await supabase
+      *     .from('orchestral_sections')
+      *     .select(`
+      *       name,
+      *       instruments (
+      *         name
+      *       )
+      *     `)
+      *     .order('name', { referencedTable: 'instruments', ascending: false })
+      *
+      * ```
+      *
+      * @exampleSql On a referenced table
+      * ```sql
+      * create table
+      *   orchestral_sections (id int8 primary key, name text);
+      * create table
+      *   instruments (
+      *     id int8 primary key,
+      *     section_id int8 not null references orchestral_sections,
+      *     name text
+      *   );
+      *
+      * insert into
+      *   orchestral_sections (id, name)
+      * values
+      *   (1, 'strings'),
+      *   (2, 'woodwinds');
+      * insert into
+      *   instruments (id, section_id, name)
+      * values
+      *   (1, 1, 'harp'),
+      *   (2, 1, 'violin');
+      * ```
+      *
+      * @exampleResponse On a referenced table
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "strings",
+      *       "instruments": [
+      *         {
+      *           "name": "violin"
+      *         },
+      *         {
+      *           "name": "harp"
+      *         }
+      *       ]
+      *     },
+      *     {
+      *       "name": "woodwinds",
+      *       "instruments": []
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @exampleDescription Order parent table by a referenced table
+      * Ordering with `referenced_table(col)` affects the ordering of the
+      * parent table.
+      *
+      * @example Order parent table by a referenced table
+      * ```ts
+      *   const { data, error } = await supabase
+      *     .from('instruments')
+      *     .select(`
+      *       name,
+      *       section:orchestral_sections (
+      *         name
+      *       )
+      *     `)
+      *     .order('section(name)', { ascending: true })
+      *
+      * ```
+      *
+      * @exampleSql Order parent table by a referenced table
+      * ```sql
+      * create table
+      *   orchestral_sections (id int8 primary key, name text);
+      * create table
+      *   instruments (
+      *     id int8 primary key,
+      *     section_id int8 not null references orchestral_sections,
+      *     name text
+      *   );
+      *
+      * insert into
+      *   orchestral_sections (id, name)
+      * values
+      *   (1, 'strings'),
+      *   (2, 'woodwinds');
+      * insert into
+      *   instruments (id, section_id, name)
+      * values
+      *   (1, 2, 'flute'),
+      *   (2, 1, 'violin');
+      * ```
+      *
+      * @exampleResponse Order parent table by a referenced table
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "violin",
+      *       "orchestral_sections": {"name": "strings"}
+      *     },
+      *     {
+      *       "name": "flute",
+      *       "orchestral_sections": {"name": "woodwinds"}
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      order(column, { ascending = true, nullsFirst, foreignTable, referencedTable = foreignTable } = {}) {
+        const key = referencedTable ? `${referencedTable}.order` : "order";
+        const existingOrder = this.url.searchParams.get(key);
+        this.url.searchParams.set(key, `${existingOrder ? `${existingOrder},` : ""}${column}.${ascending ? "asc" : "desc"}${nullsFirst === void 0 ? "" : nullsFirst ? ".nullsfirst" : ".nullslast"}`);
+        return this;
+      }
+      /**
+      * Limit the query result by `count`.
+      *
+      * @param count - The maximum number of rows to return
+      * @param options - Named parameters
+      * @param options.referencedTable - Set this to limit rows of referenced
+      * tables instead of the parent table
+      * @param options.foreignTable - Deprecated, use `options.referencedTable`
+      * instead
+      *
+      * @category Database
+      * @subcategory Using modifiers
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select('name')
+      *   .limit(1)
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "Luke"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @example On a referenced table
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('orchestral_sections')
+      *   .select(`
+      *     name,
+      *     instruments (
+      *       name
+      *     )
+      *   `)
+      *   .limit(1, { referencedTable: 'instruments' })
+      * ```
+      *
+      * @exampleSql On a referenced table
+      * ```sql
+      * create table
+      *   orchestral_sections (id int8 primary key, name text);
+      * create table
+      *   instruments (
+      *     id int8 primary key,
+      *     section_id int8 not null references orchestral_sections,
+      *     name text
+      *   );
+      *
+      * insert into
+      *   orchestral_sections (id, name)
+      * values
+      *   (1, 'strings');
+      * insert into
+      *   instruments (id, section_id, name)
+      * values
+      *   (1, 1, 'harp'),
+      *   (2, 1, 'violin');
+      * ```
+      *
+      * @exampleResponse On a referenced table
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "strings",
+      *       "instruments": [
+      *         {
+      *           "name": "violin"
+      *         }
+      *       ]
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      limit(count, { foreignTable, referencedTable = foreignTable } = {}) {
+        const key = typeof referencedTable === "undefined" ? "limit" : `${referencedTable}.limit`;
+        this.url.searchParams.set(key, `${count}`);
+        return this;
+      }
+      /**
+      * Limit the query result by starting at an offset `from` and ending at the offset `to`.
+      * Only records within this range are returned.
+      * This respects the query order and if there is no order clause the range could behave unexpectedly.
+      * The `from` and `to` values are 0-based and inclusive: `range(1, 3)` will include the second, third
+      * and fourth rows of the query.
+      *
+      * @param from - The starting index from which to limit the result
+      * @param to - The last index to which to limit the result
+      * @param options - Named parameters
+      * @param options.referencedTable - Set this to limit rows of referenced
+      * tables instead of the parent table
+      * @param options.foreignTable - Deprecated, use `options.referencedTable`
+      * instead
+      *
+      * @category Database
+      * @subcategory Using modifiers
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select('name')
+      *   .range(0, 1)
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "Luke"
+      *     },
+      *     {
+      *       "name": "Leia"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      range(from, to, { foreignTable, referencedTable = foreignTable } = {}) {
+        const keyOffset = typeof referencedTable === "undefined" ? "offset" : `${referencedTable}.offset`;
+        const keyLimit = typeof referencedTable === "undefined" ? "limit" : `${referencedTable}.limit`;
+        this.url.searchParams.set(keyOffset, `${from}`);
+        this.url.searchParams.set(keyLimit, `${to - from + 1}`);
+        return this;
+      }
+      /**
+      * Set the AbortSignal for the fetch request.
+      *
+      * @param signal - The AbortSignal to use for the fetch request
+      *
+      * @category Database
+      * @subcategory Using modifiers
+      *
+      * @remarks
+      * You can use this to set a timeout for the request.
+      *
+      * @exampleDescription Aborting requests in-flight
+      * You can use an [`AbortController`](https://developer.mozilla.org/en-US/docs/Web/API/AbortController) to abort requests.
+      * Note that `status` and `statusText` don't mean anything for aborted requests as the request wasn't fulfilled.
+      *
+      * @example Aborting requests in-flight
+      * ```ts
+      * const ac = new AbortController()
+      *
+      * const { data, error } = await supabase
+      *   .from('very_big_table')
+      *   .select()
+      *   .abortSignal(ac.signal)
+      *
+      * // Abort the request after 100 ms
+      * setTimeout(() => ac.abort(), 100)
+      * ```
+      *
+      * @exampleResponse Aborting requests in-flight
+      * ```json
+      *   {
+      *     "error": {
+      *       "message": "AbortError: The user aborted a request.",
+      *       "details": "",
+      *       "hint": "The request was aborted locally via the provided AbortSignal.",
+      *       "code": ""
+      *     },
+      *     "status": 0,
+      *     "statusText": ""
+      *   }
+      *
+      * ```
+      *
+      * @example Set a timeout
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('very_big_table')
+      *   .select()
+      *   .abortSignal(AbortSignal.timeout(1000 /* ms *\/))
+      * ```
+      *
+      * @exampleResponse Set a timeout
+      * ```json
+      *   {
+      *     "error": {
+      *       "message": "FetchError: The user aborted a request.",
+      *       "details": "",
+      *       "hint": "",
+      *       "code": ""
+      *     },
+      *     "status": 400,
+      *     "statusText": "Bad Request"
+      *   }
+      *
+      * ```
+      */
+      abortSignal(signal) {
+        this.signal = signal;
+        return this;
+      }
+      /**
+      * Return `data` as a single object instead of an array of objects.
+      *
+      * Query result must be one row (e.g. using `.limit(1)`), otherwise this
+      * returns an error.
+      *
+      * @category Database
+      * @subcategory Using modifiers
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select('name')
+      *   .limit(1)
+      *   .single()
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": {
+      *     "name": "Luke"
+      *   },
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      single() {
+        this.headers.set("Accept", "application/vnd.pgrst.object+json");
+        return this;
+      }
+      /**
+      * Return `data` as a single object instead of an array of objects.
+      *
+      * Query result must be zero or one row (e.g. using `.limit(1)`), otherwise
+      * this returns an error.
+      *
+      * @category Database
+      * @subcategory Using modifiers
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select()
+      *   .eq('name', 'Katniss')
+      *   .maybeSingle()
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      maybeSingle() {
+        this.isMaybeSingle = true;
+        return this;
+      }
+      /**
+      * Return `data` as a string in CSV format.
+      *
+      * @category Database
+      * @subcategory Using modifiers
+      *
+      * @exampleDescription Return data as CSV
+      * By default, the data is returned in JSON format, but can also be returned as Comma Separated Values.
+      *
+      * @example Return data as CSV
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select()
+      *   .csv()
+      * ```
+      *
+      * @exampleSql Return data as CSV
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse Return data as CSV
+      * ```json
+      * {
+      *   "data": "id,name\n1,Luke\n2,Leia\n3,Han",
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      csv() {
+        this.headers.set("Accept", "text/csv");
+        return this;
+      }
+      /**
+      * Return `data` as an object in [GeoJSON](https://geojson.org) format.
+      *
+      * @category Database
+      */
+      geojson() {
+        this.headers.set("Accept", "application/geo+json");
+        return this;
+      }
+      /**
+      * Return `data` as the EXPLAIN plan for the query.
+      *
+      * You need to enable the
+      * [db_plan_enabled](https://supabase.com/docs/guides/database/debugging-performance#enabling-explain)
+      * setting before using this method.
+      *
+      * @param options - Named parameters
+      *
+      * @param options.analyze - If `true`, the query will be executed and the
+      * actual run time will be returned
+      *
+      * @param options.verbose - If `true`, the query identifier will be returned
+      * and `data` will include the output columns of the query
+      *
+      * @param options.settings - If `true`, include information on configuration
+      * parameters that affect query planning
+      *
+      * @param options.buffers - If `true`, include information on buffer usage
+      *
+      * @param options.wal - If `true`, include information on WAL record generation
+      *
+      * @param options.format - The format of the output, can be `"text"` (default)
+      * or `"json"`
+      *
+      * @category Database
+      * @subcategory Using modifiers
+      *
+      * @exampleDescription Get the execution plan
+      * By default, the data is returned in TEXT format, but can also be returned as JSON by using the `format` parameter.
+      *
+      * @example Get the execution plan
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select()
+      *   .explain()
+      * ```
+      *
+      * @exampleSql Get the execution plan
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse Get the execution plan
+      * ```js
+      * Aggregate  (cost=33.34..33.36 rows=1 width=112)
+      *   ->  Limit  (cost=0.00..18.33 rows=1000 width=40)
+      *         ->  Seq Scan on characters  (cost=0.00..22.00 rows=1200 width=40)
+      * ```
+      *
+      * @exampleDescription Get the execution plan with analyze and verbose
+      * By default, the data is returned in TEXT format, but can also be returned as JSON by using the `format` parameter.
+      *
+      * @example Get the execution plan with analyze and verbose
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select()
+      *   .explain({analyze:true,verbose:true})
+      * ```
+      *
+      * @exampleSql Get the execution plan with analyze and verbose
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse Get the execution plan with analyze and verbose
+      * ```js
+      * Aggregate  (cost=33.34..33.36 rows=1 width=112) (actual time=0.041..0.041 rows=1 loops=1)
+      *   Output: NULL::bigint, count(ROW(characters.id, characters.name)), COALESCE(json_agg(ROW(characters.id, characters.name)), '[]'::json), NULLIF(current_setting('response.headers'::text, true), ''::text), NULLIF(current_setting('response.status'::text, true), ''::text)
+      *   ->  Limit  (cost=0.00..18.33 rows=1000 width=40) (actual time=0.005..0.006 rows=3 loops=1)
+      *         Output: characters.id, characters.name
+      *         ->  Seq Scan on public.characters  (cost=0.00..22.00 rows=1200 width=40) (actual time=0.004..0.005 rows=3 loops=1)
+      *               Output: characters.id, characters.name
+      * Query Identifier: -4730654291623321173
+      * Planning Time: 0.407 ms
+      * Execution Time: 0.119 ms
+      * ```
+      */
+      explain({ analyze = false, verbose = false, settings = false, buffers = false, wal = false, format = "text" } = {}) {
+        var _this$headers$get;
+        const options = [
+          analyze ? "analyze" : null,
+          verbose ? "verbose" : null,
+          settings ? "settings" : null,
+          buffers ? "buffers" : null,
+          wal ? "wal" : null
+        ].filter(Boolean).join("|");
+        const forMediatype = (_this$headers$get = this.headers.get("Accept")) !== null && _this$headers$get !== void 0 ? _this$headers$get : "application/json";
+        this.headers.set("Accept", `application/vnd.pgrst.plan+${format}; for="${forMediatype}"; options=${options};`);
+        if (format === "json") return this;
+        else return this;
+      }
+      /**
+      * Rollback the query.
+      *
+      * `data` will still be returned, but the query is not committed.
+      *
+      * @category Database
+      */
+      rollback() {
+        this.headers.append("Prefer", "tx=rollback");
+        return this;
+      }
+      /**
+      * Override the type of the returned `data`.
+      *
+      * @typeParam NewResult - The new result type to override with
+      * @deprecated Use overrideTypes<yourType, { merge: false }>() method at the end of your call chain instead
+      *
+      * @category Database
+      * @subcategory Using modifiers
+      *
+      * @remarks
+      * - Deprecated: use overrideTypes method instead
+      *
+      * @example Override type of successful response
+      * ```ts
+      * const { data } = await supabase
+      *   .from('countries')
+      *   .select()
+      *   .returns<Array<MyType>>()
+      * ```
+      *
+      * @exampleResponse Override type of successful response
+      * ```js
+      * let x: typeof data // MyType[]
+      * ```
+      *
+      * @example Override type of object response
+      * ```ts
+      * const { data } = await supabase
+      *   .from('countries')
+      *   .select()
+      *   .maybeSingle()
+      *   .returns<MyType>()
+      * ```
+      *
+      * @exampleResponse Override type of object response
+      * ```js
+      * let x: typeof data // MyType | null
+      * ```
+      */
+      returns() {
+        return this;
+      }
+      /**
+      * Set the maximum number of rows that can be affected by the query.
+      * Only available in PostgREST v13+ and only works with PATCH and DELETE methods.
+      *
+      * @param value - The maximum number of rows that can be affected
+      *
+      * @category Database
+      */
+      maxAffected(value) {
+        this.headers.append("Prefer", "handling=strict");
+        this.headers.append("Prefer", `max-affected=${value}`);
+        return this;
+      }
+    };
+    PostgrestReservedCharsRegexp = /* @__PURE__ */ new RegExp("[,()]");
+    PostgrestFilterBuilder = class extends PostgrestTransformBuilder {
+      /**
+      * Match only rows where `column` is equal to `value`.
+      *
+      * To check if the value of `column` is NULL, you should use `.is()` instead.
+      *
+      * @param column - The column to filter on
+      * @param value - The value to filter with
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select()
+      *   .eq('name', 'Leia')
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 2,
+      *       "name": "Leia"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      eq(column, value) {
+        this.url.searchParams.append(column, `eq.${value}`);
+        return this;
+      }
+      /**
+      * Match only rows where `column` is not equal to `value`.
+      *
+      * This filter does not include rows where `column` is `NULL`. To match null
+      * values, use `.is(column, null)` instead.
+      *
+      * @param column - The column to filter on
+      * @param value - The value to filter with
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select()
+      *   .neq('name', 'Leia')
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "name": "Luke"
+      *     },
+      *     {
+      *       "id": 3,
+      *       "name": "Han"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      neq(column, value) {
+        this.url.searchParams.append(column, `neq.${value}`);
+        return this;
+      }
+      /**
+      * Match only rows where `column` is greater than `value`.
+      *
+      * @param column - The column to filter on
+      * @param value - The value to filter with
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @exampleDescription With `select()`
+      * When using [reserved words](https://www.postgresql.org/docs/current/sql-keywords-appendix.html) for column names you need
+      * to add double quotes e.g. `.gt('"order"', 2)`
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select()
+      *   .gt('id', 2)
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 3,
+      *       "name": "Han"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      gt(column, value) {
+        this.url.searchParams.append(column, `gt.${value}`);
+        return this;
+      }
+      /**
+      * Match only rows where `column` is greater than or equal to `value`.
+      *
+      * @param column - The column to filter on
+      * @param value - The value to filter with
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select()
+      *   .gte('id', 2)
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 2,
+      *       "name": "Leia"
+      *     },
+      *     {
+      *       "id": 3,
+      *       "name": "Han"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      gte(column, value) {
+        this.url.searchParams.append(column, `gte.${value}`);
+        return this;
+      }
+      /**
+      * Match only rows where `column` is less than `value`.
+      *
+      * @param column - The column to filter on
+      * @param value - The value to filter with
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select()
+      *   .lt('id', 2)
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "name": "Luke"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      lt(column, value) {
+        this.url.searchParams.append(column, `lt.${value}`);
+        return this;
+      }
+      /**
+      * Match only rows where `column` is less than or equal to `value`.
+      *
+      * @param column - The column to filter on
+      * @param value - The value to filter with
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select()
+      *   .lte('id', 2)
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "name": "Luke"
+      *     },
+      *     {
+      *       "id": 2,
+      *       "name": "Leia"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      lte(column, value) {
+        this.url.searchParams.append(column, `lte.${value}`);
+        return this;
+      }
+      /**
+      * Match only rows where `column` matches `pattern` case-sensitively.
+      *
+      * @param column - The column to filter on
+      * @param pattern - The pattern to match with
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select()
+      *   .like('name', '%Lu%')
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "name": "Luke"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      like(column, pattern) {
+        this.url.searchParams.append(column, `like.${pattern}`);
+        return this;
+      }
+      /**
+      * Match only rows where `column` matches all of `patterns` case-sensitively.
+      *
+      * @param column - The column to filter on
+      * @param patterns - The patterns to match with
+      *
+      * @category Database
+      * @subcategory Using filters
+      */
+      likeAllOf(column, patterns) {
+        this.url.searchParams.append(column, `like(all).{${patterns.join(",")}}`);
+        return this;
+      }
+      /**
+      * Match only rows where `column` matches any of `patterns` case-sensitively.
+      *
+      * @param column - The column to filter on
+      * @param patterns - The patterns to match with
+      *
+      * @category Database
+      * @subcategory Using filters
+      */
+      likeAnyOf(column, patterns) {
+        this.url.searchParams.append(column, `like(any).{${patterns.join(",")}}`);
+        return this;
+      }
+      /**
+      * Match only rows where `column` matches `pattern` case-insensitively.
+      *
+      * @param column - The column to filter on
+      * @param pattern - The pattern to match with
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select()
+      *   .ilike('name', '%lu%')
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "name": "Luke"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      ilike(column, pattern) {
+        this.url.searchParams.append(column, `ilike.${pattern}`);
+        return this;
+      }
+      /**
+      * Match only rows where `column` matches all of `patterns` case-insensitively.
+      *
+      * @param column - The column to filter on
+      * @param patterns - The patterns to match with
+      *
+      * @category Database
+      * @subcategory Using filters
+      */
+      ilikeAllOf(column, patterns) {
+        this.url.searchParams.append(column, `ilike(all).{${patterns.join(",")}}`);
+        return this;
+      }
+      /**
+      * Match only rows where `column` matches any of `patterns` case-insensitively.
+      *
+      * @param column - The column to filter on
+      * @param patterns - The patterns to match with
+      *
+      * @category Database
+      * @subcategory Using filters
+      */
+      ilikeAnyOf(column, patterns) {
+        this.url.searchParams.append(column, `ilike(any).{${patterns.join(",")}}`);
+        return this;
+      }
+      /**
+      * Match only rows where `column` matches the PostgreSQL regex `pattern`
+      * case-sensitively (using the `~` operator).
+      *
+      * @param column - The column to filter on
+      * @param pattern - The PostgreSQL regular expression pattern to match with
+      */
+      regexMatch(column, pattern) {
+        this.url.searchParams.append(column, `match.${pattern}`);
+        return this;
+      }
+      /**
+      * Match only rows where `column` matches the PostgreSQL regex `pattern`
+      * case-insensitively (using the `~*` operator).
+      *
+      * @param column - The column to filter on
+      * @param pattern - The PostgreSQL regular expression pattern to match with
+      */
+      regexIMatch(column, pattern) {
+        this.url.searchParams.append(column, `imatch.${pattern}`);
+        return this;
+      }
+      /**
+      * Match only rows where `column` IS `value`.
+      *
+      * For non-boolean columns, this is only relevant for checking if the value of
+      * `column` is NULL by setting `value` to `null`.
+      *
+      * For boolean columns, you can also set `value` to `true` or `false` and it
+      * will behave the same way as `.eq()`.
+      *
+      * @param column - The column to filter on
+      * @param value - The value to filter with
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @exampleDescription Checking for nullness, true or false
+      * Using the `eq()` filter doesn't work when filtering for `null`.
+      *
+      * Instead, you need to use `is()`.
+      *
+      * @example Checking for nullness, true or false
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('countries')
+      *   .select()
+      *   .is('name', null)
+      * ```
+      *
+      * @exampleSql Checking for nullness, true or false
+      * ```sql
+      * create table
+      *   countries (id int8 primary key, name text);
+      *
+      * insert into
+      *   countries (id, name)
+      * values
+      *   (1, 'null'),
+      *   (2, null);
+      * ```
+      *
+      * @exampleResponse Checking for nullness, true or false
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 2,
+      *       "name": "null"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      is(column, value) {
+        this.url.searchParams.append(column, `is.${value}`);
+        return this;
+      }
+      /**
+      * Match only rows where `column` IS DISTINCT FROM `value`.
+      *
+      * Unlike `.neq()`, this treats `NULL` as a comparable value. Two `NULL` values
+      * are considered equal (not distinct), and comparing `NULL` with any non-NULL
+      * value returns true (distinct).
+      *
+      * @param column - The column to filter on
+      * @param value - The value to filter with
+      */
+      isDistinct(column, value) {
+        this.url.searchParams.append(column, `isdistinct.${value}`);
+        return this;
+      }
+      /**
+      * Match only rows where `column` is included in the `values` array.
+      *
+      * @param column - The column to filter on
+      * @param values - The values array to filter with
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select()
+      *   .in('name', ['Leia', 'Han'])
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 2,
+      *       "name": "Leia"
+      *     },
+      *     {
+      *       "id": 3,
+      *       "name": "Han"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      in(column, values) {
+        const cleanedValues = Array.from(new Set(values)).map((s) => {
+          if (typeof s === "string" && PostgrestReservedCharsRegexp.test(s)) return `"${s}"`;
+          else return `${s}`;
+        }).join(",");
+        this.url.searchParams.append(column, `in.(${cleanedValues})`);
+        return this;
+      }
+      /**
+      * Match only rows where `column` is NOT included in the `values` array.
+      *
+      * @param column - The column to filter on
+      * @param values - The values array to filter with
+      */
+      notIn(column, values) {
+        const cleanedValues = Array.from(new Set(values)).map((s) => {
+          if (typeof s === "string" && PostgrestReservedCharsRegexp.test(s)) return `"${s}"`;
+          else return `${s}`;
+        }).join(",");
+        this.url.searchParams.append(column, `not.in.(${cleanedValues})`);
+        return this;
+      }
+      /**
+      * Only relevant for jsonb, array, and range columns. Match only rows where
+      * `column` contains every element appearing in `value`.
+      *
+      * @param column - The jsonb, array, or range column to filter on
+      * @param value - The jsonb, array, or range value to filter with
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @example On array columns
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('issues')
+      *   .select()
+      *   .contains('tags', ['is:open', 'priority:low'])
+      * ```
+      *
+      * @exampleSql On array columns
+      * ```sql
+      * create table
+      *   issues (
+      *     id int8 primary key,
+      *     title text,
+      *     tags text[]
+      *   );
+      *
+      * insert into
+      *   issues (id, title, tags)
+      * values
+      *   (1, 'Cache invalidation is not working', array['is:open', 'severity:high', 'priority:low']),
+      *   (2, 'Use better names', array['is:open', 'severity:low', 'priority:medium']);
+      * ```
+      *
+      * @exampleResponse On array columns
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "title": "Cache invalidation is not working"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @exampleDescription On range columns
+      * Postgres supports a number of [range
+      * types](https://www.postgresql.org/docs/current/rangetypes.html). You
+      * can filter on range columns using the string representation of range
+      * values.
+      *
+      * @example On range columns
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('reservations')
+      *   .select()
+      *   .contains('during', '[2000-01-01 13:00, 2000-01-01 13:30)')
+      * ```
+      *
+      * @exampleSql On range columns
+      * ```sql
+      * create table
+      *   reservations (
+      *     id int8 primary key,
+      *     room_name text,
+      *     during tsrange
+      *   );
+      *
+      * insert into
+      *   reservations (id, room_name, during)
+      * values
+      *   (1, 'Emerald', '[2000-01-01 13:00, 2000-01-01 15:00)'),
+      *   (2, 'Topaz', '[2000-01-02 09:00, 2000-01-02 10:00)');
+      * ```
+      *
+      * @exampleResponse On range columns
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "room_name": "Emerald",
+      *       "during": "[\"2000-01-01 13:00:00\",\"2000-01-01 15:00:00\")"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @example On `jsonb` columns
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('users')
+      *   .select('name')
+      *   .contains('address', { postcode: 90210 })
+      * ```
+      *
+      * @exampleSql On `jsonb` columns
+      * ```sql
+      * create table
+      *   users (
+      *     id int8 primary key,
+      *     name text,
+      *     address jsonb
+      *   );
+      *
+      * insert into
+      *   users (id, name, address)
+      * values
+      *   (1, 'Michael', '{ "postcode": 90210, "street": "Melrose Place" }'),
+      *   (2, 'Jane', '{}');
+      * ```
+      *
+      * @exampleResponse On `jsonb` columns
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "Michael"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      contains(column, value) {
+        if (typeof value === "string") this.url.searchParams.append(column, `cs.${value}`);
+        else if (Array.isArray(value)) this.url.searchParams.append(column, `cs.{${value.join(",")}}`);
+        else this.url.searchParams.append(column, `cs.${JSON.stringify(value)}`);
+        return this;
+      }
+      /**
+      * Only relevant for jsonb, array, and range columns. Match only rows where
+      * every element appearing in `column` is contained by `value`.
+      *
+      * @param column - The jsonb, array, or range column to filter on
+      * @param value - The jsonb, array, or range value to filter with
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @example On array columns
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('classes')
+      *   .select('name')
+      *   .containedBy('days', ['monday', 'tuesday', 'wednesday', 'friday'])
+      * ```
+      *
+      * @exampleSql On array columns
+      * ```sql
+      * create table
+      *   classes (
+      *     id int8 primary key,
+      *     name text,
+      *     days text[]
+      *   );
+      *
+      * insert into
+      *   classes (id, name, days)
+      * values
+      *   (1, 'Chemistry', array['monday', 'friday']),
+      *   (2, 'History', array['monday', 'wednesday', 'thursday']);
+      * ```
+      *
+      * @exampleResponse On array columns
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "Chemistry"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @exampleDescription On range columns
+      * Postgres supports a number of [range
+      * types](https://www.postgresql.org/docs/current/rangetypes.html). You
+      * can filter on range columns using the string representation of range
+      * values.
+      *
+      * @example On range columns
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('reservations')
+      *   .select()
+      *   .containedBy('during', '[2000-01-01 00:00, 2000-01-01 23:59)')
+      * ```
+      *
+      * @exampleSql On range columns
+      * ```sql
+      * create table
+      *   reservations (
+      *     id int8 primary key,
+      *     room_name text,
+      *     during tsrange
+      *   );
+      *
+      * insert into
+      *   reservations (id, room_name, during)
+      * values
+      *   (1, 'Emerald', '[2000-01-01 13:00, 2000-01-01 15:00)'),
+      *   (2, 'Topaz', '[2000-01-02 09:00, 2000-01-02 10:00)');
+      * ```
+      *
+      * @exampleResponse On range columns
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "room_name": "Emerald",
+      *       "during": "[\"2000-01-01 13:00:00\",\"2000-01-01 15:00:00\")"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @example On `jsonb` columns
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('users')
+      *   .select('name')
+      *   .containedBy('address', {})
+      * ```
+      *
+      * @exampleSql On `jsonb` columns
+      * ```sql
+      * create table
+      *   users (
+      *     id int8 primary key,
+      *     name text,
+      *     address jsonb
+      *   );
+      *
+      * insert into
+      *   users (id, name, address)
+      * values
+      *   (1, 'Michael', '{ "postcode": 90210, "street": "Melrose Place" }'),
+      *   (2, 'Jane', '{}');
+      * ```
+      *
+      * @exampleResponse On `jsonb` columns
+      * ```json
+      *   {
+      *     "data": [
+      *       {
+      *         "name": "Jane"
+      *       }
+      *     ],
+      *     "status": 200,
+      *     "statusText": "OK"
+      *   }
+      *
+      * ```
+      */
+      containedBy(column, value) {
+        if (typeof value === "string") this.url.searchParams.append(column, `cd.${value}`);
+        else if (Array.isArray(value)) this.url.searchParams.append(column, `cd.{${value.join(",")}}`);
+        else this.url.searchParams.append(column, `cd.${JSON.stringify(value)}`);
+        return this;
+      }
+      /**
+      * Only relevant for range columns. Match only rows where every element in
+      * `column` is greater than any element in `range`.
+      *
+      * @param column - The range column to filter on
+      * @param range - The range to filter with
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @exampleDescription With `select()`
+      * Postgres supports a number of [range
+      * types](https://www.postgresql.org/docs/current/rangetypes.html). You
+      * can filter on range columns using the string representation of range
+      * values.
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('reservations')
+      *   .select()
+      *   .rangeGt('during', '[2000-01-02 08:00, 2000-01-02 09:00)')
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   reservations (
+      *     id int8 primary key,
+      *     room_name text,
+      *     during tsrange
+      *   );
+      *
+      * insert into
+      *   reservations (id, room_name, during)
+      * values
+      *   (1, 'Emerald', '[2000-01-01 13:00, 2000-01-01 15:00)'),
+      *   (2, 'Topaz', '[2000-01-02 09:00, 2000-01-02 10:00)');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      *   {
+      *     "data": [
+      *       {
+      *         "id": 2,
+      *         "room_name": "Topaz",
+      *         "during": "[\"2000-01-02 09:00:00\",\"2000-01-02 10:00:00\")"
+      *       }
+      *     ],
+      *     "status": 200,
+      *     "statusText": "OK"
+      *   }
+      *
+      * ```
+      */
+      rangeGt(column, range) {
+        this.url.searchParams.append(column, `sr.${range}`);
+        return this;
+      }
+      /**
+      * Only relevant for range columns. Match only rows where every element in
+      * `column` is either contained in `range` or greater than any element in
+      * `range`.
+      *
+      * @param column - The range column to filter on
+      * @param range - The range to filter with
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @exampleDescription With `select()`
+      * Postgres supports a number of [range
+      * types](https://www.postgresql.org/docs/current/rangetypes.html). You
+      * can filter on range columns using the string representation of range
+      * values.
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('reservations')
+      *   .select()
+      *   .rangeGte('during', '[2000-01-02 08:30, 2000-01-02 09:30)')
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   reservations (
+      *     id int8 primary key,
+      *     room_name text,
+      *     during tsrange
+      *   );
+      *
+      * insert into
+      *   reservations (id, room_name, during)
+      * values
+      *   (1, 'Emerald', '[2000-01-01 13:00, 2000-01-01 15:00)'),
+      *   (2, 'Topaz', '[2000-01-02 09:00, 2000-01-02 10:00)');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      *   {
+      *     "data": [
+      *       {
+      *         "id": 2,
+      *         "room_name": "Topaz",
+      *         "during": "[\"2000-01-02 09:00:00\",\"2000-01-02 10:00:00\")"
+      *       }
+      *     ],
+      *     "status": 200,
+      *     "statusText": "OK"
+      *   }
+      *
+      * ```
+      */
+      rangeGte(column, range) {
+        this.url.searchParams.append(column, `nxl.${range}`);
+        return this;
+      }
+      /**
+      * Only relevant for range columns. Match only rows where every element in
+      * `column` is less than any element in `range`.
+      *
+      * @param column - The range column to filter on
+      * @param range - The range to filter with
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @exampleDescription With `select()`
+      * Postgres supports a number of [range
+      * types](https://www.postgresql.org/docs/current/rangetypes.html). You
+      * can filter on range columns using the string representation of range
+      * values.
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('reservations')
+      *   .select()
+      *   .rangeLt('during', '[2000-01-01 15:00, 2000-01-01 16:00)')
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   reservations (
+      *     id int8 primary key,
+      *     room_name text,
+      *     during tsrange
+      *   );
+      *
+      * insert into
+      *   reservations (id, room_name, during)
+      * values
+      *   (1, 'Emerald', '[2000-01-01 13:00, 2000-01-01 15:00)'),
+      *   (2, 'Topaz', '[2000-01-02 09:00, 2000-01-02 10:00)');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "room_name": "Emerald",
+      *       "during": "[\"2000-01-01 13:00:00\",\"2000-01-01 15:00:00\")"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      rangeLt(column, range) {
+        this.url.searchParams.append(column, `sl.${range}`);
+        return this;
+      }
+      /**
+      * Only relevant for range columns. Match only rows where every element in
+      * `column` is either contained in `range` or less than any element in
+      * `range`.
+      *
+      * @param column - The range column to filter on
+      * @param range - The range to filter with
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @exampleDescription With `select()`
+      * Postgres supports a number of [range
+      * types](https://www.postgresql.org/docs/current/rangetypes.html). You
+      * can filter on range columns using the string representation of range
+      * values.
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('reservations')
+      *   .select()
+      *   .rangeLte('during', '[2000-01-01 14:00, 2000-01-01 16:00)')
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   reservations (
+      *     id int8 primary key,
+      *     room_name text,
+      *     during tsrange
+      *   );
+      *
+      * insert into
+      *   reservations (id, room_name, during)
+      * values
+      *   (1, 'Emerald', '[2000-01-01 13:00, 2000-01-01 15:00)'),
+      *   (2, 'Topaz', '[2000-01-02 09:00, 2000-01-02 10:00)');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      *   {
+      *     "data": [
+      *       {
+      *         "id": 1,
+      *         "room_name": "Emerald",
+      *         "during": "[\"2000-01-01 13:00:00\",\"2000-01-01 15:00:00\")"
+      *       }
+      *     ],
+      *     "status": 200,
+      *     "statusText": "OK"
+      *   }
+      *
+      * ```
+      */
+      rangeLte(column, range) {
+        this.url.searchParams.append(column, `nxr.${range}`);
+        return this;
+      }
+      /**
+      * Only relevant for range columns. Match only rows where `column` is
+      * mutually exclusive to `range` and there can be no element between the two
+      * ranges.
+      *
+      * @param column - The range column to filter on
+      * @param range - The range to filter with
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @exampleDescription With `select()`
+      * Postgres supports a number of [range
+      * types](https://www.postgresql.org/docs/current/rangetypes.html). You
+      * can filter on range columns using the string representation of range
+      * values.
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('reservations')
+      *   .select()
+      *   .rangeAdjacent('during', '[2000-01-01 12:00, 2000-01-01 13:00)')
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   reservations (
+      *     id int8 primary key,
+      *     room_name text,
+      *     during tsrange
+      *   );
+      *
+      * insert into
+      *   reservations (id, room_name, during)
+      * values
+      *   (1, 'Emerald', '[2000-01-01 13:00, 2000-01-01 15:00)'),
+      *   (2, 'Topaz', '[2000-01-02 09:00, 2000-01-02 10:00)');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "room_name": "Emerald",
+      *       "during": "[\"2000-01-01 13:00:00\",\"2000-01-01 15:00:00\")"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      rangeAdjacent(column, range) {
+        this.url.searchParams.append(column, `adj.${range}`);
+        return this;
+      }
+      /**
+      * Only relevant for array and range columns. Match only rows where
+      * `column` and `value` have an element in common.
+      *
+      * @param column - The array or range column to filter on
+      * @param value - The array or range value to filter with
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @example On array columns
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('issues')
+      *   .select('title')
+      *   .overlaps('tags', ['is:closed', 'severity:high'])
+      * ```
+      *
+      * @exampleSql On array columns
+      * ```sql
+      * create table
+      *   issues (
+      *     id int8 primary key,
+      *     title text,
+      *     tags text[]
+      *   );
+      *
+      * insert into
+      *   issues (id, title, tags)
+      * values
+      *   (1, 'Cache invalidation is not working', array['is:open', 'severity:high', 'priority:low']),
+      *   (2, 'Use better names', array['is:open', 'severity:low', 'priority:medium']);
+      * ```
+      *
+      * @exampleResponse On array columns
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "title": "Cache invalidation is not working"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @exampleDescription On range columns
+      * Postgres supports a number of [range
+      * types](https://www.postgresql.org/docs/current/rangetypes.html). You
+      * can filter on range columns using the string representation of range
+      * values.
+      *
+      * @example On range columns
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('reservations')
+      *   .select()
+      *   .overlaps('during', '[2000-01-01 12:45, 2000-01-01 13:15)')
+      * ```
+      *
+      * @exampleSql On range columns
+      * ```sql
+      * create table
+      *   reservations (
+      *     id int8 primary key,
+      *     room_name text,
+      *     during tsrange
+      *   );
+      *
+      * insert into
+      *   reservations (id, room_name, during)
+      * values
+      *   (1, 'Emerald', '[2000-01-01 13:00, 2000-01-01 15:00)'),
+      *   (2, 'Topaz', '[2000-01-02 09:00, 2000-01-02 10:00)');
+      * ```
+      *
+      * @exampleResponse On range columns
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "room_name": "Emerald",
+      *       "during": "[\"2000-01-01 13:00:00\",\"2000-01-01 15:00:00\")"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      overlaps(column, value) {
+        if (typeof value === "string") this.url.searchParams.append(column, `ov.${value}`);
+        else this.url.searchParams.append(column, `ov.{${value.join(",")}}`);
+        return this;
+      }
+      /**
+      * Only relevant for text and tsvector columns. Match only rows where
+      * `column` matches the query string in `query`.
+      *
+      * @param column - The text or tsvector column to filter on
+      * @param query - The query text to match with
+      * @param options - Named parameters
+      * @param options.config - The text search configuration to use
+      * @param options.type - Change how the `query` text is interpreted
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @remarks
+      * - For more information, see [Postgres full text search](/docs/guides/database/full-text-search).
+      *
+      * @example Text search
+      * ```ts
+      * const result = await supabase
+      *   .from("texts")
+      *   .select("content")
+      *   .textSearch("content", `'eggs' & 'ham'`, {
+      *     config: "english",
+      *   });
+      * ```
+      *
+      * @exampleSql Text search
+      * ```sql
+      * create table texts (
+      *   id      bigint
+      *           primary key
+      *           generated always as identity,
+      *   content text
+      * );
+      *
+      * insert into texts (content) values
+      *     ('Four score and seven years ago'),
+      *     ('The road goes ever on and on'),
+      *     ('Green eggs and ham')
+      * ;
+      * ```
+      *
+      * @exampleResponse Text search
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "content": "Green eggs and ham"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @exampleDescription Basic normalization
+      * Uses PostgreSQL's `plainto_tsquery` function.
+      *
+      * @example Basic normalization
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('quotes')
+      *   .select('catchphrase')
+      *   .textSearch('catchphrase', `'fat' & 'cat'`, {
+      *     type: 'plain',
+      *     config: 'english'
+      *   })
+      * ```
+      *
+      * @exampleDescription Full normalization
+      * Uses PostgreSQL's `phraseto_tsquery` function.
+      *
+      * @example Full normalization
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('quotes')
+      *   .select('catchphrase')
+      *   .textSearch('catchphrase', `'fat' & 'cat'`, {
+      *     type: 'phrase',
+      *     config: 'english'
+      *   })
+      * ```
+      *
+      * @exampleDescription Websearch
+      * Uses PostgreSQL's `websearch_to_tsquery` function.
+      * This function will never raise syntax errors, which makes it possible to use raw user-supplied input for search, and can be used
+      * with advanced operators.
+      *
+      * - `unquoted text`: text not inside quote marks will be converted to terms separated by & operators, as if processed by plainto_tsquery.
+      * - `"quoted text"`: text inside quote marks will be converted to terms separated by `<->` operators, as if processed by phraseto_tsquery.
+      * - `OR`: the word “or” will be converted to the | operator.
+      * - `-`: a dash will be converted to the ! operator.
+      *
+      * @example Websearch
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('quotes')
+      *   .select('catchphrase')
+      *   .textSearch('catchphrase', `'fat or cat'`, {
+      *     type: 'websearch',
+      *     config: 'english'
+      *   })
+      * ```
+      */
+      textSearch(column, query, { config, type } = {}) {
+        let typePart = "";
+        if (type === "plain") typePart = "pl";
+        else if (type === "phrase") typePart = "ph";
+        else if (type === "websearch") typePart = "w";
+        const configPart = config === void 0 ? "" : `(${config})`;
+        this.url.searchParams.append(column, `${typePart}fts${configPart}.${query}`);
+        return this;
+      }
+      /**
+      * Match only rows where each column in `query` keys is equal to its
+      * associated value. Shorthand for multiple `.eq()`s.
+      *
+      * @param query - The object to filter with, with column names as keys mapped
+      * to their filter values
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select('name')
+      *   .match({ id: 2, name: 'Leia' })
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "Leia"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      match(query) {
+        Object.entries(query).filter(([_, value]) => value !== void 0).forEach(([column, value]) => {
+          this.url.searchParams.append(column, `eq.${value}`);
+        });
+        return this;
+      }
+      /**
+      * Match only rows which doesn't satisfy the filter.
+      *
+      * Unlike most filters, `opearator` and `value` are used as-is and need to
+      * follow [PostgREST
+      * syntax](https://postgrest.org/en/stable/api.html#operators). You also need
+      * to make sure they are properly sanitized.
+      *
+      * @param column - The column to filter on
+      * @param operator - The operator to be negated to filter with, following
+      * PostgREST syntax
+      * @param value - The value to filter with, following PostgREST syntax
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @remarks
+      * not() expects you to use the raw PostgREST syntax for the filter values.
+      *
+      * ```ts
+      * .not('id', 'in', '(5,6,7)')  // Use `()` for `in` filter
+      * .not('arraycol', 'cs', '{"a","b"}')  // Use `cs` for `contains()`, `{}` for array values
+      * ```
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('countries')
+      *   .select()
+      *   .not('name', 'is', null)
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   countries (id int8 primary key, name text);
+      *
+      * insert into
+      *   countries (id, name)
+      * values
+      *   (1, 'null'),
+      *   (2, null);
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      *   {
+      *     "data": [
+      *       {
+      *         "id": 1,
+      *         "name": "null"
+      *       }
+      *     ],
+      *     "status": 200,
+      *     "statusText": "OK"
+      *   }
+      *
+      * ```
+      */
+      not(column, operator, value) {
+        this.url.searchParams.append(column, `not.${operator}.${value}`);
+        return this;
+      }
+      /**
+      * Match only rows which satisfy at least one of the filters.
+      *
+      * Unlike most filters, `filters` is used as-is and needs to follow [PostgREST
+      * syntax](https://postgrest.org/en/stable/api.html#operators). You also need
+      * to make sure it's properly sanitized.
+      *
+      * It's currently not possible to do an `.or()` filter across multiple tables.
+      *
+      * @param filters - The filters to use, following PostgREST syntax
+      * @param options - Named parameters
+      * @param options.referencedTable - Set this to filter on referenced tables
+      * instead of the parent table
+      * @param options.foreignTable - Deprecated, use `referencedTable` instead
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @remarks
+      * or() expects you to use the raw PostgREST syntax for the filter names and values.
+      *
+      * ```ts
+      * .or('id.in.(5,6,7), arraycol.cs.{"a","b"}')  // Use `()` for `in` filter, `{}` for array values and `cs` for `contains()`.
+      * .or('id.in.(5,6,7), arraycol.cd.{"a","b"}')  // Use `cd` for `containedBy()`
+      * ```
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select('name')
+      *   .or('id.eq.2,name.eq.Han')
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "Leia"
+      *     },
+      *     {
+      *       "name": "Han"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @example Use `or` with `and`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select('name')
+      *   .or('id.gt.3,and(id.eq.1,name.eq.Luke)')
+      * ```
+      *
+      * @exampleSql Use `or` with `and`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse Use `or` with `and`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "Luke"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @example Use `or` on referenced tables
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('orchestral_sections')
+      *   .select(`
+      *     name,
+      *     instruments!inner (
+      *       name
+      *     )
+      *   `)
+      *   .or('section_id.eq.1,name.eq.guzheng', { referencedTable: 'instruments' })
+      * ```
+      *
+      * @exampleSql Use `or` on referenced tables
+      * ```sql
+      * create table
+      *   orchestral_sections (id int8 primary key, name text);
+      * create table
+      *   instruments (
+      *     id int8 primary key,
+      *     section_id int8 not null references orchestral_sections,
+      *     name text
+      *   );
+      *
+      * insert into
+      *   orchestral_sections (id, name)
+      * values
+      *   (1, 'strings'),
+      *   (2, 'woodwinds');
+      * insert into
+      *   instruments (id, section_id, name)
+      * values
+      *   (1, 2, 'flute'),
+      *   (2, 1, 'violin');
+      * ```
+      *
+      * @exampleResponse Use `or` on referenced tables
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "strings",
+      *       "instruments": [
+      *         {
+      *           "name": "violin"
+      *         }
+      *       ]
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      or(filters, { foreignTable, referencedTable = foreignTable } = {}) {
+        const key = referencedTable ? `${referencedTable}.or` : "or";
+        this.url.searchParams.append(key, `(${filters})`);
+        return this;
+      }
+      /**
+      * Match only rows which satisfy the filter. This is an escape hatch - you
+      * should use the specific filter methods wherever possible.
+      *
+      * Unlike most filters, `opearator` and `value` are used as-is and need to
+      * follow [PostgREST
+      * syntax](https://postgrest.org/en/stable/api.html#operators). You also need
+      * to make sure they are properly sanitized.
+      *
+      * @param column - The column to filter on
+      * @param operator - The operator to filter with, following PostgREST syntax
+      * @param value - The value to filter with, following PostgREST syntax
+      *
+      * @category Database
+      * @subcategory Using filters
+      *
+      * @remarks
+      * filter() expects you to use the raw PostgREST syntax for the filter values.
+      *
+      * ```ts
+      * .filter('id', 'in', '(5,6,7)')  // Use `()` for `in` filter
+      * .filter('arraycol', 'cs', '{"a","b"}')  // Use `cs` for `contains()`, `{}` for array values
+      * ```
+      *
+      * @example With `select()`
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select()
+      *   .filter('name', 'in', '("Han","Yoda")')
+      * ```
+      *
+      * @exampleSql With `select()`
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse With `select()`
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 3,
+      *       "name": "Han"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @example On a referenced table
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('orchestral_sections')
+      *   .select(`
+      *     name,
+      *     instruments!inner (
+      *       name
+      *     )
+      *   `)
+      *   .filter('instruments.name', 'eq', 'flute')
+      * ```
+      *
+      * @exampleSql On a referenced table
+      * ```sql
+      * create table
+      *   orchestral_sections (id int8 primary key, name text);
+      * create table
+      *    instruments (
+      *     id int8 primary key,
+      *     section_id int8 not null references orchestral_sections,
+      *     name text
+      *   );
+      *
+      * insert into
+      *   orchestral_sections (id, name)
+      * values
+      *   (1, 'strings'),
+      *   (2, 'woodwinds');
+      * insert into
+      *   instruments (id, section_id, name)
+      * values
+      *   (1, 2, 'flute'),
+      *   (2, 1, 'violin');
+      * ```
+      *
+      * @exampleResponse On a referenced table
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "woodwinds",
+      *       "instruments": [
+      *         {
+      *           "name": "flute"
+      *         }
+      *       ]
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      filter(column, operator, value) {
+        this.url.searchParams.append(column, `${operator}.${value}`);
+        return this;
+      }
+    };
+    PostgrestQueryBuilder = class {
+      /**
+      * Creates a query builder scoped to a Postgres table or view.
+      *
+      * @category Database
+      *
+      * @param url - The URL for the query
+      * @param options - Named parameters
+      * @param options.headers - Custom headers
+      * @param options.schema - Postgres schema to use
+      * @param options.fetch - Custom fetch implementation
+      * @param options.urlLengthLimit - Maximum URL length before warning
+      * @param options.retry - Enable automatic retries for transient errors (default: true)
+      *
+      * @example Using supabase-js (recommended)
+      * ```ts
+      * import { createClient } from '@supabase/supabase-js'
+      *
+      * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
+      * const { data, error } = await supabase.from('users').select('*')
+      * ```
+      *
+      * @example Standalone import for bundle-sensitive environments
+      * ```ts
+      * import { PostgrestQueryBuilder } from '@supabase/postgrest-js'
+      *
+      * const query = new PostgrestQueryBuilder(
+      *   new URL('https://xyzcompany.supabase.co/rest/v1/users'),
+      *   { headers: { apikey: 'your-publishable-key' }, retry: true }
+      * )
+      * ```
+      */
+      constructor(url, { headers = {}, schema, fetch: fetch$1, urlLengthLimit = 8e3, retry }) {
+        this.url = url;
+        this.headers = new Headers(headers);
+        this.schema = schema;
+        this.fetch = fetch$1;
+        this.urlLengthLimit = urlLengthLimit;
+        this.retry = retry;
+      }
+      /**
+      * Clone URL and headers to prevent shared state between operations.
+      */
+      cloneRequestState() {
+        return {
+          url: new URL(this.url.toString()),
+          headers: new Headers(this.headers)
+        };
+      }
+      /**
+      * Perform a SELECT query on the table or view.
+      *
+      * @param columns - The columns to retrieve, separated by commas. Columns can be renamed when returned with `customName:columnName`
+      *
+      * @param options - Named parameters
+      *
+      * @param options.head - When set to `true`, `data` will not be returned.
+      * Useful if you only need the count.
+      *
+      * @param options.count - Count algorithm to use to count rows in the table or view.
+      *
+      * `"exact"`: Exact but slow count algorithm. Performs a `COUNT(*)` under the
+      * hood.
+      *
+      * `"planned"`: Approximated but fast count algorithm. Uses the Postgres
+      * statistics under the hood.
+      *
+      * `"estimated"`: Uses exact count for low numbers and planned count for high
+      * numbers.
+      *
+      * @remarks
+      * When using `count` with `.range()` or `.limit()`, the returned `count` is the total number of rows
+      * that match your filters, not the number of rows in the current page. Use this to build pagination UI.
+      
+      * - By default, Supabase projects return a maximum of 1,000 rows. This setting can be changed in your project's [API settings](/dashboard/project/_/settings/api). It's recommended that you keep it low to limit the payload size of accidental or malicious requests. You can use `range()` queries to paginate through your data.
+      * - `select()` can be combined with [Filters](/docs/reference/javascript/using-filters)
+      * - `select()` can be combined with [Modifiers](/docs/reference/javascript/using-modifiers)
+      * - `apikey` is a reserved keyword if you're using the [Supabase Platform](/docs/guides/platform) and [should be avoided as a column name](https://github.com/supabase/supabase/issues/5465). *
+      * @category Database
+      *
+      * @example Getting your data
+      * ```js
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select()
+      * ```
+      *
+      * @exampleSql Getting your data
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Harry'),
+      *   (2, 'Frodo'),
+      *   (3, 'Katniss');
+      * ```
+      *
+      * @exampleResponse Getting your data
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "name": "Harry"
+      *     },
+      *     {
+      *       "id": 2,
+      *       "name": "Frodo"
+      *     },
+      *     {
+      *       "id": 3,
+      *       "name": "Katniss"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @exampleDescription Handling errors
+      * The most useful field on a Postgres error is usually `hint` — when the database knows the fix, it puts the literal SQL there. For example, a permission-denied error (`code: '42501'`) arrives with a `hint` like `"Grant the required privileges to the current role with: GRANT SELECT ON public.characters TO anon;"`. Log the full `error` object so the hint isn't hidden behind `error.message`.
+      *
+      * @example Handling errors
+      * ```js
+      * const { data, error } = await supabase.from('characters').select()
+      * if (error) {
+      *   // Logs the full error: message, code, details, and hint.
+      *   console.error(error)
+      *   return
+      * }
+      * ```
+      *
+      * @exampleResponse Handling errors
+      * ```json
+      * {
+      *   "error": {
+      *     "code": "42501",
+      *     "details": null,
+      *     "hint": "Grant the required privileges to the current role with: GRANT SELECT ON public.characters TO anon;",
+      *     "message": "permission denied for table characters"
+      *   },
+      *   "status": 401,
+      *   "statusText": "Unauthorized"
+      * }
+      * ```
+      *
+      * @example Selecting specific columns
+      * ```js
+      * const { data, error } = await supabase
+      *   .from('characters')
+      *   .select('name')
+      * ```
+      *
+      * @exampleSql Selecting specific columns
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Frodo'),
+      *   (2, 'Harry'),
+      *   (3, 'Katniss');
+      * ```
+      *
+      * @exampleResponse Selecting specific columns
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "Frodo"
+      *     },
+      *     {
+      *       "name": "Harry"
+      *     },
+      *     {
+      *       "name": "Katniss"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @exampleDescription Query referenced tables
+      * If your database has foreign key relationships, you can query related tables too.
+      *
+      * @example Query referenced tables
+      * ```js
+      * const { data, error } = await supabase
+      *   .from('orchestral_sections')
+      *   .select(`
+      *     name,
+      *     instruments (
+      *       name
+      *     )
+      *   `)
+      * ```
+      *
+      * @exampleSql Query referenced tables
+      * ```sql
+      * create table
+      *   orchestral_sections (id int8 primary key, name text);
+      * create table
+      *   instruments (
+      *     id int8 primary key,
+      *     section_id int8 not null references orchestral_sections,
+      *     name text
+      *   );
+      *
+      * insert into
+      *   orchestral_sections (id, name)
+      * values
+      *   (1, 'strings'),
+      *   (2, 'woodwinds');
+      * insert into
+      *   instruments (id, section_id, name)
+      * values
+      *   (1, 2, 'flute'),
+      *   (2, 1, 'violin');
+      * ```
+      *
+      * @exampleResponse Query referenced tables
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "strings",
+      *       "instruments": [
+      *         {
+      *           "name": "violin"
+      *         }
+      *       ]
+      *     },
+      *     {
+      *       "name": "woodwinds",
+      *       "instruments": [
+      *         {
+      *           "name": "flute"
+      *         }
+      *       ]
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @exampleDescription Query referenced tables with spaces in their names
+      * If your table name contains spaces, you must use double quotes in the `select` statement to reference the table.
+      *
+      * @example Query referenced tables with spaces in their names
+      * ```js
+      * const { data, error } = await supabase
+      *   .from('orchestral sections')
+      *   .select(`
+      *     name,
+      *     "musical instruments" (
+      *       name
+      *     )
+      *   `)
+      * ```
+      *
+      * @exampleSql Query referenced tables with spaces in their names
+      * ```sql
+      * create table
+      *   "orchestral sections" (id int8 primary key, name text);
+      * create table
+      *   "musical instruments" (
+      *     id int8 primary key,
+      *     section_id int8 not null references "orchestral sections",
+      *     name text
+      *   );
+      *
+      * insert into
+      *   "orchestral sections" (id, name)
+      * values
+      *   (1, 'strings'),
+      *   (2, 'woodwinds');
+      * insert into
+      *   "musical instruments" (id, section_id, name)
+      * values
+      *   (1, 2, 'flute'),
+      *   (2, 1, 'violin');
+      * ```
+      *
+      * @exampleResponse Query referenced tables with spaces in their names
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "strings",
+      *       "musical instruments": [
+      *         {
+      *           "name": "violin"
+      *         }
+      *       ]
+      *     },
+      *     {
+      *       "name": "woodwinds",
+      *       "musical instruments": [
+      *         {
+      *           "name": "flute"
+      *         }
+      *       ]
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @exampleDescription Query referenced tables through a join table
+      * If you're in a situation where your tables are **NOT** directly
+      * related, but instead are joined by a _join table_, you can still use
+      * the `select()` method to query the related data. The join table needs
+      * to have the foreign keys as part of its composite primary key.
+      *
+      * @example Query referenced tables through a join table
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('users')
+      *   .select(`
+      *     name,
+      *     teams (
+      *       name
+      *     )
+      *   `)
+      *   
+      * ```
+      *
+      * @exampleSql Query referenced tables through a join table
+      * ```sql
+      * create table
+      *   users (
+      *     id int8 primary key,
+      *     name text
+      *   );
+      * create table
+      *   teams (
+      *     id int8 primary key,
+      *     name text
+      *   );
+      * -- join table
+      * create table
+      *   users_teams (
+      *     user_id int8 not null references users,
+      *     team_id int8 not null references teams,
+      *     -- both foreign keys must be part of a composite primary key
+      *     primary key (user_id, team_id)
+      *   );
+      *
+      * insert into
+      *   users (id, name)
+      * values
+      *   (1, 'Kiran'),
+      *   (2, 'Evan');
+      * insert into
+      *   teams (id, name)
+      * values
+      *   (1, 'Green'),
+      *   (2, 'Blue');
+      * insert into
+      *   users_teams (user_id, team_id)
+      * values
+      *   (1, 1),
+      *   (1, 2),
+      *   (2, 2);
+      * ```
+      *
+      * @exampleResponse Query referenced tables through a join table
+      * ```json
+      *   {
+      *     "data": [
+      *       {
+      *         "name": "Kiran",
+      *         "teams": [
+      *           {
+      *             "name": "Green"
+      *           },
+      *           {
+      *             "name": "Blue"
+      *           }
+      *         ]
+      *       },
+      *       {
+      *         "name": "Evan",
+      *         "teams": [
+      *           {
+      *             "name": "Blue"
+      *           }
+      *         ]
+      *       }
+      *     ],
+      *     "status": 200,
+      *     "statusText": "OK"
+      *   }
+      *   
+      * ```
+      *
+      * @exampleDescription Query the same referenced table multiple times
+      * If you need to query the same referenced table twice, use the name of the
+      * joined column to identify which join to use. You can also give each
+      * column an alias.
+      *
+      * @example Query the same referenced table multiple times
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('messages')
+      *   .select(`
+      *     content,
+      *     from:sender_id(name),
+      *     to:receiver_id(name)
+      *   `)
+      *
+      * // To infer types, use the name of the table (in this case `users`) and
+      * // the name of the foreign key constraint.
+      * const { data, error } = await supabase
+      *   .from('messages')
+      *   .select(`
+      *     content,
+      *     from:users!messages_sender_id_fkey(name),
+      *     to:users!messages_receiver_id_fkey(name)
+      *   `)
+      * ```
+      *
+      * @exampleSql Query the same referenced table multiple times
+      * ```sql
+      *  create table
+      *  users (id int8 primary key, name text);
+      *
+      *  create table
+      *    messages (
+      *      sender_id int8 not null references users,
+      *      receiver_id int8 not null references users,
+      *      content text
+      *    );
+      *
+      *  insert into
+      *    users (id, name)
+      *  values
+      *    (1, 'Kiran'),
+      *    (2, 'Evan');
+      *
+      *  insert into
+      *    messages (sender_id, receiver_id, content)
+      *  values
+      *    (1, 2, '👋');
+      *  ```
+      * ```
+      *
+      * @exampleResponse Query the same referenced table multiple times
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "content": "👋",
+      *       "from": {
+      *         "name": "Kiran"
+      *       },
+      *       "to": {
+      *         "name": "Evan"
+      *       }
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @exampleDescription Query nested foreign tables through a join table
+      * You can use the result of a joined table to gather data in
+      * another foreign table. With multiple references to the same foreign
+      * table you must specify the column on which to conduct the join.
+      *
+      * @example Query nested foreign tables through a join table
+      * ```ts
+      *   const { data, error } = await supabase
+      *     .from('games')
+      *     .select(`
+      *       game_id:id,
+      *       away_team:teams!games_away_team_fkey (
+      *         users (
+      *           id,
+      *           name
+      *         )
+      *       )
+      *     `)
+      *   
+      * ```
+      *
+      * @exampleSql Query nested foreign tables through a join table
+      * ```sql
+      * ```sql
+      * create table
+      *   users (
+      *     id int8 primary key,
+      *     name text
+      *   );
+      * create table
+      *   teams (
+      *     id int8 primary key,
+      *     name text
+      *   );
+      * -- join table
+      * create table
+      *   users_teams (
+      *     user_id int8 not null references users,
+      *     team_id int8 not null references teams,
+      *
+      *     primary key (user_id, team_id)
+      *   );
+      * create table
+      *   games (
+      *     id int8 primary key,
+      *     home_team int8 not null references teams,
+      *     away_team int8 not null references teams,
+      *     name text
+      *   );
+      *
+      * insert into users (id, name)
+      * values
+      *   (1, 'Kiran'),
+      *   (2, 'Evan');
+      * insert into
+      *   teams (id, name)
+      * values
+      *   (1, 'Green'),
+      *   (2, 'Blue');
+      * insert into
+      *   users_teams (user_id, team_id)
+      * values
+      *   (1, 1),
+      *   (1, 2),
+      *   (2, 2);
+      * insert into
+      *   games (id, home_team, away_team, name)
+      * values
+      *   (1, 1, 2, 'Green vs Blue'),
+      *   (2, 2, 1, 'Blue vs Green');
+      * ```
+      *
+      * @exampleResponse Query nested foreign tables through a join table
+      * ```json
+      *   {
+      *     "data": [
+      *       {
+      *         "game_id": 1,
+      *         "away_team": {
+      *           "users": [
+      *             {
+      *               "id": 1,
+      *               "name": "Kiran"
+      *             },
+      *             {
+      *               "id": 2,
+      *               "name": "Evan"
+      *             }
+      *           ]
+      *         }
+      *       },
+      *       {
+      *         "game_id": 2,
+      *         "away_team": {
+      *           "users": [
+      *             {
+      *               "id": 1,
+      *               "name": "Kiran"
+      *             }
+      *           ]
+      *         }
+      *       }
+      *     ],
+      *     "status": 200,
+      *     "statusText": "OK"
+      *   }
+      *   
+      * ```
+      *
+      * @exampleDescription Filtering through referenced tables
+      * If the filter on a referenced table's column is not satisfied, the referenced
+      * table returns `[]` or `null` but the parent table is not filtered out.
+      * If you want to filter out the parent table rows, use the `!inner` hint
+      *
+      * @example Filtering through referenced tables
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('instruments')
+      *   .select('name, orchestral_sections(*)')
+      *   .eq('orchestral_sections.name', 'percussion')
+      * ```
+      *
+      * @exampleSql Filtering through referenced tables
+      * ```sql
+      * create table
+      *   orchestral_sections (id int8 primary key, name text);
+      * create table
+      *   instruments (
+      *     id int8 primary key,
+      *     section_id int8 not null references orchestral_sections,
+      *     name text
+      *   );
+      *
+      * insert into
+      *   orchestral_sections (id, name)
+      * values
+      *   (1, 'strings'),
+      *   (2, 'woodwinds');
+      * insert into
+      *   instruments (id, section_id, name)
+      * values
+      *   (1, 2, 'flute'),
+      *   (2, 1, 'violin');
+      * ```
+      *
+      * @exampleResponse Filtering through referenced tables
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "flute",
+      *       "orchestral_sections": null
+      *     },
+      *     {
+      *       "name": "violin",
+      *       "orchestral_sections": null
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @exampleDescription Querying referenced table with count
+      * You can get the number of rows in a related table by using the
+      * **count** property.
+      *
+      * @example Querying referenced table with count
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('orchestral_sections')
+      *   .select(`*, instruments(count)`)
+      * ```
+      *
+      * @exampleSql Querying referenced table with count
+      * ```sql
+      * create table orchestral_sections (
+      *   "id" "uuid" primary key default "extensions"."uuid_generate_v4"() not null,
+      *   "name" text
+      * );
+      *
+      * create table characters (
+      *   "id" "uuid" primary key default "extensions"."uuid_generate_v4"() not null,
+      *   "name" text,
+      *   "section_id" "uuid" references public.orchestral_sections on delete cascade
+      * );
+      *
+      * with section as (
+      *   insert into orchestral_sections (name)
+      *   values ('strings') returning id
+      * )
+      * insert into instruments (name, section_id) values
+      * ('violin', (select id from section)),
+      * ('viola', (select id from section)),
+      * ('cello', (select id from section)),
+      * ('double bass', (select id from section));
+      * ```
+      *
+      * @exampleResponse Querying referenced table with count
+      * ```json
+      * [
+      *   {
+      *     "id": "693694e7-d993-4360-a6d7-6294e325d9b6",
+      *     "name": "strings",
+      *     "instruments": [
+      *       {
+      *         "count": 4
+      *       }
+      *     ]
+      *   }
+      * ]
+      * ```
+      *
+      * @exampleDescription Querying with count option
+      * You can get the number of rows by using the
+      * [count](/docs/reference/javascript/select#parameters) option.
+      *
+      * @example Querying with count option
+      * ```ts
+      * const { count, error } = await supabase
+      *   .from('characters')
+      *   .select('*', { count: 'exact', head: true })
+      * ```
+      *
+      * @exampleSql Querying with count option
+      * ```sql
+      * create table
+      *   characters (id int8 primary key, name text);
+      *
+      * insert into
+      *   characters (id, name)
+      * values
+      *   (1, 'Luke'),
+      *   (2, 'Leia'),
+      *   (3, 'Han');
+      * ```
+      *
+      * @exampleResponse Querying with count option
+      * ```json
+      * {
+      *   "count": 3,
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @exampleDescription Querying JSON data
+      * You can select and filter data inside of
+      * [JSON](/docs/guides/database/json) columns. Postgres offers some
+      * [operators](/docs/guides/database/json#query-the-jsonb-data) for
+      * querying JSON data.
+      *
+      * @example Querying JSON data
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('users')
+      *   .select(`
+      *     id, name,
+      *     address->city
+      *   `)
+      * ```
+      *
+      * @exampleSql Querying JSON data
+      * ```sql
+      * create table
+      *   users (
+      *     id int8 primary key,
+      *     name text,
+      *     address jsonb
+      *   );
+      *
+      * insert into
+      *   users (id, name, address)
+      * values
+      *   (1, 'Frodo', '{"city":"Hobbiton"}');
+      * ```
+      *
+      * @exampleResponse Querying JSON data
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "name": "Frodo",
+      *       "city": "Hobbiton"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @exampleDescription Querying referenced table with inner join
+      * If you don't want to return the referenced table contents, you can leave the parenthesis empty.
+      * Like `.select('name, orchestral_sections!inner()')`.
+      *
+      * @example Querying referenced table with inner join
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('instruments')
+      *   .select('name, orchestral_sections!inner(name)')
+      *   .eq('orchestral_sections.name', 'woodwinds')
+      *   .limit(1)
+      * ```
+      *
+      * @exampleSql Querying referenced table with inner join
+      * ```sql
+      * create table orchestral_sections (
+      *   "id" "uuid" primary key default "extensions"."uuid_generate_v4"() not null,
+      *   "name" text
+      * );
+      *
+      * create table instruments (
+      *   "id" "uuid" primary key default "extensions"."uuid_generate_v4"() not null,
+      *   "name" text,
+      *   "section_id" "uuid" references public.orchestral_sections on delete cascade
+      * );
+      *
+      * with section as (
+      *   insert into orchestral_sections (name)
+      *   values ('woodwinds') returning id
+      * )
+      * insert into instruments (name, section_id) values
+      * ('flute', (select id from section)),
+      * ('clarinet', (select id from section)),
+      * ('bassoon', (select id from section)),
+      * ('piccolo', (select id from section));
+      * ```
+      *
+      * @exampleResponse Querying referenced table with inner join
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "flute",
+      *       "orchestral_sections": {"name": "woodwinds"}
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @exampleDescription Switching schemas per query
+      * In addition to setting the schema during initialization, you can also switch schemas on a per-query basis.
+      * Make sure you've set up your [database privileges and API settings](/docs/guides/api/using-custom-schemas).
+      *
+      * @example Switching schemas per query
+      * ```ts
+      * const { data, error } = await supabase
+      *   .schema('myschema')
+      *   .from('mytable')
+      *   .select()
+      * ```
+      *
+      * @exampleSql Switching schemas per query
+      * ```sql
+      * create schema myschema;
+      *
+      * create table myschema.mytable (
+      *   id uuid primary key default gen_random_uuid(),
+      *   data text
+      * );
+      *
+      * insert into myschema.mytable (data) values ('mydata');
+      * ```
+      *
+      * @exampleResponse Switching schemas per query
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": "4162e008-27b0-4c0f-82dc-ccaeee9a624d",
+      *       "data": "mydata"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      select(columns, options) {
+        const { head: head2 = false, count } = options !== null && options !== void 0 ? options : {};
+        const method = head2 ? "HEAD" : "GET";
+        let quoted = false;
+        const cleanedColumns = (columns !== null && columns !== void 0 ? columns : "*").split("").map((c) => {
+          if (/\s/.test(c) && !quoted) return "";
+          if (c === '"') quoted = !quoted;
+          return c;
+        }).join("");
+        const { url, headers } = this.cloneRequestState();
+        url.searchParams.set("select", cleanedColumns);
+        if (count) headers.append("Prefer", `count=${count}`);
+        return new PostgrestFilterBuilder({
+          method,
+          url,
+          headers,
+          schema: this.schema,
+          fetch: this.fetch,
+          urlLengthLimit: this.urlLengthLimit,
+          retry: this.retry
+        });
+      }
+      /**
+      * Perform an INSERT into the table or view.
+      *
+      * By default, inserted rows are not returned. To return it, chain the call
+      * with `.select()`.
+      *
+      * @param values - The values to insert. Pass an object to insert a single row
+      * or an array to insert multiple rows.
+      *
+      * @param options - Named parameters
+      *
+      * @param options.count - Count algorithm to use to count inserted rows.
+      *
+      * `"exact"`: Exact but slow count algorithm. Performs a `COUNT(*)` under the
+      * hood.
+      *
+      * `"planned"`: Approximated but fast count algorithm. Uses the Postgres
+      * statistics under the hood.
+      *
+      * `"estimated"`: Uses exact count for low numbers and planned count for high
+      * numbers.
+      *
+      * @param options.defaultToNull - Make missing fields default to `null`.
+      * Otherwise, use the default value for the column. Only applies for bulk
+      * inserts.
+      *
+      * @category Database
+      *
+      * @example Create a record
+      * ```ts
+      * const { error } = await supabase
+      *   .from('countries')
+      *   .insert({ id: 1, name: 'Mordor' })
+      * ```
+      *
+      * @exampleSql Create a record
+      * ```sql
+      * create table
+      *   countries (id int8 primary key, name text);
+      * ```
+      *
+      * @exampleResponse Create a record
+      * ```json
+      * {
+      *   "status": 201,
+      *   "statusText": "Created"
+      * }
+      * ```
+      *
+      * @exampleDescription Handling errors
+      * `error.hint` from Postgres often contains the actionable fix (e.g. `"Grant the required privileges to the current role with: GRANT INSERT ON public.countries TO anon;"` for a `42501` permission-denied error). Log the full `error` object so it isn't hidden behind `error.message`.
+      *
+      * @example Handling errors
+      * ```js
+      * const { error } = await supabase.from('countries').insert({ id: 1, name: 'Mordor' })
+      * if (error) console.error(error)
+      * ```
+      *
+      * @example Create a record and return it
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('countries')
+      *   .insert({ id: 1, name: 'Mordor' })
+      *   .select()
+      * ```
+      *
+      * @exampleSql Create a record and return it
+      * ```sql
+      * create table
+      *   countries (id int8 primary key, name text);
+      * ```
+      *
+      * @exampleResponse Create a record and return it
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "name": "Mordor"
+      *     }
+      *   ],
+      *   "status": 201,
+      *   "statusText": "Created"
+      * }
+      * ```
+      *
+      * @exampleDescription Bulk create
+      * A bulk create operation is handled in a single transaction.
+      * If any of the inserts fail, none of the rows are inserted.
+      *
+      * @example Bulk create
+      * ```ts
+      * const { error } = await supabase
+      *   .from('countries')
+      *   .insert([
+      *     { id: 1, name: 'Mordor' },
+      *     { id: 1, name: 'The Shire' },
+      *   ])
+      * ```
+      *
+      * @exampleSql Bulk create
+      * ```sql
+      * create table
+      *   countries (id int8 primary key, name text);
+      * ```
+      *
+      * @exampleResponse Bulk create
+      * ```json
+      * {
+      *   "error": {
+      *     "code": "23505",
+      *     "details": "Key (id)=(1) already exists.",
+      *     "hint": null,
+      *     "message": "duplicate key value violates unique constraint \"countries_pkey\""
+      *   },
+      *   "status": 409,
+      *   "statusText": "Conflict"
+      * }
+      * ```
+      */
+      insert(values, { count, defaultToNull = true } = {}) {
+        var _this$fetch;
+        const method = "POST";
+        const { url, headers } = this.cloneRequestState();
+        if (count) headers.append("Prefer", `count=${count}`);
+        if (!defaultToNull) headers.append("Prefer", `missing=default`);
+        if (Array.isArray(values)) {
+          const columns = values.reduce((acc, x) => acc.concat(Object.keys(x)), []);
+          if (columns.length > 0) {
+            const uniqueColumns = [...new Set(columns)].map((column) => `"${column}"`);
+            url.searchParams.set("columns", uniqueColumns.join(","));
+          }
+        }
+        return new PostgrestFilterBuilder({
+          method,
+          url,
+          headers,
+          schema: this.schema,
+          body: values,
+          fetch: (_this$fetch = this.fetch) !== null && _this$fetch !== void 0 ? _this$fetch : fetch,
+          urlLengthLimit: this.urlLengthLimit,
+          retry: this.retry
+        });
+      }
+      /**
+      * Perform an UPSERT on the table or view. Depending on the column(s) passed
+      * to `onConflict`, `.upsert()` allows you to perform the equivalent of
+      * `.insert()` if a row with the corresponding `onConflict` columns doesn't
+      * exist, or if it does exist, perform an alternative action depending on
+      * `ignoreDuplicates`.
+      *
+      * By default, upserted rows are not returned. To return it, chain the call
+      * with `.select()`.
+      *
+      * @param values - The values to upsert with. Pass an object to upsert a
+      * single row or an array to upsert multiple rows.
+      *
+      * @param options - Named parameters
+      *
+      * @param options.onConflict - Comma-separated UNIQUE column(s) to specify how
+      * duplicate rows are determined. Two rows are duplicates if all the
+      * `onConflict` columns are equal.
+      *
+      * @param options.ignoreDuplicates - If `true`, duplicate rows are ignored. If
+      * `false`, duplicate rows are merged with existing rows.
+      *
+      * @param options.count - Count algorithm to use to count upserted rows.
+      *
+      * `"exact"`: Exact but slow count algorithm. Performs a `COUNT(*)` under the
+      * hood.
+      *
+      * `"planned"`: Approximated but fast count algorithm. Uses the Postgres
+      * statistics under the hood.
+      *
+      * `"estimated"`: Uses exact count for low numbers and planned count for high
+      * numbers.
+      *
+      * @param options.defaultToNull - Make missing fields default to `null`.
+      * Otherwise, use the default value for the column. This only applies when
+      * inserting new rows, not when merging with existing rows under
+      * `ignoreDuplicates: false`. This also only applies when doing bulk upserts.
+      *
+      * @example Upsert a single row using a unique key
+      * ```ts
+      * // Upserting a single row, overwriting based on the 'username' unique column
+      * const { data, error } = await supabase
+      *   .from('users')
+      *   .upsert({ username: 'supabot' }, { onConflict: 'username' })
+      *
+      * // Example response:
+      * // {
+      * //   data: [
+      * //     { id: 4, message: 'bar', username: 'supabot' }
+      * //   ],
+      * //   error: null
+      * // }
+      * ```
+      *
+      * @example Upsert with conflict resolution and exact row counting
+      * ```ts
+      * // Upserting and returning exact count
+      * const { data, error, count } = await supabase
+      *   .from('users')
+      *   .upsert(
+      *     {
+      *       id: 3,
+      *       message: 'foo',
+      *       username: 'supabot'
+      *     },
+      *     {
+      *       onConflict: 'username',
+      *       count: 'exact'
+      *     }
+      *   )
+      *
+      * // Example response:
+      * // {
+      * //   data: [
+      * //     {
+      * //       id: 42,
+      * //       handle: "saoirse",
+      * //       display_name: "Saoirse"
+      * //     }
+      * //   ],
+      * //   count: 1,
+      * //   error: null
+      * // }
+      * ```
+      *
+      * @category Database
+      *
+      * @remarks
+      * - Primary keys must be included in `values` to use upsert.
+      *
+      * @example Upsert your data
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('instruments')
+      *   .upsert({ id: 1, name: 'piano' })
+      *   .select()
+      * ```
+      *
+      * @exampleSql Upsert your data
+      * ```sql
+      * create table
+      *   instruments (id int8 primary key, name text);
+      *
+      * insert into
+      *   instruments (id, name)
+      * values
+      *   (1, 'harpsichord');
+      * ```
+      *
+      * @exampleResponse Upsert your data
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "name": "piano"
+      *     }
+      *   ],
+      *   "status": 201,
+      *   "statusText": "Created"
+      * }
+      * ```
+      *
+      * @exampleDescription Handling errors
+      * `error.hint` from Postgres often contains the actionable fix (e.g. `"Grant the required privileges to the current role with: GRANT INSERT, UPDATE ON public.instruments TO anon;"` for a `42501` permission-denied error). Log the full `error` object so it isn't hidden behind `error.message`.
+      *
+      * @example Handling errors
+      * ```js
+      * const { data, error } = await supabase.from('instruments').upsert({ id: 1, name: 'piano' }).select()
+      * if (error) console.error(error)
+      * ```
+      *
+      * @example Bulk Upsert your data
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('instruments')
+      *   .upsert([
+      *     { id: 1, name: 'piano' },
+      *     { id: 2, name: 'harp' },
+      *   ])
+      *   .select()
+      * ```
+      *
+      * @exampleSql Bulk Upsert your data
+      * ```sql
+      * create table
+      *   instruments (id int8 primary key, name text);
+      *
+      * insert into
+      *   instruments (id, name)
+      * values
+      *   (1, 'harpsichord');
+      * ```
+      *
+      * @exampleResponse Bulk Upsert your data
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "name": "piano"
+      *     },
+      *     {
+      *       "id": 2,
+      *       "name": "harp"
+      *     }
+      *   ],
+      *   "status": 201,
+      *   "statusText": "Created"
+      * }
+      * ```
+      *
+      * @exampleDescription Upserting into tables with constraints
+      * In the following query, `upsert()` implicitly uses the `id`
+      * (primary key) column to determine conflicts. If there is no existing
+      * row with the same `id`, `upsert()` inserts a new row, which
+      * will fail in this case as there is already a row with `handle` `"saoirse"`.
+      * Using the `onConflict` option, you can instruct `upsert()` to use
+      * another column with a unique constraint to determine conflicts.
+      *
+      * @example Upserting into tables with constraints
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('users')
+      *   .upsert({ id: 42, handle: 'saoirse', display_name: 'Saoirse' })
+      *   .select()
+      * ```
+      *
+      * @exampleSql Upserting into tables with constraints
+      * ```sql
+      * create table
+      *   users (
+      *     id int8 generated by default as identity primary key,
+      *     handle text not null unique,
+      *     display_name text
+      *   );
+      *
+      * insert into
+      *   users (id, handle, display_name)
+      * values
+      *   (1, 'saoirse', null);
+      * ```
+      *
+      * @exampleResponse Upserting into tables with constraints
+      * ```json
+      * {
+      *   "error": {
+      *     "code": "23505",
+      *     "details": "Key (handle)=(saoirse) already exists.",
+      *     "hint": null,
+      *     "message": "duplicate key value violates unique constraint \"users_handle_key\""
+      *   },
+      *   "status": 409,
+      *   "statusText": "Conflict"
+      * }
+      * ```
+      */
+      upsert(values, { onConflict, ignoreDuplicates = false, count, defaultToNull = true } = {}) {
+        var _this$fetch2;
+        const method = "POST";
+        const { url, headers } = this.cloneRequestState();
+        headers.append("Prefer", `resolution=${ignoreDuplicates ? "ignore" : "merge"}-duplicates`);
+        if (onConflict !== void 0) url.searchParams.set("on_conflict", onConflict);
+        if (count) headers.append("Prefer", `count=${count}`);
+        if (!defaultToNull) headers.append("Prefer", "missing=default");
+        if (Array.isArray(values)) {
+          const columns = values.reduce((acc, x) => acc.concat(Object.keys(x)), []);
+          if (columns.length > 0) {
+            const uniqueColumns = [...new Set(columns)].map((column) => `"${column}"`);
+            url.searchParams.set("columns", uniqueColumns.join(","));
+          }
+        }
+        return new PostgrestFilterBuilder({
+          method,
+          url,
+          headers,
+          schema: this.schema,
+          body: values,
+          fetch: (_this$fetch2 = this.fetch) !== null && _this$fetch2 !== void 0 ? _this$fetch2 : fetch,
+          urlLengthLimit: this.urlLengthLimit,
+          retry: this.retry
+        });
+      }
+      /**
+      * Perform an UPDATE on the table or view.
+      *
+      * By default, updated rows are not returned. To return it, chain the call
+      * with `.select()` after filters.
+      *
+      * @param values - The values to update with
+      *
+      * @param options - Named parameters
+      *
+      * @param options.count - Count algorithm to use to count updated rows.
+      *
+      * `"exact"`: Exact but slow count algorithm. Performs a `COUNT(*)` under the
+      * hood.
+      *
+      * `"planned"`: Approximated but fast count algorithm. Uses the Postgres
+      * statistics under the hood.
+      *
+      * `"estimated"`: Uses exact count for low numbers and planned count for high
+      * numbers.
+      *
+      * @category Database
+      *
+      * @remarks
+      * - `update()` should always be combined with [Filters](/docs/reference/javascript/using-filters) to target the item(s) you wish to update.
+      *
+      * @example Updating your data
+      * ```ts
+      * const { error } = await supabase
+      *   .from('instruments')
+      *   .update({ name: 'piano' })
+      *   .eq('id', 1)
+      * ```
+      *
+      * @exampleSql Updating your data
+      * ```sql
+      * create table
+      *   instruments (id int8 primary key, name text);
+      *
+      * insert into
+      *   instruments (id, name)
+      * values
+      *   (1, 'harpsichord');
+      * ```
+      *
+      * @exampleResponse Updating your data
+      * ```json
+      * {
+      *   "status": 204,
+      *   "statusText": "No Content"
+      * }
+      * ```
+      *
+      * @exampleDescription Handling errors
+      * `error.hint` from Postgres often contains the actionable fix (e.g. `"Grant the required privileges to the current role with: GRANT UPDATE ON public.instruments TO anon;"` for a `42501` permission-denied error). Log the full `error` object so it isn't hidden behind `error.message`.
+      *
+      * @example Handling errors
+      * ```js
+      * const { error } = await supabase.from('instruments').update({ name: 'piano' }).eq('id', 1)
+      * if (error) console.error(error)
+      * ```
+      *
+      * @example Update a record and return it
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('instruments')
+      *   .update({ name: 'piano' })
+      *   .eq('id', 1)
+      *   .select()
+      * ```
+      *
+      * @exampleSql Update a record and return it
+      * ```sql
+      * create table
+      *   instruments (id int8 primary key, name text);
+      *
+      * insert into
+      *   instruments (id, name)
+      * values
+      *   (1, 'harpsichord');
+      * ```
+      *
+      * @exampleResponse Update a record and return it
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "name": "piano"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @exampleDescription Updating JSON data
+      * Postgres offers some
+      * [operators](/docs/guides/database/json#query-the-jsonb-data) for
+      * working with JSON data. Currently, it is only possible to update the entire JSON document.
+      *
+      * @example Updating JSON data
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('users')
+      *   .update({
+      *     address: {
+      *       street: 'Melrose Place',
+      *       postcode: 90210
+      *     }
+      *   })
+      *   .eq('address->postcode', 90210)
+      *   .select()
+      * ```
+      *
+      * @exampleSql Updating JSON data
+      * ```sql
+      * create table
+      *   users (
+      *     id int8 primary key,
+      *     name text,
+      *     address jsonb
+      *   );
+      *
+      * insert into
+      *   users (id, name, address)
+      * values
+      *   (1, 'Michael', '{ "postcode": 90210 }');
+      * ```
+      *
+      * @exampleResponse Updating JSON data
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "name": "Michael",
+      *       "address": {
+      *         "street": "Melrose Place",
+      *         "postcode": 90210
+      *       }
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      update(values, { count } = {}) {
+        var _this$fetch3;
+        const method = "PATCH";
+        const { url, headers } = this.cloneRequestState();
+        if (count) headers.append("Prefer", `count=${count}`);
+        return new PostgrestFilterBuilder({
+          method,
+          url,
+          headers,
+          schema: this.schema,
+          body: values,
+          fetch: (_this$fetch3 = this.fetch) !== null && _this$fetch3 !== void 0 ? _this$fetch3 : fetch,
+          urlLengthLimit: this.urlLengthLimit,
+          retry: this.retry
+        });
+      }
+      /**
+      * Perform a DELETE on the table or view.
+      *
+      * By default, deleted rows are not returned. To return it, chain the call
+      * with `.select()` after filters.
+      *
+      * @param options - Named parameters
+      *
+      * @param options.count - Count algorithm to use to count deleted rows.
+      *
+      * `"exact"`: Exact but slow count algorithm. Performs a `COUNT(*)` under the
+      * hood.
+      *
+      * `"planned"`: Approximated but fast count algorithm. Uses the Postgres
+      * statistics under the hood.
+      *
+      * `"estimated"`: Uses exact count for low numbers and planned count for high
+      * numbers.
+      *
+      * @category Database
+      *
+      * @remarks
+      * - `delete()` should always be combined with [filters](/docs/reference/javascript/using-filters) to target the item(s) you wish to delete.
+      * - If you use `delete()` with filters and you have
+      *   [RLS](/docs/learn/auth-deep-dive/auth-row-level-security) enabled, only
+      *   rows visible through `SELECT` policies are deleted. Note that by default
+      *   no rows are visible, so you need at least one `SELECT`/`ALL` policy that
+      *   makes the rows visible.
+      * - When using `delete().in()`, specify an array of values to target multiple rows with a single query. This is particularly useful for batch deleting entries that share common criteria, such as deleting users by their IDs. Ensure that the array you provide accurately represents all records you intend to delete to avoid unintended data removal.
+      *
+      * @example Delete a single record
+      * ```ts
+      * const response = await supabase
+      *   .from('countries')
+      *   .delete()
+      *   .eq('id', 1)
+      * ```
+      *
+      * @exampleSql Delete a single record
+      * ```sql
+      * create table
+      *   countries (id int8 primary key, name text);
+      *
+      * insert into
+      *   countries (id, name)
+      * values
+      *   (1, 'Mordor');
+      * ```
+      *
+      * @exampleResponse Delete a single record
+      * ```json
+      * {
+      *   "status": 204,
+      *   "statusText": "No Content"
+      * }
+      * ```
+      *
+      * @exampleDescription Handling errors
+      * `error.hint` from Postgres often contains the actionable fix (e.g. `"Grant the required privileges to the current role with: GRANT DELETE ON public.countries TO anon;"` for a `42501` permission-denied error). Log the full `error` object so it isn't hidden behind `error.message`.
+      *
+      * @example Handling errors
+      * ```js
+      * const { error } = await supabase.from('countries').delete().eq('id', 1)
+      * if (error) console.error(error)
+      * ```
+      *
+      * @example Delete a record and return it
+      * ```ts
+      * const { data, error } = await supabase
+      *   .from('countries')
+      *   .delete()
+      *   .eq('id', 1)
+      *   .select()
+      * ```
+      *
+      * @exampleSql Delete a record and return it
+      * ```sql
+      * create table
+      *   countries (id int8 primary key, name text);
+      *
+      * insert into
+      *   countries (id, name)
+      * values
+      *   (1, 'Mordor');
+      * ```
+      *
+      * @exampleResponse Delete a record and return it
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "id": 1,
+      *       "name": "Mordor"
+      *     }
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @example Delete multiple records
+      * ```ts
+      * const response = await supabase
+      *   .from('countries')
+      *   .delete()
+      *   .in('id', [1, 2, 3])
+      * ```
+      *
+      * @exampleSql Delete multiple records
+      * ```sql
+      * create table
+      *   countries (id int8 primary key, name text);
+      *
+      * insert into
+      *   countries (id, name)
+      * values
+      *   (1, 'Rohan'), (2, 'The Shire'), (3, 'Mordor');
+      * ```
+      *
+      * @exampleResponse Delete multiple records
+      * ```json
+      * {
+      *   "status": 204,
+      *   "statusText": "No Content"
+      * }
+      * ```
+      */
+      delete({ count } = {}) {
+        var _this$fetch4;
+        const method = "DELETE";
+        const { url, headers } = this.cloneRequestState();
+        if (count) headers.append("Prefer", `count=${count}`);
+        return new PostgrestFilterBuilder({
+          method,
+          url,
+          headers,
+          schema: this.schema,
+          fetch: (_this$fetch4 = this.fetch) !== null && _this$fetch4 !== void 0 ? _this$fetch4 : fetch,
+          urlLengthLimit: this.urlLengthLimit,
+          retry: this.retry
+        });
+      }
+    };
+    PostgrestClient = class PostgrestClient2 {
+      /**
+      * Creates a PostgREST client.
+      *
+      * @param url - URL of the PostgREST endpoint
+      * @param options - Named parameters
+      * @param options.headers - Custom headers
+      * @param options.schema - Postgres schema to switch to
+      * @param options.fetch - Custom fetch
+      * @param options.timeout - Optional timeout in milliseconds for all requests. When set, requests will automatically abort after this duration to prevent indefinite hangs.
+      * @param options.urlLengthLimit - Maximum URL length in characters before warnings/errors are triggered. Defaults to 8000.
+      * @param options.retry - Enable or disable automatic retries for transient errors.
+      *   When enabled, idempotent requests (GET, HEAD, OPTIONS) that fail with network
+      *   errors or HTTP 503/520 responses will be automatically retried up to 3 times
+      *   with exponential backoff (1s, 2s, 4s). Defaults to `true`.
+      * @example Using supabase-js (recommended)
+      * ```ts
+      * import { createClient } from '@supabase/supabase-js'
+      *
+      * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
+      * const { data, error } = await supabase.from('profiles').select('*')
+      * ```
+      *
+      * @category Database
+      *
+      * @remarks
+      * - A `timeout` option (in milliseconds) can be set to automatically abort requests that take too long.
+      * - A `urlLengthLimit` option (default: 8000) can be set to control when URL length warnings are included in error messages for aborted requests.
+      *
+      * @example Standalone import for bundle-sensitive environments
+      * ```ts
+      * import { PostgrestClient } from '@supabase/postgrest-js'
+      *
+      * const postgrest = new PostgrestClient('https://xyzcompany.supabase.co/rest/v1', {
+      *   headers: { apikey: 'your-publishable-key' },
+      *   schema: 'public',
+      *   timeout: 30000, // 30 second timeout
+      * })
+      * ```
+      */
+      constructor(url, { headers = {}, schema, fetch: fetch$1, timeout, urlLengthLimit = 8e3, retry } = {}) {
+        this.url = url;
+        this.headers = new Headers(headers);
+        this.schemaName = schema;
+        this.urlLengthLimit = urlLengthLimit;
+        const originalFetch = fetch$1 !== null && fetch$1 !== void 0 ? fetch$1 : globalThis.fetch;
+        if (timeout !== void 0 && timeout > 0) this.fetch = (input, init) => {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), timeout);
+          const existingSignal = init === null || init === void 0 ? void 0 : init.signal;
+          if (existingSignal) {
+            if (existingSignal.aborted) {
+              clearTimeout(timeoutId);
+              return originalFetch(input, init);
+            }
+            const abortHandler = () => {
+              clearTimeout(timeoutId);
+              controller.abort();
+            };
+            existingSignal.addEventListener("abort", abortHandler, { once: true });
+            return originalFetch(input, _objectSpread2(_objectSpread2({}, init), {}, { signal: controller.signal })).finally(() => {
+              clearTimeout(timeoutId);
+              existingSignal.removeEventListener("abort", abortHandler);
+            });
+          }
+          return originalFetch(input, _objectSpread2(_objectSpread2({}, init), {}, { signal: controller.signal })).finally(() => clearTimeout(timeoutId));
+        };
+        else this.fetch = originalFetch;
+        this.retry = retry;
+      }
+      /**
+      * Perform a query on a table or a view.
+      *
+      * @param relation - The table or view name to query
+      *
+      * @category Database
+      */
+      from(relation) {
+        if (!relation || typeof relation !== "string" || relation.trim() === "") throw new Error("Invalid relation name: relation must be a non-empty string.");
+        return new PostgrestQueryBuilder(new URL(`${this.url}/${relation}`), {
+          headers: new Headers(this.headers),
+          schema: this.schemaName,
+          fetch: this.fetch,
+          urlLengthLimit: this.urlLengthLimit,
+          retry: this.retry
+        });
+      }
+      /**
+      * Select a schema to query or perform an function (rpc) call.
+      *
+      * The schema needs to be on the list of exposed schemas inside Supabase.
+      *
+      * @param schema - The schema to query
+      *
+      * @category Database
+      */
+      schema(schema) {
+        return new PostgrestClient2(this.url, {
+          headers: this.headers,
+          schema,
+          fetch: this.fetch,
+          urlLengthLimit: this.urlLengthLimit,
+          retry: this.retry
+        });
+      }
+      /**
+      * Perform a function call.
+      *
+      * @param fn - The function name to call
+      * @param args - The arguments to pass to the function call
+      * @param options - Named parameters
+      * @param options.head - When set to `true`, `data` will not be returned.
+      * Useful if you only need the count.
+      * @param options.get - When set to `true`, the function will be called with
+      * read-only access mode.
+      * @param options.count - Count algorithm to use to count rows returned by the
+      * function. Only applicable for [set-returning
+      * functions](https://www.postgresql.org/docs/current/functions-srf.html).
+      *
+      * `"exact"`: Exact but slow count algorithm. Performs a `COUNT(*)` under the
+      * hood.
+      *
+      * `"planned"`: Approximated but fast count algorithm. Uses the Postgres
+      * statistics under the hood.
+      *
+      * `"estimated"`: Uses exact count for low numbers and planned count for high
+      * numbers.
+      *
+      * @example
+      * ```ts
+      * // For cross-schema functions where type inference fails, use overrideTypes:
+      * const { data } = await supabase
+      *   .schema('schema_b')
+      *   .rpc('function_a', {})
+      *   .overrideTypes<{ id: string; user_id: string }[]>()
+      * ```
+      *
+      * @category Database
+      *
+      * @example Call a Postgres function without arguments
+      * ```ts
+      * const { data, error } = await supabase.rpc('hello_world')
+      * ```
+      *
+      * @exampleSql Call a Postgres function without arguments
+      * ```sql
+      * create function hello_world() returns text as $$
+      *   select 'Hello world';
+      * $$ language sql;
+      * ```
+      *
+      * @exampleResponse Call a Postgres function without arguments
+      * ```json
+      * {
+      *   "data": "Hello world",
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @example Call a Postgres function with arguments
+      * ```ts
+      * const { data, error } = await supabase.rpc('echo', { say: '👋' })
+      * ```
+      *
+      * @exampleSql Call a Postgres function with arguments
+      * ```sql
+      * create function echo(say text) returns text as $$
+      *   select say;
+      * $$ language sql;
+      * ```
+      *
+      * @exampleResponse Call a Postgres function with arguments
+      * ```json
+      *   {
+      *     "data": "👋",
+      *     "status": 200,
+      *     "statusText": "OK"
+      *   }
+      *
+      * ```
+      *
+      * @exampleDescription Bulk processing
+      * You can process large payloads by passing in an array as an argument.
+      *
+      * @example Bulk processing
+      * ```ts
+      * const { data, error } = await supabase.rpc('add_one_each', { arr: [1, 2, 3] })
+      * ```
+      *
+      * @exampleSql Bulk processing
+      * ```sql
+      * create function add_one_each(arr int[]) returns int[] as $$
+      *   select array_agg(n + 1) from unnest(arr) as n;
+      * $$ language sql;
+      * ```
+      *
+      * @exampleResponse Bulk processing
+      * ```json
+      * {
+      *   "data": [
+      *     2,
+      *     3,
+      *     4
+      *   ],
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @exampleDescription Call a Postgres function with filters
+      * Postgres functions that return tables can also be combined with [Filters](/docs/reference/javascript/using-filters) and [Modifiers](/docs/reference/javascript/using-modifiers).
+      *
+      * @example Call a Postgres function with filters
+      * ```ts
+      * const { data, error } = await supabase
+      *   .rpc('list_stored_countries')
+      *   .eq('id', 1)
+      *   .single()
+      * ```
+      *
+      * @exampleSql Call a Postgres function with filters
+      * ```sql
+      * create table
+      *   countries (id int8 primary key, name text);
+      *
+      * insert into
+      *   countries (id, name)
+      * values
+      *   (1, 'Rohan'),
+      *   (2, 'The Shire');
+      *
+      * create function list_stored_countries() returns setof countries as $$
+      *   select * from countries;
+      * $$ language sql;
+      * ```
+      *
+      * @exampleResponse Call a Postgres function with filters
+      * ```json
+      * {
+      *   "data": {
+      *     "id": 1,
+      *     "name": "Rohan"
+      *   },
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      *
+      * @example Call a read-only Postgres function
+      * ```ts
+      * const { data, error } = await supabase.rpc('hello_world', undefined, { get: true })
+      * ```
+      *
+      * @exampleSql Call a read-only Postgres function
+      * ```sql
+      * create function hello_world() returns text as $$
+      *   select 'Hello world';
+      * $$ language sql;
+      * ```
+      *
+      * @exampleResponse Call a read-only Postgres function
+      * ```json
+      * {
+      *   "data": "Hello world",
+      *   "status": 200,
+      *   "statusText": "OK"
+      * }
+      * ```
+      */
+      rpc(fn, args = {}, { head: head2 = false, get: get2 = false, count } = {}) {
+        var _this$fetch;
+        let method;
+        const url = new URL(`${this.url}/rpc/${fn}`);
+        let body;
+        const _isObject = (v) => v !== null && typeof v === "object" && (!Array.isArray(v) || v.some(_isObject));
+        const _hasObjectArg = head2 && Object.values(args).some(_isObject);
+        if (_hasObjectArg) {
+          method = "POST";
+          body = args;
+        } else if (head2 || get2) {
+          method = head2 ? "HEAD" : "GET";
+          Object.entries(args).filter(([_, value]) => value !== void 0).map(([name, value]) => [name, Array.isArray(value) ? `{${value.join(",")}}` : `${value}`]).forEach(([name, value]) => {
+            url.searchParams.append(name, value);
+          });
+        } else {
+          method = "POST";
+          body = args;
+        }
+        const headers = new Headers(this.headers);
+        if (_hasObjectArg) headers.set("Prefer", count ? `count=${count},return=minimal` : "return=minimal");
+        else if (count) headers.set("Prefer", `count=${count}`);
+        return new PostgrestFilterBuilder({
+          method,
+          url,
+          headers,
+          schema: this.schemaName,
+          body,
+          fetch: (_this$fetch = this.fetch) !== null && _this$fetch !== void 0 ? _this$fetch : fetch,
+          urlLengthLimit: this.urlLengthLimit,
+          retry: this.retry
+        });
+      }
+    };
+  }
+});
+
 // ../../node_modules/.pnpm/@supabase+realtime-js@2.107.0/node_modules/@supabase/realtime-js/dist/main/lib/websocket-factory.js
 var require_websocket_factory = __commonJS({
   "../../node_modules/.pnpm/@supabase+realtime-js@2.107.0/node_modules/@supabase/realtime-js/dist/main/lib/websocket-factory.js"(exports) {
@@ -33471,6 +38487,3240 @@ var require_main2 = __commonJS({
     } });
     var websocket_factory_1 = tslib_1.__importDefault(require_websocket_factory());
     exports.WebSocketFactory = websocket_factory_1.default;
+  }
+});
+
+// ../../node_modules/.pnpm/iceberg-js@0.8.1/node_modules/iceberg-js/dist/index.mjs
+function buildUrl(baseUrl, path, query) {
+  const url = new URL(path, baseUrl);
+  if (query) {
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== void 0) {
+        url.searchParams.set(key, value);
+      }
+    }
+  }
+  return url.toString();
+}
+async function buildAuthHeaders(auth) {
+  if (!auth || auth.type === "none") {
+    return {};
+  }
+  if (auth.type === "bearer") {
+    return { Authorization: `Bearer ${auth.token}` };
+  }
+  if (auth.type === "header") {
+    return { [auth.name]: auth.value };
+  }
+  if (auth.type === "custom") {
+    return await auth.getHeaders();
+  }
+  return {};
+}
+function createFetchClient(options) {
+  const fetchFn = options.fetchImpl ?? globalThis.fetch;
+  return {
+    async request({
+      method,
+      path,
+      query,
+      body,
+      headers
+    }) {
+      const url = buildUrl(options.baseUrl, path, query);
+      const authHeaders = await buildAuthHeaders(options.auth);
+      const res = await fetchFn(url, {
+        method,
+        headers: {
+          ...body ? { "Content-Type": "application/json" } : {},
+          ...authHeaders,
+          ...headers
+        },
+        body: body ? JSON.stringify(body) : void 0
+      });
+      const text = await res.text();
+      const isJson = (res.headers.get("content-type") || "").includes("application/json");
+      const data = isJson && text ? JSON.parse(text) : text;
+      if (!res.ok) {
+        const errBody = isJson ? data : void 0;
+        const errorDetail = errBody?.error;
+        throw new IcebergError(
+          errorDetail?.message ?? `Request failed with status ${res.status}`,
+          {
+            status: res.status,
+            icebergType: errorDetail?.type,
+            icebergCode: errorDetail?.code,
+            details: errBody
+          }
+        );
+      }
+      return { status: res.status, headers: res.headers, data };
+    }
+  };
+}
+function namespaceToPath(namespace) {
+  return namespace.join("");
+}
+function namespaceToPath2(namespace) {
+  return namespace.join("");
+}
+var IcebergError, NamespaceOperations, TableOperations, IcebergRestCatalog;
+var init_dist2 = __esm({
+  "../../node_modules/.pnpm/iceberg-js@0.8.1/node_modules/iceberg-js/dist/index.mjs"() {
+    IcebergError = class extends Error {
+      constructor(message, opts) {
+        super(message);
+        this.name = "IcebergError";
+        this.status = opts.status;
+        this.icebergType = opts.icebergType;
+        this.icebergCode = opts.icebergCode;
+        this.details = opts.details;
+        this.isCommitStateUnknown = opts.icebergType === "CommitStateUnknownException" || [500, 502, 504].includes(opts.status) && opts.icebergType?.includes("CommitState") === true;
+      }
+      /**
+       * Returns true if the error is a 404 Not Found error.
+       */
+      isNotFound() {
+        return this.status === 404;
+      }
+      /**
+       * Returns true if the error is a 409 Conflict error.
+       */
+      isConflict() {
+        return this.status === 409;
+      }
+      /**
+       * Returns true if the error is a 419 Authentication Timeout error.
+       */
+      isAuthenticationTimeout() {
+        return this.status === 419;
+      }
+    };
+    NamespaceOperations = class {
+      constructor(client2, prefix = "") {
+        this.client = client2;
+        this.prefix = prefix;
+      }
+      async listNamespaces(parent) {
+        const query = parent ? { parent: namespaceToPath(parent.namespace) } : void 0;
+        const response = await this.client.request({
+          method: "GET",
+          path: `${this.prefix}/namespaces`,
+          query
+        });
+        return response.data.namespaces.map((ns) => ({ namespace: ns }));
+      }
+      async createNamespace(id, metadata) {
+        const request = {
+          namespace: id.namespace,
+          properties: metadata?.properties
+        };
+        const response = await this.client.request({
+          method: "POST",
+          path: `${this.prefix}/namespaces`,
+          body: request
+        });
+        return response.data;
+      }
+      async dropNamespace(id) {
+        await this.client.request({
+          method: "DELETE",
+          path: `${this.prefix}/namespaces/${namespaceToPath(id.namespace)}`
+        });
+      }
+      async loadNamespaceMetadata(id) {
+        const response = await this.client.request({
+          method: "GET",
+          path: `${this.prefix}/namespaces/${namespaceToPath(id.namespace)}`
+        });
+        return {
+          properties: response.data.properties
+        };
+      }
+      async namespaceExists(id) {
+        try {
+          await this.client.request({
+            method: "HEAD",
+            path: `${this.prefix}/namespaces/${namespaceToPath(id.namespace)}`
+          });
+          return true;
+        } catch (error) {
+          if (error instanceof IcebergError && error.status === 404) {
+            return false;
+          }
+          throw error;
+        }
+      }
+      async createNamespaceIfNotExists(id, metadata) {
+        try {
+          return await this.createNamespace(id, metadata);
+        } catch (error) {
+          if (error instanceof IcebergError && error.status === 409) {
+            return;
+          }
+          throw error;
+        }
+      }
+    };
+    TableOperations = class {
+      constructor(client2, prefix = "", accessDelegation) {
+        this.client = client2;
+        this.prefix = prefix;
+        this.accessDelegation = accessDelegation;
+      }
+      async listTables(namespace) {
+        const response = await this.client.request({
+          method: "GET",
+          path: `${this.prefix}/namespaces/${namespaceToPath2(namespace.namespace)}/tables`
+        });
+        return response.data.identifiers;
+      }
+      async createTable(namespace, request) {
+        const headers = {};
+        if (this.accessDelegation) {
+          headers["X-Iceberg-Access-Delegation"] = this.accessDelegation;
+        }
+        const response = await this.client.request({
+          method: "POST",
+          path: `${this.prefix}/namespaces/${namespaceToPath2(namespace.namespace)}/tables`,
+          body: request,
+          headers
+        });
+        return response.data.metadata;
+      }
+      async updateTable(id, request) {
+        const response = await this.client.request({
+          method: "POST",
+          path: `${this.prefix}/namespaces/${namespaceToPath2(id.namespace)}/tables/${id.name}`,
+          body: request
+        });
+        return {
+          "metadata-location": response.data["metadata-location"],
+          metadata: response.data.metadata
+        };
+      }
+      async dropTable(id, options) {
+        await this.client.request({
+          method: "DELETE",
+          path: `${this.prefix}/namespaces/${namespaceToPath2(id.namespace)}/tables/${id.name}`,
+          query: { purgeRequested: String(options?.purge ?? false) }
+        });
+      }
+      async loadTable(id) {
+        const headers = {};
+        if (this.accessDelegation) {
+          headers["X-Iceberg-Access-Delegation"] = this.accessDelegation;
+        }
+        const response = await this.client.request({
+          method: "GET",
+          path: `${this.prefix}/namespaces/${namespaceToPath2(id.namespace)}/tables/${id.name}`,
+          headers
+        });
+        return response.data.metadata;
+      }
+      async tableExists(id) {
+        const headers = {};
+        if (this.accessDelegation) {
+          headers["X-Iceberg-Access-Delegation"] = this.accessDelegation;
+        }
+        try {
+          await this.client.request({
+            method: "HEAD",
+            path: `${this.prefix}/namespaces/${namespaceToPath2(id.namespace)}/tables/${id.name}`,
+            headers
+          });
+          return true;
+        } catch (error) {
+          if (error instanceof IcebergError && error.status === 404) {
+            return false;
+          }
+          throw error;
+        }
+      }
+      async createTableIfNotExists(namespace, request) {
+        try {
+          return await this.createTable(namespace, request);
+        } catch (error) {
+          if (error instanceof IcebergError && error.status === 409) {
+            return await this.loadTable({ namespace: namespace.namespace, name: request.name });
+          }
+          throw error;
+        }
+      }
+    };
+    IcebergRestCatalog = class {
+      /**
+       * Creates a new Iceberg REST Catalog client.
+       *
+       * @param options - Configuration options for the catalog client
+       */
+      constructor(options) {
+        let prefix = "v1";
+        if (options.catalogName) {
+          prefix += `/${options.catalogName}`;
+        }
+        const baseUrl = options.baseUrl.endsWith("/") ? options.baseUrl : `${options.baseUrl}/`;
+        this.client = createFetchClient({
+          baseUrl,
+          auth: options.auth,
+          fetchImpl: options.fetch
+        });
+        this.accessDelegation = options.accessDelegation?.join(",");
+        this.namespaceOps = new NamespaceOperations(this.client, prefix);
+        this.tableOps = new TableOperations(this.client, prefix, this.accessDelegation);
+      }
+      /**
+       * Lists all namespaces in the catalog.
+       *
+       * @param parent - Optional parent namespace to list children under
+       * @returns Array of namespace identifiers
+       *
+       * @example
+       * ```typescript
+       * // List all top-level namespaces
+       * const namespaces = await catalog.listNamespaces();
+       *
+       * // List namespaces under a parent
+       * const children = await catalog.listNamespaces({ namespace: ['analytics'] });
+       * ```
+       */
+      async listNamespaces(parent) {
+        return this.namespaceOps.listNamespaces(parent);
+      }
+      /**
+       * Creates a new namespace in the catalog.
+       *
+       * @param id - Namespace identifier to create
+       * @param metadata - Optional metadata properties for the namespace
+       * @returns Response containing the created namespace and its properties
+       *
+       * @example
+       * ```typescript
+       * const response = await catalog.createNamespace(
+       *   { namespace: ['analytics'] },
+       *   { properties: { owner: 'data-team' } }
+       * );
+       * console.log(response.namespace); // ['analytics']
+       * console.log(response.properties); // { owner: 'data-team', ... }
+       * ```
+       */
+      async createNamespace(id, metadata) {
+        return this.namespaceOps.createNamespace(id, metadata);
+      }
+      /**
+       * Drops a namespace from the catalog.
+       *
+       * The namespace must be empty (contain no tables) before it can be dropped.
+       *
+       * @param id - Namespace identifier to drop
+       *
+       * @example
+       * ```typescript
+       * await catalog.dropNamespace({ namespace: ['analytics'] });
+       * ```
+       */
+      async dropNamespace(id) {
+        await this.namespaceOps.dropNamespace(id);
+      }
+      /**
+       * Loads metadata for a namespace.
+       *
+       * @param id - Namespace identifier to load
+       * @returns Namespace metadata including properties
+       *
+       * @example
+       * ```typescript
+       * const metadata = await catalog.loadNamespaceMetadata({ namespace: ['analytics'] });
+       * console.log(metadata.properties);
+       * ```
+       */
+      async loadNamespaceMetadata(id) {
+        return this.namespaceOps.loadNamespaceMetadata(id);
+      }
+      /**
+       * Lists all tables in a namespace.
+       *
+       * @param namespace - Namespace identifier to list tables from
+       * @returns Array of table identifiers
+       *
+       * @example
+       * ```typescript
+       * const tables = await catalog.listTables({ namespace: ['analytics'] });
+       * console.log(tables); // [{ namespace: ['analytics'], name: 'events' }, ...]
+       * ```
+       */
+      async listTables(namespace) {
+        return this.tableOps.listTables(namespace);
+      }
+      /**
+       * Creates a new table in the catalog.
+       *
+       * @param namespace - Namespace to create the table in
+       * @param request - Table creation request including name, schema, partition spec, etc.
+       * @returns Table metadata for the created table
+       *
+       * @example
+       * ```typescript
+       * const metadata = await catalog.createTable(
+       *   { namespace: ['analytics'] },
+       *   {
+       *     name: 'events',
+       *     schema: {
+       *       type: 'struct',
+       *       fields: [
+       *         { id: 1, name: 'id', type: 'long', required: true },
+       *         { id: 2, name: 'timestamp', type: 'timestamp', required: true }
+       *       ],
+       *       'schema-id': 0
+       *     },
+       *     'partition-spec': {
+       *       'spec-id': 0,
+       *       fields: [
+       *         { source_id: 2, field_id: 1000, name: 'ts_day', transform: 'day' }
+       *       ]
+       *     }
+       *   }
+       * );
+       * ```
+       */
+      async createTable(namespace, request) {
+        return this.tableOps.createTable(namespace, request);
+      }
+      /**
+       * Updates an existing table's metadata.
+       *
+       * Can update the schema, partition spec, or properties of a table.
+       *
+       * @param id - Table identifier to update
+       * @param request - Update request with fields to modify
+       * @returns Response containing the metadata location and updated table metadata
+       *
+       * @example
+       * ```typescript
+       * const response = await catalog.updateTable(
+       *   { namespace: ['analytics'], name: 'events' },
+       *   {
+       *     properties: { 'read.split.target-size': '134217728' }
+       *   }
+       * );
+       * console.log(response['metadata-location']); // s3://...
+       * console.log(response.metadata); // TableMetadata object
+       * ```
+       */
+      async updateTable(id, request) {
+        return this.tableOps.updateTable(id, request);
+      }
+      /**
+       * Drops a table from the catalog.
+       *
+       * @param id - Table identifier to drop
+       *
+       * @example
+       * ```typescript
+       * await catalog.dropTable({ namespace: ['analytics'], name: 'events' });
+       * ```
+       */
+      async dropTable(id, options) {
+        await this.tableOps.dropTable(id, options);
+      }
+      /**
+       * Loads metadata for a table.
+       *
+       * @param id - Table identifier to load
+       * @returns Table metadata including schema, partition spec, location, etc.
+       *
+       * @example
+       * ```typescript
+       * const metadata = await catalog.loadTable({ namespace: ['analytics'], name: 'events' });
+       * console.log(metadata.schema);
+       * console.log(metadata.location);
+       * ```
+       */
+      async loadTable(id) {
+        return this.tableOps.loadTable(id);
+      }
+      /**
+       * Checks if a namespace exists in the catalog.
+       *
+       * @param id - Namespace identifier to check
+       * @returns True if the namespace exists, false otherwise
+       *
+       * @example
+       * ```typescript
+       * const exists = await catalog.namespaceExists({ namespace: ['analytics'] });
+       * console.log(exists); // true or false
+       * ```
+       */
+      async namespaceExists(id) {
+        return this.namespaceOps.namespaceExists(id);
+      }
+      /**
+       * Checks if a table exists in the catalog.
+       *
+       * @param id - Table identifier to check
+       * @returns True if the table exists, false otherwise
+       *
+       * @example
+       * ```typescript
+       * const exists = await catalog.tableExists({ namespace: ['analytics'], name: 'events' });
+       * console.log(exists); // true or false
+       * ```
+       */
+      async tableExists(id) {
+        return this.tableOps.tableExists(id);
+      }
+      /**
+       * Creates a namespace if it does not exist.
+       *
+       * If the namespace already exists, returns void. If created, returns the response.
+       *
+       * @param id - Namespace identifier to create
+       * @param metadata - Optional metadata properties for the namespace
+       * @returns Response containing the created namespace and its properties, or void if it already exists
+       *
+       * @example
+       * ```typescript
+       * const response = await catalog.createNamespaceIfNotExists(
+       *   { namespace: ['analytics'] },
+       *   { properties: { owner: 'data-team' } }
+       * );
+       * if (response) {
+       *   console.log('Created:', response.namespace);
+       * } else {
+       *   console.log('Already exists');
+       * }
+       * ```
+       */
+      async createNamespaceIfNotExists(id, metadata) {
+        return this.namespaceOps.createNamespaceIfNotExists(id, metadata);
+      }
+      /**
+       * Creates a table if it does not exist.
+       *
+       * If the table already exists, returns its metadata instead.
+       *
+       * @param namespace - Namespace to create the table in
+       * @param request - Table creation request including name, schema, partition spec, etc.
+       * @returns Table metadata for the created or existing table
+       *
+       * @example
+       * ```typescript
+       * const metadata = await catalog.createTableIfNotExists(
+       *   { namespace: ['analytics'] },
+       *   {
+       *     name: 'events',
+       *     schema: {
+       *       type: 'struct',
+       *       fields: [
+       *         { id: 1, name: 'id', type: 'long', required: true },
+       *         { id: 2, name: 'timestamp', type: 'timestamp', required: true }
+       *       ],
+       *       'schema-id': 0
+       *     }
+       *   }
+       * );
+       * ```
+       */
+      async createTableIfNotExists(namespace, request) {
+        return this.tableOps.createTableIfNotExists(namespace, request);
+      }
+    };
+  }
+});
+
+// ../../node_modules/.pnpm/@supabase+storage-js@2.107.0/node_modules/@supabase/storage-js/dist/index.mjs
+function _typeof2(o) {
+  "@babel/helpers - typeof";
+  return _typeof2 = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function(o$1) {
+    return typeof o$1;
+  } : function(o$1) {
+    return o$1 && "function" == typeof Symbol && o$1.constructor === Symbol && o$1 !== Symbol.prototype ? "symbol" : typeof o$1;
+  }, _typeof2(o);
+}
+function toPrimitive2(t, r) {
+  if ("object" != _typeof2(t) || !t) return t;
+  var e = t[Symbol.toPrimitive];
+  if (void 0 !== e) {
+    var i = e.call(t, r || "default");
+    if ("object" != _typeof2(i)) return i;
+    throw new TypeError("@@toPrimitive must return a primitive value.");
+  }
+  return ("string" === r ? String : Number)(t);
+}
+function toPropertyKey2(t) {
+  var i = toPrimitive2(t, "string");
+  return "symbol" == _typeof2(i) ? i : i + "";
+}
+function _defineProperty2(e, r, t) {
+  return (r = toPropertyKey2(r)) in e ? Object.defineProperty(e, r, {
+    value: t,
+    enumerable: true,
+    configurable: true,
+    writable: true
+  }) : e[r] = t, e;
+}
+function ownKeys3(e, r) {
+  var t = Object.keys(e);
+  if (Object.getOwnPropertySymbols) {
+    var o = Object.getOwnPropertySymbols(e);
+    r && (o = o.filter(function(r$1) {
+      return Object.getOwnPropertyDescriptor(e, r$1).enumerable;
+    })), t.push.apply(t, o);
+  }
+  return t;
+}
+function _objectSpread22(e) {
+  for (var r = 1; r < arguments.length; r++) {
+    var t = null != arguments[r] ? arguments[r] : {};
+    r % 2 ? ownKeys3(Object(t), true).forEach(function(r$1) {
+      _defineProperty2(e, r$1, t[r$1]);
+    }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys3(Object(t)).forEach(function(r$1) {
+      Object.defineProperty(e, r$1, Object.getOwnPropertyDescriptor(t, r$1));
+    });
+  }
+  return e;
+}
+function isStorageError(error) {
+  return typeof error === "object" && error !== null && "__isStorageError" in error;
+}
+function setHeader(headers, name, value) {
+  const result = _objectSpread22({}, headers);
+  const nameLower = name.toLowerCase();
+  for (const key of Object.keys(result)) if (key.toLowerCase() === nameLower) delete result[key];
+  result[nameLower] = value;
+  return result;
+}
+function normalizeHeaders(headers) {
+  const result = {};
+  for (const [key, value] of Object.entries(headers)) result[key.toLowerCase()] = value;
+  return result;
+}
+async function _handleRequest(fetcher, method, url, options, parameters, body, namespace) {
+  return new Promise((resolve, reject) => {
+    fetcher(url, _getRequestParams(method, options, parameters, body)).then((result) => {
+      if (!result.ok) throw result;
+      if (options === null || options === void 0 ? void 0 : options.noResolveJson) return result;
+      if (namespace === "vectors") {
+        const contentType = result.headers.get("content-type");
+        if (result.headers.get("content-length") === "0" || result.status === 204) return {};
+        if (!contentType || !contentType.includes("application/json")) return {};
+      }
+      return result.json();
+    }).then((data) => resolve(data)).catch((error) => handleError(error, reject, options, namespace));
+  });
+}
+function createFetchApi(namespace = "storage") {
+  return {
+    get: async (fetcher, url, options, parameters) => {
+      return _handleRequest(fetcher, "GET", url, options, parameters, void 0, namespace);
+    },
+    post: async (fetcher, url, body, options, parameters) => {
+      return _handleRequest(fetcher, "POST", url, options, parameters, body, namespace);
+    },
+    put: async (fetcher, url, body, options, parameters) => {
+      return _handleRequest(fetcher, "PUT", url, options, parameters, body, namespace);
+    },
+    head: async (fetcher, url, options, parameters) => {
+      return _handleRequest(fetcher, "HEAD", url, _objectSpread22(_objectSpread22({}, options), {}, { noResolveJson: true }), parameters, void 0, namespace);
+    },
+    remove: async (fetcher, url, body, options, parameters) => {
+      return _handleRequest(fetcher, "DELETE", url, options, parameters, body, namespace);
+    }
+  };
+}
+var StorageError, StorageApiError, StorageUnknownError, resolveFetch, isPlainObject, recursiveToCamel, isValidBucketName, _getErrorMessage, handleError, _getRequestParams, defaultApi, get, post, put, head, remove, vectorsApi, BaseApiClient, _Symbol$toStringTag$1, StreamDownloadBuilder, _Symbol$toStringTag, BlobDownloadBuilder, DEFAULT_SEARCH_OPTIONS, DEFAULT_FILE_OPTIONS, StorageFileApi, version, DEFAULT_HEADERS, StorageBucketApi, StorageAnalyticsClient, VectorIndexApi, VectorDataApi, VectorBucketApi, StorageVectorsClient, VectorBucketScope, VectorIndexScope, StorageClient;
+var init_dist3 = __esm({
+  "../../node_modules/.pnpm/@supabase+storage-js@2.107.0/node_modules/@supabase/storage-js/dist/index.mjs"() {
+    init_dist2();
+    StorageError = class extends Error {
+      constructor(message, namespace = "storage", status, statusCode) {
+        super(message);
+        this.__isStorageError = true;
+        this.namespace = namespace;
+        this.name = namespace === "vectors" ? "StorageVectorsError" : "StorageError";
+        this.status = status;
+        this.statusCode = statusCode;
+      }
+      toJSON() {
+        return {
+          name: this.name,
+          message: this.message,
+          status: this.status,
+          statusCode: this.statusCode
+        };
+      }
+    };
+    StorageApiError = class extends StorageError {
+      constructor(message, status, statusCode, namespace = "storage") {
+        super(message, namespace, status, statusCode);
+        this.name = namespace === "vectors" ? "StorageVectorsApiError" : "StorageApiError";
+        this.status = status;
+        this.statusCode = statusCode;
+      }
+      toJSON() {
+        return _objectSpread22({}, super.toJSON());
+      }
+    };
+    StorageUnknownError = class extends StorageError {
+      constructor(message, originalError, namespace = "storage") {
+        super(message, namespace);
+        this.name = namespace === "vectors" ? "StorageVectorsUnknownError" : "StorageUnknownError";
+        this.originalError = originalError;
+      }
+    };
+    resolveFetch = (customFetch) => {
+      if (customFetch) return (...args) => customFetch(...args);
+      return (...args) => fetch(...args);
+    };
+    isPlainObject = (value) => {
+      if (typeof value !== "object" || value === null) return false;
+      const prototype = Object.getPrototypeOf(value);
+      return (prototype === null || prototype === Object.prototype || Object.getPrototypeOf(prototype) === null) && !(Symbol.toStringTag in value) && !(Symbol.iterator in value);
+    };
+    recursiveToCamel = (item) => {
+      if (Array.isArray(item)) return item.map((el) => recursiveToCamel(el));
+      else if (typeof item === "function" || item !== Object(item)) return item;
+      const result = {};
+      Object.entries(item).forEach(([key, value]) => {
+        const newKey = key.replace(/([-_][a-z])/gi, (c) => c.toUpperCase().replace(/[-_]/g, ""));
+        result[newKey] = recursiveToCamel(value);
+      });
+      return result;
+    };
+    isValidBucketName = (bucketName) => {
+      if (!bucketName || typeof bucketName !== "string") return false;
+      if (bucketName.length === 0 || bucketName.length > 100) return false;
+      if (bucketName.trim() !== bucketName) return false;
+      if (bucketName.includes("/") || bucketName.includes("\\")) return false;
+      return /^[\w!.\*'() &$@=;:+,?-]+$/.test(bucketName);
+    };
+    _getErrorMessage = (err) => {
+      if (typeof err === "object" && err !== null) {
+        const e = err;
+        if (typeof e.msg === "string") return e.msg;
+        if (typeof e.message === "string") return e.message;
+        if (typeof e.error_description === "string") return e.error_description;
+        if (typeof e.error === "string") return e.error;
+        if (typeof e.error === "object" && e.error !== null) {
+          const nested = e.error;
+          if (typeof nested.message === "string") return nested.message;
+        }
+      }
+      return JSON.stringify(err);
+    };
+    handleError = async (error, reject, options, namespace) => {
+      if (error !== null && typeof error === "object" && "json" in error && typeof error.json === "function") {
+        const responseError = error;
+        let status = parseInt(String(responseError.status), 10);
+        if (!Number.isFinite(status)) status = 500;
+        responseError.json().then((err) => {
+          const statusCode = (err === null || err === void 0 ? void 0 : err.statusCode) || (err === null || err === void 0 ? void 0 : err.code) || status + "";
+          reject(new StorageApiError(_getErrorMessage(err), status, statusCode, namespace));
+        }).catch(() => {
+          const statusCode = status + "";
+          reject(new StorageApiError(responseError.statusText || `HTTP ${status} error`, status, statusCode, namespace));
+        });
+      } else reject(new StorageUnknownError(_getErrorMessage(error), error, namespace));
+    };
+    _getRequestParams = (method, options, parameters, body) => {
+      const params = {
+        method,
+        headers: (options === null || options === void 0 ? void 0 : options.headers) || {}
+      };
+      if (method === "GET" || method === "HEAD" || !body) return _objectSpread22(_objectSpread22({}, params), parameters);
+      if (isPlainObject(body)) {
+        var _contentType;
+        const headers = (options === null || options === void 0 ? void 0 : options.headers) || {};
+        let contentType;
+        for (const [key, value] of Object.entries(headers)) if (key.toLowerCase() === "content-type") contentType = value;
+        params.headers = setHeader(headers, "Content-Type", (_contentType = contentType) !== null && _contentType !== void 0 ? _contentType : "application/json");
+        params.body = JSON.stringify(body);
+      } else params.body = body;
+      if (options === null || options === void 0 ? void 0 : options.duplex) params.duplex = options.duplex;
+      return _objectSpread22(_objectSpread22({}, params), parameters);
+    };
+    defaultApi = createFetchApi("storage");
+    ({ get, post, put, head, remove } = defaultApi);
+    vectorsApi = createFetchApi("vectors");
+    BaseApiClient = class {
+      /**
+      * Creates a new BaseApiClient instance
+      * @param url - Base URL for API requests
+      * @param headers - Default headers for API requests
+      * @param fetch - Optional custom fetch implementation
+      * @param namespace - Error namespace ('storage' or 'vectors')
+      */
+      constructor(url, headers = {}, fetch$1, namespace = "storage") {
+        this.shouldThrowOnError = false;
+        this.url = url;
+        this.headers = normalizeHeaders(headers);
+        this.fetch = resolveFetch(fetch$1);
+        this.namespace = namespace;
+      }
+      /**
+      * Enable throwing errors instead of returning them.
+      * When enabled, errors are thrown instead of returned in { data, error } format.
+      *
+      * @returns this - For method chaining
+      */
+      throwOnError() {
+        this.shouldThrowOnError = true;
+        return this;
+      }
+      /**
+      * Set an HTTP header for the request.
+      * Creates a shallow copy of headers to avoid mutating shared state.
+      *
+      * @param name - Header name
+      * @param value - Header value
+      * @returns this - For method chaining
+      */
+      setHeader(name, value) {
+        this.headers = setHeader(this.headers, name, value);
+        return this;
+      }
+      /**
+      * Handles API operation with standardized error handling
+      * Eliminates repetitive try-catch blocks across all API methods
+      *
+      * This wrapper:
+      * 1. Executes the operation
+      * 2. Returns { data, error: null } on success
+      * 3. Returns { data: null, error } on failure (if shouldThrowOnError is false)
+      * 4. Throws error on failure (if shouldThrowOnError is true)
+      *
+      * @typeParam T - The expected data type from the operation
+      * @param operation - Async function that performs the API call
+      * @returns Promise with { data, error } tuple
+      *
+      * @example Handling an operation
+      * ```typescript
+      * async listBuckets() {
+      *   return this.handleOperation(async () => {
+      *     return await get(this.fetch, `${this.url}/bucket`, {
+      *       headers: this.headers,
+      *     })
+      *   })
+      * }
+      * ```
+      */
+      async handleOperation(operation) {
+        var _this = this;
+        try {
+          return {
+            data: await operation(),
+            error: null
+          };
+        } catch (error) {
+          if (_this.shouldThrowOnError) throw error;
+          if (isStorageError(error)) return {
+            data: null,
+            error
+          };
+          throw error;
+        }
+      }
+    };
+    _Symbol$toStringTag$1 = Symbol.toStringTag;
+    StreamDownloadBuilder = class {
+      constructor(downloadFn, shouldThrowOnError) {
+        this.downloadFn = downloadFn;
+        this.shouldThrowOnError = shouldThrowOnError;
+        this[_Symbol$toStringTag$1] = "StreamDownloadBuilder";
+        this.promise = null;
+      }
+      then(onfulfilled, onrejected) {
+        return this.getPromise().then(onfulfilled, onrejected);
+      }
+      catch(onrejected) {
+        return this.getPromise().catch(onrejected);
+      }
+      finally(onfinally) {
+        return this.getPromise().finally(onfinally);
+      }
+      getPromise() {
+        if (!this.promise) this.promise = this.execute();
+        return this.promise;
+      }
+      async execute() {
+        var _this = this;
+        try {
+          return {
+            data: (await _this.downloadFn()).body,
+            error: null
+          };
+        } catch (error) {
+          if (_this.shouldThrowOnError) throw error;
+          if (isStorageError(error)) return {
+            data: null,
+            error
+          };
+          throw error;
+        }
+      }
+    };
+    _Symbol$toStringTag = Symbol.toStringTag;
+    BlobDownloadBuilder = class {
+      constructor(downloadFn, shouldThrowOnError) {
+        this.downloadFn = downloadFn;
+        this.shouldThrowOnError = shouldThrowOnError;
+        this[_Symbol$toStringTag] = "BlobDownloadBuilder";
+        this.promise = null;
+      }
+      asStream() {
+        return new StreamDownloadBuilder(this.downloadFn, this.shouldThrowOnError);
+      }
+      then(onfulfilled, onrejected) {
+        return this.getPromise().then(onfulfilled, onrejected);
+      }
+      catch(onrejected) {
+        return this.getPromise().catch(onrejected);
+      }
+      finally(onfinally) {
+        return this.getPromise().finally(onfinally);
+      }
+      getPromise() {
+        if (!this.promise) this.promise = this.execute();
+        return this.promise;
+      }
+      async execute() {
+        var _this = this;
+        try {
+          return {
+            data: await (await _this.downloadFn()).blob(),
+            error: null
+          };
+        } catch (error) {
+          if (_this.shouldThrowOnError) throw error;
+          if (isStorageError(error)) return {
+            data: null,
+            error
+          };
+          throw error;
+        }
+      }
+    };
+    DEFAULT_SEARCH_OPTIONS = {
+      limit: 100,
+      offset: 0,
+      sortBy: {
+        column: "name",
+        order: "asc"
+      }
+    };
+    DEFAULT_FILE_OPTIONS = {
+      cacheControl: "3600",
+      contentType: "text/plain;charset=UTF-8",
+      upsert: false
+    };
+    StorageFileApi = class extends BaseApiClient {
+      constructor(url, headers = {}, bucketId, fetch$1) {
+        super(url, headers, fetch$1, "storage");
+        this.bucketId = bucketId;
+      }
+      /**
+      * Uploads a file to an existing bucket or replaces an existing file at the specified path with a new one.
+      *
+      * @param method HTTP method.
+      * @param path The relative file path. Should be of the format `folder/subfolder/filename.png`. The bucket must already exist before attempting to upload.
+      * @param fileBody The body of the file to be stored in the bucket.
+      */
+      async uploadOrUpdate(method, path, fileBody, fileOptions) {
+        var _this = this;
+        return _this.handleOperation(async () => {
+          let body;
+          const options = _objectSpread22(_objectSpread22({}, DEFAULT_FILE_OPTIONS), fileOptions);
+          let headers = _objectSpread22(_objectSpread22({}, _this.headers), method === "POST" && { "x-upsert": String(options.upsert) });
+          const metadata = options.metadata;
+          if (typeof Blob !== "undefined" && fileBody instanceof Blob) {
+            body = new FormData();
+            body.append("cacheControl", options.cacheControl);
+            if (metadata) body.append("metadata", _this.encodeMetadata(metadata));
+            body.append("", fileBody);
+          } else if (typeof FormData !== "undefined" && fileBody instanceof FormData) {
+            body = fileBody;
+            if (!body.has("cacheControl")) body.append("cacheControl", options.cacheControl);
+            if (metadata && !body.has("metadata")) body.append("metadata", _this.encodeMetadata(metadata));
+          } else {
+            body = fileBody;
+            headers["cache-control"] = `max-age=${options.cacheControl}`;
+            headers["content-type"] = options.contentType;
+            if (metadata) headers["x-metadata"] = _this.toBase64(_this.encodeMetadata(metadata));
+            if ((typeof ReadableStream !== "undefined" && body instanceof ReadableStream || body && typeof body === "object" && "pipe" in body && typeof body.pipe === "function") && !options.duplex) options.duplex = "half";
+          }
+          if (fileOptions === null || fileOptions === void 0 ? void 0 : fileOptions.headers) for (const [key, value] of Object.entries(fileOptions.headers)) headers = setHeader(headers, key, value);
+          const cleanPath = _this._removeEmptyFolders(path);
+          const _path = _this._getFinalPath(cleanPath);
+          const data = await (method == "PUT" ? put : post)(_this.fetch, `${_this.url}/object/${_path}`, body, _objectSpread22({ headers }, (options === null || options === void 0 ? void 0 : options.duplex) ? { duplex: options.duplex } : {}));
+          return {
+            path: cleanPath,
+            id: data.Id,
+            fullPath: data.Key
+          };
+        });
+      }
+      /**
+      * Uploads a file to an existing bucket.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param path The file path, including the file name. Should be of the format `folder/subfolder/filename.png`. The bucket must already exist before attempting to upload.
+      * @param fileBody The body of the file to be stored in the bucket.
+      * @param fileOptions Optional file upload options including cacheControl, contentType, upsert, and metadata.
+      * @returns Promise with response containing file path, id, and fullPath or error
+      *
+      * @example Upload file
+      * ```js
+      * const avatarFile = event.target.files[0]
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .upload('public/avatar1.png', avatarFile, {
+      *     cacheControl: '3600',
+      *     upsert: false
+      *   })
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": {
+      *     "path": "public/avatar1.png",
+      *     "fullPath": "avatars/public/avatar1.png"
+      *   },
+      *   "error": null
+      * }
+      * ```
+      *
+      * @example Upload file using `ArrayBuffer` from base64 file data
+      * ```js
+      * import { decode } from 'base64-arraybuffer'
+      *
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .upload('public/avatar1.png', decode('base64FileData'), {
+      *     contentType: 'image/png'
+      *   })
+      * ```
+      *
+      * @example Handling errors
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .upload('public/avatar1.png', avatarFile)
+      *
+      * if (error) {
+      *   // Log the full error so fields like `statusCode` and `error` (the
+      *   // Storage error name, e.g. "Duplicate") aren't hidden behind `error.message`.
+      *   console.error(error)
+      *   return
+      * }
+      * ```
+      *
+      * @remarks
+      * - RLS policy permissions required:
+      *   - `buckets` table permissions: none
+      *   - `objects` table permissions: only `insert` when you are uploading new files and `select`, `insert` and `update` when you are upserting files
+      * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
+      * - For React Native, using either `Blob`, `File` or `FormData` does not work as intended. Upload file using `ArrayBuffer` from base64 file data instead, see example below.
+      */
+      async upload(path, fileBody, fileOptions) {
+        return this.uploadOrUpdate("POST", path, fileBody, fileOptions);
+      }
+      /**
+      * Upload a file with a token generated from `createSignedUploadUrl`.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param path The file path, including the file name. Should be of the format `folder/subfolder/filename.png`. The bucket must already exist before attempting to upload.
+      * @param token The token generated from `createSignedUploadUrl`
+      * @param fileBody The body of the file to be stored in the bucket.
+      * @param fileOptions HTTP headers (cacheControl, contentType, etc.).
+      * **Note:** The `upsert` option has no effect here. To enable upsert behavior,
+      * pass `{ upsert: true }` when calling `createSignedUploadUrl()` instead.
+      * @returns Promise with response containing file path and fullPath or error
+      *
+      * @example Upload to a signed URL
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .uploadToSignedUrl('folder/cat.jpg', 'token-from-createSignedUploadUrl', file)
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": {
+      *     "path": "folder/cat.jpg",
+      *     "fullPath": "avatars/folder/cat.jpg"
+      *   },
+      *   "error": null
+      * }
+      * ```
+      *
+      * @remarks
+      * - RLS policy permissions required:
+      *   - `buckets` table permissions: none
+      *   - `objects` table permissions: none
+      * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
+      */
+      async uploadToSignedUrl(path, token, fileBody, fileOptions) {
+        var _this3 = this;
+        const cleanPath = _this3._removeEmptyFolders(path);
+        const _path = _this3._getFinalPath(cleanPath);
+        const url = new URL(_this3.url + `/object/upload/sign/${_path}`);
+        url.searchParams.set("token", token);
+        return _this3.handleOperation(async () => {
+          let body;
+          const options = _objectSpread22(_objectSpread22({}, DEFAULT_FILE_OPTIONS), fileOptions);
+          let headers = _objectSpread22(_objectSpread22({}, _this3.headers), { "x-upsert": String(options.upsert) });
+          const metadata = options.metadata;
+          if (typeof Blob !== "undefined" && fileBody instanceof Blob) {
+            body = new FormData();
+            body.append("cacheControl", options.cacheControl);
+            if (metadata) body.append("metadata", _this3.encodeMetadata(metadata));
+            body.append("", fileBody);
+          } else if (typeof FormData !== "undefined" && fileBody instanceof FormData) {
+            body = fileBody;
+            if (!body.has("cacheControl")) body.append("cacheControl", options.cacheControl);
+            if (metadata && !body.has("metadata")) body.append("metadata", _this3.encodeMetadata(metadata));
+          } else {
+            body = fileBody;
+            headers["cache-control"] = `max-age=${options.cacheControl}`;
+            headers["content-type"] = options.contentType;
+            if (metadata) headers["x-metadata"] = _this3.toBase64(_this3.encodeMetadata(metadata));
+            if ((typeof ReadableStream !== "undefined" && body instanceof ReadableStream || body && typeof body === "object" && "pipe" in body && typeof body.pipe === "function") && !options.duplex) options.duplex = "half";
+          }
+          if (fileOptions === null || fileOptions === void 0 ? void 0 : fileOptions.headers) for (const [key, value] of Object.entries(fileOptions.headers)) headers = setHeader(headers, key, value);
+          return {
+            path: cleanPath,
+            fullPath: (await put(_this3.fetch, url.toString(), body, _objectSpread22({ headers }, (options === null || options === void 0 ? void 0 : options.duplex) ? { duplex: options.duplex } : {}))).Key
+          };
+        });
+      }
+      /**
+      * Creates a signed upload URL.
+      * Signed upload URLs can be used to upload files to the bucket without further authentication.
+      * They are valid for 2 hours.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param path The file path, including the current file name. For example `folder/image.png`.
+      * @param options.upsert If set to true, allows the file to be overwritten if it already exists.
+      * @returns Promise with response containing signed upload URL, token, and path or error
+      *
+      * @example Create Signed Upload URL
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .createSignedUploadUrl('folder/cat.jpg')
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": {
+      *     "signedUrl": "https://example.supabase.co/storage/v1/object/upload/sign/avatars/folder/cat.jpg?token=<TOKEN>",
+      *     "path": "folder/cat.jpg",
+      *     "token": "<TOKEN>"
+      *   },
+      *   "error": null
+      * }
+      * ```
+      *
+      * @remarks
+      * - RLS policy permissions required:
+      *   - `buckets` table permissions: none
+      *   - `objects` table permissions: `insert`
+      * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
+      */
+      async createSignedUploadUrl(path, options) {
+        var _this4 = this;
+        return _this4.handleOperation(async () => {
+          let _path = _this4._getFinalPath(path);
+          const headers = _objectSpread22({}, _this4.headers);
+          if (options === null || options === void 0 ? void 0 : options.upsert) headers["x-upsert"] = "true";
+          const data = await post(_this4.fetch, `${_this4.url}/object/upload/sign/${_path}`, {}, { headers });
+          const url = new URL(_this4.url + data.url);
+          const token = url.searchParams.get("token");
+          if (!token) throw new StorageError("No token returned by API");
+          return {
+            signedUrl: url.toString(),
+            path,
+            token
+          };
+        });
+      }
+      /**
+      * Replaces an existing file at the specified path with a new one.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param path The relative file path. Should be of the format `folder/subfolder/filename.png`. The bucket must already exist before attempting to update.
+      * @param fileBody The body of the file to be stored in the bucket.
+      * @param fileOptions Optional file upload options including cacheControl, contentType, and metadata.
+      * **Note:** The `upsert` option has no effect here. `update()` always replaces the
+      * file at the given path, so the `x-upsert` header is not sent. To control upsert
+      * behavior, use `upload()` instead.
+      * @returns Promise with response containing file path, id, and fullPath or error
+      *
+      * @example Update file
+      * ```js
+      * const avatarFile = event.target.files[0]
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .update('public/avatar1.png', avatarFile, {
+      *     cacheControl: '3600'
+      *   })
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": {
+      *     "path": "public/avatar1.png",
+      *     "fullPath": "avatars/public/avatar1.png"
+      *   },
+      *   "error": null
+      * }
+      * ```
+      *
+      * @example Update file using `ArrayBuffer` from base64 file data
+      * ```js
+      * import {decode} from 'base64-arraybuffer'
+      *
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .update('public/avatar1.png', decode('base64FileData'), {
+      *     contentType: 'image/png'
+      *   })
+      * ```
+      *
+      * @remarks
+      * - RLS policy permissions required:
+      *   - `buckets` table permissions: none
+      *   - `objects` table permissions: `update` and `select`
+      * - `update()` always replaces the file at the given path regardless of the `upsert` option.
+      * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
+      * - For React Native, using either `Blob`, `File` or `FormData` does not work as intended. Update file using `ArrayBuffer` from base64 file data instead, see example below.
+      */
+      async update(path, fileBody, fileOptions) {
+        return this.uploadOrUpdate("PUT", path, fileBody, fileOptions);
+      }
+      /**
+      * Moves an existing file to a new path in the same bucket.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param fromPath The original file path, including the current file name. For example `folder/image.png`.
+      * @param toPath The new file path, including the new file name. For example `folder/image-new.png`.
+      * @param options The destination options.
+      * @returns Promise with response containing success message or error
+      *
+      * @example Move file
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .move('public/avatar1.png', 'private/avatar2.png')
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": {
+      *     "message": "Successfully moved"
+      *   },
+      *   "error": null
+      * }
+      * ```
+      *
+      * @remarks
+      * - RLS policy permissions required:
+      *   - `buckets` table permissions: none
+      *   - `objects` table permissions: `update` and `select`
+      * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
+      */
+      async move(fromPath, toPath, options) {
+        var _this6 = this;
+        return _this6.handleOperation(async () => {
+          return await post(_this6.fetch, `${_this6.url}/object/move`, {
+            bucketId: _this6.bucketId,
+            sourceKey: fromPath,
+            destinationKey: toPath,
+            destinationBucket: options === null || options === void 0 ? void 0 : options.destinationBucket
+          }, { headers: _this6.headers });
+        });
+      }
+      /**
+      * Copies an existing file to a new path in the same bucket.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param fromPath The original file path, including the current file name. For example `folder/image.png`.
+      * @param toPath The new file path, including the new file name. For example `folder/image-copy.png`.
+      * @param options The destination options.
+      * @returns Promise with response containing copied file path or error
+      *
+      * @example Copy file
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .copy('public/avatar1.png', 'private/avatar2.png')
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": {
+      *     "path": "avatars/private/avatar2.png"
+      *   },
+      *   "error": null
+      * }
+      * ```
+      *
+      * @remarks
+      * - RLS policy permissions required:
+      *   - `buckets` table permissions: none
+      *   - `objects` table permissions: `insert` and `select`
+      * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
+      */
+      async copy(fromPath, toPath, options) {
+        var _this7 = this;
+        return _this7.handleOperation(async () => {
+          return { path: (await post(_this7.fetch, `${_this7.url}/object/copy`, {
+            bucketId: _this7.bucketId,
+            sourceKey: fromPath,
+            destinationKey: toPath,
+            destinationBucket: options === null || options === void 0 ? void 0 : options.destinationBucket
+          }, { headers: _this7.headers })).Key };
+        });
+      }
+      /**
+      * Creates a signed URL. Use a signed URL to share a file for a fixed amount of time.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param path The file path, including the current file name. For example `folder/image.png`.
+      * @param expiresIn The number of seconds until the signed URL expires. For example, `60` for a URL which is valid for one minute.
+      * @param options.download triggers the file as a download if set to true. Set this parameter as the name of the file if you want to trigger the download with a different filename.
+      * @param options.transform Transform the asset before serving it to the client.
+      * @param options.cacheNonce Append a cache nonce parameter to the URL to invalidate the cache.
+      * @returns Promise with response containing signed URL or error
+      *
+      * @example Create Signed URL
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .createSignedUrl('folder/avatar1.png', 60)
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": {
+      *     "signedUrl": "https://example.supabase.co/storage/v1/object/sign/avatars/folder/avatar1.png?token=<TOKEN>"
+      *   },
+      *   "error": null
+      * }
+      * ```
+      *
+      * @example Create a signed URL for an asset with transformations
+      * ```js
+      * const { data } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .createSignedUrl('folder/avatar1.png', 60, {
+      *     transform: {
+      *       width: 100,
+      *       height: 100,
+      *     }
+      *   })
+      * ```
+      *
+      * @example Create a signed URL which triggers the download of the asset
+      * ```js
+      * const { data } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .createSignedUrl('folder/avatar1.png', 60, {
+      *     download: true,
+      *   })
+      * ```
+      *
+      * @remarks
+      * - RLS policy permissions required:
+      *   - `buckets` table permissions: none
+      *   - `objects` table permissions: `select`
+      * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
+      */
+      async createSignedUrl(path, expiresIn, options) {
+        var _this8 = this;
+        return _this8.handleOperation(async () => {
+          let _path = _this8._getFinalPath(path);
+          const hasTransform = typeof (options === null || options === void 0 ? void 0 : options.transform) === "object" && options.transform !== null && Object.keys(options.transform).length > 0;
+          let data = await post(_this8.fetch, `${_this8.url}/object/sign/${_path}`, _objectSpread22({ expiresIn }, hasTransform ? { transform: options.transform } : {}), { headers: _this8.headers });
+          const query = new URLSearchParams();
+          if (options === null || options === void 0 ? void 0 : options.download) query.set("download", options.download === true ? "" : options.download);
+          if ((options === null || options === void 0 ? void 0 : options.cacheNonce) != null) query.set("cacheNonce", String(options.cacheNonce));
+          const queryString = query.toString();
+          return { signedUrl: encodeURI(`${_this8.url}${data.signedURL}${queryString ? `&${queryString}` : ""}`) };
+        });
+      }
+      /**
+      * Creates multiple signed URLs. Use a signed URL to share a file for a fixed amount of time.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param paths The file paths to be downloaded, including the current file names. For example `['folder/image.png', 'folder2/image2.png']`.
+      * @param expiresIn The number of seconds until the signed URLs expire. For example, `60` for URLs which are valid for one minute.
+      * @param options.download triggers the file as a download if set to true. Set this parameter as the name of the file if you want to trigger the download with a different filename.
+      * @param options.cacheNonce Append a cache nonce parameter to the URL to invalidate the cache.
+      * @returns Promise with response containing array of objects with signedUrl, path, and error or error
+      *
+      * @example Create Signed URLs
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .createSignedUrls(['folder/avatar1.png', 'folder/avatar2.png'], 60)
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "error": null,
+      *       "path": "folder/avatar1.png",
+      *       "signedURL": "/object/sign/avatars/folder/avatar1.png?token=<TOKEN>",
+      *       "signedUrl": "https://example.supabase.co/storage/v1/object/sign/avatars/folder/avatar1.png?token=<TOKEN>"
+      *     },
+      *     {
+      *       "error": null,
+      *       "path": "folder/avatar2.png",
+      *       "signedURL": "/object/sign/avatars/folder/avatar2.png?token=<TOKEN>",
+      *       "signedUrl": "https://example.supabase.co/storage/v1/object/sign/avatars/folder/avatar2.png?token=<TOKEN>"
+      *     }
+      *   ],
+      *   "error": null
+      * }
+      * ```
+      *
+      * @remarks
+      * - RLS policy permissions required:
+      *   - `buckets` table permissions: none
+      *   - `objects` table permissions: `select`
+      * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
+      */
+      async createSignedUrls(paths, expiresIn, options) {
+        var _this9 = this;
+        return _this9.handleOperation(async () => {
+          const data = await post(_this9.fetch, `${_this9.url}/object/sign/${_this9.bucketId}`, {
+            expiresIn,
+            paths
+          }, { headers: _this9.headers });
+          const query = new URLSearchParams();
+          if (options === null || options === void 0 ? void 0 : options.download) query.set("download", options.download === true ? "" : options.download);
+          if ((options === null || options === void 0 ? void 0 : options.cacheNonce) != null) query.set("cacheNonce", String(options.cacheNonce));
+          const queryString = query.toString();
+          return data.map((datum) => _objectSpread22(_objectSpread22({}, datum), {}, { signedUrl: datum.signedURL ? encodeURI(`${_this9.url}${datum.signedURL}${queryString ? `&${queryString}` : ""}`) : null }));
+        });
+      }
+      /**
+      * Downloads a file from a private bucket. For public buckets, make a request to the URL returned from `getPublicUrl` instead.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param path The full path and file name of the file to be downloaded. For example `folder/image.png`.
+      * @param options.transform Transform the asset before serving it to the client.
+      * @param options.cacheNonce Append a cache nonce parameter to the URL to invalidate the cache.
+      * @param parameters Additional fetch parameters like signal for cancellation. Supports standard fetch options including cache control.
+      * @returns BlobDownloadBuilder instance for downloading the file
+      *
+      * @example Download file
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .download('folder/avatar1.png')
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": <BLOB>,
+      *   "error": null
+      * }
+      * ```
+      *
+      * @example Download file with transformations
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .download('folder/avatar1.png', {
+      *     transform: {
+      *       width: 100,
+      *       height: 100,
+      *       quality: 80
+      *     }
+      *   })
+      * ```
+      *
+      * @example Download with cache control (useful in Edge Functions)
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .download('folder/avatar1.png', {}, { cache: 'no-store' })
+      * ```
+      *
+      * @example Download with abort signal
+      * ```js
+      * const controller = new AbortController()
+      * setTimeout(() => controller.abort(), 5000)
+      *
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .download('folder/avatar1.png', {}, { signal: controller.signal })
+      * ```
+      *
+      * @remarks
+      * - RLS policy permissions required:
+      *   - `buckets` table permissions: none
+      *   - `objects` table permissions: `select`
+      * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
+      */
+      download(path, options, parameters) {
+        const renderPath = typeof (options === null || options === void 0 ? void 0 : options.transform) === "object" && options.transform !== null && Object.keys(options.transform).length > 0 ? "render/image/authenticated" : "object";
+        const query = new URLSearchParams();
+        if (options === null || options === void 0 ? void 0 : options.transform) this.applyTransformOptsToQuery(query, options.transform);
+        if ((options === null || options === void 0 ? void 0 : options.cacheNonce) != null) query.set("cacheNonce", String(options.cacheNonce));
+        const queryString = query.toString();
+        const _path = this._getFinalPath(path);
+        const downloadFn = () => get(this.fetch, `${this.url}/${renderPath}/${_path}${queryString ? `?${queryString}` : ""}`, {
+          headers: this.headers,
+          noResolveJson: true
+        }, parameters);
+        return new BlobDownloadBuilder(downloadFn, this.shouldThrowOnError);
+      }
+      /**
+      * Retrieves the details of an existing file.
+      *
+      * Returns detailed file metadata including size, content type, and timestamps.
+      * Note: The API returns `last_modified` field, not `updated_at`.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param path The file path, including the file name. For example `folder/image.png`.
+      * @returns Promise with response containing file metadata or error
+      *
+      * @example Get file info
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .info('folder/avatar1.png')
+      *
+      * if (data) {
+      *   console.log('Last modified:', data.lastModified)
+      *   console.log('Size:', data.size)
+      * }
+      * ```
+      */
+      async info(path) {
+        var _this10 = this;
+        const _path = _this10._getFinalPath(path);
+        return _this10.handleOperation(async () => {
+          return recursiveToCamel(await get(_this10.fetch, `${_this10.url}/object/info/${_path}`, { headers: _this10.headers }));
+        });
+      }
+      /**
+      * Checks the existence of a file.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param path The file path, including the file name. For example `folder/image.png`.
+      * @returns Promise with response containing boolean indicating file existence or error
+      *
+      * @example Check file existence
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .exists('folder/avatar1.png')
+      * ```
+      */
+      async exists(path) {
+        var _this11 = this;
+        const _path = _this11._getFinalPath(path);
+        try {
+          await head(_this11.fetch, `${_this11.url}/object/${_path}`, { headers: _this11.headers });
+          return {
+            data: true,
+            error: null
+          };
+        } catch (error) {
+          if (_this11.shouldThrowOnError) throw error;
+          if (isStorageError(error)) {
+            var _error$originalError;
+            const status = error instanceof StorageApiError ? error.status : error instanceof StorageUnknownError ? (_error$originalError = error.originalError) === null || _error$originalError === void 0 ? void 0 : _error$originalError.status : void 0;
+            if (status !== void 0 && [400, 404].includes(status)) return {
+              data: false,
+              error
+            };
+          }
+          throw error;
+        }
+      }
+      /**
+      * A simple convenience function to get the URL for an asset in a public bucket. If you do not want to use this function, you can construct the public URL by concatenating the bucket URL with the path to the asset.
+      * This function does not verify if the bucket is public. If a public URL is created for a bucket which is not public, you will not be able to download the asset.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param path The path and name of the file to generate the public URL for. For example `folder/image.png`.
+      * @param options.download Triggers the file as a download if set to true. Set this parameter as the name of the file if you want to trigger the download with a different filename.
+      * @param options.transform Transform the asset before serving it to the client.
+      * @param options.cacheNonce Append a cache nonce parameter to the URL to invalidate the cache.
+      * @returns Object with public URL
+      *
+      * @example Returns the URL for an asset in a public bucket
+      * ```js
+      * const { data } = supabase
+      *   .storage
+      *   .from('public-bucket')
+      *   .getPublicUrl('folder/avatar1.png')
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": {
+      *     "publicUrl": "https://example.supabase.co/storage/v1/object/public/public-bucket/folder/avatar1.png"
+      *   }
+      * }
+      * ```
+      *
+      * @example Returns the URL for an asset in a public bucket with transformations
+      * ```js
+      * const { data } = supabase
+      *   .storage
+      *   .from('public-bucket')
+      *   .getPublicUrl('folder/avatar1.png', {
+      *     transform: {
+      *       width: 100,
+      *       height: 100,
+      *     }
+      *   })
+      * ```
+      *
+      * @example Returns the URL which triggers the download of an asset in a public bucket
+      * ```js
+      * const { data } = supabase
+      *   .storage
+      *   .from('public-bucket')
+      *   .getPublicUrl('folder/avatar1.png', {
+      *     download: true,
+      *   })
+      * ```
+      *
+      * @remarks
+      * - The bucket needs to be set to public, either via [updateBucket()](/docs/reference/javascript/storage-updatebucket) or by going to Storage on [supabase.com/dashboard](https://supabase.com/dashboard), clicking the overflow menu on a bucket and choosing "Make public"
+      * - RLS policy permissions required:
+      *   - `buckets` table permissions: none
+      *   - `objects` table permissions: none
+      * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
+      */
+      getPublicUrl(path, options) {
+        const _path = this._getFinalPath(path);
+        const query = new URLSearchParams();
+        if (options === null || options === void 0 ? void 0 : options.download) query.set("download", options.download === true ? "" : options.download);
+        if (options === null || options === void 0 ? void 0 : options.transform) this.applyTransformOptsToQuery(query, options.transform);
+        if ((options === null || options === void 0 ? void 0 : options.cacheNonce) != null) query.set("cacheNonce", String(options.cacheNonce));
+        const queryString = query.toString();
+        const renderPath = typeof (options === null || options === void 0 ? void 0 : options.transform) === "object" && options.transform !== null && Object.keys(options.transform).length > 0 ? "render/image" : "object";
+        return { data: { publicUrl: encodeURI(`${this.url}/${renderPath}/public/${_path}`) + (queryString ? `?${queryString}` : "") } };
+      }
+      /**
+      * Deletes files within the same bucket
+      *
+      * Returns an array of FileObject entries for the deleted files. Note that deprecated
+      * fields like `bucket_id` may or may not be present in the response - do not rely on them.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param paths An array of files to delete, including the path and file name. For example [`'folder/image.png'`].
+      * @returns Promise with response containing array of deleted file objects or error
+      *
+      * @example Delete file
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .remove(['folder/avatar1.png'])
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": [],
+      *   "error": null
+      * }
+      * ```
+      *
+      * @remarks
+      * - RLS policy permissions required:
+      *   - `buckets` table permissions: none
+      *   - `objects` table permissions: `delete` and `select`
+      * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
+      */
+      async remove(paths) {
+        var _this12 = this;
+        return _this12.handleOperation(async () => {
+          return await remove(_this12.fetch, `${_this12.url}/object/${_this12.bucketId}`, { prefixes: paths }, { headers: _this12.headers });
+        });
+      }
+      /**
+      * Get file metadata
+      * @param id the file id to retrieve metadata
+      */
+      /**
+      * Update file metadata
+      * @param id the file id to update metadata
+      * @param meta the new file metadata
+      */
+      /**
+      * Lists all the files and folders within a path of the bucket.
+      *
+      * **Important:** For folder entries, fields like `id`, `updated_at`, `created_at`,
+      * `last_accessed_at`, and `metadata` will be `null`. Only files have these fields populated.
+      * Additionally, deprecated fields like `bucket_id`, `owner`, and `buckets` are NOT returned
+      * by this method.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param path The folder path.
+      * @param options Search options including limit (defaults to 100), offset, sortBy, and search
+      * @param parameters Optional fetch parameters including signal for cancellation
+      * @returns Promise with response containing array of files/folders or error
+      *
+      * @example List files in a bucket
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .list('folder', {
+      *     limit: 100,
+      *     offset: 0,
+      *     sortBy: { column: 'name', order: 'asc' },
+      *   })
+      *
+      * // Handle files vs folders
+      * data?.forEach(item => {
+      *   if (item.id !== null) {
+      *     // It's a file
+      *     console.log('File:', item.name, 'Size:', item.metadata?.size)
+      *   } else {
+      *     // It's a folder
+      *     console.log('Folder:', item.name)
+      *   }
+      * })
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "avatar1.png",
+      *       "id": "e668cf7f-821b-4a2f-9dce-7dfa5dd1cfd2",
+      *       "updated_at": "2024-05-22T23:06:05.580Z",
+      *       "created_at": "2024-05-22T23:04:34.443Z",
+      *       "last_accessed_at": "2024-05-22T23:04:34.443Z",
+      *       "metadata": {
+      *         "eTag": "\"c5e8c553235d9af30ef4f6e280790b92\"",
+      *         "size": 32175,
+      *         "mimetype": "image/png",
+      *         "cacheControl": "max-age=3600",
+      *         "lastModified": "2024-05-22T23:06:05.574Z",
+      *         "contentLength": 32175,
+      *         "httpStatusCode": 200
+      *       }
+      *     }
+      *   ],
+      *   "error": null
+      * }
+      * ```
+      *
+      * @example Search files in a bucket
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .list('folder', {
+      *     limit: 100,
+      *     offset: 0,
+      *     sortBy: { column: 'name', order: 'asc' },
+      *     search: 'jon'
+      *   })
+      * ```
+      *
+      * @remarks
+      * - RLS policy permissions required:
+      *   - `buckets` table permissions: none
+      *   - `objects` table permissions: `select`
+      * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
+      */
+      async list(path, options, parameters) {
+        var _this13 = this;
+        return _this13.handleOperation(async () => {
+          const body = _objectSpread22(_objectSpread22(_objectSpread22({}, DEFAULT_SEARCH_OPTIONS), options), {}, { prefix: path || "" });
+          return await post(_this13.fetch, `${_this13.url}/object/list/${_this13.bucketId}`, body, { headers: _this13.headers }, parameters);
+        });
+      }
+      /**
+      * Lists all the files and folders within a bucket using the V2 API with pagination support.
+      *
+      * **Important:** Folder entries in the `folders` array only contain `name` and optionally `key` —
+      * they have no `id`, timestamps, or `metadata` fields. Full file metadata is only available
+      * on entries in the `objects` array.
+      *
+      * @experimental this method signature might change in the future
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param options Search options including prefix, cursor for pagination, limit, with_delimiter
+      * @param parameters Optional fetch parameters including signal for cancellation
+      * @returns Promise with response containing folders/objects arrays with pagination info or error
+      *
+      * @example List files with pagination
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .from('avatars')
+      *   .listV2({
+      *     prefix: 'folder/',
+      *     limit: 100,
+      *   })
+      *
+      * // Handle pagination
+      * if (data?.hasNext) {
+      *   const nextPage = await supabase
+      *     .storage
+      *     .from('avatars')
+      *     .listV2({
+      *       prefix: 'folder/',
+      *       cursor: data.nextCursor,
+      *     })
+      * }
+      *
+      * // Handle files vs folders
+      * data?.objects.forEach(file => {
+      *   if (file.id !== null) {
+      *     console.log('File:', file.name, 'Size:', file.metadata?.size)
+      *   }
+      * })
+      * data?.folders.forEach(folder => {
+      *   console.log('Folder:', folder.name)
+      * })
+      * ```
+      */
+      async listV2(options, parameters) {
+        var _this14 = this;
+        return _this14.handleOperation(async () => {
+          const body = _objectSpread22({}, options);
+          return await post(_this14.fetch, `${_this14.url}/object/list-v2/${_this14.bucketId}`, body, { headers: _this14.headers }, parameters);
+        });
+      }
+      encodeMetadata(metadata) {
+        return JSON.stringify(metadata);
+      }
+      toBase64(data) {
+        if (typeof Buffer !== "undefined") return Buffer.from(data).toString("base64");
+        return btoa(data);
+      }
+      _getFinalPath(path) {
+        return `${this.bucketId}/${path.replace(/^\/+/, "")}`;
+      }
+      _removeEmptyFolders(path) {
+        return path.replace(/^\/|\/$/g, "").replace(/\/+/g, "/");
+      }
+      /** Modifies the `query`, appending values the from `transform` */
+      applyTransformOptsToQuery(query, transform) {
+        if (transform.width) query.set("width", transform.width.toString());
+        if (transform.height) query.set("height", transform.height.toString());
+        if (transform.resize) query.set("resize", transform.resize);
+        if (transform.format) query.set("format", transform.format);
+        if (transform.quality) query.set("quality", transform.quality.toString());
+        return query;
+      }
+    };
+    version = "2.107.0";
+    DEFAULT_HEADERS = { "X-Client-Info": `storage-js/${version}` };
+    StorageBucketApi = class extends BaseApiClient {
+      constructor(url, headers = {}, fetch$1, opts) {
+        const baseUrl = new URL(url);
+        if (opts === null || opts === void 0 ? void 0 : opts.useNewHostname) {
+          if (/supabase\.(co|in|red)$/.test(baseUrl.hostname) && !baseUrl.hostname.includes("storage.supabase.")) baseUrl.hostname = baseUrl.hostname.replace("supabase.", "storage.supabase.");
+        }
+        const finalUrl = baseUrl.href.replace(/\/$/, "");
+        const finalHeaders = _objectSpread22(_objectSpread22({}, DEFAULT_HEADERS), headers);
+        super(finalUrl, finalHeaders, fetch$1, "storage");
+      }
+      /**
+      * Retrieves the details of all Storage buckets within an existing project.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param options Query parameters for listing buckets
+      * @param options.limit Maximum number of buckets to return
+      * @param options.offset Number of buckets to skip
+      * @param options.sortColumn Column to sort by ('id', 'name', 'created_at', 'updated_at')
+      * @param options.sortOrder Sort order ('asc' or 'desc')
+      * @param options.search Search term to filter bucket names
+      * @returns Promise with response containing array of buckets or error
+      *
+      * @example List buckets
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .listBuckets()
+      * ```
+      *
+      * @example List buckets with options
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .listBuckets({
+      *     limit: 10,
+      *     offset: 0,
+      *     sortColumn: 'created_at',
+      *     sortOrder: 'desc',
+      *     search: 'prod'
+      *   })
+      * ```
+      *
+      * @remarks
+      * - RLS policy permissions required:
+      *   - `buckets` table permissions: `select`
+      *   - `objects` table permissions: none
+      * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
+      */
+      async listBuckets(options) {
+        var _this = this;
+        return _this.handleOperation(async () => {
+          const queryString = _this.listBucketOptionsToQueryString(options);
+          return await get(_this.fetch, `${_this.url}/bucket${queryString}`, { headers: _this.headers });
+        });
+      }
+      /**
+      * Retrieves the details of an existing Storage bucket.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param id The unique identifier of the bucket you would like to retrieve.
+      * @returns Promise with response containing bucket details or error
+      *
+      * @example Get bucket
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .getBucket('avatars')
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": {
+      *     "id": "avatars",
+      *     "name": "avatars",
+      *     "owner": "",
+      *     "public": false,
+      *     "file_size_limit": 1024,
+      *     "allowed_mime_types": [
+      *       "image/png"
+      *     ],
+      *     "created_at": "2024-05-22T22:26:05.100Z",
+      *     "updated_at": "2024-05-22T22:26:05.100Z"
+      *   },
+      *   "error": null
+      * }
+      * ```
+      *
+      * @remarks
+      * - RLS policy permissions required:
+      *   - `buckets` table permissions: `select`
+      *   - `objects` table permissions: none
+      * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
+      */
+      async getBucket(id) {
+        var _this2 = this;
+        return _this2.handleOperation(async () => {
+          return await get(_this2.fetch, `${_this2.url}/bucket/${id}`, { headers: _this2.headers });
+        });
+      }
+      /**
+      * Creates a new Storage bucket
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param id A unique identifier for the bucket you are creating.
+      * @param options.public The visibility of the bucket. Public buckets don't require an authorization token to download objects, but still require a valid token for all other operations. By default, buckets are private.
+      * @param options.fileSizeLimit specifies the max file size in bytes that can be uploaded to this bucket.
+      * The global file size limit takes precedence over this value.
+      * The default value is null, which doesn't set a per bucket file size limit.
+      * @param options.allowedMimeTypes specifies the allowed mime types that this bucket can accept during upload.
+      * The default value is null, which allows files with all mime types to be uploaded.
+      * Each mime type specified can be a wildcard, e.g. image/*, or a specific mime type, e.g. image/png.
+      * @param options.type (private-beta) specifies the bucket type. see `BucketType` for more details.
+      *   - default bucket type is `STANDARD`
+      * @returns Promise with response containing newly created bucket name or error
+      *
+      * @example Create bucket
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .createBucket('avatars', {
+      *     public: false,
+      *     allowedMimeTypes: ['image/png'],
+      *     fileSizeLimit: 1024
+      *   })
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": {
+      *     "name": "avatars"
+      *   },
+      *   "error": null
+      * }
+      * ```
+      *
+      * @remarks
+      * - RLS policy permissions required:
+      *   - `buckets` table permissions: `insert`
+      *   - `objects` table permissions: none
+      * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
+      */
+      async createBucket(id, options = { public: false }) {
+        var _this3 = this;
+        return _this3.handleOperation(async () => {
+          return await post(_this3.fetch, `${_this3.url}/bucket`, {
+            id,
+            name: id,
+            type: options.type,
+            public: options.public,
+            file_size_limit: options.fileSizeLimit,
+            allowed_mime_types: options.allowedMimeTypes
+          }, { headers: _this3.headers });
+        });
+      }
+      /**
+      * Updates a Storage bucket
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param id A unique identifier for the bucket you are updating.
+      * @param options.public The visibility of the bucket. Public buckets don't require an authorization token to download objects, but still require a valid token for all other operations.
+      * @param options.fileSizeLimit specifies the max file size in bytes that can be uploaded to this bucket.
+      * The global file size limit takes precedence over this value.
+      * The default value is null, which doesn't set a per bucket file size limit.
+      * @param options.allowedMimeTypes specifies the allowed mime types that this bucket can accept during upload.
+      * The default value is null, which allows files with all mime types to be uploaded.
+      * Each mime type specified can be a wildcard, e.g. image/*, or a specific mime type, e.g. image/png.
+      * @returns Promise with response containing success message or error
+      *
+      * @example Update bucket
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .updateBucket('avatars', {
+      *     public: false,
+      *     allowedMimeTypes: ['image/png'],
+      *     fileSizeLimit: 1024
+      *   })
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": {
+      *     "message": "Successfully updated"
+      *   },
+      *   "error": null
+      * }
+      * ```
+      *
+      * @remarks
+      * - RLS policy permissions required:
+      *   - `buckets` table permissions: `select` and `update`
+      *   - `objects` table permissions: none
+      * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
+      */
+      async updateBucket(id, options) {
+        var _this4 = this;
+        return _this4.handleOperation(async () => {
+          return await put(_this4.fetch, `${_this4.url}/bucket/${id}`, {
+            id,
+            name: id,
+            public: options.public,
+            file_size_limit: options.fileSizeLimit,
+            allowed_mime_types: options.allowedMimeTypes
+          }, { headers: _this4.headers });
+        });
+      }
+      /**
+      * Removes all objects inside a single bucket.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param id The unique identifier of the bucket you would like to empty.
+      * @returns Promise with success message or error
+      *
+      * @example Empty bucket
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .emptyBucket('avatars')
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": {
+      *     "message": "Successfully emptied"
+      *   },
+      *   "error": null
+      * }
+      * ```
+      *
+      * @remarks
+      * - RLS policy permissions required:
+      *   - `buckets` table permissions: `select`
+      *   - `objects` table permissions: `select` and `delete`
+      * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
+      */
+      async emptyBucket(id) {
+        var _this5 = this;
+        return _this5.handleOperation(async () => {
+          return await post(_this5.fetch, `${_this5.url}/bucket/${id}/empty`, {}, { headers: _this5.headers });
+        });
+      }
+      /**
+      * Deletes an existing bucket. A bucket can't be deleted with existing objects inside it.
+      * You must first `empty()` the bucket.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      * @param id The unique identifier of the bucket you would like to delete.
+      * @returns Promise with success message or error
+      *
+      * @example Delete bucket
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .deleteBucket('avatars')
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": {
+      *     "message": "Successfully deleted"
+      *   },
+      *   "error": null
+      * }
+      * ```
+      *
+      * @remarks
+      * - RLS policy permissions required:
+      *   - `buckets` table permissions: `select` and `delete`
+      *   - `objects` table permissions: none
+      * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
+      */
+      async deleteBucket(id) {
+        var _this6 = this;
+        return _this6.handleOperation(async () => {
+          return await remove(_this6.fetch, `${_this6.url}/bucket/${id}`, {}, { headers: _this6.headers });
+        });
+      }
+      listBucketOptionsToQueryString(options) {
+        const params = {};
+        if (options) {
+          if ("limit" in options) params.limit = String(options.limit);
+          if ("offset" in options) params.offset = String(options.offset);
+          if (options.search) params.search = options.search;
+          if (options.sortColumn) params.sortColumn = options.sortColumn;
+          if (options.sortOrder) params.sortOrder = options.sortOrder;
+        }
+        return Object.keys(params).length > 0 ? "?" + new URLSearchParams(params).toString() : "";
+      }
+    };
+    StorageAnalyticsClient = class extends BaseApiClient {
+      /**
+      * @alpha
+      *
+      * Creates a new StorageAnalyticsClient instance
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Analytics Buckets
+      * @param url - The base URL for the storage API
+      * @param headers - HTTP headers to include in requests
+      * @param fetch - Optional custom fetch implementation
+      *
+      * @example Using supabase-js (recommended)
+      * ```typescript
+      * import { createClient } from '@supabase/supabase-js'
+      *
+      * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
+      * const { data, error } = await supabase.storage.analytics.listBuckets()
+      * ```
+      *
+      * @example Standalone import for bundle-sensitive environments
+      * ```typescript
+      * import { StorageAnalyticsClient } from '@supabase/storage-js'
+      *
+      * const client = new StorageAnalyticsClient(url, headers)
+      * ```
+      */
+      constructor(url, headers = {}, fetch$1) {
+        const finalUrl = url.replace(/\/$/, "");
+        const finalHeaders = _objectSpread22(_objectSpread22({}, DEFAULT_HEADERS), headers);
+        super(finalUrl, finalHeaders, fetch$1, "storage");
+      }
+      /**
+      * @alpha
+      *
+      * Creates a new analytics bucket using Iceberg tables
+      * Analytics buckets are optimized for analytical queries and data processing
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Analytics Buckets
+      * @param name A unique name for the bucket you are creating
+      * @returns Promise with response containing newly created analytics bucket or error
+      *
+      * @example Create analytics bucket
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .analytics
+      *   .createBucket('analytics-data')
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": {
+      *     "name": "analytics-data",
+      *     "type": "ANALYTICS",
+      *     "format": "iceberg",
+      *     "created_at": "2024-05-22T22:26:05.100Z",
+      *     "updated_at": "2024-05-22T22:26:05.100Z"
+      *   },
+      *   "error": null
+      * }
+      * ```
+      *
+      * @remarks
+      * - Creates a new analytics bucket using Iceberg tables
+      * - Analytics buckets are optimized for analytical queries and data processing
+      */
+      async createBucket(name) {
+        var _this = this;
+        return _this.handleOperation(async () => {
+          return await post(_this.fetch, `${_this.url}/bucket`, { name }, { headers: _this.headers });
+        });
+      }
+      /**
+      * @alpha
+      *
+      * Retrieves the details of all Analytics Storage buckets within an existing project
+      * Only returns buckets of type 'ANALYTICS'
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Analytics Buckets
+      * @param options Query parameters for listing buckets
+      * @param options.limit Maximum number of buckets to return
+      * @param options.offset Number of buckets to skip
+      * @param options.sortColumn Column to sort by ('name', 'created_at', 'updated_at')
+      * @param options.sortOrder Sort order ('asc' or 'desc')
+      * @param options.search Search term to filter bucket names
+      * @returns Promise with response containing array of analytics buckets or error
+      *
+      * @example List analytics buckets
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .analytics
+      *   .listBuckets({
+      *     limit: 10,
+      *     offset: 0,
+      *     sortColumn: 'created_at',
+      *     sortOrder: 'desc'
+      *   })
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": [
+      *     {
+      *       "name": "analytics-data",
+      *       "type": "ANALYTICS",
+      *       "format": "iceberg",
+      *       "created_at": "2024-05-22T22:26:05.100Z",
+      *       "updated_at": "2024-05-22T22:26:05.100Z"
+      *     }
+      *   ],
+      *   "error": null
+      * }
+      * ```
+      *
+      * @remarks
+      * - Retrieves the details of all Analytics Storage buckets within an existing project
+      * - Only returns buckets of type 'ANALYTICS'
+      */
+      async listBuckets(options) {
+        var _this2 = this;
+        return _this2.handleOperation(async () => {
+          const queryParams = new URLSearchParams();
+          if ((options === null || options === void 0 ? void 0 : options.limit) !== void 0) queryParams.set("limit", options.limit.toString());
+          if ((options === null || options === void 0 ? void 0 : options.offset) !== void 0) queryParams.set("offset", options.offset.toString());
+          if (options === null || options === void 0 ? void 0 : options.sortColumn) queryParams.set("sortColumn", options.sortColumn);
+          if (options === null || options === void 0 ? void 0 : options.sortOrder) queryParams.set("sortOrder", options.sortOrder);
+          if (options === null || options === void 0 ? void 0 : options.search) queryParams.set("search", options.search);
+          const queryString = queryParams.toString();
+          const url = queryString ? `${_this2.url}/bucket?${queryString}` : `${_this2.url}/bucket`;
+          return await get(_this2.fetch, url, { headers: _this2.headers });
+        });
+      }
+      /**
+      * @alpha
+      *
+      * Deletes an existing analytics bucket
+      * A bucket can't be deleted with existing objects inside it
+      * You must first empty the bucket before deletion
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Analytics Buckets
+      * @param bucketName The unique identifier of the bucket you would like to delete
+      * @returns Promise with response containing success message or error
+      *
+      * @example Delete analytics bucket
+      * ```js
+      * const { data, error } = await supabase
+      *   .storage
+      *   .analytics
+      *   .deleteBucket('analytics-data')
+      * ```
+      *
+      * Response:
+      * ```json
+      * {
+      *   "data": {
+      *     "message": "Successfully deleted"
+      *   },
+      *   "error": null
+      * }
+      * ```
+      *
+      * @remarks
+      * - Deletes an analytics bucket
+      */
+      async deleteBucket(bucketName) {
+        var _this3 = this;
+        return _this3.handleOperation(async () => {
+          return await remove(_this3.fetch, `${_this3.url}/bucket/${bucketName}`, {}, { headers: _this3.headers });
+        });
+      }
+      /**
+      * @alpha
+      *
+      * Get an Iceberg REST Catalog client configured for a specific analytics bucket
+      * Use this to perform advanced table and namespace operations within the bucket
+      * The returned client provides full access to the Apache Iceberg REST Catalog API
+      * with the Supabase `{ data, error }` pattern for consistent error handling on all operations.
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Analytics Buckets
+      * @param bucketName - The name of the analytics bucket (warehouse) to connect to
+      * @returns The wrapped Iceberg catalog client
+      * @throws {StorageError} If the bucket name is invalid
+      *
+      * @example Get catalog and create table
+      * ```js
+      * // First, create an analytics bucket
+      * const { data: bucket, error: bucketError } = await supabase
+      *   .storage
+      *   .analytics
+      *   .createBucket('analytics-data')
+      *
+      * // Get the Iceberg catalog for that bucket
+      * const catalog = supabase.storage.analytics.from('analytics-data')
+      *
+      * // Create a namespace
+      * const { error: nsError } = await catalog.createNamespace({ namespace: ['default'] })
+      *
+      * // Create a table with schema
+      * const { data: tableMetadata, error: tableError } = await catalog.createTable(
+      *   { namespace: ['default'] },
+      *   {
+      *     name: 'events',
+      *     schema: {
+      *       type: 'struct',
+      *       fields: [
+      *         { id: 1, name: 'id', type: 'long', required: true },
+      *         { id: 2, name: 'timestamp', type: 'timestamp', required: true },
+      *         { id: 3, name: 'user_id', type: 'string', required: false }
+      *       ],
+      *       'schema-id': 0,
+      *       'identifier-field-ids': [1]
+      *     },
+      *     'partition-spec': {
+      *       'spec-id': 0,
+      *       fields: []
+      *     },
+      *     'write-order': {
+      *       'order-id': 0,
+      *       fields: []
+      *     },
+      *     properties: {
+      *       'write.format.default': 'parquet'
+      *     }
+      *   }
+      * )
+      * ```
+      *
+      * @example List tables in namespace
+      * ```js
+      * const catalog = supabase.storage.analytics.from('analytics-data')
+      *
+      * // List all tables in the default namespace
+      * const { data: tables, error: listError } = await catalog.listTables({ namespace: ['default'] })
+      * if (listError) {
+      *   if (listError.isNotFound()) {
+      *     console.log('Namespace not found')
+      *   }
+      *   return
+      * }
+      * console.log(tables) // [{ namespace: ['default'], name: 'events' }]
+      * ```
+      *
+      * @example Working with namespaces
+      * ```js
+      * const catalog = supabase.storage.analytics.from('analytics-data')
+      *
+      * // List all namespaces
+      * const { data: namespaces } = await catalog.listNamespaces()
+      *
+      * // Create namespace with properties
+      * await catalog.createNamespace(
+      *   { namespace: ['production'] },
+      *   { properties: { owner: 'data-team', env: 'prod' } }
+      * )
+      * ```
+      *
+      * @example Cleanup operations
+      * ```js
+      * const catalog = supabase.storage.analytics.from('analytics-data')
+      *
+      * // Drop table with purge option (removes all data)
+      * const { error: dropError } = await catalog.dropTable(
+      *   { namespace: ['default'], name: 'events' },
+      *   { purge: true }
+      * )
+      *
+      * if (dropError?.isNotFound()) {
+      *   console.log('Table does not exist')
+      * }
+      *
+      * // Drop namespace (must be empty)
+      * await catalog.dropNamespace({ namespace: ['default'] })
+      * ```
+      *
+      * @remarks
+      * This method provides a bridge between Supabase's bucket management and the standard
+      * Apache Iceberg REST Catalog API. The bucket name maps to the Iceberg warehouse parameter.
+      * All authentication and configuration is handled automatically using your Supabase credentials.
+      *
+      * **Error Handling**: Invalid bucket names throw immediately. All catalog
+      * operations return `{ data, error }` where errors are `IcebergError` instances from iceberg-js.
+      * Use helper methods like `error.isNotFound()` or check `error.status` for specific error handling.
+      * Use `.throwOnError()` on the analytics client if you prefer exceptions for catalog operations.
+      *
+      * **Cleanup Operations**: When using `dropTable`, the `purge: true` option permanently
+      * deletes all table data. Without it, the table is marked as deleted but data remains.
+      *
+      * **Library Dependency**: The returned catalog wraps `IcebergRestCatalog` from iceberg-js.
+      * For complete API documentation and advanced usage, refer to the
+      * [iceberg-js documentation](https://supabase.github.io/iceberg-js/).
+      */
+      from(bucketName) {
+        var _this4 = this;
+        if (!isValidBucketName(bucketName)) throw new StorageError("Invalid bucket name: File, folder, and bucket names must follow AWS object key naming guidelines and should avoid the use of any other characters.");
+        const catalog = new IcebergRestCatalog({
+          baseUrl: this.url,
+          catalogName: bucketName,
+          auth: {
+            type: "custom",
+            getHeaders: async () => _this4.headers
+          },
+          fetch: this.fetch
+        });
+        const shouldThrowOnError = this.shouldThrowOnError;
+        return new Proxy(catalog, { get(target, prop) {
+          const value = target[prop];
+          if (typeof value !== "function") return value;
+          return async (...args) => {
+            try {
+              return {
+                data: await value.apply(target, args),
+                error: null
+              };
+            } catch (error) {
+              if (shouldThrowOnError) throw error;
+              return {
+                data: null,
+                error
+              };
+            }
+          };
+        } });
+      }
+    };
+    VectorIndexApi = class extends BaseApiClient {
+      /** Creates a new VectorIndexApi instance */
+      constructor(url, headers = {}, fetch$1) {
+        const finalUrl = url.replace(/\/$/, "");
+        const finalHeaders = _objectSpread22(_objectSpread22({}, DEFAULT_HEADERS), {}, { "Content-Type": "application/json" }, headers);
+        super(finalUrl, finalHeaders, fetch$1, "vectors");
+      }
+      /** Creates a new vector index within a bucket */
+      async createIndex(options) {
+        var _this = this;
+        return _this.handleOperation(async () => {
+          return await vectorsApi.post(_this.fetch, `${_this.url}/CreateIndex`, options, { headers: _this.headers }) || {};
+        });
+      }
+      /** Retrieves metadata for a specific vector index */
+      async getIndex(vectorBucketName, indexName) {
+        var _this2 = this;
+        return _this2.handleOperation(async () => {
+          return await vectorsApi.post(_this2.fetch, `${_this2.url}/GetIndex`, {
+            vectorBucketName,
+            indexName
+          }, { headers: _this2.headers });
+        });
+      }
+      /** Lists vector indexes within a bucket with optional filtering and pagination */
+      async listIndexes(options) {
+        var _this3 = this;
+        return _this3.handleOperation(async () => {
+          return await vectorsApi.post(_this3.fetch, `${_this3.url}/ListIndexes`, options, { headers: _this3.headers });
+        });
+      }
+      /** Deletes a vector index and all its data */
+      async deleteIndex(vectorBucketName, indexName) {
+        var _this4 = this;
+        return _this4.handleOperation(async () => {
+          return await vectorsApi.post(_this4.fetch, `${_this4.url}/DeleteIndex`, {
+            vectorBucketName,
+            indexName
+          }, { headers: _this4.headers }) || {};
+        });
+      }
+    };
+    VectorDataApi = class extends BaseApiClient {
+      /** Creates a new VectorDataApi instance */
+      constructor(url, headers = {}, fetch$1) {
+        const finalUrl = url.replace(/\/$/, "");
+        const finalHeaders = _objectSpread22(_objectSpread22({}, DEFAULT_HEADERS), {}, { "Content-Type": "application/json" }, headers);
+        super(finalUrl, finalHeaders, fetch$1, "vectors");
+      }
+      /** Inserts or updates vectors in batch (1-500 per request) */
+      async putVectors(options) {
+        var _this = this;
+        if (options.vectors.length < 1 || options.vectors.length > 500) throw new Error("Vector batch size must be between 1 and 500 items");
+        return _this.handleOperation(async () => {
+          return await vectorsApi.post(_this.fetch, `${_this.url}/PutVectors`, options, { headers: _this.headers }) || {};
+        });
+      }
+      /** Retrieves vectors by their keys in batch */
+      async getVectors(options) {
+        var _this2 = this;
+        return _this2.handleOperation(async () => {
+          return await vectorsApi.post(_this2.fetch, `${_this2.url}/GetVectors`, options, { headers: _this2.headers });
+        });
+      }
+      /** Lists vectors in an index with pagination */
+      async listVectors(options) {
+        var _this3 = this;
+        if (options.segmentCount !== void 0) {
+          if (options.segmentCount < 1 || options.segmentCount > 16) throw new Error("segmentCount must be between 1 and 16");
+          if (options.segmentIndex !== void 0) {
+            if (options.segmentIndex < 0 || options.segmentIndex >= options.segmentCount) throw new Error(`segmentIndex must be between 0 and ${options.segmentCount - 1}`);
+          }
+        }
+        return _this3.handleOperation(async () => {
+          return await vectorsApi.post(_this3.fetch, `${_this3.url}/ListVectors`, options, { headers: _this3.headers });
+        });
+      }
+      /** Queries for similar vectors using approximate nearest neighbor search */
+      async queryVectors(options) {
+        var _this4 = this;
+        return _this4.handleOperation(async () => {
+          return await vectorsApi.post(_this4.fetch, `${_this4.url}/QueryVectors`, options, { headers: _this4.headers });
+        });
+      }
+      /** Deletes vectors by their keys in batch (1-500 per request) */
+      async deleteVectors(options) {
+        var _this5 = this;
+        if (options.keys.length < 1 || options.keys.length > 500) throw new Error("Keys batch size must be between 1 and 500 items");
+        return _this5.handleOperation(async () => {
+          return await vectorsApi.post(_this5.fetch, `${_this5.url}/DeleteVectors`, options, { headers: _this5.headers }) || {};
+        });
+      }
+    };
+    VectorBucketApi = class extends BaseApiClient {
+      /** Creates a new VectorBucketApi instance */
+      constructor(url, headers = {}, fetch$1) {
+        const finalUrl = url.replace(/\/$/, "");
+        const finalHeaders = _objectSpread22(_objectSpread22({}, DEFAULT_HEADERS), {}, { "Content-Type": "application/json" }, headers);
+        super(finalUrl, finalHeaders, fetch$1, "vectors");
+      }
+      /** Creates a new vector bucket */
+      async createBucket(vectorBucketName) {
+        var _this = this;
+        return _this.handleOperation(async () => {
+          return await vectorsApi.post(_this.fetch, `${_this.url}/CreateVectorBucket`, { vectorBucketName }, { headers: _this.headers }) || {};
+        });
+      }
+      /** Retrieves metadata for a specific vector bucket */
+      async getBucket(vectorBucketName) {
+        var _this2 = this;
+        return _this2.handleOperation(async () => {
+          return await vectorsApi.post(_this2.fetch, `${_this2.url}/GetVectorBucket`, { vectorBucketName }, { headers: _this2.headers });
+        });
+      }
+      /** Lists vector buckets with optional filtering and pagination */
+      async listBuckets(options = {}) {
+        var _this3 = this;
+        return _this3.handleOperation(async () => {
+          return await vectorsApi.post(_this3.fetch, `${_this3.url}/ListVectorBuckets`, options, { headers: _this3.headers });
+        });
+      }
+      /** Deletes a vector bucket (must be empty first) */
+      async deleteBucket(vectorBucketName) {
+        var _this4 = this;
+        return _this4.handleOperation(async () => {
+          return await vectorsApi.post(_this4.fetch, `${_this4.url}/DeleteVectorBucket`, { vectorBucketName }, { headers: _this4.headers }) || {};
+        });
+      }
+    };
+    StorageVectorsClient = class extends VectorBucketApi {
+      /**
+      * @alpha
+      *
+      * Creates a StorageVectorsClient that can manage buckets, indexes, and vectors.
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      * @param url - Base URL of the Storage Vectors REST API.
+      * @param options.headers - Optional headers (for example `Authorization`) applied to every request.
+      * @param options.fetch - Optional custom `fetch` implementation for non-browser runtimes.
+      *
+      * @example Using supabase-js (recommended)
+      * ```typescript
+      * import { createClient } from '@supabase/supabase-js'
+      *
+      * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
+      * const bucket = supabase.storage.vectors.from('embeddings-prod')
+      * ```
+      *
+      * @example Standalone import for bundle-sensitive environments
+      * ```typescript
+      * import { StorageVectorsClient } from '@supabase/storage-js'
+      *
+      * const client = new StorageVectorsClient(url, options)
+      * ```
+      */
+      constructor(url, options = {}) {
+        super(url, options.headers || {}, options.fetch);
+      }
+      /**
+      *
+      * @alpha
+      *
+      * Access operations for a specific vector bucket
+      * Returns a scoped client for index and vector operations within the bucket
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      * @param vectorBucketName - Name of the vector bucket
+      * @returns Bucket-scoped client with index and vector operations
+      *
+      * @example Accessing a vector bucket
+      * ```typescript
+      * const bucket = supabase.storage.vectors.from('embeddings-prod')
+      * ```
+      */
+      from(vectorBucketName) {
+        return new VectorBucketScope(this.url, this.headers, vectorBucketName, this.fetch);
+      }
+      /**
+      *
+      * @alpha
+      *
+      * Creates a new vector bucket
+      * Vector buckets are containers for vector indexes and their data
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      * @param vectorBucketName - Unique name for the vector bucket
+      * @returns Promise with empty response on success or error
+      *
+      * @example Creating a vector bucket
+      * ```typescript
+      * const { data, error } = await supabase
+      *   .storage
+      *   .vectors
+      *   .createBucket('embeddings-prod')
+      * ```
+      */
+      async createBucket(vectorBucketName) {
+        var _superprop_getCreateBucket = () => super.createBucket, _this = this;
+        return _superprop_getCreateBucket().call(_this, vectorBucketName);
+      }
+      /**
+      *
+      * @alpha
+      *
+      * Retrieves metadata for a specific vector bucket
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      * @param vectorBucketName - Name of the vector bucket
+      * @returns Promise with bucket metadata or error
+      *
+      * @example Get bucket metadata
+      * ```typescript
+      * const { data, error } = await supabase
+      *   .storage
+      *   .vectors
+      *   .getBucket('embeddings-prod')
+      *
+      * console.log('Bucket created:', data?.vectorBucket.creationTime)
+      * ```
+      */
+      async getBucket(vectorBucketName) {
+        var _superprop_getGetBucket = () => super.getBucket, _this2 = this;
+        return _superprop_getGetBucket().call(_this2, vectorBucketName);
+      }
+      /**
+      *
+      * @alpha
+      *
+      * Lists all vector buckets with optional filtering and pagination
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      * @param options - Optional filters (prefix, maxResults, nextToken)
+      * @returns Promise with list of buckets or error
+      *
+      * @example List vector buckets
+      * ```typescript
+      * const { data, error } = await supabase
+      *   .storage
+      *   .vectors
+      *   .listBuckets({ prefix: 'embeddings-' })
+      *
+      * data?.vectorBuckets.forEach(bucket => {
+      *   console.log(bucket.vectorBucketName)
+      * })
+      * ```
+      */
+      async listBuckets(options = {}) {
+        var _superprop_getListBuckets = () => super.listBuckets, _this3 = this;
+        return _superprop_getListBuckets().call(_this3, options);
+      }
+      /**
+      *
+      * @alpha
+      *
+      * Deletes a vector bucket (bucket must be empty)
+      * All indexes must be deleted before deleting the bucket
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      * @param vectorBucketName - Name of the vector bucket to delete
+      * @returns Promise with empty response on success or error
+      *
+      * @example Delete a vector bucket
+      * ```typescript
+      * const { data, error } = await supabase
+      *   .storage
+      *   .vectors
+      *   .deleteBucket('embeddings-old')
+      * ```
+      */
+      async deleteBucket(vectorBucketName) {
+        var _superprop_getDeleteBucket = () => super.deleteBucket, _this4 = this;
+        return _superprop_getDeleteBucket().call(_this4, vectorBucketName);
+      }
+    };
+    VectorBucketScope = class extends VectorIndexApi {
+      /**
+      * @alpha
+      *
+      * Creates a helper that automatically scopes all index operations to the provided bucket.
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      * @example Creating a vector bucket scope
+      * ```typescript
+      * const bucket = supabase.storage.vectors.from('embeddings-prod')
+      * ```
+      */
+      constructor(url, headers, vectorBucketName, fetch$1) {
+        super(url, headers, fetch$1);
+        this.vectorBucketName = vectorBucketName;
+      }
+      /**
+      *
+      * @alpha
+      *
+      * Creates a new vector index in this bucket
+      * Convenience method that automatically includes the bucket name
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      * @param options - Index configuration (vectorBucketName is automatically set)
+      * @returns Promise with empty response on success or error
+      *
+      * @example Creating a vector index
+      * ```typescript
+      * const bucket = supabase.storage.vectors.from('embeddings-prod')
+      * await bucket.createIndex({
+      *   indexName: 'documents-openai',
+      *   dataType: 'float32',
+      *   dimension: 1536,
+      *   distanceMetric: 'cosine',
+      *   metadataConfiguration: {
+      *     nonFilterableMetadataKeys: ['raw_text']
+      *   }
+      * })
+      * ```
+      */
+      async createIndex(options) {
+        var _superprop_getCreateIndex = () => super.createIndex, _this5 = this;
+        return _superprop_getCreateIndex().call(_this5, _objectSpread22(_objectSpread22({}, options), {}, { vectorBucketName: _this5.vectorBucketName }));
+      }
+      /**
+      *
+      * @alpha
+      *
+      * Lists indexes in this bucket
+      * Convenience method that automatically includes the bucket name
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      * @param options - Listing options (vectorBucketName is automatically set)
+      * @returns Promise with response containing indexes array and pagination token or error
+      *
+      * @example List indexes
+      * ```typescript
+      * const bucket = supabase.storage.vectors.from('embeddings-prod')
+      * const { data } = await bucket.listIndexes({ prefix: 'documents-' })
+      * ```
+      */
+      async listIndexes(options = {}) {
+        var _superprop_getListIndexes = () => super.listIndexes, _this6 = this;
+        return _superprop_getListIndexes().call(_this6, _objectSpread22(_objectSpread22({}, options), {}, { vectorBucketName: _this6.vectorBucketName }));
+      }
+      /**
+      *
+      * @alpha
+      *
+      * Retrieves metadata for a specific index in this bucket
+      * Convenience method that automatically includes the bucket name
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      * @param indexName - Name of the index to retrieve
+      * @returns Promise with index metadata or error
+      *
+      * @example Get index metadata
+      * ```typescript
+      * const bucket = supabase.storage.vectors.from('embeddings-prod')
+      * const { data } = await bucket.getIndex('documents-openai')
+      * console.log('Dimension:', data?.index.dimension)
+      * ```
+      */
+      async getIndex(indexName) {
+        var _superprop_getGetIndex = () => super.getIndex, _this7 = this;
+        return _superprop_getGetIndex().call(_this7, _this7.vectorBucketName, indexName);
+      }
+      /**
+      *
+      * @alpha
+      *
+      * Deletes an index from this bucket
+      * Convenience method that automatically includes the bucket name
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      * @param indexName - Name of the index to delete
+      * @returns Promise with empty response on success or error
+      *
+      * @example Delete an index
+      * ```typescript
+      * const bucket = supabase.storage.vectors.from('embeddings-prod')
+      * await bucket.deleteIndex('old-index')
+      * ```
+      */
+      async deleteIndex(indexName) {
+        var _superprop_getDeleteIndex = () => super.deleteIndex, _this8 = this;
+        return _superprop_getDeleteIndex().call(_this8, _this8.vectorBucketName, indexName);
+      }
+      /**
+      *
+      * @alpha
+      *
+      * Access operations for a specific index within this bucket
+      * Returns a scoped client for vector data operations
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      * @param indexName - Name of the index
+      * @returns Index-scoped client with vector data operations
+      *
+      * @example Accessing an index
+      * ```typescript
+      * const index = supabase.storage.vectors.from('embeddings-prod').index('documents-openai')
+      *
+      * // Insert vectors
+      * await index.putVectors({
+      *   vectors: [
+      *     { key: 'doc-1', data: { float32: [...] }, metadata: { title: 'Intro' } }
+      *   ]
+      * })
+      *
+      * // Query similar vectors
+      * const { data } = await index.queryVectors({
+      *   queryVector: { float32: [...] },
+      *   topK: 5
+      * })
+      * ```
+      */
+      index(indexName) {
+        return new VectorIndexScope(this.url, this.headers, this.vectorBucketName, indexName, this.fetch);
+      }
+    };
+    VectorIndexScope = class extends VectorDataApi {
+      /**
+      *
+      * @alpha
+      *
+      * Creates a helper that automatically scopes all vector operations to the provided bucket/index names.
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      * @example Creating a vector index scope
+      * ```typescript
+      * const index = supabase.storage.vectors.from('embeddings-prod').index('documents-openai')
+      * ```
+      */
+      constructor(url, headers, vectorBucketName, indexName, fetch$1) {
+        super(url, headers, fetch$1);
+        this.vectorBucketName = vectorBucketName;
+        this.indexName = indexName;
+      }
+      /**
+      *
+      * @alpha
+      *
+      * Inserts or updates vectors in this index
+      * Convenience method that automatically includes bucket and index names
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      * @param options - Vector insertion options (bucket and index names automatically set)
+      * @returns Promise with empty response on success or error
+      *
+      * @example Insert vectors into an index
+      * ```typescript
+      * const index = supabase.storage.vectors.from('embeddings-prod').index('documents-openai')
+      * await index.putVectors({
+      *   vectors: [
+      *     {
+      *       key: 'doc-1',
+      *       data: { float32: [0.1, 0.2, ...] },
+      *       metadata: { title: 'Introduction', page: 1 }
+      *     }
+      *   ]
+      * })
+      * ```
+      */
+      async putVectors(options) {
+        var _superprop_getPutVectors = () => super.putVectors, _this9 = this;
+        return _superprop_getPutVectors().call(_this9, _objectSpread22(_objectSpread22({}, options), {}, {
+          vectorBucketName: _this9.vectorBucketName,
+          indexName: _this9.indexName
+        }));
+      }
+      /**
+      *
+      * @alpha
+      *
+      * Retrieves vectors by keys from this index
+      * Convenience method that automatically includes bucket and index names
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      * @param options - Vector retrieval options (bucket and index names automatically set)
+      * @returns Promise with response containing vectors array or error
+      *
+      * @example Get vectors by keys
+      * ```typescript
+      * const index = supabase.storage.vectors.from('embeddings-prod').index('documents-openai')
+      * const { data } = await index.getVectors({
+      *   keys: ['doc-1', 'doc-2'],
+      *   returnMetadata: true
+      * })
+      * ```
+      */
+      async getVectors(options) {
+        var _superprop_getGetVectors = () => super.getVectors, _this10 = this;
+        return _superprop_getGetVectors().call(_this10, _objectSpread22(_objectSpread22({}, options), {}, {
+          vectorBucketName: _this10.vectorBucketName,
+          indexName: _this10.indexName
+        }));
+      }
+      /**
+      *
+      * @alpha
+      *
+      * Lists vectors in this index with pagination
+      * Convenience method that automatically includes bucket and index names
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      * @param options - Listing options (bucket and index names automatically set)
+      * @returns Promise with response containing vectors array and pagination token or error
+      *
+      * @example List vectors with pagination
+      * ```typescript
+      * const index = supabase.storage.vectors.from('embeddings-prod').index('documents-openai')
+      * const { data } = await index.listVectors({
+      *   maxResults: 500,
+      *   returnMetadata: true
+      * })
+      * ```
+      */
+      async listVectors(options = {}) {
+        var _superprop_getListVectors = () => super.listVectors, _this11 = this;
+        return _superprop_getListVectors().call(_this11, _objectSpread22(_objectSpread22({}, options), {}, {
+          vectorBucketName: _this11.vectorBucketName,
+          indexName: _this11.indexName
+        }));
+      }
+      /**
+      *
+      * @alpha
+      *
+      * Queries for similar vectors in this index
+      * Convenience method that automatically includes bucket and index names
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      * @param options - Query options (bucket and index names automatically set)
+      * @returns Promise with response containing matches array of similar vectors ordered by distance or error
+      *
+      * @example Query similar vectors
+      * ```typescript
+      * const index = supabase.storage.vectors.from('embeddings-prod').index('documents-openai')
+      * const { data } = await index.queryVectors({
+      *   queryVector: { float32: [0.1, 0.2, ...] },
+      *   topK: 5,
+      *   filter: { category: 'technical' },
+      *   returnDistance: true,
+      *   returnMetadata: true
+      * })
+      * ```
+      */
+      async queryVectors(options) {
+        var _superprop_getQueryVectors = () => super.queryVectors, _this12 = this;
+        return _superprop_getQueryVectors().call(_this12, _objectSpread22(_objectSpread22({}, options), {}, {
+          vectorBucketName: _this12.vectorBucketName,
+          indexName: _this12.indexName
+        }));
+      }
+      /**
+      *
+      * @alpha
+      *
+      * Deletes vectors by keys from this index
+      * Convenience method that automatically includes bucket and index names
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      * @param options - Deletion options (bucket and index names automatically set)
+      * @returns Promise with empty response on success or error
+      *
+      * @example Delete vectors by keys
+      * ```typescript
+      * const index = supabase.storage.vectors.from('embeddings-prod').index('documents-openai')
+      * await index.deleteVectors({
+      *   keys: ['doc-1', 'doc-2', 'doc-3']
+      * })
+      * ```
+      */
+      async deleteVectors(options) {
+        var _superprop_getDeleteVectors = () => super.deleteVectors, _this13 = this;
+        return _superprop_getDeleteVectors().call(_this13, _objectSpread22(_objectSpread22({}, options), {}, {
+          vectorBucketName: _this13.vectorBucketName,
+          indexName: _this13.indexName
+        }));
+      }
+    };
+    StorageClient = class extends StorageBucketApi {
+      /**
+      * Creates a client for Storage buckets, files, analytics, and vectors.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      *
+      * @example Using supabase-js (recommended)
+      * ```ts
+      * import { createClient } from '@supabase/supabase-js'
+      *
+      * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
+      * const avatars = supabase.storage.from('avatars')
+      * ```
+      *
+      * @example Standalone import for bundle-sensitive environments
+      * ```ts
+      * import { StorageClient } from '@supabase/storage-js'
+      *
+      * const storage = new StorageClient('https://xyzcompany.supabase.co/storage/v1', {
+      *   apikey: 'your-publishable-key',
+      * })
+      * const avatars = storage.from('avatars')
+      * ```
+      */
+      constructor(url, headers = {}, fetch$1, opts) {
+        super(url, headers, fetch$1, opts);
+      }
+      /**
+      * Perform file operation in a bucket.
+      *
+      * @category Storage
+      * @subcategory File Buckets
+      *
+      * @param id The bucket id to operate on.
+      *
+      * @example Accessing a bucket
+      * ```typescript
+      * const avatars = supabase.storage.from('avatars')
+      * ```
+      */
+      from(id) {
+        return new StorageFileApi(this.url, this.headers, id, this.fetch);
+      }
+      /**
+      *
+      * @alpha
+      *
+      * Access vector storage operations.
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Vector Buckets
+      *
+      * @returns A StorageVectorsClient instance configured with the current storage settings.
+      */
+      get vectors() {
+        return new StorageVectorsClient(this.url + "/vector", {
+          headers: this.headers,
+          fetch: this.fetch
+        });
+      }
+      /**
+      *
+      * @alpha
+      *
+      * Access analytics storage operations using Iceberg tables.
+      *
+      * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
+      *
+      * @category Storage
+      * @subcategory Analytics Buckets
+      *
+      * @returns A StorageAnalyticsClient instance configured with the current storage settings.
+      */
+      get analytics() {
+        return new StorageAnalyticsClient(this.url + "/iceberg", this.headers, this.fetch);
+      }
+    };
   }
 });
 
@@ -41635,154 +49885,984 @@ var require_main3 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/@ioredis+commands@1.10.0/node_modules/@ioredis/commands/built/commands.json
+// ../../node_modules/.pnpm/@supabase+supabase-js@2.107.0/node_modules/@supabase/supabase-js/dist/index.mjs
+var dist_exports = {};
+__export(dist_exports, {
+  FunctionRegion: () => import_functions_js.FunctionRegion,
+  FunctionsError: () => import_functions_js.FunctionsError,
+  FunctionsFetchError: () => import_functions_js.FunctionsFetchError,
+  FunctionsHttpError: () => import_functions_js.FunctionsHttpError,
+  FunctionsRelayError: () => import_functions_js.FunctionsRelayError,
+  PostgrestError: () => PostgrestError,
+  StorageApiError: () => StorageApiError,
+  SupabaseClient: () => SupabaseClient,
+  createClient: () => createClient
+});
+function __awaiter2(thisArg, _arguments, P, generator) {
+  function adopt(value) {
+    return value instanceof P ? value : new P(function(resolve) {
+      resolve(value);
+    });
+  }
+  return new (P || (P = Promise))(function(resolve, reject) {
+    function fulfilled(value) {
+      try {
+        step(generator.next(value));
+      } catch (e) {
+        reject(e);
+      }
+    }
+    function rejected(value) {
+      try {
+        step(generator["throw"](value));
+      } catch (e) {
+        reject(e);
+      }
+    }
+    function step(result) {
+      result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected);
+    }
+    step((generator = generator.apply(thisArg, _arguments || [])).next());
+  });
+}
+function loadOtel() {
+  if (otelModulePromise === null) otelModulePromise = import(
+    /* webpackIgnore: true */
+    /* turbopackIgnore: true */
+    /* @vite-ignore */
+    OTEL_PKG
+  ).catch(() => null);
+  return otelModulePromise;
+}
+function extractTraceContext() {
+  return __awaiter2(this, void 0, void 0, function* () {
+    try {
+      const otel = yield loadOtel();
+      if (!otel || !otel.propagation || !otel.context) return null;
+      const carrier = {};
+      otel.propagation.inject(otel.context.active(), carrier);
+      const traceparent = carrier["traceparent"];
+      if (!traceparent) return null;
+      return {
+        traceparent,
+        tracestate: carrier["tracestate"],
+        baggage: carrier["baggage"]
+      };
+    } catch (_a) {
+      return null;
+    }
+  });
+}
+function parseTraceParent(traceparent) {
+  if (!traceparent || typeof traceparent !== "string") return null;
+  const parts = traceparent.split("-");
+  if (parts.length !== 4) return null;
+  const [version$1, traceId, parentId, traceFlags] = parts;
+  if (version$1.length !== 2 || traceId.length !== 32 || parentId.length !== 16 || traceFlags.length !== 2) return null;
+  const hexRegex = /^[0-9a-f]+$/i;
+  if (!hexRegex.test(version$1) || !hexRegex.test(traceId) || !hexRegex.test(parentId) || !hexRegex.test(traceFlags)) return null;
+  if (traceId === "00000000000000000000000000000000" || parentId === "0000000000000000") return null;
+  return {
+    version: version$1,
+    traceId,
+    parentId,
+    traceFlags,
+    isSampled: (parseInt(traceFlags, 16) & 1) === 1
+  };
+}
+function shouldPropagateToTarget(targetUrl, targets) {
+  if (!targetUrl || !targets || targets.length === 0) return false;
+  let url;
+  if (targetUrl instanceof URL) url = targetUrl;
+  else try {
+    url = new URL(targetUrl);
+  } catch (error) {
+    return false;
+  }
+  for (const target of targets) try {
+    if (typeof target === "string") {
+      if (matchStringTarget(url.hostname, target)) return true;
+    } else if (target instanceof RegExp) {
+      if (target.test(url.hostname)) return true;
+    } else if (typeof target === "function") {
+      if (target(url)) return true;
+    }
+  } catch (error) {
+    continue;
+  }
+  return false;
+}
+function matchStringTarget(hostname, target) {
+  if (target === hostname) return true;
+  if (target.startsWith("*.")) {
+    const domain = target.slice(2);
+    if (hostname.endsWith(domain)) {
+      if (hostname === domain || hostname.endsWith("." + domain)) return true;
+    }
+  }
+  return false;
+}
+function getDefaultPropagationTargets(supabaseUrl2) {
+  const targets = [];
+  try {
+    const url = new URL(supabaseUrl2);
+    targets.push(url.hostname);
+  } catch (error) {
+  }
+  targets.push("*.supabase.co", "*.supabase.in");
+  targets.push("localhost", "127.0.0.1", "[::1]");
+  return targets;
+}
+function _typeof3(o) {
+  "@babel/helpers - typeof";
+  return _typeof3 = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function(o$1) {
+    return typeof o$1;
+  } : function(o$1) {
+    return o$1 && "function" == typeof Symbol && o$1.constructor === Symbol && o$1 !== Symbol.prototype ? "symbol" : typeof o$1;
+  }, _typeof3(o);
+}
+function toPrimitive3(t, r) {
+  if ("object" != _typeof3(t) || !t) return t;
+  var e = t[Symbol.toPrimitive];
+  if (void 0 !== e) {
+    var i = e.call(t, r || "default");
+    if ("object" != _typeof3(i)) return i;
+    throw new TypeError("@@toPrimitive must return a primitive value.");
+  }
+  return ("string" === r ? String : Number)(t);
+}
+function toPropertyKey3(t) {
+  var i = toPrimitive3(t, "string");
+  return "symbol" == _typeof3(i) ? i : i + "";
+}
+function _defineProperty3(e, r, t) {
+  return (r = toPropertyKey3(r)) in e ? Object.defineProperty(e, r, {
+    value: t,
+    enumerable: true,
+    configurable: true,
+    writable: true
+  }) : e[r] = t, e;
+}
+function ownKeys4(e, r) {
+  var t = Object.keys(e);
+  if (Object.getOwnPropertySymbols) {
+    var o = Object.getOwnPropertySymbols(e);
+    r && (o = o.filter(function(r$1) {
+      return Object.getOwnPropertyDescriptor(e, r$1).enumerable;
+    })), t.push.apply(t, o);
+  }
+  return t;
+}
+function _objectSpread23(e) {
+  for (var r = 1; r < arguments.length; r++) {
+    var t = null != arguments[r] ? arguments[r] : {};
+    r % 2 ? ownKeys4(Object(t), true).forEach(function(r$1) {
+      _defineProperty3(e, r$1, t[r$1]);
+    }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys4(Object(t)).forEach(function(r$1) {
+      Object.defineProperty(e, r$1, Object.getOwnPropertyDescriptor(t, r$1));
+    });
+  }
+  return e;
+}
+async function getTraceHeaders(input, targets, respectSampling) {
+  if (!shouldPropagateToTarget(typeof input === "string" ? input : input instanceof URL ? input : input.url, targets)) return null;
+  const traceContext = await extractTraceContext();
+  if (!traceContext || !traceContext.traceparent) return null;
+  if (respectSampling) {
+    const parsed = parseTraceParent(traceContext.traceparent);
+    if (parsed && !parsed.isSampled) return null;
+  }
+  return traceContext;
+}
+function normalizeTracePropagation(value) {
+  return typeof value === "boolean" ? { enabled: value } : value;
+}
+function ensureTrailingSlash(url) {
+  return url.endsWith("/") ? url : url + "/";
+}
+function applySettingDefaults(options, defaults) {
+  var _DEFAULT_GLOBAL_OPTIO, _globalOptions$header, _ref, _tracePropagationOpti, _ref2, _tracePropagationOpti2;
+  const { db: dbOptions, auth: authOptions, realtime: realtimeOptions, global: globalOptions } = options;
+  const { db: DEFAULT_DB_OPTIONS$1, auth: DEFAULT_AUTH_OPTIONS$1, realtime: DEFAULT_REALTIME_OPTIONS$1, global: DEFAULT_GLOBAL_OPTIONS$1 } = defaults;
+  const tracePropagationOptions = normalizeTracePropagation(options.tracePropagation);
+  const DEFAULT_TRACE_PROPAGATION_OPTIONS$1 = normalizeTracePropagation(defaults.tracePropagation);
+  const result = {
+    db: _objectSpread23(_objectSpread23({}, DEFAULT_DB_OPTIONS$1), dbOptions),
+    auth: _objectSpread23(_objectSpread23({}, DEFAULT_AUTH_OPTIONS$1), authOptions),
+    realtime: _objectSpread23(_objectSpread23({}, DEFAULT_REALTIME_OPTIONS$1), realtimeOptions),
+    storage: {},
+    global: _objectSpread23(_objectSpread23(_objectSpread23({}, DEFAULT_GLOBAL_OPTIONS$1), globalOptions), {}, { headers: _objectSpread23(_objectSpread23({}, (_DEFAULT_GLOBAL_OPTIO = DEFAULT_GLOBAL_OPTIONS$1 === null || DEFAULT_GLOBAL_OPTIONS$1 === void 0 ? void 0 : DEFAULT_GLOBAL_OPTIONS$1.headers) !== null && _DEFAULT_GLOBAL_OPTIO !== void 0 ? _DEFAULT_GLOBAL_OPTIO : {}), (_globalOptions$header = globalOptions === null || globalOptions === void 0 ? void 0 : globalOptions.headers) !== null && _globalOptions$header !== void 0 ? _globalOptions$header : {}) }),
+    tracePropagation: {
+      enabled: (_ref = (_tracePropagationOpti = tracePropagationOptions === null || tracePropagationOptions === void 0 ? void 0 : tracePropagationOptions.enabled) !== null && _tracePropagationOpti !== void 0 ? _tracePropagationOpti : DEFAULT_TRACE_PROPAGATION_OPTIONS$1 === null || DEFAULT_TRACE_PROPAGATION_OPTIONS$1 === void 0 ? void 0 : DEFAULT_TRACE_PROPAGATION_OPTIONS$1.enabled) !== null && _ref !== void 0 ? _ref : false,
+      respectSamplingDecision: (_ref2 = (_tracePropagationOpti2 = tracePropagationOptions === null || tracePropagationOptions === void 0 ? void 0 : tracePropagationOptions.respectSamplingDecision) !== null && _tracePropagationOpti2 !== void 0 ? _tracePropagationOpti2 : DEFAULT_TRACE_PROPAGATION_OPTIONS$1 === null || DEFAULT_TRACE_PROPAGATION_OPTIONS$1 === void 0 ? void 0 : DEFAULT_TRACE_PROPAGATION_OPTIONS$1.respectSamplingDecision) !== null && _ref2 !== void 0 ? _ref2 : true
+    },
+    accessToken: async () => ""
+  };
+  if (options.accessToken) result.accessToken = options.accessToken;
+  else delete result.accessToken;
+  return result;
+}
+function validateSupabaseUrl(supabaseUrl2) {
+  const trimmedUrl = supabaseUrl2 === null || supabaseUrl2 === void 0 ? void 0 : supabaseUrl2.trim();
+  if (!trimmedUrl) throw new Error("supabaseUrl is required.");
+  if (!trimmedUrl.match(/^https?:\/\//i)) throw new Error("Invalid supabaseUrl: Must be a valid HTTP or HTTPS URL.");
+  try {
+    return new URL(ensureTrailingSlash(trimmedUrl));
+  } catch (_unused) {
+    throw Error("Invalid supabaseUrl: Provided URL is malformed.");
+  }
+}
+function shouldShowDeprecationWarning() {
+  if (typeof window !== "undefined") return false;
+  const _process = globalThis["process"];
+  if (!_process) return false;
+  const processVersion = _process["version"];
+  if (processVersion === void 0 || processVersion === null) return false;
+  const versionMatch = processVersion.match(/^v(\d+)\./);
+  if (!versionMatch) return false;
+  return parseInt(versionMatch[1], 10) <= 18;
+}
+var import_functions_js, import_realtime_js, import_auth_js, version2, JS_ENV, JS_RUNTIME_VERSION, _Deno$version, _process$version, _runtimeMeta, DEFAULT_HEADERS2, DEFAULT_GLOBAL_OPTIONS, DEFAULT_DB_OPTIONS, DEFAULT_AUTH_OPTIONS, DEFAULT_REALTIME_OPTIONS, DEFAULT_TRACE_PROPAGATION_OPTIONS, otelModulePromise, OTEL_PKG, resolveFetch2, resolveHeadersConstructor, fetchWithAuth, SupabaseAuthClient, SupabaseClient, createClient;
+var init_dist4 = __esm({
+  "../../node_modules/.pnpm/@supabase+supabase-js@2.107.0/node_modules/@supabase/supabase-js/dist/index.mjs"() {
+    import_functions_js = __toESM(require_main(), 1);
+    init_dist();
+    import_realtime_js = __toESM(require_main2(), 1);
+    init_dist3();
+    import_auth_js = __toESM(require_main3(), 1);
+    __reExport(dist_exports, __toESM(require_main2(), 1));
+    __reExport(dist_exports, __toESM(require_main3(), 1));
+    version2 = "2.107.0";
+    JS_ENV = "";
+    if (typeof Deno !== "undefined") {
+      JS_ENV = "deno";
+      JS_RUNTIME_VERSION = (_Deno$version = Deno.version) === null || _Deno$version === void 0 ? void 0 : _Deno$version.deno;
+    } else if (typeof document !== "undefined") JS_ENV = "web";
+    else if (typeof navigator !== "undefined" && navigator.product === "ReactNative") JS_ENV = "react-native";
+    else {
+      JS_ENV = "node";
+      JS_RUNTIME_VERSION = typeof process !== "undefined" ? (_process$version = process.version) === null || _process$version === void 0 ? void 0 : _process$version.replace(/^v/, "") : void 0;
+    }
+    _runtimeMeta = [`runtime=${JS_ENV}`];
+    if (JS_RUNTIME_VERSION) _runtimeMeta.push(`runtime-version=${JS_RUNTIME_VERSION}`);
+    DEFAULT_HEADERS2 = { "X-Client-Info": `supabase-js/${version2}; ${_runtimeMeta.join("; ")}` };
+    DEFAULT_GLOBAL_OPTIONS = { headers: DEFAULT_HEADERS2 };
+    DEFAULT_DB_OPTIONS = { schema: "public" };
+    DEFAULT_AUTH_OPTIONS = {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true,
+      flowType: "implicit"
+    };
+    DEFAULT_REALTIME_OPTIONS = {};
+    DEFAULT_TRACE_PROPAGATION_OPTIONS = {
+      enabled: false,
+      respectSamplingDecision: true
+    };
+    otelModulePromise = null;
+    OTEL_PKG = "@opentelemetry/api";
+    resolveFetch2 = (customFetch) => {
+      if (customFetch) return (...args) => customFetch(...args);
+      return (...args) => fetch(...args);
+    };
+    resolveHeadersConstructor = () => {
+      return Headers;
+    };
+    fetchWithAuth = (supabaseKey2, supabaseUrl2, getAccessToken, customFetch, tracePropagationOptions) => {
+      const fetch$1 = resolveFetch2(customFetch);
+      const HeadersConstructor = resolveHeadersConstructor();
+      const traceEnabled = (tracePropagationOptions === null || tracePropagationOptions === void 0 ? void 0 : tracePropagationOptions.enabled) === true;
+      const respectSampling = (tracePropagationOptions === null || tracePropagationOptions === void 0 ? void 0 : tracePropagationOptions.respectSamplingDecision) !== false;
+      const traceTargets = traceEnabled ? getDefaultPropagationTargets(supabaseUrl2) : null;
+      return async (input, init) => {
+        var _await$getAccessToken;
+        const accessToken = (_await$getAccessToken = await getAccessToken()) !== null && _await$getAccessToken !== void 0 ? _await$getAccessToken : supabaseKey2;
+        let headers = new HeadersConstructor(init === null || init === void 0 ? void 0 : init.headers);
+        if (!headers.has("apikey")) headers.set("apikey", supabaseKey2);
+        if (!headers.has("Authorization")) headers.set("Authorization", `Bearer ${accessToken}`);
+        if (traceTargets) {
+          const traceHeaders = await getTraceHeaders(input, traceTargets, respectSampling);
+          if (traceHeaders) {
+            if (traceHeaders.traceparent && !headers.has("traceparent")) headers.set("traceparent", traceHeaders.traceparent);
+            if (traceHeaders.tracestate && !headers.has("tracestate")) headers.set("tracestate", traceHeaders.tracestate);
+            if (traceHeaders.baggage && !headers.has("baggage")) headers.set("baggage", traceHeaders.baggage);
+          }
+        }
+        return fetch$1(input, _objectSpread23(_objectSpread23({}, init), {}, { headers }));
+      };
+    };
+    SupabaseAuthClient = class extends import_auth_js.AuthClient {
+      constructor(options) {
+        super(options);
+      }
+    };
+    SupabaseClient = class {
+      /**
+      * Create a new client for use in the browser.
+      *
+      * @category Initializing
+      *
+      * @param supabaseUrl The unique Supabase URL which is supplied when you create a new project in your project dashboard.
+      * @param supabaseKey The unique Supabase Key which is supplied when you create a new project in your project dashboard.
+      * @param options.db.schema You can switch in between schemas. The schema needs to be on the list of exposed schemas inside Supabase.
+      * @param options.auth.autoRefreshToken Set to "true" if you want to automatically refresh the token before expiring.
+      * @param options.auth.persistSession Set to "true" if you want to automatically save the user session into local storage.
+      * @param options.auth.detectSessionInUrl Set to "true" if you want to automatically detects OAuth grants in the URL and signs in the user.
+      * @param options.realtime Options passed along to realtime-js constructor.
+      * @param options.storage Options passed along to the storage-js constructor.
+      * @param options.global.fetch A custom fetch implementation.
+      * @param options.global.headers Any additional headers to send with each network request.
+      *
+      * @example Creating a client
+      * ```js
+      * import { createClient } from '@supabase/supabase-js'
+      *
+      * // Create a single supabase client for interacting with your database
+      * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
+      * ```
+      *
+      * @example With a custom domain
+      * ```js
+      * import { createClient } from '@supabase/supabase-js'
+      *
+      * // Use a custom domain as the supabase URL
+      * const supabase = createClient('https://my-custom-domain.com', 'your-publishable-key')
+      * ```
+      *
+      * @example With additional parameters
+      * ```js
+      * import { createClient } from '@supabase/supabase-js'
+      *
+      * const options = {
+      *   db: {
+      *     schema: 'public',
+      *   },
+      *   auth: {
+      *     autoRefreshToken: true,
+      *     persistSession: true,
+      *     detectSessionInUrl: true
+      *   },
+      *   global: {
+      *     headers: { 'x-my-custom-header': 'my-app-name' },
+      *   },
+      * }
+      * const supabase = createClient("https://xyzcompany.supabase.co", "your-publishable-key", options)
+      * ```
+      *
+      * @exampleDescription With custom schemas
+      * By default the API server points to the `public` schema. You can enable other database schemas within the Dashboard.
+      * Go to [Settings > API > Exposed schemas](/dashboard/project/_/settings/api) and add the schema which you want to expose to the API.
+      *
+      * Note: each client connection can only access a single schema, so the code above can access the `other_schema` schema but cannot access the `public` schema.
+      *
+      * @example With custom schemas
+      * ```js
+      * import { createClient } from '@supabase/supabase-js'
+      *
+      * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key', {
+      *   // Provide a custom schema. Defaults to "public".
+      *   db: { schema: 'other_schema' }
+      * })
+      * ```
+      *
+      * @exampleDescription Custom fetch implementation
+      * `supabase-js` uses the [`cross-fetch`](https://www.npmjs.com/package/cross-fetch) library to make HTTP requests,
+      * but an alternative `fetch` implementation can be provided as an option.
+      * This is most useful in environments where `cross-fetch` is not compatible (for instance Cloudflare Workers).
+      *
+      * @example Custom fetch implementation
+      * ```js
+      * import { createClient } from '@supabase/supabase-js'
+      *
+      * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key', {
+      *   global: { fetch: fetch.bind(globalThis) }
+      * })
+      * ```
+      *
+      * @exampleDescription React Native options with AsyncStorage
+      * For React Native we recommend using `AsyncStorage` as the storage implementation for Supabase Auth.
+      *
+      * @example React Native options with AsyncStorage
+      * ```js
+      * import 'react-native-url-polyfill/auto'
+      * import { createClient } from '@supabase/supabase-js'
+      * import AsyncStorage from "@react-native-async-storage/async-storage";
+      *
+      * const supabase = createClient("https://xyzcompany.supabase.co", "your-publishable-key", {
+      *   auth: {
+      *     storage: AsyncStorage,
+      *     autoRefreshToken: true,
+      *     persistSession: true,
+      *     detectSessionInUrl: false,
+      *   },
+      * });
+      * ```
+      *
+      * @exampleDescription React Native options with Expo SecureStore
+      * If you wish to encrypt the user's session information, you can use `aes-js` and store the encryption key in Expo SecureStore.
+      * The `aes-js` library, a reputable JavaScript-only implementation of the AES encryption algorithm in CTR mode.
+      * A new 256-bit encryption key is generated using the `react-native-get-random-values` library.
+      * This key is stored inside Expo's SecureStore, while the value is encrypted and placed inside AsyncStorage.
+      *
+      * Please make sure that:
+      * - You keep the `expo-secure-store`, `aes-js` and `react-native-get-random-values` libraries up-to-date.
+      * - Choose the correct [`SecureStoreOptions`](https://docs.expo.dev/versions/latest/sdk/securestore/#securestoreoptions) for your app's needs.
+      *   E.g. [`SecureStore.WHEN_UNLOCKED`](https://docs.expo.dev/versions/latest/sdk/securestore/#securestorewhen_unlocked) regulates when the data can be accessed.
+      * - Carefully consider optimizations or other modifications to the above example, as those can lead to introducing subtle security vulnerabilities.
+      *
+      * @example React Native options with Expo SecureStore
+      * ```ts
+      * import 'react-native-url-polyfill/auto'
+      * import { createClient } from '@supabase/supabase-js'
+      * import AsyncStorage from '@react-native-async-storage/async-storage';
+      * import * as SecureStore from 'expo-secure-store';
+      * import * as aesjs from 'aes-js';
+      * import 'react-native-get-random-values';
+      *
+      * // As Expo's SecureStore does not support values larger than 2048
+      * // bytes, an AES-256 key is generated and stored in SecureStore, while
+      * // it is used to encrypt/decrypt values stored in AsyncStorage.
+      * class LargeSecureStore {
+      *   private async _encrypt(key: string, value: string) {
+      *     const encryptionKey = crypto.getRandomValues(new Uint8Array(256 / 8));
+      *
+      *     const cipher = new aesjs.ModeOfOperation.ctr(encryptionKey, new aesjs.Counter(1));
+      *     const encryptedBytes = cipher.encrypt(aesjs.utils.utf8.toBytes(value));
+      *
+      *     await SecureStore.setItemAsync(key, aesjs.utils.hex.fromBytes(encryptionKey));
+      *
+      *     return aesjs.utils.hex.fromBytes(encryptedBytes);
+      *   }
+      *
+      *   private async _decrypt(key: string, value: string) {
+      *     const encryptionKeyHex = await SecureStore.getItemAsync(key);
+      *     if (!encryptionKeyHex) {
+      *       return encryptionKeyHex;
+      *     }
+      *
+      *     const cipher = new aesjs.ModeOfOperation.ctr(aesjs.utils.hex.toBytes(encryptionKeyHex), new aesjs.Counter(1));
+      *     const decryptedBytes = cipher.decrypt(aesjs.utils.hex.toBytes(value));
+      *
+      *     return aesjs.utils.utf8.fromBytes(decryptedBytes);
+      *   }
+      *
+      *   async getItem(key: string) {
+      *     const encrypted = await AsyncStorage.getItem(key);
+      *     if (!encrypted) { return encrypted; }
+      *
+      *     return await this._decrypt(key, encrypted);
+      *   }
+      *
+      *   async removeItem(key: string) {
+      *     await AsyncStorage.removeItem(key);
+      *     await SecureStore.deleteItemAsync(key);
+      *   }
+      *
+      *   async setItem(key: string, value: string) {
+      *     const encrypted = await this._encrypt(key, value);
+      *
+      *     await AsyncStorage.setItem(key, encrypted);
+      *   }
+      * }
+      *
+      * const supabase = createClient("https://xyzcompany.supabase.co", "your-publishable-key", {
+      *   auth: {
+      *     storage: new LargeSecureStore(),
+      *     autoRefreshToken: true,
+      *     persistSession: true,
+      *     detectSessionInUrl: false,
+      *   },
+      * });
+      * ```
+      *
+      * @example With a database query
+      * ```ts
+      * import { createClient } from '@supabase/supabase-js'
+      *
+      * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
+      *
+      * const { data } = await supabase.from('profiles').select('*')
+      * ```
+      *
+      * @exampleDescription With OpenTelemetry tracing
+      * Opt in to W3C trace context propagation so the `trace_id` from your
+      * client-side spans is attached to Supabase requests and appears in API
+      * Gateway and Edge Function logs. Requires `@opentelemetry/api` to be
+      * installed in your application. See [Tracing with the JS SDK](https://supabase.com/docs/guides/telemetry/client-side-tracing).
+      *
+      * @example With OpenTelemetry tracing
+      * ```ts
+      * import { createClient } from '@supabase/supabase-js'
+      * import { trace } from '@opentelemetry/api'
+      *
+      * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key', {
+      *   tracePropagation: true,
+      * })
+      *
+      * const tracer = trace.getTracer('my-app')
+      *
+      * await tracer.startActiveSpan('fetch-users', async (span) => {
+      *   // Outgoing request carries the active trace context.
+      *   const { data, error } = await supabase.from('users').select('*')
+      *   span.end()
+      * })
+      * ```
+      */
+      constructor(supabaseUrl2, supabaseKey2, options) {
+        var _settings$auth$storag, _settings$global$head;
+        this.supabaseUrl = supabaseUrl2;
+        this.supabaseKey = supabaseKey2;
+        const baseUrl = validateSupabaseUrl(supabaseUrl2);
+        if (!supabaseKey2) throw new Error("supabaseKey is required.");
+        this.realtimeUrl = new URL("realtime/v1", baseUrl);
+        this.realtimeUrl.protocol = this.realtimeUrl.protocol.replace("http", "ws");
+        this.authUrl = new URL("auth/v1", baseUrl);
+        this.storageUrl = new URL("storage/v1", baseUrl);
+        this.functionsUrl = new URL("functions/v1", baseUrl);
+        const defaultStorageKey = `sb-${baseUrl.hostname.split(".")[0]}-auth-token`;
+        const DEFAULTS = {
+          db: DEFAULT_DB_OPTIONS,
+          realtime: DEFAULT_REALTIME_OPTIONS,
+          auth: _objectSpread23(_objectSpread23({}, DEFAULT_AUTH_OPTIONS), {}, { storageKey: defaultStorageKey }),
+          global: DEFAULT_GLOBAL_OPTIONS,
+          tracePropagation: DEFAULT_TRACE_PROPAGATION_OPTIONS
+        };
+        const settings = applySettingDefaults(options !== null && options !== void 0 ? options : {}, DEFAULTS);
+        this.settings = settings;
+        this.storageKey = (_settings$auth$storag = settings.auth.storageKey) !== null && _settings$auth$storag !== void 0 ? _settings$auth$storag : "";
+        this.headers = (_settings$global$head = settings.global.headers) !== null && _settings$global$head !== void 0 ? _settings$global$head : {};
+        if (!settings.accessToken) {
+          var _settings$auth;
+          this.auth = this._initSupabaseAuthClient((_settings$auth = settings.auth) !== null && _settings$auth !== void 0 ? _settings$auth : {}, this.headers, settings.global.fetch);
+        } else {
+          this.accessToken = settings.accessToken;
+          this.auth = new Proxy({}, { get: (_, prop) => {
+            throw new Error(`@supabase/supabase-js: Supabase Client is configured with the accessToken option, accessing supabase.auth.${String(prop)} is not possible`);
+          } });
+        }
+        this.fetch = fetchWithAuth(supabaseKey2, supabaseUrl2, this._getAccessToken.bind(this), settings.global.fetch, settings.tracePropagation);
+        this.realtime = this._initRealtimeClient(_objectSpread23({
+          headers: this.headers,
+          accessToken: this._getAccessToken.bind(this),
+          fetch: this.fetch
+        }, settings.realtime));
+        if (this.accessToken) Promise.resolve(this.accessToken()).then((token) => this.realtime.setAuth(token)).catch((e) => console.warn("Failed to set initial Realtime auth token:", e));
+        this.rest = new PostgrestClient(new URL("rest/v1", baseUrl).href, {
+          headers: this.headers,
+          schema: settings.db.schema,
+          fetch: this.fetch,
+          timeout: settings.db.timeout,
+          urlLengthLimit: settings.db.urlLengthLimit
+        });
+        this.storage = new StorageClient(this.storageUrl.href, this.headers, this.fetch, options === null || options === void 0 ? void 0 : options.storage);
+        if (!settings.accessToken) this._listenForAuthEvents();
+      }
+      /**
+      * Supabase Functions allows you to deploy and invoke edge functions.
+      */
+      get functions() {
+        return new import_functions_js.FunctionsClient(this.functionsUrl.href, {
+          headers: this.headers,
+          customFetch: this.fetch
+        });
+      }
+      /**
+      * Perform a query on a table or a view.
+      *
+      * @param relation - The table or view name to query
+      */
+      from(relation) {
+        return this.rest.from(relation);
+      }
+      /**
+      * Select a schema to query or perform an function (rpc) call.
+      *
+      * The schema needs to be on the list of exposed schemas inside Supabase.
+      *
+      * @param schema - The schema to query
+      */
+      schema(schema) {
+        return this.rest.schema(schema);
+      }
+      /**
+      * Perform a function call.
+      *
+      * @param fn - The function name to call
+      * @param args - The arguments to pass to the function call
+      * @param options - Named parameters
+      * @param options.head - When set to `true`, `data` will not be returned.
+      * Useful if you only need the count.
+      * @param options.get - When set to `true`, the function will be called with
+      * read-only access mode.
+      * @param options.count - Count algorithm to use to count rows returned by the
+      * function. Only applicable for [set-returning
+      * functions](https://www.postgresql.org/docs/current/functions-srf.html).
+      *
+      * `"exact"`: Exact but slow count algorithm. Performs a `COUNT(*)` under the
+      * hood.
+      *
+      * `"planned"`: Approximated but fast count algorithm. Uses the Postgres
+      * statistics under the hood.
+      *
+      * `"estimated"`: Uses exact count for low numbers and planned count for high
+      * numbers.
+      */
+      rpc(fn, args = {}, options = {
+        head: false,
+        get: false,
+        count: void 0
+      }) {
+        return this.rest.rpc(fn, args, options);
+      }
+      /**
+      * Creates a Realtime channel with Broadcast, Presence, and Postgres Changes.
+      *
+      * @param {string} name - The name of the Realtime channel.
+      * @param {Object} opts - The options to pass to the Realtime channel.
+      *
+      * @category Realtime
+      */
+      channel(name, opts = { config: {} }) {
+        return this.realtime.channel(name, opts);
+      }
+      /**
+      * Returns all Realtime channels.
+      *
+      * @category Realtime
+      *
+      * @example Get all channels
+      * ```js
+      * const channels = supabase.getChannels()
+      * ```
+      */
+      getChannels() {
+        return this.realtime.getChannels();
+      }
+      /**
+      * Unsubscribes and removes Realtime channel from Realtime client.
+      *
+      * @param {RealtimeChannel} channel - The name of the Realtime channel.
+      *
+      *
+      * @category Realtime
+      *
+      * @remarks
+      * - Removing a channel is a great way to maintain the performance of your project's Realtime service as well as your database if you're listening to Postgres changes. Supabase will automatically handle cleanup 30 seconds after a client is disconnected, but unused channels may cause degradation as more clients are simultaneously subscribed.
+      *
+      * @example Removes a channel
+      * ```js
+      * supabase.removeChannel(myChannel)
+      * ```
+      */
+      removeChannel(channel) {
+        return this.realtime.removeChannel(channel);
+      }
+      /**
+      * Unsubscribes and removes all Realtime channels from Realtime client.
+      *
+      * @category Realtime
+      *
+      * @remarks
+      * - Removing channels is a great way to maintain the performance of your project's Realtime service as well as your database if you're listening to Postgres changes. Supabase will automatically handle cleanup 30 seconds after a client is disconnected, but unused channels may cause degradation as more clients are simultaneously subscribed.
+      *
+      * @example Remove all channels
+      * ```js
+      * supabase.removeAllChannels()
+      * ```
+      */
+      removeAllChannels() {
+        return this.realtime.removeAllChannels();
+      }
+      async _getAccessToken() {
+        var _this = this;
+        var _data$session$access_, _data$session;
+        if (_this.accessToken) return await _this.accessToken();
+        const { data } = await _this.auth.getSession();
+        return (_data$session$access_ = (_data$session = data.session) === null || _data$session === void 0 ? void 0 : _data$session.access_token) !== null && _data$session$access_ !== void 0 ? _data$session$access_ : _this.supabaseKey;
+      }
+      _initSupabaseAuthClient({ autoRefreshToken, persistSession, detectSessionInUrl, storage, userStorage, storageKey, flowType, lock, debug, throwOnError, experimental, lockAcquireTimeout, skipAutoInitialize }, headers, fetch$1) {
+        const authHeaders = {
+          Authorization: `Bearer ${this.supabaseKey}`,
+          apikey: `${this.supabaseKey}`
+        };
+        return new SupabaseAuthClient({
+          url: this.authUrl.href,
+          headers: _objectSpread23(_objectSpread23({}, authHeaders), headers),
+          storageKey,
+          autoRefreshToken,
+          persistSession,
+          detectSessionInUrl,
+          storage,
+          userStorage,
+          flowType,
+          lock,
+          debug,
+          throwOnError,
+          experimental,
+          fetch: fetch$1,
+          lockAcquireTimeout,
+          skipAutoInitialize,
+          hasCustomAuthorizationHeader: Object.keys(this.headers).some((key) => key.toLowerCase() === "authorization")
+        });
+      }
+      _initRealtimeClient(options) {
+        return new import_realtime_js.RealtimeClient(this.realtimeUrl.href, _objectSpread23(_objectSpread23({}, options), {}, { params: _objectSpread23(_objectSpread23({}, { apikey: this.supabaseKey }), options === null || options === void 0 ? void 0 : options.params) }));
+      }
+      _listenForAuthEvents() {
+        return this.auth.onAuthStateChange((event, session) => {
+          this._handleTokenChanged(event, "CLIENT", session === null || session === void 0 ? void 0 : session.access_token);
+        });
+      }
+      _handleTokenChanged(event, source, token) {
+        if ((event === "TOKEN_REFRESHED" || event === "SIGNED_IN") && this.changedAccessToken !== token) {
+          this.changedAccessToken = token;
+          this.realtime.setAuth(token);
+        } else if (event === "SIGNED_OUT") {
+          this.realtime.setAuth();
+          if (source == "STORAGE") this.auth.signOut();
+          this.changedAccessToken = void 0;
+        }
+      }
+    };
+    createClient = (supabaseUrl2, supabaseKey2, options) => {
+      return new SupabaseClient(supabaseUrl2, supabaseKey2, options);
+    };
+    if (shouldShowDeprecationWarning()) console.warn("\u26A0\uFE0F  Node.js 18 and below are deprecated and will no longer be supported in future versions of @supabase/supabase-js. Please upgrade to Node.js 20 or later. For more information, visit: https://github.com/orgs/supabase/discussions/37217");
+  }
+});
+
+// src/lib/supabase.ts
+var supabase_exports = {};
+__export(supabase_exports, {
+  createUserClient: () => createUserClient,
+  fetchAll: () => fetchAll,
+  refreshSupabaseSchema: () => refreshSupabaseSchema,
+  supabase: () => supabaseProxy
+});
+function getSupabaseSync() {
+  if (_supabase) return _supabase;
+  try {
+    _supabase = createClient(supabaseUrl, supabaseKey);
+    return _supabase;
+  } catch (err) {
+    throw new Error(`Supabase client creation failed: ${String(err)}`);
+  }
+}
+function refreshSupabaseSchema() {
+  _supabase = null;
+  return getSupabaseSync();
+}
+function createUserClient(token) {
+  return createClient(supabaseUrl, supabaseKey, {
+    global: {
+      headers: { Authorization: `Bearer ${token}` }
+    },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    }
+  });
+}
+async function fetchAll(build, pageSize = 1e3) {
+  const all = [];
+  let start = 0;
+  for (; ; ) {
+    const { data, error } = await build(start, start + pageSize - 1);
+    if (error) return { data: null, error };
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < pageSize) break;
+    start += pageSize;
+  }
+  return { data: all, error: null };
+}
+var supabaseUrl, supabaseKey, _supabase, supabaseProxy;
+var init_supabase = __esm({
+  "src/lib/supabase.ts"() {
+    "use strict";
+    init_dist4();
+    supabaseUrl = process.env.SUPABASE_URL || "https://supabase.chuglii.in";
+    supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSIsICJpc3MiOiAic3VwYWJhc2UiLCAiaWF0IjogMTcwMDAwMDAwMCwgImV4cCI6IDIwMTUzNjAwMDB9.UTDwoY0L6W6nllK7FvssoFLp3qvAx60PijJyL9XHyXQ";
+    _supabase = null;
+    supabaseProxy = new Proxy({}, {
+      get(_target, prop) {
+        const client2 = getSupabaseSync();
+        return client2[prop];
+      }
+    });
+  }
+});
+
+// ../../node_modules/.pnpm/@ioredis+commands@2.0.0/node_modules/@ioredis/commands/built/commands.json
 var require_commands = __commonJS({
-  "../../node_modules/.pnpm/@ioredis+commands@1.10.0/node_modules/@ioredis/commands/built/commands.json"(exports, module) {
+  "../../node_modules/.pnpm/@ioredis+commands@2.0.0/node_modules/@ioredis/commands/built/commands.json"(exports, module) {
     module.exports = {
-      vadd: {
-        arity: -5,
-        flags: [
-          "write",
-          "denyoom",
-          "module"
-        ],
-        keyStart: 1,
-        keyStop: 1,
-        step: 1
-      },
-      vcard: {
-        arity: 2,
-        flags: [
-          "readonly",
-          "module",
-          "fast"
-        ],
-        keyStart: 1,
-        keyStop: 1,
-        step: 1
-      },
-      vdim: {
-        arity: 2,
-        flags: [
-          "readonly",
-          "module",
-          "fast"
-        ],
-        keyStart: 1,
-        keyStop: 1,
-        step: 1
-      },
-      vemb: {
-        arity: -3,
-        flags: [
-          "readonly",
-          "module",
-          "fast"
-        ],
-        keyStart: 1,
-        keyStop: 1,
-        step: 1
-      },
-      vgetattr: {
-        arity: 3,
-        flags: [
-          "readonly",
-          "module",
-          "fast"
-        ],
-        keyStart: 1,
-        keyStop: 1,
-        step: 1
-      },
-      vinfo: {
-        arity: 2,
-        flags: [
-          "readonly",
-          "module",
-          "fast"
-        ],
-        keyStart: 1,
-        keyStop: 1,
-        step: 1
-      },
-      vismember: {
-        arity: 3,
-        flags: [
-          "readonly",
-          "module"
-        ],
-        keyStart: 1,
-        keyStop: 1,
-        step: 1
-      },
-      vlinks: {
-        arity: -3,
-        flags: [
-          "readonly",
-          "module",
-          "fast"
-        ],
-        keyStart: 1,
-        keyStop: 1,
-        step: 1
-      },
-      vrandmember: {
-        arity: -2,
-        flags: [
-          "readonly",
-          "module"
-        ],
-        keyStart: 1,
-        keyStop: 1,
-        step: 1
-      },
-      vrange: {
-        arity: -4,
-        flags: [
-          "readonly",
-          "module"
-        ],
-        keyStart: 1,
-        keyStop: 1,
-        step: 1
-      },
-      vrem: {
-        arity: 3,
-        flags: [
-          "write",
-          "module"
-        ],
-        keyStart: 1,
-        keyStop: 1,
-        step: 1
-      },
-      vsetattr: {
-        arity: 4,
-        flags: [
-          "write",
-          "module",
-          "fast"
-        ],
-        keyStart: 1,
-        keyStop: 1,
-        step: 1
-      },
-      vsim: {
-        arity: -4,
-        flags: [
-          "readonly",
-          "module"
-        ],
-        keyStart: 1,
-        keyStop: 1,
-        step: 1
-      },
       acl: {
         arity: -2,
         flags: [],
         keyStart: 0,
         keyStop: 0,
-        step: 0
+        step: 0,
+        subcommands: {
+          cat: {
+            arity: -2,
+            flags: [
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          deluser: {
+            arity: -3,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            responsePolicy: "all_succeeded",
+            step: 0
+          },
+          dryrun: {
+            arity: -4,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          genpass: {
+            arity: -2,
+            flags: [
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          getuser: {
+            arity: 3,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          help: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          list: {
+            arity: 2,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          load: {
+            arity: 2,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          log: {
+            arity: -2,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          save: {
+            arity: 2,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            responsePolicy: "all_succeeded",
+            step: 0
+          },
+          setuser: {
+            arity: -3,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            responsePolicy: "all_succeeded",
+            step: 0
+          },
+          users: {
+            arity: 2,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          whoami: {
+            arity: 2,
+            flags: [
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          }
+        }
       },
       append: {
         arity: 3,
@@ -41994,6 +51074,85 @@ var require_commands = __commonJS({
         keyStop: 0,
         step: 0
       },
+      backup: {
+        arity: 2,
+        flags: [],
+        keyStart: 0,
+        keyStop: 0,
+        step: 0,
+        subcommands: {
+          abort: {
+            arity: 2,
+            flags: [
+              "admin",
+              "noscript"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          cleanup: {
+            arity: 2,
+            flags: [
+              "admin",
+              "noscript"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          help: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          list: {
+            arity: 2,
+            flags: [
+              "admin",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          seal: {
+            arity: 2,
+            flags: [
+              "admin",
+              "noscript"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          start: {
+            arity: 2,
+            flags: [
+              "admin",
+              "noscript"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          status: {
+            arity: 2,
+            flags: [
+              "admin",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          }
+        }
+      },
       bgrewriteaof: {
         arity: 1,
         flags: [
@@ -42069,7 +51228,17 @@ var require_commands = __commonJS({
         flags: [
           "write",
           "denyoom",
-          "noscript",
+          "blocking"
+        ],
+        keyStart: 1,
+        keyStop: 2,
+        step: 1
+      },
+      blmovem: {
+        arity: -6,
+        flags: [
+          "write",
+          "denyoom",
           "blocking"
         ],
         keyStart: 1,
@@ -42091,7 +51260,6 @@ var require_commands = __commonJS({
         arity: -3,
         flags: [
           "write",
-          "noscript",
           "blocking"
         ],
         keyStart: 1,
@@ -42102,7 +51270,6 @@ var require_commands = __commonJS({
         arity: -3,
         flags: [
           "write",
-          "noscript",
           "blocking"
         ],
         keyStart: 1,
@@ -42114,7 +51281,6 @@ var require_commands = __commonJS({
         flags: [
           "write",
           "denyoom",
-          "noscript",
           "blocking"
         ],
         keyStart: 1,
@@ -42136,7 +51302,6 @@ var require_commands = __commonJS({
         arity: -3,
         flags: [
           "write",
-          "noscript",
           "blocking",
           "fast"
         ],
@@ -42148,7 +51313,6 @@ var require_commands = __commonJS({
         arity: -3,
         flags: [
           "write",
-          "noscript",
           "blocking",
           "fast"
         ],
@@ -42161,14 +51325,553 @@ var require_commands = __commonJS({
         flags: [],
         keyStart: 0,
         keyStop: 0,
-        step: 0
+        step: 0,
+        subcommands: {
+          caching: {
+            arity: 3,
+            flags: [
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          getname: {
+            arity: 2,
+            flags: [
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          getredir: {
+            arity: 2,
+            flags: [
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          help: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          id: {
+            arity: 2,
+            flags: [
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          info: {
+            arity: 2,
+            flags: [
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          kill: {
+            arity: -3,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          list: {
+            arity: -2,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          "no-evict": {
+            arity: 3,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          "no-touch": {
+            arity: 3,
+            flags: [
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          pause: {
+            arity: -3,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          reply: {
+            arity: 3,
+            flags: [
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          setinfo: {
+            arity: 4,
+            flags: [
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            responsePolicy: "all_succeeded",
+            step: 0
+          },
+          setname: {
+            arity: 3,
+            flags: [
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            responsePolicy: "all_succeeded",
+            step: 0
+          },
+          tracking: {
+            arity: -3,
+            flags: [
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          trackinginfo: {
+            arity: 2,
+            flags: [
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          unblock: {
+            arity: -3,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          unpause: {
+            arity: 2,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          }
+        }
       },
       cluster: {
         arity: -2,
         flags: [],
         keyStart: 0,
         keyStop: 0,
-        step: 0
+        step: 0,
+        subcommands: {
+          addslots: {
+            arity: -3,
+            flags: [
+              "admin",
+              "stale",
+              "no_async_loading"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          addslotsrange: {
+            arity: -4,
+            flags: [
+              "admin",
+              "stale",
+              "no_async_loading"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          bumpepoch: {
+            arity: 2,
+            flags: [
+              "admin",
+              "stale",
+              "no_async_loading"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          "count-failure-reports": {
+            arity: 3,
+            flags: [
+              "admin",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          countkeysinslot: {
+            arity: 3,
+            flags: [
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          delslots: {
+            arity: -3,
+            flags: [
+              "admin",
+              "stale",
+              "no_async_loading"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          delslotsrange: {
+            arity: -4,
+            flags: [
+              "admin",
+              "stale",
+              "no_async_loading"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          failover: {
+            arity: -2,
+            flags: [
+              "admin",
+              "stale",
+              "no_async_loading"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          flushslots: {
+            arity: 2,
+            flags: [
+              "admin",
+              "stale",
+              "no_async_loading"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          forget: {
+            arity: 3,
+            flags: [
+              "admin",
+              "stale",
+              "no_async_loading"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          getkeysinslot: {
+            arity: 4,
+            flags: [
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          help: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          info: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          keyslot: {
+            arity: 3,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          links: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          meet: {
+            arity: -4,
+            flags: [
+              "admin",
+              "stale",
+              "no_async_loading"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          migration: {
+            arity: -4,
+            flags: [
+              "admin",
+              "stale",
+              "no_async_loading"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          myid: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          myshardid: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          nodes: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          replicas: {
+            arity: 3,
+            flags: [
+              "admin",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          replicate: {
+            arity: 3,
+            flags: [
+              "admin",
+              "stale",
+              "no_async_loading"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          reset: {
+            arity: -2,
+            flags: [
+              "admin",
+              "noscript",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          saveconfig: {
+            arity: 2,
+            flags: [
+              "admin",
+              "stale",
+              "no_async_loading"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          "set-config-epoch": {
+            arity: 3,
+            flags: [
+              "admin",
+              "stale",
+              "no_async_loading"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          setslot: {
+            arity: -4,
+            flags: [
+              "admin",
+              "stale",
+              "no_async_loading"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          shards: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          slaves: {
+            arity: 3,
+            flags: [
+              "admin",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          "slot-stats": {
+            arity: -4,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_shards",
+            step: 0
+          },
+          slots: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          syncslots: {
+            arity: -3,
+            flags: [
+              "admin",
+              "stale",
+              "no_async_loading"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          }
+        }
       },
       command: {
         arity: -1,
@@ -42178,14 +51881,152 @@ var require_commands = __commonJS({
         ],
         keyStart: 0,
         keyStop: 0,
-        step: 0
+        step: 0,
+        subcommands: {
+          count: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          docs: {
+            arity: -2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          getkeys: {
+            arity: -3,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          getkeysandflags: {
+            arity: -3,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          help: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          info: {
+            arity: -2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          list: {
+            arity: -2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          }
+        }
       },
       config: {
         arity: -2,
         flags: [],
         keyStart: 0,
         keyStop: 0,
-        step: 0
+        step: 0,
+        subcommands: {
+          get: {
+            arity: -3,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          help: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          resetstat: {
+            arity: 2,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            responsePolicy: "all_succeeded",
+            step: 0
+          },
+          rewrite: {
+            arity: 2,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            responsePolicy: "all_succeeded",
+            step: 0
+          },
+          set: {
+            arity: -4,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            responsePolicy: "all_succeeded",
+            step: 0
+          }
+        }
       },
       copy: {
         arity: -3,
@@ -42205,6 +52046,8 @@ var require_commands = __commonJS({
         ],
         keyStart: 0,
         keyStop: 0,
+        requestPolicy: "all_shards",
+        responsePolicy: "agg_sum",
         step: 0
       },
       debug: {
@@ -42248,6 +52091,28 @@ var require_commands = __commonJS({
         ],
         keyStart: 1,
         keyStop: -1,
+        requestPolicy: "multi_shard",
+        responsePolicy: "agg_sum",
+        step: 1
+      },
+      delex: {
+        arity: -2,
+        flags: [
+          "write",
+          "fast"
+        ],
+        keyStart: 1,
+        keyStop: 1,
+        step: 1
+      },
+      digest: {
+        arity: 2,
+        flags: [
+          "readonly",
+          "fast"
+        ],
+        keyStart: 1,
+        keyStop: 1,
         step: 1
       },
       discard: {
@@ -42275,6 +52140,8 @@ var require_commands = __commonJS({
       echo: {
         arity: 2,
         flags: [
+          "loading",
+          "stale",
           "fast"
         ],
         keyStart: 0,
@@ -42288,7 +52155,8 @@ var require_commands = __commonJS({
           "stale",
           "skip_monitor",
           "no_mandatory_keys",
-          "movablekeys"
+          "movablekeys",
+          "script_runner"
         ],
         keyStart: 0,
         keyStop: 0,
@@ -42302,7 +52170,8 @@ var require_commands = __commonJS({
           "stale",
           "skip_monitor",
           "no_mandatory_keys",
-          "movablekeys"
+          "movablekeys",
+          "script_runner"
         ],
         keyStart: 0,
         keyStop: 0,
@@ -42315,7 +52184,8 @@ var require_commands = __commonJS({
           "stale",
           "skip_monitor",
           "no_mandatory_keys",
-          "movablekeys"
+          "movablekeys",
+          "script_runner"
         ],
         keyStart: 0,
         keyStop: 0,
@@ -42329,7 +52199,8 @@ var require_commands = __commonJS({
           "stale",
           "skip_monitor",
           "no_mandatory_keys",
-          "movablekeys"
+          "movablekeys",
+          "script_runner"
         ],
         keyStart: 0,
         keyStop: 0,
@@ -42355,6 +52226,8 @@ var require_commands = __commonJS({
         ],
         keyStart: 1,
         keyStop: -1,
+        requestPolicy: "multi_shard",
+        responsePolicy: "agg_sum",
         step: 1
       },
       expire: {
@@ -42405,7 +52278,8 @@ var require_commands = __commonJS({
           "stale",
           "skip_monitor",
           "no_mandatory_keys",
-          "movablekeys"
+          "movablekeys",
+          "script_runner"
         ],
         keyStart: 0,
         keyStop: 0,
@@ -42419,7 +52293,8 @@ var require_commands = __commonJS({
           "stale",
           "skip_monitor",
           "no_mandatory_keys",
-          "movablekeys"
+          "movablekeys",
+          "script_runner"
         ],
         keyStart: 0,
         keyStop: 0,
@@ -42432,6 +52307,8 @@ var require_commands = __commonJS({
         ],
         keyStart: 0,
         keyStop: 0,
+        requestPolicy: "all_shards",
+        responsePolicy: "all_succeeded",
         step: 0
       },
       flushdb: {
@@ -42441,6 +52318,8 @@ var require_commands = __commonJS({
         ],
         keyStart: 0,
         keyStop: 0,
+        requestPolicy: "all_shards",
+        responsePolicy: "all_succeeded",
         step: 0
       },
       function: {
@@ -42448,7 +52327,111 @@ var require_commands = __commonJS({
         flags: [],
         keyStart: 0,
         keyStop: 0,
-        step: 0
+        step: 0,
+        subcommands: {
+          delete: {
+            arity: 3,
+            flags: [
+              "write",
+              "noscript"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_shards",
+            responsePolicy: "all_succeeded",
+            step: 0
+          },
+          dump: {
+            arity: 2,
+            flags: [
+              "noscript"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          flush: {
+            arity: -2,
+            flags: [
+              "write",
+              "noscript"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_shards",
+            responsePolicy: "all_succeeded",
+            step: 0
+          },
+          help: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          kill: {
+            arity: 2,
+            flags: [
+              "noscript",
+              "allow_busy"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_shards",
+            responsePolicy: "one_succeeded",
+            step: 0
+          },
+          list: {
+            arity: -2,
+            flags: [
+              "noscript"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          load: {
+            arity: -3,
+            flags: [
+              "write",
+              "denyoom",
+              "noscript"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_shards",
+            responsePolicy: "all_succeeded",
+            step: 0
+          },
+          restore: {
+            arity: -3,
+            flags: [
+              "write",
+              "denyoom",
+              "noscript"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_shards",
+            responsePolicy: "all_succeeded",
+            step: 0
+          },
+          stats: {
+            arity: 2,
+            flags: [
+              "noscript",
+              "allow_busy"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_shards",
+            responsePolicy: "special",
+            step: 0
+          }
+        }
       },
       geoadd: {
         arity: -5,
@@ -42709,6 +52692,51 @@ var require_commands = __commonJS({
         keyStop: 1,
         step: 1
       },
+      himport: {
+        arity: -2,
+        flags: [],
+        keyStart: 0,
+        keyStop: 0,
+        step: 0,
+        subcommands: {
+          discard: {
+            arity: 3,
+            flags: [],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_shards",
+            step: 0
+          },
+          discardall: {
+            arity: 2,
+            flags: [],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_shards",
+            step: 0
+          },
+          prepare: {
+            arity: -4,
+            flags: [
+              "denyoom"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_shards",
+            step: 0
+          },
+          set: {
+            arity: -5,
+            flags: [
+              "write",
+              "denyoom"
+            ],
+            keyStart: 2,
+            keyStop: 2,
+            step: 1
+          }
+        }
+      },
       hincrby: {
         arity: 4,
         flags: [
@@ -42770,6 +52798,70 @@ var require_commands = __commonJS({
         keyStart: 1,
         keyStop: 1,
         step: 1
+      },
+      hotkeys: {
+        arity: -2,
+        flags: [],
+        keyStart: 0,
+        keyStop: 0,
+        step: 0,
+        subcommands: {
+          get: {
+            arity: 2,
+            flags: [
+              "admin",
+              "noscript"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "special",
+            responsePolicy: "special",
+            step: 0
+          },
+          help: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          reset: {
+            arity: 2,
+            flags: [
+              "admin",
+              "noscript"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "special",
+            step: 0
+          },
+          start: {
+            arity: -2,
+            flags: [
+              "admin",
+              "noscript"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "special",
+            step: 0
+          },
+          stop: {
+            arity: 2,
+            flags: [
+              "admin",
+              "noscript"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "special",
+            step: 0
+          }
+        }
       },
       hpersist: {
         arity: -5,
@@ -42953,6 +53045,8 @@ var require_commands = __commonJS({
         ],
         keyStart: 0,
         keyStop: 0,
+        requestPolicy: "all_shards",
+        responsePolicy: "special",
         step: 0
       },
       keys: {
@@ -42962,6 +53056,7 @@ var require_commands = __commonJS({
         ],
         keyStart: 0,
         keyStop: 0,
+        requestPolicy: "all_shards",
         step: 0
       },
       lastsave: {
@@ -42980,7 +53075,103 @@ var require_commands = __commonJS({
         flags: [],
         keyStart: 0,
         keyStop: 0,
-        step: 0
+        step: 0,
+        subcommands: {
+          doctor: {
+            arity: 2,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            responsePolicy: "special",
+            step: 0
+          },
+          graph: {
+            arity: 3,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            responsePolicy: "special",
+            step: 0
+          },
+          help: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          histogram: {
+            arity: -2,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            responsePolicy: "special",
+            step: 0
+          },
+          history: {
+            arity: 3,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            responsePolicy: "special",
+            step: 0
+          },
+          latest: {
+            arity: 2,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            responsePolicy: "special",
+            step: 0
+          },
+          reset: {
+            arity: -2,
+            flags: [
+              "admin",
+              "noscript",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            responsePolicy: "agg_sum",
+            step: 0
+          }
+        }
       },
       lcs: {
         arity: -3,
@@ -43022,6 +53213,16 @@ var require_commands = __commonJS({
       },
       lmove: {
         arity: 5,
+        flags: [
+          "write",
+          "denyoom"
+        ],
+        keyStart: 1,
+        keyStop: 2,
+        step: 1
+      },
+      lmovem: {
+        arity: -5,
         flags: [
           "write",
           "denyoom"
@@ -43133,7 +53334,64 @@ var require_commands = __commonJS({
         flags: [],
         keyStart: 0,
         keyStop: 0,
-        step: 0
+        step: 0,
+        subcommands: {
+          doctor: {
+            arity: 2,
+            flags: [],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_shards",
+            responsePolicy: "special",
+            step: 0
+          },
+          help: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          "malloc-stats": {
+            arity: 2,
+            flags: [],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_shards",
+            responsePolicy: "special",
+            step: 0
+          },
+          purge: {
+            arity: 2,
+            flags: [],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_shards",
+            responsePolicy: "all_succeeded",
+            step: 0
+          },
+          stats: {
+            arity: 2,
+            flags: [],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_shards",
+            responsePolicy: "special",
+            step: 0
+          },
+          usage: {
+            arity: -3,
+            flags: [
+              "readonly"
+            ],
+            keyStart: 2,
+            keyStop: 2,
+            step: 1
+          }
+        }
       },
       mget: {
         arity: -2,
@@ -43143,6 +53401,7 @@ var require_commands = __commonJS({
         ],
         keyStart: 1,
         keyStop: -1,
+        requestPolicy: "multi_shard",
         step: 1
       },
       migrate: {
@@ -43160,7 +53419,62 @@ var require_commands = __commonJS({
         flags: [],
         keyStart: 0,
         keyStop: 0,
-        step: 0
+        step: 0,
+        subcommands: {
+          help: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          list: {
+            arity: 2,
+            flags: [
+              "admin",
+              "noscript"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          load: {
+            arity: -3,
+            flags: [
+              "admin",
+              "noscript",
+              "no_async_loading"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          loadex: {
+            arity: -3,
+            flags: [
+              "admin",
+              "noscript",
+              "no_async_loading"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          unload: {
+            arity: 3,
+            flags: [
+              "admin",
+              "noscript",
+              "no_async_loading"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          }
+        }
       },
       monitor: {
         arity: 1,
@@ -43192,6 +53506,8 @@ var require_commands = __commonJS({
         ],
         keyStart: 1,
         keyStop: -1,
+        requestPolicy: "multi_shard",
+        responsePolicy: "all_succeeded",
         step: 2
       },
       msetex: {
@@ -43203,6 +53519,8 @@ var require_commands = __commonJS({
         ],
         keyStart: 0,
         keyStop: 0,
+        requestPolicy: "multi_shard",
+        responsePolicy: "all_succeeded",
         step: 0
       },
       msetnx: {
@@ -43233,7 +53551,55 @@ var require_commands = __commonJS({
         flags: [],
         keyStart: 0,
         keyStop: 0,
-        step: 0
+        step: 0,
+        subcommands: {
+          encoding: {
+            arity: 3,
+            flags: [
+              "readonly"
+            ],
+            keyStart: 2,
+            keyStop: 2,
+            step: 1
+          },
+          freq: {
+            arity: 3,
+            flags: [
+              "readonly"
+            ],
+            keyStart: 2,
+            keyStop: 2,
+            step: 1
+          },
+          help: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          idletime: {
+            arity: 3,
+            flags: [
+              "readonly"
+            ],
+            keyStart: 2,
+            keyStop: 2,
+            step: 1
+          },
+          refcount: {
+            arity: 3,
+            flags: [
+              "readonly"
+            ],
+            keyStart: 2,
+            keyStop: 2,
+            step: 1
+          }
+        }
       },
       persist: {
         arity: 2,
@@ -43332,6 +53698,8 @@ var require_commands = __commonJS({
         ],
         keyStart: 0,
         keyStop: 0,
+        requestPolicy: "all_shards",
+        responsePolicy: "all_succeeded",
         step: 0
       },
       psetex: {
@@ -43347,6 +53715,7 @@ var require_commands = __commonJS({
       psubscribe: {
         arity: -2,
         flags: [
+          "denyoom",
           "pubsub",
           "noscript",
           "loading",
@@ -43395,7 +53764,74 @@ var require_commands = __commonJS({
         flags: [],
         keyStart: 0,
         keyStop: 0,
-        step: 0
+        step: 0,
+        subcommands: {
+          channels: {
+            arity: -2,
+            flags: [
+              "pubsub",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          help: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          numpat: {
+            arity: 2,
+            flags: [
+              "pubsub",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          numsub: {
+            arity: -2,
+            flags: [
+              "pubsub",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          shardchannels: {
+            arity: -2,
+            flags: [
+              "pubsub",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          shardnumsub: {
+            arity: -2,
+            flags: [
+              "pubsub",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          }
+        }
       },
       punsubscribe: {
         arity: -1,
@@ -43430,6 +53866,8 @@ var require_commands = __commonJS({
         ],
         keyStart: 0,
         keyStop: 0,
+        requestPolicy: "all_shards",
+        responsePolicy: "special",
         step: 0
       },
       readonly: {
@@ -43617,6 +54055,8 @@ var require_commands = __commonJS({
         ],
         keyStart: 0,
         keyStop: 0,
+        requestPolicy: "special",
+        responsePolicy: "special",
         step: 0
       },
       scard: {
@@ -43634,7 +54074,74 @@ var require_commands = __commonJS({
         flags: [],
         keyStart: 0,
         keyStop: 0,
-        step: 0
+        step: 0,
+        subcommands: {
+          debug: {
+            arity: 3,
+            flags: [
+              "noscript"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          exists: {
+            arity: -3,
+            flags: [
+              "noscript"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_shards",
+            responsePolicy: "agg_logical_and",
+            step: 0
+          },
+          flush: {
+            arity: -2,
+            flags: [
+              "noscript"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            responsePolicy: "all_succeeded",
+            step: 0
+          },
+          help: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          kill: {
+            arity: 2,
+            flags: [
+              "noscript",
+              "allow_busy"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_shards",
+            responsePolicy: "one_succeeded",
+            step: 0
+          },
+          load: {
+            arity: 3,
+            flags: [
+              "noscript",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            responsePolicy: "all_succeeded",
+            step: 0
+          }
+        }
       },
       sdiff: {
         arity: -2,
@@ -43644,6 +54151,16 @@ var require_commands = __commonJS({
         keyStart: 1,
         keyStop: -1,
         step: 1
+      },
+      sdiffcard: {
+        arity: -3,
+        flags: [
+          "readonly",
+          "movablekeys"
+        ],
+        keyStart: 0,
+        keyStop: 0,
+        step: 0
       },
       sdiffstore: {
         arity: -3,
@@ -43787,7 +54304,57 @@ var require_commands = __commonJS({
         flags: [],
         keyStart: 0,
         keyStop: 0,
-        step: 0
+        step: 0,
+        subcommands: {
+          get: {
+            arity: -2,
+            flags: [
+              "admin",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            step: 0
+          },
+          help: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          len: {
+            arity: 2,
+            flags: [
+              "admin",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            responsePolicy: "agg_sum",
+            step: 0
+          },
+          reset: {
+            arity: 2,
+            flags: [
+              "admin",
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            requestPolicy: "all_nodes",
+            responsePolicy: "all_succeeded",
+            step: 0
+          }
+        }
       },
       smembers: {
         arity: 2,
@@ -43892,6 +54459,7 @@ var require_commands = __commonJS({
       ssubscribe: {
         arity: -2,
         flags: [
+          "denyoom",
           "pubsub",
           "noscript",
           "loading",
@@ -43914,6 +54482,7 @@ var require_commands = __commonJS({
       subscribe: {
         arity: -2,
         flags: [
+          "denyoom",
           "pubsub",
           "noscript",
           "loading",
@@ -43940,6 +54509,16 @@ var require_commands = __commonJS({
         keyStart: 1,
         keyStop: -1,
         step: 1
+      },
+      sunioncard: {
+        arity: -3,
+        flags: [
+          "readonly",
+          "movablekeys"
+        ],
+        keyStart: 0,
+        keyStop: 0,
+        step: 0
       },
       sunionstore: {
         arity: -3,
@@ -44004,7 +54583,18 @@ var require_commands = __commonJS({
         ],
         keyStart: 1,
         keyStop: -1,
+        requestPolicy: "multi_shard",
+        responsePolicy: "agg_sum",
         step: 1
+      },
+      trimslots: {
+        arity: -5,
+        flags: [
+          "write"
+        ],
+        keyStart: 0,
+        keyStop: 0,
+        step: 0
       },
       ttl: {
         arity: 2,
@@ -44034,6 +54624,8 @@ var require_commands = __commonJS({
         ],
         keyStart: 1,
         keyStop: -1,
+        requestPolicy: "multi_shard",
+        responsePolicy: "agg_sum",
         step: 1
       },
       unsubscribe: {
@@ -44061,13 +54653,164 @@ var require_commands = __commonJS({
         keyStop: 0,
         step: 0
       },
+      vadd: {
+        arity: -5,
+        flags: [
+          "write",
+          "denyoom",
+          "module"
+        ],
+        keyStart: 1,
+        keyStop: 1,
+        step: 1
+      },
+      vcard: {
+        arity: 2,
+        flags: [
+          "readonly",
+          "module",
+          "fast"
+        ],
+        keyStart: 1,
+        keyStop: 1,
+        step: 1
+      },
+      vdim: {
+        arity: 2,
+        flags: [
+          "readonly",
+          "module",
+          "fast"
+        ],
+        keyStart: 1,
+        keyStop: 1,
+        step: 1
+      },
+      vemb: {
+        arity: -3,
+        flags: [
+          "readonly",
+          "module",
+          "fast"
+        ],
+        keyStart: 1,
+        keyStop: 1,
+        step: 1
+      },
+      vgetattr: {
+        arity: 3,
+        flags: [
+          "readonly",
+          "module",
+          "fast"
+        ],
+        keyStart: 1,
+        keyStop: 1,
+        step: 1
+      },
+      vinfo: {
+        arity: 2,
+        flags: [
+          "readonly",
+          "module",
+          "fast"
+        ],
+        keyStart: 1,
+        keyStop: 1,
+        step: 1
+      },
+      vismember: {
+        arity: 3,
+        flags: [
+          "readonly",
+          "module"
+        ],
+        keyStart: 1,
+        keyStop: 1,
+        step: 1
+      },
+      vlinks: {
+        arity: -3,
+        flags: [
+          "readonly",
+          "module",
+          "fast"
+        ],
+        keyStart: 1,
+        keyStop: 1,
+        step: 1
+      },
+      vrandmember: {
+        arity: -2,
+        flags: [
+          "readonly",
+          "module"
+        ],
+        keyStart: 1,
+        keyStop: 1,
+        step: 1
+      },
+      vrange: {
+        arity: -4,
+        flags: [
+          "readonly",
+          "module"
+        ],
+        keyStart: 1,
+        keyStop: 1,
+        step: 1
+      },
+      vrem: {
+        arity: 3,
+        flags: [
+          "write",
+          "module"
+        ],
+        keyStart: 1,
+        keyStop: 1,
+        step: 1
+      },
+      vsetattr: {
+        arity: 4,
+        flags: [
+          "write",
+          "module",
+          "fast"
+        ],
+        keyStart: 1,
+        keyStop: 1,
+        step: 1
+      },
+      vsim: {
+        arity: -4,
+        flags: [
+          "readonly",
+          "module"
+        ],
+        keyStart: 1,
+        keyStop: 1,
+        step: 1
+      },
       wait: {
         arity: 3,
         flags: [
-          "noscript"
+          "blocking"
         ],
         keyStart: 0,
         keyStop: 0,
+        requestPolicy: "all_shards",
+        responsePolicy: "agg_min",
+        step: 0
+      },
+      waitaof: {
+        arity: 4,
+        flags: [
+          "blocking"
+        ],
+        keyStart: 0,
+        keyStop: 0,
+        requestPolicy: "all_shards",
+        responsePolicy: "agg_min",
         step: 0
       },
       watch: {
@@ -44093,6 +54836,16 @@ var require_commands = __commonJS({
         keyStop: 1,
         step: 1
       },
+      xackdel: {
+        arity: -6,
+        flags: [
+          "write",
+          "fast"
+        ],
+        keyStart: 1,
+        keyStop: 1,
+        step: 1
+      },
       xadd: {
         arity: -5,
         flags: [
@@ -44106,6 +54859,16 @@ var require_commands = __commonJS({
       },
       xautoclaim: {
         arity: -6,
+        flags: [
+          "write",
+          "fast"
+        ],
+        keyStart: 1,
+        keyStop: 1,
+        step: 1
+      },
+      xcfgset: {
+        arity: -2,
         flags: [
           "write",
           "fast"
@@ -44149,14 +54912,123 @@ var require_commands = __commonJS({
         flags: [],
         keyStart: 0,
         keyStop: 0,
-        step: 0
+        step: 0,
+        subcommands: {
+          create: {
+            arity: -5,
+            flags: [
+              "write",
+              "denyoom"
+            ],
+            keyStart: 2,
+            keyStop: 2,
+            step: 1
+          },
+          createconsumer: {
+            arity: 5,
+            flags: [
+              "write",
+              "denyoom"
+            ],
+            keyStart: 2,
+            keyStop: 2,
+            step: 1
+          },
+          delconsumer: {
+            arity: 5,
+            flags: [
+              "write"
+            ],
+            keyStart: 2,
+            keyStop: 2,
+            step: 1
+          },
+          destroy: {
+            arity: 4,
+            flags: [
+              "write"
+            ],
+            keyStart: 2,
+            keyStop: 2,
+            step: 1
+          },
+          help: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          setid: {
+            arity: -5,
+            flags: [
+              "write"
+            ],
+            keyStart: 2,
+            keyStop: 2,
+            step: 1
+          }
+        }
+      },
+      xidmprecord: {
+        arity: 5,
+        flags: [
+          "write",
+          "denyoom",
+          "fast"
+        ],
+        keyStart: 1,
+        keyStop: 1,
+        step: 1
       },
       xinfo: {
         arity: -2,
         flags: [],
         keyStart: 0,
         keyStop: 0,
-        step: 0
+        step: 0,
+        subcommands: {
+          consumers: {
+            arity: 4,
+            flags: [
+              "readonly"
+            ],
+            keyStart: 2,
+            keyStop: 2,
+            step: 1
+          },
+          groups: {
+            arity: 3,
+            flags: [
+              "readonly"
+            ],
+            keyStart: 2,
+            keyStop: 2,
+            step: 1
+          },
+          help: {
+            arity: 2,
+            flags: [
+              "loading",
+              "stale"
+            ],
+            keyStart: 0,
+            keyStop: 0,
+            step: 0
+          },
+          stream: {
+            arity: -3,
+            flags: [
+              "readonly"
+            ],
+            keyStart: 2,
+            keyStop: 2,
+            step: 1
+          }
+        }
       },
       xlen: {
         arity: 2,
@@ -44438,7 +55310,7 @@ var require_commands = __commonJS({
         step: 1
       },
       zrank: {
-        arity: 3,
+        arity: -3,
         flags: [
           "readonly",
           "fast"
@@ -44512,7 +55384,7 @@ var require_commands = __commonJS({
         step: 1
       },
       zrevrank: {
-        arity: 3,
+        arity: -3,
         flags: [
           "readonly",
           "fast"
@@ -44565,9 +55437,9 @@ var require_commands = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/@ioredis+commands@1.10.0/node_modules/@ioredis/commands/built/index.js
+// ../../node_modules/.pnpm/@ioredis+commands@2.0.0/node_modules/@ioredis/commands/built/index.js
 var require_built = __commonJS({
-  "../../node_modules/.pnpm/@ioredis+commands@1.10.0/node_modules/@ioredis/commands/built/index.js"(exports) {
+  "../../node_modules/.pnpm/@ioredis+commands@2.0.0/node_modules/@ioredis/commands/built/index.js"(exports) {
     "use strict";
     var __importDefault2 = exports && exports.__importDefault || function(mod) {
       return mod && mod.__esModule ? mod : { "default": mod };
@@ -44575,17 +55447,18 @@ var require_built = __commonJS({
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.getKeyIndexes = exports.hasFlag = exports.exists = exports.list = void 0;
     var commands_json_1 = __importDefault2(require_commands());
-    exports.list = Object.keys(commands_json_1.default);
+    var commandMetadata = commands_json_1.default;
+    exports.list = Object.keys(commandMetadata);
     var flags = {};
     exports.list.forEach((commandName) => {
-      flags[commandName] = commands_json_1.default[commandName].flags.reduce(function(flags2, flag) {
+      flags[commandName] = commandMetadata[commandName].flags.reduce(function(flags2, flag) {
         flags2[flag] = true;
         return flags2;
       }, {});
     });
     function exists(commandName, options) {
       commandName = (options === null || options === void 0 ? void 0 : options.caseInsensitive) ? String(commandName).toLowerCase() : commandName;
-      return Boolean(commands_json_1.default[commandName]);
+      return Boolean(commandMetadata[commandName]);
     }
     exports.exists = exists;
     function hasFlag(commandName, flag, options) {
@@ -44598,12 +55471,20 @@ var require_built = __commonJS({
     exports.hasFlag = hasFlag;
     function getKeyIndexes(commandName, args, options) {
       commandName = (options === null || options === void 0 ? void 0 : options.nameCaseInsensitive) ? String(commandName).toLowerCase() : commandName;
-      const command = commands_json_1.default[commandName];
+      const command = commandMetadata[commandName];
       if (!command) {
         throw new Error("Unknown command " + commandName);
       }
       if (!Array.isArray(args)) {
         throw new Error("Expect args to be an array");
+      }
+      let resolvedCommand = command;
+      for (let i = 0; i < args.length && resolvedCommand.subcommands; i++) {
+        const subcommand = resolvedCommand.subcommands[String(args[i]).toLowerCase()];
+        if (!subcommand) {
+          break;
+        }
+        resolvedCommand = subcommand;
       }
       const keys = [];
       const parseExternalKey = Boolean(options && options.parseExternalKey);
@@ -44639,7 +55520,9 @@ var require_built = __commonJS({
         case "bzmpop":
           keys.push(...takeDynamicKeys(args, 1));
           break;
+        case "sdiffcard":
         case "sintercard":
+        case "sunioncard":
         case "lmpop":
         case "zunion":
         case "zinter":
@@ -44735,10 +55618,10 @@ var require_built = __commonJS({
           }
           break;
         default:
-          if (command.step > 0) {
-            const keyStart = command.keyStart - 1;
-            const keyStop = command.keyStop > 0 ? command.keyStop : args.length + command.keyStop + 1;
-            for (let i = keyStart; i < keyStop; i += command.step) {
+          if (resolvedCommand.step > 0) {
+            const keyStart = resolvedCommand.keyStart - 1;
+            const keyStop = resolvedCommand.keyStop > 0 ? resolvedCommand.keyStop : args.length + resolvedCommand.keyStop + 1;
+            for (let i = keyStart; i < keyStop; i += resolvedCommand.step) {
               keys.push(i);
             }
           }
@@ -45308,9 +56191,9 @@ var require_lib4 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/defaults.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/utils/defaults.js
 var require_defaults = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/defaults.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/utils/defaults.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.defaults = void 0;
@@ -45375,9 +56258,9 @@ var require_defaults = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/isArguments.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/utils/isArguments.js
 var require_isArguments = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/isArguments.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/utils/isArguments.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.isArguments = void 0;
@@ -45394,15 +56277,19 @@ var require_isArguments = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/lodash.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/utils/lodash.js
 var require_lodash = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/lodash.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/utils/lodash.js"(exports) {
     "use strict";
     var __createBinding2 = exports && exports.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
-      Object.defineProperty(o, k2, { enumerable: true, get: function() {
-        return m[k];
-      } });
+      var desc = Object.getOwnPropertyDescriptor(m, k);
+      if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+        desc = { enumerable: true, get: function() {
+          return m[k];
+        } };
+      }
+      Object.defineProperty(o, k2, desc);
     }) : (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
       o[k2] = m[k];
@@ -45420,9 +56307,9 @@ var require_lodash = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/debug.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/utils/debug.js
 var require_debug = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/debug.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/utils/debug.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.genRedactedString = exports.getStringValue = exports.MAX_ARGUMENT_LENGTH = void 0;
@@ -45506,9 +56393,9 @@ var require_debug = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/constants/TLSProfiles.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/constants/TLSProfiles.js
 var require_TLSProfiles = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/constants/TLSProfiles.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/constants/TLSProfiles.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var RedisCloudCA = `-----BEGIN CERTIFICATE-----
@@ -45658,14 +56545,12 @@ WD9f
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/index.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/utils/index.js
 var require_utils5 = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/index.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/utils/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    exports.noop = exports.isArguments = exports.defaults = exports.Debug = exports.getPackageMeta = exports.zipMap = exports.CONNECTION_CLOSED_ERROR_MSG = exports.shuffle = exports.sample = exports.resolveTLSProfile = exports.parseURL = exports.optimizeErrorStack = exports.toArg = exports.convertMapToArray = exports.convertObjectToArray = exports.timeout = exports.packObject = exports.isInt = exports.wrapMultiResult = exports.convertBufferToString = void 0;
-    var fs_1 = __require("fs");
-    var path_1 = __require("path");
+    exports.noop = exports.isArguments = exports.defaults = exports.Debug = exports.zipMap = exports.isResp2SubscriberMode = exports.CONNECTION_CLOSED_ERROR_MSG = exports.shuffle = exports.sample = exports.resolveTLSProfile = exports.parseURL = exports.optimizeErrorStack = exports.toArg = exports.convertMapToArray = exports.convertObjectToArray = exports.timeout = exports.packObject = exports.isInt = exports.wrapMultiResult = exports.convertBufferToString = void 0;
     var lodash_1 = require_lodash();
     Object.defineProperty(exports, "defaults", { enumerable: true, get: function() {
       return lodash_1.defaults;
@@ -45691,9 +56576,35 @@ var require_utils5 = __commonJS({
         }
         return res;
       }
+      if (isPlainObject2(value)) {
+        const keys = Object.keys(value);
+        const res = {};
+        for (const element of keys) {
+          const item = value[element];
+          const converted = item instanceof Buffer && encoding === "utf8" ? item.toString() : convertBufferToString(item, encoding);
+          if (element === "__proto__" || element === "constructor") {
+            Object.defineProperty(res, element, {
+              value: converted,
+              configurable: true,
+              enumerable: true,
+              writable: true
+            });
+          } else {
+            res[element] = converted;
+          }
+        }
+        return res;
+      }
       return value;
     }
     exports.convertBufferToString = convertBufferToString;
+    function isPlainObject2(value) {
+      if (value === null || typeof value !== "object") {
+        return false;
+      }
+      const proto = Object.getPrototypeOf(value);
+      return proto === Object.prototype || proto === null;
+    }
     function wrapMultiResult(arr) {
       if (!arr) {
         return null;
@@ -45761,6 +56672,9 @@ var require_utils5 = __commonJS({
     function toArg(arg) {
       if (arg === null || typeof arg === "undefined") {
         return "";
+      }
+      if (typeof arg === "number" && Number.isInteger(arg) && !Number.isSafeInteger(arg)) {
+        return BigInt(arg).toString();
       }
       return String(arg);
     }
@@ -45852,10 +56766,10 @@ var require_utils5 = __commonJS({
       return value;
     }
     function resolveTLSProfile(options) {
-      let tls = options === null || options === void 0 ? void 0 : options.tls;
+      let tls = options?.tls;
       if (typeof tls === "string")
         tls = { profile: tls };
-      const profile = TLSProfiles_1.default[tls === null || tls === void 0 ? void 0 : tls.profile];
+      const profile = TLSProfiles_1.default[tls?.profile];
       if (profile) {
         tls = Object.assign({}, profile, tls);
         delete tls.profile;
@@ -45883,6 +56797,10 @@ var require_utils5 = __commonJS({
     }
     exports.shuffle = shuffle;
     exports.CONNECTION_CLOSED_ERROR_MSG = "Connection is closed.";
+    function isResp2SubscriberMode(condition) {
+      return Boolean(condition?.subscriber) && condition?.protocol !== 3;
+    }
+    exports.isResp2SubscriberMode = isResp2SubscriberMode;
     function zipMap(keys, values) {
       const map = /* @__PURE__ */ new Map();
       keys.forEach((key, index) => {
@@ -45891,33 +56809,12 @@ var require_utils5 = __commonJS({
       return map;
     }
     exports.zipMap = zipMap;
-    var cachedPackageMeta = null;
-    async function getPackageMeta() {
-      if (cachedPackageMeta) {
-        return cachedPackageMeta;
-      }
-      try {
-        const filePath = (0, path_1.resolve)(__dirname, "..", "..", "package.json");
-        const data = await fs_1.promises.readFile(filePath, "utf8");
-        const parsed = JSON.parse(data);
-        cachedPackageMeta = {
-          version: parsed.version
-        };
-        return cachedPackageMeta;
-      } catch (err) {
-        cachedPackageMeta = {
-          version: "error-fetching-version"
-        };
-        return cachedPackageMeta;
-      }
-    }
-    exports.getPackageMeta = getPackageMeta;
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/argumentParsers.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/utils/argumentParsers.js
 var require_argumentParsers = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/argumentParsers.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/utils/argumentParsers.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.parseBlockOption = exports.parseSecondsArgument = void 0;
@@ -45974,9 +56871,106 @@ var require_argumentParsers = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/Command.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/replyTransformers.js
+var require_replyTransformers = __commonJS({
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/replyTransformers.js"(exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.sortedSetWithScorePairCommands = exports.transformStreamReadReply = exports.transformPairReply = exports.transformVsimReply = exports.wrapStreamMapPairs = exports.flattenNestedArrayItems = exports.passthroughReplyTransformer = void 0;
+    var passthroughReplyTransformer = function(result) {
+      return result;
+    };
+    exports.passthroughReplyTransformer = passthroughReplyTransformer;
+    var flattenNestedArrayItems = function(result) {
+      if (!Array.isArray(result)) {
+        return result;
+      }
+      let flat = null;
+      for (let i = 0; i < result.length; i++) {
+        const item = result[i];
+        if (Array.isArray(item)) {
+          if (!flat) {
+            flat = result.slice(0, i);
+          }
+          flat.push(...item);
+        } else if (flat) {
+          flat.push(item);
+        }
+      }
+      return flat ?? result;
+    };
+    exports.flattenNestedArrayItems = flattenNestedArrayItems;
+    var flattenPairTransformers = {
+      2: {
+        legacy: exports.passthroughReplyTransformer,
+        resp3: exports.passthroughReplyTransformer
+      },
+      3: {
+        legacy: exports.flattenNestedArrayItems,
+        resp3: exports.passthroughReplyTransformer
+      }
+    };
+    var vsimTransformers = {
+      2: {
+        legacy: exports.flattenNestedArrayItems,
+        resp3: exports.passthroughReplyTransformer
+      },
+      3: {
+        legacy: exports.flattenNestedArrayItems,
+        resp3: exports.passthroughReplyTransformer
+      }
+    };
+    var wrapStreamMapPairs = function(result) {
+      if (!Array.isArray(result)) {
+        return result;
+      }
+      const wrapped = [];
+      for (let i = 0; i < result.length; i += 2) {
+        wrapped.push([result[i], result[i + 1]]);
+      }
+      return wrapped;
+    };
+    exports.wrapStreamMapPairs = wrapStreamMapPairs;
+    var streamReadTransformers = {
+      2: {
+        legacy: exports.passthroughReplyTransformer,
+        resp3: exports.passthroughReplyTransformer
+      },
+      3: {
+        legacy: exports.wrapStreamMapPairs,
+        resp3: exports.passthroughReplyTransformer
+      }
+    };
+    var transformVsimReply = function(result, context) {
+      return vsimTransformers[context.protocol][context.replyMapping](result, context);
+    };
+    exports.transformVsimReply = transformVsimReply;
+    var transformPairReply = function(result, context) {
+      return flattenPairTransformers[context.protocol][context.replyMapping](result, context);
+    };
+    exports.transformPairReply = transformPairReply;
+    var transformStreamReadReply = function(result, context) {
+      return streamReadTransformers[context.protocol][context.replyMapping](result, context);
+    };
+    exports.transformStreamReadReply = transformStreamReadReply;
+    exports.sortedSetWithScorePairCommands = [
+      "zdiff",
+      "zinter",
+      "zpopmax",
+      "zpopmin",
+      "zunion",
+      "zrandmember",
+      "zrange",
+      "zrangebyscore",
+      "zrevrange",
+      "zrevrangebyscore"
+    ];
+  }
+});
+
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/Command.js
 var require_Command = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/Command.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/Command.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var commands_1 = require_built();
@@ -45984,45 +56978,8 @@ var require_Command = __commonJS({
     var standard_as_callback_1 = require_built2();
     var utils_1 = require_utils5();
     var argumentParsers_1 = require_argumentParsers();
+    var replyTransformers_1 = require_replyTransformers();
     var Command = class _Command {
-      /**
-       * Creates an instance of Command.
-       * @param name Command name
-       * @param args An array of command arguments
-       * @param options
-       * @param callback The callback that handles the response.
-       * If omit, the response will be handled via Promise
-       */
-      constructor(name, args = [], options = {}, callback) {
-        this.name = name;
-        this.inTransaction = false;
-        this.isTraced = false;
-        this.isResolved = false;
-        this.transformed = false;
-        this.replyEncoding = options.replyEncoding;
-        this.errorStack = options.errorStack;
-        this.args = args.flat();
-        this.callback = callback;
-        this.initPromise();
-        if (options.keyPrefix) {
-          const isBufferKeyPrefix = options.keyPrefix instanceof Buffer;
-          let keyPrefixBuffer = isBufferKeyPrefix ? options.keyPrefix : null;
-          this._iterateKeys((key) => {
-            if (key instanceof Buffer) {
-              if (keyPrefixBuffer === null) {
-                keyPrefixBuffer = Buffer.from(options.keyPrefix);
-              }
-              return Buffer.concat([keyPrefixBuffer, key]);
-            } else if (isBufferKeyPrefix) {
-              return Buffer.concat([options.keyPrefix, Buffer.from(String(key))]);
-            }
-            return options.keyPrefix + key;
-          });
-        }
-        if (options.readOnly) {
-          this.isReadOnly = true;
-        }
-      }
       /**
        * Check whether the command has the flag
        */
@@ -46048,6 +57005,47 @@ var require_Command = __commonJS({
         }
         return this.flagMap;
       }
+      /**
+       * Creates an instance of Command.
+       * @param name Command name
+       * @param args An array of command arguments
+       * @param options
+       * @param callback The callback that handles the response.
+       * If omit, the response will be handled via Promise
+       */
+      constructor(name, args = [], options = {}, callback) {
+        this.name = name;
+        this.inTransaction = false;
+        this.isTraced = false;
+        this.isResolved = false;
+        this.isSettled = false;
+        this.transformed = false;
+        this.replyEncoding = options.replyEncoding;
+        this.protocol = 2;
+        this.replyMapping = "legacy";
+        this.errorStack = options.errorStack;
+        this.args = args.flat();
+        this.callback = callback;
+        this.initPromise();
+        if (options.keyPrefix) {
+          const isBufferKeyPrefix = options.keyPrefix instanceof Buffer;
+          let keyPrefixBuffer = isBufferKeyPrefix ? options.keyPrefix : null;
+          this._iterateKeys((key) => {
+            if (key instanceof Buffer) {
+              if (keyPrefixBuffer === null) {
+                keyPrefixBuffer = Buffer.from(options.keyPrefix);
+              }
+              return Buffer.concat([keyPrefixBuffer, key]);
+            } else if (isBufferKeyPrefix) {
+              return Buffer.concat([options.keyPrefix, Buffer.from(String(key))]);
+            }
+            return options.keyPrefix + key;
+          });
+        }
+        if (options.readOnly) {
+          this.isReadOnly = true;
+        }
+      }
       getSlot() {
         if (typeof this.slot === "undefined") {
           const key = this.getKeys()[0];
@@ -46057,6 +57055,10 @@ var require_Command = __commonJS({
       }
       getKeys() {
         return this._iterateKeys();
+      }
+      setReplyContext(context) {
+        this.protocol = context?.protocol ?? 2;
+        this.replyMapping = context?.replyMapping ?? "legacy";
       }
       /**
        * Convert command to writable buffer or string
@@ -46112,7 +57114,11 @@ var require_Command = __commonJS({
         }
         const transformer = _Command._transformer.reply[this.name];
         if (transformer) {
-          result = transformer(result);
+          result = transformer(result, {
+            commandName: this.name,
+            protocol: this.protocol,
+            replyMapping: this.replyMapping
+          });
         }
         return result;
       }
@@ -46123,7 +57129,7 @@ var require_Command = __commonJS({
       setTimeout(ms) {
         if (!this._commandTimeoutTimer) {
           this._commandTimeoutTimer = setTimeout(() => {
-            if (!this.isResolved) {
+            if (!this.isSettled) {
               this.reject(new Error("Command timed out"));
             }
           }, ms);
@@ -46153,7 +57159,7 @@ var require_Command = __commonJS({
           return;
         }
         this._blockingTimeoutTimer = setTimeout(() => {
-          if (this.isResolved) {
+          if (this.isSettled) {
             this._blockingTimeoutTimer = void 0;
             return;
           }
@@ -46173,6 +57179,9 @@ var require_Command = __commonJS({
           return void 0;
         }
         const name = this.name.toLowerCase();
+        if (name === "blmovem") {
+          return (0, argumentParsers_1.parseSecondsArgument)(args[4]);
+        }
         if (_Command.checkFlag("LAST_ARG_TIMEOUT_COMMANDS", name)) {
           return (0, argumentParsers_1.parseSecondsArgument)(args[args.length - 1]);
         }
@@ -46200,6 +57209,8 @@ var require_Command = __commonJS({
         }
       }
       initPromise() {
+        this.isResolved = false;
+        this.isSettled = false;
         const promise = new Promise((resolve, reject) => {
           if (!this.transformed) {
             this.transformed = true;
@@ -46212,6 +57223,7 @@ var require_Command = __commonJS({
           this.resolve = this._convertValue(resolve);
           this.reject = (err) => {
             this._clearTimers();
+            this.isSettled = true;
             if (this.errorStack) {
               reject((0, utils_1.optimizeErrorStack)(err, this.errorStack.stack, __dirname));
             } else {
@@ -46248,6 +57260,7 @@ var require_Command = __commonJS({
             this._clearTimers();
             resolve(this.transformReply(value));
             this.isResolved = true;
+            this.isSettled = true;
           } catch (err) {
             this.reject(err);
           }
@@ -46255,7 +57268,6 @@ var require_Command = __commonJS({
         };
       }
     };
-    exports.default = Command;
     Command.FLAGS = {
       VALID_IN_SUBSCRIBER_MODE: [
         "subscribe",
@@ -46271,13 +57283,21 @@ var require_Command = __commonJS({
       ENTER_SUBSCRIBER_MODE: ["subscribe", "psubscribe", "ssubscribe"],
       EXIT_SUBSCRIBER_MODE: ["unsubscribe", "punsubscribe", "sunsubscribe"],
       WILL_DISCONNECT: ["quit"],
-      HANDSHAKE_COMMANDS: ["auth", "select", "client", "readonly", "info"],
+      HANDSHAKE_COMMANDS: [
+        "auth",
+        "hello",
+        "select",
+        "client",
+        "readonly",
+        "info"
+      ],
       IGNORE_RECONNECT_ON_ERROR: ["client"],
       BLOCKING_COMMANDS: [
         "blpop",
         "brpop",
         "brpoplpush",
         "blmove",
+        "blmovem",
         "bzpopmin",
         "bzpopmax",
         "bzmpop",
@@ -46300,6 +57320,7 @@ var require_Command = __commonJS({
       argument: {},
       reply: {}
     };
+    exports.default = Command;
     var msetArgumentTransformer = function(args) {
       if (args.length === 1) {
         if (args[0] instanceof Map) {
@@ -46347,6 +57368,13 @@ var require_Command = __commonJS({
       }
       return result;
     });
+    Command.setReplyTransformer("vsim", replyTransformers_1.transformVsimReply);
+    Command.setReplyTransformer("hrandfield", replyTransformers_1.transformPairReply);
+    Command.setReplyTransformer("xread", replyTransformers_1.transformStreamReadReply);
+    Command.setReplyTransformer("xreadgroup", replyTransformers_1.transformStreamReadReply);
+    for (const command of replyTransformers_1.sortedSetWithScorePairCommands) {
+      Command.setReplyTransformer(command, replyTransformers_1.transformPairReply);
+    }
     var MixedBuffers = class {
       constructor() {
         this.length = 0;
@@ -46370,9 +57398,9 @@ var require_Command = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/errors/ClusterAllFailedError.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/errors/ClusterAllFailedError.js
 var require_ClusterAllFailedError = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/errors/ClusterAllFailedError.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/errors/ClusterAllFailedError.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var redis_errors_1 = require_redis_errors();
@@ -46386,14 +57414,14 @@ var require_ClusterAllFailedError = __commonJS({
         return this.constructor.name;
       }
     };
-    exports.default = ClusterAllFailedError;
     ClusterAllFailedError.defaultMessage = "Failed to refresh slots cache.";
+    exports.default = ClusterAllFailedError;
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/ScanStream.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/ScanStream.js
 var require_ScanStream = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/ScanStream.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/ScanStream.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var stream_1 = __require("stream");
@@ -46445,9 +57473,9 @@ var require_ScanStream = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/autoPipelining.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/autoPipelining.js
 var require_autoPipelining = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/autoPipelining.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/autoPipelining.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.executeWithAutoPipelining = exports.getFirstValueInFlattenedArray = exports.shouldUseAutoPipelining = exports.notAllowedAutoPipelineCommands = exports.kCallbacks = exports.kExec = void 0;
@@ -46470,7 +57498,10 @@ var require_autoPipelining = __commonJS({
       "unsubscribe",
       "unpsubscribe",
       "select",
-      "client"
+      "client",
+      "hello",
+      "readonly",
+      "himport"
     ];
     function executeAutoPipeline(client2, slotKey) {
       if (client2._runningAutoPipelines.has(slotKey)) {
@@ -46585,9 +57616,9 @@ var require_autoPipelining = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/Script.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/Script.js
 var require_Script = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/Script.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/Script.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var crypto_1 = __require("crypto");
@@ -46650,9 +57681,9 @@ var require_Script = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/Commander.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/utils/Commander.js
 var require_Commander = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/Commander.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/utils/Commander.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var commands_1 = require_built();
@@ -46766,9 +57797,417 @@ var require_Commander = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/Pipeline.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/himport/HimportCoordinator.js
+var require_HimportCoordinator = __commonJS({
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/himport/HimportCoordinator.js"(exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.interceptHimportControlCommand = exports.isHimportControlCommand = exports.isInternalHimportCommand = exports.unbindHimportCoordinator = exports.setHimportRole = exports.interceptHimportPipeline = exports.interceptHimportCommand = exports.getHimportBinding = exports.bindHimportCoordinator = exports.cloneHimportFieldsets = exports.hasHimportCoordinator = void 0;
+    var Command_1 = require_Command();
+    var utils_1 = require_utils5();
+    exports.hasHimportCoordinator = /* @__PURE__ */ Symbol("hasHimportCoordinator");
+    var bindings = /* @__PURE__ */ new WeakMap();
+    var internalCommands = /* @__PURE__ */ new WeakSet();
+    var debug = (0, utils_1.Debug)("himport");
+    function copyValue(value) {
+      return value instanceof Buffer ? Buffer.from(value) : value;
+    }
+    function canonicalize(value) {
+      return Buffer.from(value).toString("base64");
+    }
+    function commandToken(value) {
+      if (value === void 0) {
+        return "";
+      }
+      return Buffer.isBuffer(value) ? value.toString("utf8").toUpperCase() : String(value).toUpperCase();
+    }
+    function cloneHimportFieldsets(fieldsets) {
+      if (fieldsets === void 0) {
+        return void 0;
+      }
+      if (!Array.isArray(fieldsets)) {
+        throw new TypeError("himportFieldsets must be an array");
+      }
+      const names = /* @__PURE__ */ new Set();
+      const copied = fieldsets.map((fieldset) => {
+        if (!fieldset || typeof fieldset !== "object") {
+          throw new TypeError("Each HIMPORT fieldset must be an object");
+        }
+        if (typeof fieldset.name !== "string" && !Buffer.isBuffer(fieldset.name)) {
+          throw new TypeError("Each HIMPORT fieldset name must be a string or Buffer");
+        }
+        if (!Array.isArray(fieldset.fields)) {
+          throw new TypeError("Each HIMPORT fieldset fields value must be an array");
+        }
+        const name = copyValue(fieldset.name);
+        const canonicalName = canonicalize(name);
+        if (names.has(canonicalName)) {
+          throw new TypeError("Duplicate HIMPORT fieldset name");
+        }
+        names.add(canonicalName);
+        const fields = fieldset.fields.map((field) => {
+          if (typeof field !== "string" && !Buffer.isBuffer(field)) {
+            throw new TypeError("Each HIMPORT field must be a string or Buffer");
+          }
+          return copyValue(field);
+        });
+        return Object.freeze({
+          name,
+          fields: Object.freeze(fields)
+        });
+      });
+      return Object.freeze(copied);
+    }
+    exports.cloneHimportFieldsets = cloneHimportFieldsets;
+    var HimportCoordinator = class {
+      constructor(fieldsets) {
+        this.definitionsByName = /* @__PURE__ */ new Map();
+        this.sessions = /* @__PURE__ */ new WeakMap();
+        this.managedSets = /* @__PURE__ */ new WeakMap();
+        this.definitions = fieldsets.map((fieldset) => {
+          const definition = {
+            canonicalName: canonicalize(fieldset.name),
+            name: fieldset.name,
+            fields: fieldset.fields
+          };
+          this.definitionsByName.set(definition.canonicalName, definition);
+          return definition;
+        });
+      }
+      get size() {
+        return this.definitions.length;
+      }
+      beginSession(connection) {
+        this.sessions.set(connection, {
+          fieldsets: /* @__PURE__ */ new Map()
+        });
+      }
+      detach(connection) {
+        this.sessions.delete(connection);
+      }
+      invalidate(connection) {
+        const session = this.sessions.get(connection);
+        if (session) {
+          session.fieldsets.clear();
+        }
+      }
+      getDefinitions() {
+        return this.definitions;
+      }
+      classify(command) {
+        const existing = this.managedSets.get(command);
+        if (existing) {
+          return existing;
+        }
+        if (command.name.toLowerCase() !== "himport" || commandToken(command.args[0]) !== "SET") {
+          return void 0;
+        }
+        const fieldsetName = command.args[2];
+        if (typeof fieldsetName !== "string" && !Buffer.isBuffer(fieldsetName)) {
+          return void 0;
+        }
+        const definition = this.definitionsByName.get(canonicalize(fieldsetName));
+        if (!definition) {
+          return void 0;
+        }
+        const context = {
+          definition,
+          recoveryAttempts: 0,
+          recoveryInstalled: false
+        };
+        this.managedSets.set(command, context);
+        return context;
+      }
+      prepareCommand(connection, command) {
+        const context = this.classify(command);
+        if (!context) {
+          return void 0;
+        }
+        return this.ensurePrepared(connection, context.definition);
+      }
+      hasManagedSet(commands) {
+        return commands.some((command) => this.classify(command) !== void 0);
+      }
+      prepareCommands(connection, commands) {
+        const preparations = /* @__PURE__ */ new Set();
+        for (const command of commands) {
+          const preparation = this.prepareCommand(connection, command);
+          if (preparation) {
+            preparations.add(preparation);
+          }
+        }
+        if (preparations.size === 0) {
+          return void 0;
+        }
+        return Promise.all(preparations).then(() => void 0);
+      }
+      interceptCommand(connection, command, ready, resumeSend) {
+        if (command.isSettled) {
+          return true;
+        }
+        if (command.name.toLowerCase() === "reset") {
+          this.invalidate(connection);
+        }
+        const managedSet = this.classify(command);
+        if (!managedSet) {
+          return false;
+        }
+        this.installRecovery(connection, command, resumeSend);
+        const maySend = this.consumeAllowedSend(connection, command);
+        if (!ready || maySend) {
+          return false;
+        }
+        const preparation = this.prepareCommand(connection, command);
+        if (!preparation) {
+          return false;
+        }
+        preparation.then(() => {
+          if (command.isSettled) {
+            return;
+          }
+          try {
+            this.allowNextSend(connection, command);
+            resumeSend();
+          } catch (error) {
+            command.reject(error);
+          }
+        }, (error) => {
+          if (!command.isSettled) {
+            command.reject(error);
+          }
+        });
+        return true;
+      }
+      allowNextSend(connection, command) {
+        const context = this.classify(command);
+        if (context) {
+          context.sendWithoutPreparationOn = connection;
+        }
+      }
+      consumeAllowedSend(connection, command) {
+        const context = this.managedSets.get(command);
+        if (context?.sendWithoutPreparationOn !== connection) {
+          return false;
+        }
+        context.sendWithoutPreparationOn = void 0;
+        return true;
+      }
+      installRecovery(connection, command, resumeSend) {
+        const context = this.classify(command);
+        if (!context) {
+          return;
+        }
+        context.lastConnection = connection;
+        context.resumeSend = resumeSend;
+        if (context.recoveryInstalled) {
+          return;
+        }
+        context.recoveryInstalled = true;
+        const reject = command.reject;
+        command.reject = (error) => {
+          if (command.isSettled) {
+            return;
+          }
+          const recoveryConnection = context.lastConnection;
+          const recoverySend = context.resumeSend;
+          if (context.recoveryAttempts > 0 || !recoveryConnection || !recoverySend || !isMissingFieldsetError(error)) {
+            reject.call(command, error);
+            return;
+          }
+          context.recoveryAttempts += 1;
+          this.markUnprepared(recoveryConnection, context.definition);
+          const preparation = this.ensurePrepared(recoveryConnection, context.definition);
+          Promise.resolve(preparation).then(() => {
+            if (command.isSettled) {
+              return;
+            }
+            try {
+              this.allowNextSend(recoveryConnection, command);
+              recoverySend();
+            } catch (sendError) {
+              reject.call(command, sendError);
+            }
+          }, (preparationError) => {
+            if (!command.isSettled) {
+              reject.call(command, preparationError);
+            }
+          });
+        };
+      }
+      ensurePrepared(connection, definition) {
+        const session = this.getSession(connection);
+        const current = session.fieldsets.get(definition.canonicalName);
+        if (current?.status === "prepared") {
+          return void 0;
+        }
+        if (current?.status === "preparing") {
+          return current.promise;
+        }
+        const command = new Command_1.default("himport", [
+          "PREPARE",
+          definition.name,
+          ...definition.fields
+        ]);
+        internalCommands.add(command);
+        const promise = Promise.resolve(connection.sendCommand(command)).then(() => {
+          if (this.sessions.get(connection) !== session) {
+            return this.ensurePrepared(connection, definition) ?? Promise.resolve();
+          }
+          const latest = session.fieldsets.get(definition.canonicalName);
+          if (latest?.status === "preparing" && latest.promise === promise) {
+            session.fieldsets.set(definition.canonicalName, {
+              status: "prepared"
+            });
+          }
+        }, (error) => {
+          if (this.sessions.get(connection) !== session) {
+            return this.ensurePrepared(connection, definition) ?? Promise.resolve();
+          }
+          const latest = session.fieldsets.get(definition.canonicalName);
+          if (latest?.status === "preparing" && latest.promise === promise) {
+            session.fieldsets.delete(definition.canonicalName);
+          }
+          throw error;
+        });
+        session.fieldsets.set(definition.canonicalName, {
+          status: "preparing",
+          promise
+        });
+        return promise;
+      }
+      getSession(connection) {
+        let session = this.sessions.get(connection);
+        if (!session) {
+          session = {
+            fieldsets: /* @__PURE__ */ new Map()
+          };
+          this.sessions.set(connection, session);
+        }
+        return session;
+      }
+      markUnprepared(connection, definition) {
+        const fieldsets = this.getSession(connection).fieldsets;
+        if (fieldsets.get(definition.canonicalName)?.status === "prepared") {
+          fieldsets.delete(definition.canonicalName);
+        }
+      }
+    };
+    exports.default = HimportCoordinator;
+    function bindHimportCoordinator(owner, coordinator, role) {
+      bindings.set(owner, { coordinator, role });
+      owner[exports.hasHimportCoordinator] = true;
+    }
+    exports.bindHimportCoordinator = bindHimportCoordinator;
+    function getHimportBinding(owner) {
+      return bindings.get(owner);
+    }
+    exports.getHimportBinding = getHimportBinding;
+    function interceptHimportCommand(connection, command, ready, resumeSend) {
+      const binding = bindings.get(connection);
+      if (!binding || binding.role === "replica" || isInternalHimportCommand(command)) {
+        return false;
+      }
+      return binding.coordinator.interceptCommand(connection, command, ready, resumeSend);
+    }
+    exports.interceptHimportCommand = interceptHimportCommand;
+    function interceptHimportPipeline({ owner, commands, slot, preferredNodeKey, setDestination, resume, reject }) {
+      const binding = bindings.get(owner);
+      if (!binding || !binding.coordinator.hasManagedSet(commands)) {
+        return false;
+      }
+      let connection = owner;
+      if (binding.role === "cluster") {
+        const nodeKey = preferredNodeKey ?? owner.slots?.[slot]?.[0];
+        const connectionPool = owner.connectionPool;
+        const clusterConnection = nodeKey && connectionPool?.getInstanceByKey(nodeKey) || connectionPool?.getSampleInstance("master");
+        if (!clusterConnection) {
+          reject(new Error("No master node is available for the pipeline"));
+          return true;
+        }
+        connection = clusterConnection;
+        setDestination(connection);
+      }
+      const preparation = binding.coordinator.prepareCommands(connection, commands);
+      if (!preparation) {
+        return false;
+      }
+      preparation.then(() => {
+        try {
+          resume();
+        } catch (error) {
+          reject(error);
+        }
+      }, (error) => {
+        reject(error);
+      });
+      return true;
+    }
+    exports.interceptHimportPipeline = interceptHimportPipeline;
+    function setHimportRole(owner, role) {
+      const binding = bindings.get(owner);
+      if (binding) {
+        binding.role = role;
+      }
+    }
+    exports.setHimportRole = setHimportRole;
+    function unbindHimportCoordinator(owner) {
+      const binding = bindings.get(owner);
+      if (binding) {
+        binding.coordinator.detach(owner);
+        bindings.delete(owner);
+      }
+      owner[exports.hasHimportCoordinator] = false;
+    }
+    exports.unbindHimportCoordinator = unbindHimportCoordinator;
+    function isInternalHimportCommand(command) {
+      return internalCommands.has(command);
+    }
+    exports.isInternalHimportCommand = isInternalHimportCommand;
+    function isHimportControlCommand(command) {
+      if (command.name.toLowerCase() !== "himport") {
+        return false;
+      }
+      return ["PREPARE", "DISCARD", "DISCARDALL"].includes(commandToken(command.args[0]));
+    }
+    exports.isHimportControlCommand = isHimportControlCommand;
+    function interceptHimportControlCommand(connections, command) {
+      if (!isHimportControlCommand(command) || connections.length === 0) {
+        return false;
+      }
+      const replies = connections.map((connection) => {
+        const clone = new Command_1.default(command.name, command.args);
+        connection.sendCommand(clone);
+        return clone.promise;
+      });
+      Promise.allSettled(replies).then((results) => {
+        let firstReply;
+        let hasFirstReply = false;
+        for (const result of results) {
+          if (result.status === "rejected") {
+            command.reject(result.reason);
+            return;
+          }
+          if (!hasFirstReply) {
+            firstReply = result.value;
+            hasFirstReply = true;
+          } else if (String(result.value) !== String(firstReply)) {
+            debug("divergent HIMPORT reply across masters (%s != %s)", result.value, firstReply);
+          }
+        }
+        command.resolve(firstReply);
+      });
+      return true;
+    }
+    exports.interceptHimportControlCommand = interceptHimportControlCommand;
+    function isMissingFieldsetError(error) {
+      return error.message.toLowerCase().includes("no such fieldset");
+    }
+  }
+});
+
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/Pipeline.js
 var require_Pipeline = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/Pipeline.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/Pipeline.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var calculateSlot = require_lib4();
@@ -46779,6 +58218,7 @@ var require_Pipeline = __commonJS({
     var buffer_1 = __require("buffer");
     var utils_1 = require_utils5();
     var Commander_1 = require_Commander();
+    var HimportCoordinator_1 = require_HimportCoordinator();
     function generateMultiWithNodes(redis, keys) {
       const slot = calculateSlot(keys[0]);
       const target = redis._groupsBySlot[slot];
@@ -46893,16 +58333,16 @@ var require_Pipeline = __commonJS({
             };
             const cluster = this.redis;
             cluster.handleError(commonError, this.leftRedirections, {
-              moved: function(_slot, key) {
+              moved: function(slot, key) {
                 _this.preferKey = key;
-                if (cluster.slots[errv[1]]) {
-                  if (cluster.slots[errv[1]][0] !== key) {
-                    cluster.slots[errv[1]] = [key];
+                if (cluster.slots[slot]) {
+                  if (cluster.slots[slot][0] !== key) {
+                    cluster.slots[slot] = [key];
                   }
                 } else {
-                  cluster.slots[errv[1]] = [key];
+                  cluster.slots[slot] = [key];
                 }
-                cluster._groupsBySlot[errv[1]] = cluster._groupsIds[cluster.slots[errv[1]].join(";")];
+                cluster._groupsBySlot[slot] = cluster._groupsIds[cluster.slots[slot].join(";")];
                 cluster.refreshSlotsCache();
                 _this.exec();
               },
@@ -47024,12 +58464,30 @@ var require_Pipeline = __commonJS({
         }
       }
       const _this = this;
-      execPipeline();
+      let node;
+      const himportIntercepted = (0, HimportCoordinator_1.interceptHimportPipeline)({
+        owner: _this.redis,
+        commands: _this._queue,
+        slot: pipelineSlot,
+        preferredNodeKey: _this.preferKey,
+        setDestination(connection) {
+          node = {
+            slot: pipelineSlot,
+            redis: connection
+          };
+        },
+        resume: execPipeline,
+        reject(error) {
+          _this.reject(error);
+        }
+      });
+      if (!himportIntercepted) {
+        execPipeline();
+      }
       return this.promise;
       function execPipeline() {
         let writePending = _this.replyPending = _this._queue.length;
-        let node;
-        if (_this.isCluster) {
+        if (_this.isCluster && !node) {
           node = {
             slot: pipelineSlot,
             redis: _this.redis.connectionPool.nodes.all[_this.preferKey]
@@ -47086,16 +58544,16 @@ var require_Pipeline = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/tracing.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/tracing.js
 var require_tracing = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/tracing.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/tracing.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.traceConnect = exports.traceBatch = exports.traceCommand = exports.sanitizeArgs = void 0;
     var SERIALIZATION_SUBSETS = [
       { regex: /^ECHO/i, args: 0 },
       {
-        regex: /^(LPUSH|MSET|PFA|PUBLISH|RPUSH|SADD|SET|SPUBLISH|XADD|ZADD)/i,
+        regex: /^(GETSET|LPUSH|MSET|PFA|PSETEX|PUBLISH|RPUSH|SADD|SET|SPUBLISH|XADD|ZADD)/i,
         args: 1
       },
       { regex: /^(HSET|HMSET|LSET|LINSERT)/i, args: 2 },
@@ -47167,9 +58625,9 @@ var require_tracing = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/transaction.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/transaction.js
 var require_transaction = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/transaction.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/transaction.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.addTransactionSupport = void 0;
@@ -47263,9 +58721,9 @@ var require_transaction = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/applyMixin.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/utils/applyMixin.js
 var require_applyMixin = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/utils/applyMixin.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/utils/applyMixin.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     function applyMixin(derivedConstructor, mixinConstructor) {
@@ -47277,9 +58735,9 @@ var require_applyMixin = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ClusterOptions.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/cluster/ClusterOptions.js
 var require_ClusterOptions = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ClusterOptions.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/cluster/ClusterOptions.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DEFAULT_CLUSTER_OPTIONS = void 0;
@@ -47306,14 +58764,38 @@ var require_ClusterOptions = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/util.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/cluster/util.js
 var require_util = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/util.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/cluster/util.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    exports.getConnectionName = exports.weightSrvRecords = exports.groupSrvRecords = exports.getUniqueHostnamesFromOptions = exports.normalizeNodeOptions = exports.nodeKeyToRedisOptions = exports.getNodeKey = void 0;
+    exports.getConnectionName = exports.weightSrvRecords = exports.groupSrvRecords = exports.getUniqueHostnamesFromOptions = exports.normalizeNodeOptions = exports.nodeKeyToRedisOptions = exports.getNodeKey = exports.waitForRedisReady = void 0;
     var utils_1 = require_utils5();
     var net_1 = __require("net");
+    function waitForRedisReady(redis) {
+      if (redis.status === "ready") {
+        return Promise.resolve();
+      }
+      if (redis.status === "wait") {
+        return redis.connect();
+      }
+      if (redis.status === "end") {
+        return Promise.reject(new Error(utils_1.CONNECTION_CLOSED_ERROR_MSG));
+      }
+      return new Promise((resolve, reject) => {
+        const onReady = () => {
+          redis.removeListener("end", onEnd);
+          resolve();
+        };
+        const onEnd = () => {
+          redis.removeListener("ready", onReady);
+          reject(new Error(utils_1.CONNECTION_CLOSED_ERROR_MSG));
+        };
+        redis.once("ready", onReady);
+        redis.once("end", onEnd);
+      });
+    }
+    exports.waitForRedisReady = waitForRedisReady;
     function getNodeKey(node) {
       node.port = node.port || 6379;
       node.host = node.host || "127.0.0.1";
@@ -47406,9 +58888,9 @@ var require_util = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ClusterSubscriber.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/cluster/ClusterSubscriber.js
 var require_ClusterSubscriber = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ClusterSubscriber.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/cluster/ClusterSubscriber.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var util_1 = require_util();
@@ -47511,6 +58993,8 @@ var require_ClusterSubscriber = __commonJS({
           connectionName: (0, util_1.getConnectionName)(connectionPrefix, options.connectionName),
           lazyConnect: true,
           tls: options.tls,
+          protocol: options.protocol,
+          replyMapping: options.replyMapping,
           // Don't try to reconnect the subscriber connection. If the connection fails
           // we will get an end event (handled below), at which point we'll pick a new
           // node from the pool and try to connect to that as the subscriber connection.
@@ -47592,9 +59076,9 @@ var require_ClusterSubscriber = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ConnectionPool.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/cluster/ConnectionPool.js
 var require_ConnectionPool = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ConnectionPool.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/cluster/ConnectionPool.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var events_1 = __require("events");
@@ -47603,10 +59087,11 @@ var require_ConnectionPool = __commonJS({
     var Redis_1 = require_Redis();
     var debug = (0, utils_1.Debug)("cluster:connectionPool");
     var ConnectionPool = class extends events_1.EventEmitter {
-      constructor(redisOptions, clusterNodeRetryStrategy = null) {
+      constructor(redisOptions, clusterNodeRetryStrategy = null, hooks = {}) {
         super();
         this.redisOptions = redisOptions;
         this.clusterNodeRetryStrategy = clusterNodeRetryStrategy;
+        this.hooks = hooks;
         this.nodes = {
           all: {},
           master: {},
@@ -47659,6 +59144,7 @@ var require_ConnectionPool = __commonJS({
           enableOfflineQueue: true,
           readOnly
         }, node, this.redisOptions, { lazyConnect: true }));
+        this.hooks.onCreate?.(redis, readOnly);
         return redis;
       }
       /**
@@ -47686,6 +59172,7 @@ var require_ConnectionPool = __commonJS({
               delete this.nodes.slave[key];
               this.nodes.master[key] = redis;
             }
+            this.hooks.onRoleChange?.(redis, key, readOnly);
           }
         } else {
           debug("Connecting to %s as %s", key, readOnly ? "slave" : "master");
@@ -47693,6 +59180,9 @@ var require_ConnectionPool = __commonJS({
           this.nodes.all[key] = redis;
           this.nodes[readOnly ? "slave" : "master"][key] = redis;
           redis.once("end", () => {
+            if (this.nodes.all[key] && this.nodes.all[key] !== redis) {
+              return;
+            }
             this.removeNode(key);
             this.emit("-node", redis, key);
             if (!Object.keys(this.nodes.all).length) {
@@ -47703,6 +59193,25 @@ var require_ConnectionPool = __commonJS({
           redis.on("error", (error) => {
             this.emit("nodeError", error, key);
           });
+        }
+        return redis;
+      }
+      /**
+       * Replace the connection to the node with a fresh one. Used when the
+       * existing connection is known to be stale, e.g. after a MOVED redirect
+       * that points back at the node it came from.
+       */
+      recreate(node, readOnly = false) {
+        const key = (0, util_1.getNodeKey)(node);
+        const existing = this.nodes.all[key];
+        if (existing) {
+          debug("Recreating connection to %s", key);
+          this.removeNode(key);
+          existing.disconnect();
+        }
+        const redis = this.findOrCreate(node, readOnly);
+        if (existing) {
+          this.emit("-node", existing, key);
         }
         return redis;
       }
@@ -47738,6 +59247,7 @@ var require_ConnectionPool = __commonJS({
         const { nodes } = this;
         if (nodes.all[key]) {
           debug("Remove %s from the pool", key);
+          this.hooks.onRemove?.(nodes.all[key]);
           delete nodes.all[key];
         }
         delete nodes.master[key];
@@ -48063,9 +59573,9 @@ var require_denque = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/DelayQueue.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/cluster/DelayQueue.js
 var require_DelayQueue = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/DelayQueue.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/cluster/DelayQueue.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var utils_1 = require_utils5();
@@ -48119,9 +59629,9 @@ var require_DelayQueue = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ShardedSubscriber.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/cluster/ShardedSubscriber.js
 var require_ShardedSubscriber = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ShardedSubscriber.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/cluster/ShardedSubscriber.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var util_1 = require_util();
@@ -48155,7 +59665,6 @@ var require_ShardedSubscriber = __commonJS({
     };
     var ShardedSubscriber = class {
       constructor(emitter, options, redisOptions) {
-        var _a;
         this.emitter = emitter;
         this.status = SubscriberStatus.IDLE;
         this.instance = null;
@@ -48182,7 +59691,7 @@ var require_ShardedSubscriber = __commonJS({
           retryStrategy: null,
           lazyConnect: true
         }, options, redisOptions));
-        this.lazyConnect = (_a = redisOptions === null || redisOptions === void 0 ? void 0 : redisOptions.lazyConnect) !== null && _a !== void 0 ? _a : true;
+        this.lazyConnect = redisOptions?.lazyConnect ?? true;
         this.nodeKey = (0, util_1.getNodeKey)(options);
         this.instance.on("end", this.onEnd);
         this.instance.on("error", this.onError);
@@ -48264,9 +59773,9 @@ var require_ShardedSubscriber = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ClusterSubscriberGroup.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/cluster/ClusterSubscriberGroup.js
 var require_ClusterSubscriberGroup = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/ClusterSubscriberGroup.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/cluster/ClusterSubscriberGroup.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var utils_1 = require_utils5();
@@ -48573,16 +60082,16 @@ var require_ClusterSubscriberGroup = __commonJS({
         });
       }
     };
-    exports.default = ClusterSubscriberGroup;
     ClusterSubscriberGroup.MAX_RETRY_ATTEMPTS = 10;
     ClusterSubscriberGroup.MAX_BACKOFF_MS = 2e3;
     ClusterSubscriberGroup.BASE_BACKOFF_MS = 100;
+    exports.default = ClusterSubscriberGroup;
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/index.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/cluster/index.js
 var require_cluster = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/cluster/index.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/cluster/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var commands_1 = require_built();
@@ -48604,6 +60113,7 @@ var require_cluster = __commonJS({
     var util_1 = require_util();
     var Deque = require_denque();
     var ClusterSubscriberGroup_1 = require_ClusterSubscriberGroup();
+    var HimportCoordinator_1 = require_HimportCoordinator();
     var debug = (0, utils_1.Debug)("cluster");
     var REJECT_OVERWRITTEN_COMMANDS = /* @__PURE__ */ new WeakSet();
     var Cluster = class _Cluster extends Commander_1.default {
@@ -48611,8 +60121,10 @@ var require_cluster = __commonJS({
        * Creates an instance of Cluster.
        */
       //TODO: Add an option that enables or disables sharded PubSub
+      // `redisOptions.replyMapping` carries the `ReplyMapping` class type parameter
+      // so RESP3 return shapes are inferred from the options literal at construction,
+      // mirroring the single-node `Redis` constructor.
       constructor(startupNodes, options = {}) {
-        var _a;
         super();
         this.slots = [];
         this._groupsIds = {};
@@ -48630,6 +60142,11 @@ var require_cluster = __commonJS({
         events_1.EventEmitter.call(this);
         this.startupNodes = startupNodes;
         this.options = (0, utils_1.defaults)({}, options, ClusterOptions_1.DEFAULT_CLUSTER_OPTIONS, this.options);
+        this.options.himportFieldsets = (0, HimportCoordinator_1.cloneHimportFieldsets)(this.options.himportFieldsets);
+        const himportCoordinator = this.options.himportFieldsets?.length ? new HimportCoordinator_1.default(this.options.himportFieldsets) : void 0;
+        if (himportCoordinator) {
+          (0, HimportCoordinator_1.bindHimportCoordinator)(this, himportCoordinator, "cluster");
+        }
         if (this.options.shardedSubscribers) {
           this.createShardedSubscriberGroup();
         }
@@ -48639,7 +60156,32 @@ var require_cluster = __commonJS({
         if (typeof this.options.scaleReads !== "function" && ["all", "master", "slave"].indexOf(this.options.scaleReads) === -1) {
           throw new Error('Invalid option scaleReads "' + this.options.scaleReads + '". Expected "all", "master", "slave" or a custom function');
         }
-        this.connectionPool = new ConnectionPool_1.default((_a = this.options.redisOptions) !== null && _a !== void 0 ? _a : {}, this.options.clusterNodeRetryStrategy);
+        const redisOptions = { ...this.options.redisOptions ?? {} };
+        delete redisOptions.himportFieldsets;
+        this.connectionPool = new ConnectionPool_1.default(redisOptions, this.options.clusterNodeRetryStrategy, himportCoordinator ? {
+          onCreate: (redis, readOnly) => {
+            (0, HimportCoordinator_1.bindHimportCoordinator)(redis, himportCoordinator, readOnly ? "replica" : "master");
+          },
+          onRoleChange: (redis, key, readOnly) => {
+            (0, HimportCoordinator_1.setHimportRole)(redis, readOnly ? "replica" : "master");
+            himportCoordinator.invalidate(redis);
+            if (!readOnly) {
+              (0, util_1.waitForRedisReady)(redis).then(() => {
+                for (const definition of himportCoordinator.getDefinitions()) {
+                  const preparation = himportCoordinator.ensurePrepared(redis, definition);
+                  preparation?.catch((error) => {
+                    this.emit("node error", error, key);
+                  });
+                }
+              }, (error) => {
+                this.emit("node error", error, key);
+              });
+            }
+          },
+          onRemove: (redis) => {
+            (0, HimportCoordinator_1.unbindHimportCoordinator)(redis);
+          }
+        } : void 0);
         this.connectionPool.on("-node", (redis, key) => {
           this.emit("-node", redis);
         });
@@ -48817,9 +60359,12 @@ var require_cluster = __commonJS({
        * var anotherCluster = cluster.duplicate();
        * ```
        */
-      duplicate(overrideStartupNodes = [], overrideOptions = {}) {
+      duplicate(overrideStartupNodes = [], overrideOptions) {
         const startupNodes = overrideStartupNodes.length > 0 ? overrideStartupNodes : this.startupNodes.slice(0);
         const options = Object.assign({}, this.options, overrideOptions);
+        if (this.options.redisOptions && overrideOptions?.redisOptions) {
+          options.redisOptions = Object.assign({}, this.options.redisOptions, overrideOptions.redisOptions);
+        }
         return new _Cluster(startupNodes, options);
       }
       /**
@@ -48913,6 +60458,9 @@ var require_cluster = __commonJS({
           command.reject(new Error(utils_1.CONNECTION_CLOSED_ERROR_MSG));
           return command.promise;
         }
+        if (!stream && !node && this.status === "ready" && (0, HimportCoordinator_1.isHimportControlCommand)(command) && (0, HimportCoordinator_1.interceptHimportControlCommand)(this.connectionPool.getNodes("master"), command)) {
+          return command.promise;
+        }
         let to = this.options.scaleReads;
         if (to !== "master") {
           const isCommandReadOnly = command.isReadOnly || (0, commands_1.exists)(command.name) && (0, commands_1.hasFlag)(command.name, "readonly");
@@ -48923,6 +60471,7 @@ var require_cluster = __commonJS({
         let targetSlot = node ? node.slot : command.getSlot();
         const ttl = {};
         const _this = this;
+        let lastRedis = null;
         if (!node && !REJECT_OVERWRITTEN_COMMANDS.has(command)) {
           REJECT_OVERWRITTEN_COMMANDS.add(command);
           const reject = command.reject;
@@ -48938,7 +60487,14 @@ var require_cluster = __commonJS({
                   _this.slots[slot] = [key];
                 }
                 _this._groupsBySlot[slot] = _this._groupsIds[_this.slots[slot].join(";")];
-                _this.connectionPool.findOrCreate(_this.natMapper(key));
+                const mapped = _this.natMapper(key);
+                const mappedKey = (0, util_1.getNodeKey)(mapped);
+                if (lastRedis && (0, util_1.getNodeKey)(lastRedis.options) === mappedKey && _this.connectionPool.getInstanceByKey(mappedKey) === lastRedis) {
+                  debug("MOVED redirect points back at %s; recreating its connection", mappedKey);
+                  _this.connectionPool.recreate(mapped);
+                } else {
+                  _this.connectionPool.findOrCreate(mapped);
+                }
                 tryConnection();
                 debug("refreshing slot caches... (triggered by MOVED error)");
                 _this.refreshSlotsCache();
@@ -49026,7 +60582,6 @@ var require_cluster = __commonJS({
                 }
                 if (asking) {
                   redis = _this.connectionPool.getInstanceByKey(asking);
-                  redis.asking();
                 }
               }
               if (!redis) {
@@ -49052,6 +60607,33 @@ var require_cluster = __commonJS({
           if (!redis) {
             command.reject(new Error("Cluster isn't ready and enableOfflineQueue options is false"));
             return;
+          }
+          lastRedis = redis;
+          if (asking) {
+            const himportBinding = (0, HimportCoordinator_1.getHimportBinding)(redis);
+            const managedSet = !stream && himportBinding?.role === "master" ? himportBinding.coordinator.classify(command) : void 0;
+            if (managedSet) {
+              (0, util_1.waitForRedisReady)(redis).then(() => {
+                if (command.isSettled) {
+                  return;
+                }
+                const preparation = himportBinding.coordinator.prepareCommand(redis, command);
+                return preparation ?? Promise.resolve();
+              }).then(() => {
+                if (command.isSettled) {
+                  return;
+                }
+                himportBinding.coordinator.allowNextSend(redis, command);
+                redis.asking();
+                redis.sendCommand(command, stream);
+              }, (error) => {
+                if (!command.isSettled) {
+                  command.reject(error);
+                }
+              });
+              return;
+            }
+            redis.asking();
           }
           redis.sendCommand(command, stream);
         }
@@ -49090,11 +60672,16 @@ var require_cluster = __commonJS({
         }
         const errv = error.message.split(" ");
         if (errv[0] === "MOVED") {
+          const slot = Number(errv[1]);
+          if (!Number.isInteger(slot) || slot < 0 || slot >= 16384) {
+            handlers.defaults();
+            return;
+          }
           const timeout = this.options.retryDelayOnMoved;
           if (timeout && typeof timeout === "number") {
-            this.delayQueue.push("moved", handlers.moved.bind(null, errv[1], errv[2]), { timeout });
+            this.delayQueue.push("moved", handlers.moved.bind(null, slot, errv[2]), { timeout });
           } else {
-            handlers.moved(errv[1], errv[2]);
+            handlers.moved(slot, errv[2]);
           }
         } else if (errv[0] === "ASK") {
           handlers.ask(errv[1], errv[2]);
@@ -49153,7 +60740,6 @@ var require_cluster = __commonJS({
        * Called when closed to check whether a reconnection should be made
        */
       handleCloseEvent(reason) {
-        var _a;
         if (reason) {
           debug("closed because %s", reason);
         }
@@ -49172,7 +60758,7 @@ var require_cluster = __commonJS({
           }, retryDelay);
         } else {
           if (this.options.shardedSubscribers) {
-            (_a = this.subscriberGroupEmitter) === null || _a === void 0 ? void 0 : _a.removeAllListeners();
+            this.subscriberGroupEmitter?.removeAllListeners();
           }
           this.setStatus("end");
           this.flushQueue(new Error("None of startup nodes is available"));
@@ -49220,6 +60806,8 @@ var require_cluster = __commonJS({
           enableOfflineQueue: true,
           enableReadyCheck: false,
           retryStrategy: null,
+          protocol: 2,
+          replyMapping: "legacy",
           connectionName: (0, util_1.getConnectionName)("refresher", this.options.redisOptions && this.options.redisOptions.connectionName)
         });
         duplicatedConnection.on("error", utils_1.noop);
@@ -49434,9 +61022,9 @@ var require_cluster = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/AbstractConnector.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/connectors/AbstractConnector.js
 var require_AbstractConnector = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/AbstractConnector.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/connectors/AbstractConnector.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var utils_1 = require_utils5();
@@ -49466,9 +61054,9 @@ var require_AbstractConnector = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/StandaloneConnector.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/connectors/StandaloneConnector.js
 var require_StandaloneConnector = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/StandaloneConnector.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/connectors/StandaloneConnector.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var net_1 = __require("net");
@@ -49531,9 +61119,9 @@ var require_StandaloneConnector = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/SentinelConnector/SentinelIterator.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/connectors/SentinelConnector/SentinelIterator.js
 var require_SentinelIterator = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/SentinelConnector/SentinelIterator.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/connectors/SentinelConnector/SentinelIterator.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     function isSentinelEql(a, b) {
@@ -49571,9 +61159,9 @@ var require_SentinelIterator = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/SentinelConnector/FailoverDetector.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/connectors/SentinelConnector/FailoverDetector.js
 var require_FailoverDetector = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/SentinelConnector/FailoverDetector.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/connectors/SentinelConnector/FailoverDetector.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.FailoverDetector = void 0;
@@ -49619,9 +61207,9 @@ var require_FailoverDetector = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/SentinelConnector/index.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/connectors/SentinelConnector/index.js
 var require_SentinelConnector = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/SentinelConnector/index.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/connectors/SentinelConnector/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SentinelIterator = void 0;
@@ -49774,14 +61362,12 @@ var require_SentinelConnector = __commonJS({
           host: endpoint.host,
           username: this.options.sentinelUsername || null,
           password: this.options.sentinelPassword || null,
-          family: endpoint.family || // @ts-expect-error
-          ("path" in this.options && this.options.path ? void 0 : (
-            // @ts-expect-error
-            this.options.family
-          )),
+          family: endpoint.family || ("path" in this.options && this.options.path ? void 0 : this.options.family),
           tls: this.options.sentinelTLS,
           retryStrategy: null,
           enableReadyCheck: false,
+          protocol: this.options.protocol,
+          replyMapping: "legacy",
           connectTimeout: this.options.connectTimeout,
           commandTimeout: this.options.sentinelCommandTimeout,
           ...options
@@ -49802,7 +61388,6 @@ var require_SentinelConnector = __commonJS({
         }
       }
       async initFailoverDetector() {
-        var _a;
         if (!this.options.failoverDetector) {
           return;
         }
@@ -49815,11 +61400,12 @@ var require_SentinelConnector = __commonJS({
           }
           const client2 = this.connectToSentinel(value, {
             lazyConnect: true,
-            retryStrategy: this.options.sentinelReconnectStrategy
+            retryStrategy: this.options.sentinelReconnectStrategy,
+            protocol: this.options.protocol,
+            replyMapping: "legacy"
           });
           client2.on("reconnecting", () => {
-            var _a2;
-            (_a2 = this.emitter) === null || _a2 === void 0 ? void 0 : _a2.emit("sentinelReconnecting");
+            this.emitter?.emit("sentinelReconnecting");
           });
           sentinels.push({ address: value, client: client2 });
         }
@@ -49829,7 +61415,7 @@ var require_SentinelConnector = __commonJS({
         }
         this.failoverDetector = new FailoverDetector_1.FailoverDetector(this, sentinels);
         await this.failoverDetector.subscribe();
-        (_a = this.emitter) === null || _a === void 0 ? void 0 : _a.emit("failoverSubscribed");
+        this.emitter?.emit("failoverSubscribed");
       }
     };
     exports.default = SentinelConnector;
@@ -49841,18 +61427,14 @@ var require_SentinelConnector = __commonJS({
       if (typeof preferredSlaves === "function") {
         selectedSlave = preferredSlaves(availableSlaves);
       } else if (preferredSlaves !== null && typeof preferredSlaves === "object") {
-        const preferredSlavesArray = Array.isArray(preferredSlaves) ? preferredSlaves : [preferredSlaves];
+        const preferredSlavesArray = Array.isArray(preferredSlaves) ? [...preferredSlaves] : [preferredSlaves];
         preferredSlavesArray.sort((a, b) => {
-          if (!a.prio) {
-            a.prio = 1;
-          }
-          if (!b.prio) {
-            b.prio = 1;
-          }
-          if (a.prio < b.prio) {
+          const aPrio = a.prio ?? 1;
+          const bPrio = b.prio ?? 1;
+          if (aPrio < bPrio) {
             return -1;
           }
-          if (a.prio > b.prio) {
+          if (aPrio > bPrio) {
             return 1;
           }
           return 0;
@@ -49885,9 +61467,9 @@ var require_SentinelConnector = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/index.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/connectors/index.js
 var require_connectors = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/connectors/index.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/connectors/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.SentinelConnector = exports.StandaloneConnector = void 0;
@@ -49898,9 +61480,9 @@ var require_connectors = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/errors/MaxRetriesPerRequestError.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/errors/MaxRetriesPerRequestError.js
 var require_MaxRetriesPerRequestError = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/errors/MaxRetriesPerRequestError.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/errors/MaxRetriesPerRequestError.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var redis_errors_1 = require_redis_errors();
@@ -49918,9 +61500,9 @@ var require_MaxRetriesPerRequestError = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/errors/index.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/errors/index.js
 var require_errors2 = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/errors/index.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/errors/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.MaxRetriesPerRequestError = void 0;
@@ -49929,418 +61511,19 @@ var require_errors2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/redis-parser@3.0.0/node_modules/redis-parser/lib/parser.js
-var require_parser = __commonJS({
-  "../../node_modules/.pnpm/redis-parser@3.0.0/node_modules/redis-parser/lib/parser.js"(exports, module) {
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/utils/version.js
+var require_version3 = __commonJS({
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/utils/version.js"(exports) {
     "use strict";
-    var Buffer2 = __require("buffer").Buffer;
-    var StringDecoder = __require("string_decoder").StringDecoder;
-    var decoder = new StringDecoder();
-    var errors = require_redis_errors();
-    var ReplyError = errors.ReplyError;
-    var ParserError = errors.ParserError;
-    var bufferPool = Buffer2.allocUnsafe(32 * 1024);
-    var bufferOffset = 0;
-    var interval = null;
-    var counter = 0;
-    var notDecreased = 0;
-    function parseSimpleNumbers(parser) {
-      const length = parser.buffer.length - 1;
-      var offset = parser.offset;
-      var number = 0;
-      var sign = 1;
-      if (parser.buffer[offset] === 45) {
-        sign = -1;
-        offset++;
-      }
-      while (offset < length) {
-        const c1 = parser.buffer[offset++];
-        if (c1 === 13) {
-          parser.offset = offset + 1;
-          return sign * number;
-        }
-        number = number * 10 + (c1 - 48);
-      }
-    }
-    function parseStringNumbers(parser) {
-      const length = parser.buffer.length - 1;
-      var offset = parser.offset;
-      var number = 0;
-      var res = "";
-      if (parser.buffer[offset] === 45) {
-        res += "-";
-        offset++;
-      }
-      while (offset < length) {
-        var c1 = parser.buffer[offset++];
-        if (c1 === 13) {
-          parser.offset = offset + 1;
-          if (number !== 0) {
-            res += number;
-          }
-          return res;
-        } else if (number > 429496728) {
-          res += number * 10 + (c1 - 48);
-          number = 0;
-        } else if (c1 === 48 && number === 0) {
-          res += 0;
-        } else {
-          number = number * 10 + (c1 - 48);
-        }
-      }
-    }
-    function parseSimpleString(parser) {
-      const start = parser.offset;
-      const buffer = parser.buffer;
-      const length = buffer.length - 1;
-      var offset = start;
-      while (offset < length) {
-        if (buffer[offset++] === 13) {
-          parser.offset = offset + 1;
-          if (parser.optionReturnBuffers === true) {
-            return parser.buffer.slice(start, offset - 1);
-          }
-          return parser.buffer.toString("utf8", start, offset - 1);
-        }
-      }
-    }
-    function parseLength(parser) {
-      const length = parser.buffer.length - 1;
-      var offset = parser.offset;
-      var number = 0;
-      while (offset < length) {
-        const c1 = parser.buffer[offset++];
-        if (c1 === 13) {
-          parser.offset = offset + 1;
-          return number;
-        }
-        number = number * 10 + (c1 - 48);
-      }
-    }
-    function parseInteger(parser) {
-      if (parser.optionStringNumbers === true) {
-        return parseStringNumbers(parser);
-      }
-      return parseSimpleNumbers(parser);
-    }
-    function parseBulkString(parser) {
-      const length = parseLength(parser);
-      if (length === void 0) {
-        return;
-      }
-      if (length < 0) {
-        return null;
-      }
-      const offset = parser.offset + length;
-      if (offset + 2 > parser.buffer.length) {
-        parser.bigStrSize = offset + 2;
-        parser.totalChunkSize = parser.buffer.length;
-        parser.bufferCache.push(parser.buffer);
-        return;
-      }
-      const start = parser.offset;
-      parser.offset = offset + 2;
-      if (parser.optionReturnBuffers === true) {
-        return parser.buffer.slice(start, offset);
-      }
-      return parser.buffer.toString("utf8", start, offset);
-    }
-    function parseError(parser) {
-      var string = parseSimpleString(parser);
-      if (string !== void 0) {
-        if (parser.optionReturnBuffers === true) {
-          string = string.toString();
-        }
-        return new ReplyError(string);
-      }
-    }
-    function handleError2(parser, type) {
-      const err = new ParserError(
-        "Protocol error, got " + JSON.stringify(String.fromCharCode(type)) + " as reply type byte",
-        JSON.stringify(parser.buffer),
-        parser.offset
-      );
-      parser.buffer = null;
-      parser.returnFatalError(err);
-    }
-    function parseArray(parser) {
-      const length = parseLength(parser);
-      if (length === void 0) {
-        return;
-      }
-      if (length < 0) {
-        return null;
-      }
-      const responses = new Array(length);
-      return parseArrayElements(parser, responses, 0);
-    }
-    function pushArrayCache(parser, array, pos) {
-      parser.arrayCache.push(array);
-      parser.arrayPos.push(pos);
-    }
-    function parseArrayChunks(parser) {
-      const tmp = parser.arrayCache.pop();
-      var pos = parser.arrayPos.pop();
-      if (parser.arrayCache.length) {
-        const res = parseArrayChunks(parser);
-        if (res === void 0) {
-          pushArrayCache(parser, tmp, pos);
-          return;
-        }
-        tmp[pos++] = res;
-      }
-      return parseArrayElements(parser, tmp, pos);
-    }
-    function parseArrayElements(parser, responses, i) {
-      const bufferLength = parser.buffer.length;
-      while (i < responses.length) {
-        const offset = parser.offset;
-        if (parser.offset >= bufferLength) {
-          pushArrayCache(parser, responses, i);
-          return;
-        }
-        const response = parseType(parser, parser.buffer[parser.offset++]);
-        if (response === void 0) {
-          if (!(parser.arrayCache.length || parser.bufferCache.length)) {
-            parser.offset = offset;
-          }
-          pushArrayCache(parser, responses, i);
-          return;
-        }
-        responses[i] = response;
-        i++;
-      }
-      return responses;
-    }
-    function parseType(parser, type) {
-      switch (type) {
-        case 36:
-          return parseBulkString(parser);
-        case 43:
-          return parseSimpleString(parser);
-        case 42:
-          return parseArray(parser);
-        case 58:
-          return parseInteger(parser);
-        case 45:
-          return parseError(parser);
-        default:
-          return handleError2(parser, type);
-      }
-    }
-    function decreaseBufferPool() {
-      if (bufferPool.length > 50 * 1024) {
-        if (counter === 1 || notDecreased > counter * 2) {
-          const minSliceLen = Math.floor(bufferPool.length / 10);
-          const sliceLength = minSliceLen < bufferOffset ? bufferOffset : minSliceLen;
-          bufferOffset = 0;
-          bufferPool = bufferPool.slice(sliceLength, bufferPool.length);
-        } else {
-          notDecreased++;
-          counter--;
-        }
-      } else {
-        clearInterval(interval);
-        counter = 0;
-        notDecreased = 0;
-        interval = null;
-      }
-    }
-    function resizeBuffer(length) {
-      if (bufferPool.length < length + bufferOffset) {
-        const multiplier = length > 1024 * 1024 * 75 ? 2 : 3;
-        if (bufferOffset > 1024 * 1024 * 111) {
-          bufferOffset = 1024 * 1024 * 50;
-        }
-        bufferPool = Buffer2.allocUnsafe(length * multiplier + bufferOffset);
-        bufferOffset = 0;
-        counter++;
-        if (interval === null) {
-          interval = setInterval(decreaseBufferPool, 50);
-        }
-      }
-    }
-    function concatBulkString(parser) {
-      const list = parser.bufferCache;
-      const oldOffset = parser.offset;
-      var chunks = list.length;
-      var offset = parser.bigStrSize - parser.totalChunkSize;
-      parser.offset = offset;
-      if (offset <= 2) {
-        if (chunks === 2) {
-          return list[0].toString("utf8", oldOffset, list[0].length + offset - 2);
-        }
-        chunks--;
-        offset = list[list.length - 2].length + offset;
-      }
-      var res = decoder.write(list[0].slice(oldOffset));
-      for (var i = 1; i < chunks - 1; i++) {
-        res += decoder.write(list[i]);
-      }
-      res += decoder.end(list[i].slice(0, offset - 2));
-      return res;
-    }
-    function concatBulkBuffer(parser) {
-      const list = parser.bufferCache;
-      const oldOffset = parser.offset;
-      const length = parser.bigStrSize - oldOffset - 2;
-      var chunks = list.length;
-      var offset = parser.bigStrSize - parser.totalChunkSize;
-      parser.offset = offset;
-      if (offset <= 2) {
-        if (chunks === 2) {
-          return list[0].slice(oldOffset, list[0].length + offset - 2);
-        }
-        chunks--;
-        offset = list[list.length - 2].length + offset;
-      }
-      resizeBuffer(length);
-      const start = bufferOffset;
-      list[0].copy(bufferPool, start, oldOffset, list[0].length);
-      bufferOffset += list[0].length - oldOffset;
-      for (var i = 1; i < chunks - 1; i++) {
-        list[i].copy(bufferPool, bufferOffset);
-        bufferOffset += list[i].length;
-      }
-      list[i].copy(bufferPool, bufferOffset, 0, offset - 2);
-      bufferOffset += offset - 2;
-      return bufferPool.slice(start, bufferOffset);
-    }
-    var JavascriptRedisParser = class {
-      /**
-       * Javascript Redis Parser constructor
-       * @param {{returnError: Function, returnReply: Function, returnFatalError?: Function, returnBuffers: boolean, stringNumbers: boolean }} options
-       * @constructor
-       */
-      constructor(options) {
-        if (!options) {
-          throw new TypeError("Options are mandatory.");
-        }
-        if (typeof options.returnError !== "function" || typeof options.returnReply !== "function") {
-          throw new TypeError("The returnReply and returnError options have to be functions.");
-        }
-        this.setReturnBuffers(!!options.returnBuffers);
-        this.setStringNumbers(!!options.stringNumbers);
-        this.returnError = options.returnError;
-        this.returnFatalError = options.returnFatalError || options.returnError;
-        this.returnReply = options.returnReply;
-        this.reset();
-      }
-      /**
-       * Reset the parser values to the initial state
-       *
-       * @returns {undefined}
-       */
-      reset() {
-        this.offset = 0;
-        this.buffer = null;
-        this.bigStrSize = 0;
-        this.totalChunkSize = 0;
-        this.bufferCache = [];
-        this.arrayCache = [];
-        this.arrayPos = [];
-      }
-      /**
-       * Set the returnBuffers option
-       *
-       * @param {boolean} returnBuffers
-       * @returns {undefined}
-       */
-      setReturnBuffers(returnBuffers) {
-        if (typeof returnBuffers !== "boolean") {
-          throw new TypeError("The returnBuffers argument has to be a boolean");
-        }
-        this.optionReturnBuffers = returnBuffers;
-      }
-      /**
-       * Set the stringNumbers option
-       *
-       * @param {boolean} stringNumbers
-       * @returns {undefined}
-       */
-      setStringNumbers(stringNumbers) {
-        if (typeof stringNumbers !== "boolean") {
-          throw new TypeError("The stringNumbers argument has to be a boolean");
-        }
-        this.optionStringNumbers = stringNumbers;
-      }
-      /**
-       * Parse the redis buffer
-       * @param {Buffer} buffer
-       * @returns {undefined}
-       */
-      execute(buffer) {
-        if (this.buffer === null) {
-          this.buffer = buffer;
-          this.offset = 0;
-        } else if (this.bigStrSize === 0) {
-          const oldLength = this.buffer.length;
-          const remainingLength = oldLength - this.offset;
-          const newBuffer = Buffer2.allocUnsafe(remainingLength + buffer.length);
-          this.buffer.copy(newBuffer, 0, this.offset, oldLength);
-          buffer.copy(newBuffer, remainingLength, 0, buffer.length);
-          this.buffer = newBuffer;
-          this.offset = 0;
-          if (this.arrayCache.length) {
-            const arr = parseArrayChunks(this);
-            if (arr === void 0) {
-              return;
-            }
-            this.returnReply(arr);
-          }
-        } else if (this.totalChunkSize + buffer.length >= this.bigStrSize) {
-          this.bufferCache.push(buffer);
-          var tmp = this.optionReturnBuffers ? concatBulkBuffer(this) : concatBulkString(this);
-          this.bigStrSize = 0;
-          this.bufferCache = [];
-          this.buffer = buffer;
-          if (this.arrayCache.length) {
-            this.arrayCache[0][this.arrayPos[0]++] = tmp;
-            tmp = parseArrayChunks(this);
-            if (tmp === void 0) {
-              return;
-            }
-          }
-          this.returnReply(tmp);
-        } else {
-          this.bufferCache.push(buffer);
-          this.totalChunkSize += buffer.length;
-          return;
-        }
-        while (this.offset < this.buffer.length) {
-          const offset = this.offset;
-          const type = this.buffer[this.offset++];
-          const response = parseType(this, type);
-          if (response === void 0) {
-            if (!(this.arrayCache.length || this.bufferCache.length)) {
-              this.offset = offset;
-            }
-            return;
-          }
-          if (type === 45) {
-            this.returnError(response);
-          } else {
-            this.returnReply(response);
-          }
-        }
-        this.buffer = null;
-      }
-    };
-    module.exports = JavascriptRedisParser;
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.PACKAGE_VERSION = void 0;
+    exports.PACKAGE_VERSION = "6.0.0";
   }
 });
 
-// ../../node_modules/.pnpm/redis-parser@3.0.0/node_modules/redis-parser/index.js
-var require_redis_parser = __commonJS({
-  "../../node_modules/.pnpm/redis-parser@3.0.0/node_modules/redis-parser/index.js"(exports, module) {
-    "use strict";
-    module.exports = require_parser();
-  }
-});
-
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/SubscriptionSet.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/SubscriptionSet.js
 var require_SubscriptionSet = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/SubscriptionSet.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/SubscriptionSet.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var SubscriptionSet = class {
@@ -50380,36 +61563,838 @@ var require_SubscriptionSet = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/DataHandler.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/resp/verbatim-string.js
+var require_verbatim_string = __commonJS({
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/resp/verbatim-string.js"(exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.VerbatimString = void 0;
+    var VerbatimString = class extends String {
+      constructor(format, value) {
+        super(value);
+        this.format = format;
+      }
+    };
+    exports.VerbatimString = VerbatimString;
+  }
+});
+
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/resp/errors.js
+var require_errors3 = __commonJS({
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/resp/errors.js"(exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.BlobError = exports.SimpleError = void 0;
+    var redis_errors_1 = require_redis_errors();
+    var SimpleError = class extends redis_errors_1.ReplyError {
+      get name() {
+        return "ReplyError";
+      }
+    };
+    exports.SimpleError = SimpleError;
+    var BlobError = class extends redis_errors_1.ReplyError {
+      get name() {
+        return "ReplyError";
+      }
+    };
+    exports.BlobError = BlobError;
+  }
+});
+
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/resp/decoder.js
+var require_decoder = __commonJS({
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/resp/decoder.js"(exports) {
+    "use strict";
+    var __classPrivateFieldSet2 = exports && exports.__classPrivateFieldSet || function(receiver, state, value, kind, f) {
+      if (kind === "m") throw new TypeError("Private method is not writable");
+      if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
+      if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
+      return kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value), value;
+    };
+    var __classPrivateFieldGet2 = exports && exports.__classPrivateFieldGet || function(receiver, state, kind, f) {
+      if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
+      if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
+      return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
+    };
+    var _Decoder_instances;
+    var _a;
+    var _Decoder_cursor;
+    var _Decoder_next;
+    var _Decoder_pushTypeMapping;
+    var _Decoder_continueDecodeTypeValue;
+    var _Decoder_decodeTypeValue;
+    var _Decoder_handleDecodedValue;
+    var _Decoder_continueDecodeValue;
+    var _Decoder_decodeNull;
+    var _Decoder_decodeBoolean;
+    var _Decoder_decodeNumber;
+    var _Decoder_maybeDecodeNumberValue;
+    var _Decoder_decodeNumberValue;
+    var _Decoder_decodeUnsingedNumber;
+    var _Decoder_decodeBigNumber;
+    var _Decoder_maybeDecodeBigNumberValue;
+    var _Decoder_decodeBigNumberValue;
+    var _Decoder_decodeUnsingedBigNumber;
+    var _Decoder_decodeDouble;
+    var _Decoder_maybeDecodeDoubleInteger;
+    var _Decoder_decodeDoubleInteger;
+    var _Decoder_continueDecodeDoubleInteger;
+    var _Decoder_DOUBLE_DECIMAL_MULTIPLIERS;
+    var _Decoder_decodeDoubleDecimal;
+    var _Decoder_decodeDoubleExponent;
+    var _Decoder_continueDecodeDoubleExponent;
+    var _Decoder_findCRLF;
+    var _Decoder_decodeSimpleString;
+    var _Decoder_continueDecodeSimpleString;
+    var _Decoder_decodeBlobString;
+    var _Decoder_continueDecodeBlobStringLength;
+    var _Decoder_decodeStringWithLength;
+    var _Decoder_continueDecodeStringWithLength;
+    var _Decoder_decodeBlobStringWithLength;
+    var _Decoder_decodeVerbatimString;
+    var _Decoder_continueDecodeVerbatimStringLength;
+    var _Decoder_decodeVerbatimStringWithLength;
+    var _Decoder_decodeVerbatimStringFormat;
+    var _Decoder_continueDecodeVerbatimStringFormat;
+    var _Decoder_decodeVerbatimStringWithFormat;
+    var _Decoder_continueDecodeVerbatimStringWithFormat;
+    var _Decoder_decodeSimpleError;
+    var _Decoder_continueDecodeSimpleError;
+    var _Decoder_decodeBlobError;
+    var _Decoder_continueDecodeBlobError;
+    var _Decoder_decodeNestedType;
+    var _Decoder_decodeNestedTypeValue;
+    var _Decoder_decodeArray;
+    var _Decoder_decodeArrayWithLength;
+    var _Decoder_continueDecodeArrayLength;
+    var _Decoder_decodeArrayItems;
+    var _Decoder_continueDecodeArrayItems;
+    var _Decoder_decodeSet;
+    var _Decoder_continueDecodeSetLength;
+    var _Decoder_decodeSetItems;
+    var _Decoder_decodeSetAsSet;
+    var _Decoder_continueDecodeSetAsSet;
+    var _Decoder_decodeMap;
+    var _Decoder_continueDecodeMapLength;
+    var _Decoder_decodeMapItems;
+    var _Decoder_decodeMapAsMap;
+    var _Decoder_decodeMapKey;
+    var _Decoder_decodeMapKeyValue;
+    var _Decoder_continueDecodeMapKey;
+    var _Decoder_continueDecodeMapValue;
+    var _Decoder_decodeMapAsObject;
+    var _Decoder_continueDecodeMapAsObjectKey;
+    var _Decoder_continueDecodeMapAsObjectValue;
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.Decoder = exports.PUSH_TYPE_MAPPING = exports.RESP_TYPES = void 0;
+    var verbatim_string_1 = require_verbatim_string();
+    var errors_1 = require_errors3();
+    exports.RESP_TYPES = {
+      NULL: 95,
+      // _
+      BOOLEAN: 35,
+      // #
+      NUMBER: 58,
+      // :
+      BIG_NUMBER: 40,
+      // (
+      DOUBLE: 44,
+      // ,
+      SIMPLE_STRING: 43,
+      // +
+      BLOB_STRING: 36,
+      // $
+      VERBATIM_STRING: 61,
+      // =
+      SIMPLE_ERROR: 45,
+      // -
+      BLOB_ERROR: 33,
+      // !
+      ARRAY: 42,
+      // *
+      SET: 126,
+      // ~
+      MAP: 37,
+      // %
+      PUSH: 62
+      // >
+    };
+    var ASCII = {
+      "\r": 13,
+      t: 116,
+      "+": 43,
+      "-": 45,
+      "0": 48,
+      ".": 46,
+      i: 105,
+      n: 110,
+      E: 69,
+      e: 101
+    };
+    exports.PUSH_TYPE_MAPPING = {
+      [exports.RESP_TYPES.BLOB_STRING]: Buffer
+    };
+    var Decoder = class {
+      constructor(config) {
+        _Decoder_instances.add(this);
+        _Decoder_cursor.set(this, 0);
+        _Decoder_next.set(this, void 0);
+        _Decoder_pushTypeMapping.set(this, void 0);
+        this.onReply = config.onReply;
+        this.onErrorReply = config.onErrorReply;
+        this.onPush = config.onPush;
+        this.getTypeMapping = config.getTypeMapping;
+        __classPrivateFieldSet2(this, _Decoder_pushTypeMapping, {
+          ...config.getTypeMapping(),
+          ...exports.PUSH_TYPE_MAPPING
+        }, "f");
+      }
+      reset() {
+        __classPrivateFieldSet2(this, _Decoder_cursor, 0, "f");
+        __classPrivateFieldSet2(this, _Decoder_next, void 0, "f");
+      }
+      write(chunk) {
+        var _b;
+        if (__classPrivateFieldGet2(this, _Decoder_cursor, "f") >= chunk.length) {
+          __classPrivateFieldSet2(this, _Decoder_cursor, __classPrivateFieldGet2(this, _Decoder_cursor, "f") - chunk.length, "f");
+          return;
+        }
+        if (__classPrivateFieldGet2(this, _Decoder_next, "f")) {
+          if (__classPrivateFieldGet2(this, _Decoder_next, "f").call(this, chunk) || __classPrivateFieldGet2(this, _Decoder_cursor, "f") >= chunk.length) {
+            __classPrivateFieldSet2(this, _Decoder_cursor, __classPrivateFieldGet2(this, _Decoder_cursor, "f") - chunk.length, "f");
+            return;
+          }
+        }
+        do {
+          const type = chunk[__classPrivateFieldGet2(this, _Decoder_cursor, "f")];
+          if (__classPrivateFieldSet2(this, _Decoder_cursor, (_b = __classPrivateFieldGet2(this, _Decoder_cursor, "f"), ++_b), "f") === chunk.length) {
+            __classPrivateFieldSet2(this, _Decoder_next, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeTypeValue).bind(this, type), "f");
+            break;
+          }
+          if (__classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeTypeValue).call(this, type, chunk)) {
+            break;
+          }
+        } while (__classPrivateFieldGet2(this, _Decoder_cursor, "f") < chunk.length);
+        __classPrivateFieldSet2(this, _Decoder_cursor, __classPrivateFieldGet2(this, _Decoder_cursor, "f") - chunk.length, "f");
+      }
+    };
+    exports.Decoder = Decoder;
+    _a = Decoder, _Decoder_cursor = /* @__PURE__ */ new WeakMap(), _Decoder_next = /* @__PURE__ */ new WeakMap(), _Decoder_pushTypeMapping = /* @__PURE__ */ new WeakMap(), _Decoder_instances = /* @__PURE__ */ new WeakSet(), _Decoder_continueDecodeTypeValue = function _Decoder_continueDecodeTypeValue2(type, chunk) {
+      __classPrivateFieldSet2(this, _Decoder_next, void 0, "f");
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeTypeValue).call(this, type, chunk);
+    }, _Decoder_decodeTypeValue = function _Decoder_decodeTypeValue2(type, chunk) {
+      switch (type) {
+        case exports.RESP_TYPES.NULL:
+          this.onReply(__classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNull).call(this));
+          return false;
+        case exports.RESP_TYPES.BOOLEAN:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_handleDecodedValue).call(this, this.onReply, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBoolean).call(this, this.getTypeMapping()[exports.RESP_TYPES.BOOLEAN], chunk));
+        case exports.RESP_TYPES.NUMBER:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_handleDecodedValue).call(this, this.onReply, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNumber).call(this, this.getTypeMapping()[exports.RESP_TYPES.NUMBER], chunk));
+        case exports.RESP_TYPES.BIG_NUMBER:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_handleDecodedValue).call(this, this.onReply, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBigNumber).call(this, this.getTypeMapping()[exports.RESP_TYPES.BIG_NUMBER], chunk));
+        case exports.RESP_TYPES.DOUBLE:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_handleDecodedValue).call(this, this.onReply, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeDouble).call(this, this.getTypeMapping()[exports.RESP_TYPES.DOUBLE], chunk));
+        case exports.RESP_TYPES.SIMPLE_STRING:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_handleDecodedValue).call(this, this.onReply, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeSimpleString).call(this, this.getTypeMapping()[exports.RESP_TYPES.SIMPLE_STRING], chunk));
+        case exports.RESP_TYPES.BLOB_STRING:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_handleDecodedValue).call(this, this.onReply, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBlobString).call(this, this.getTypeMapping()[exports.RESP_TYPES.BLOB_STRING], chunk));
+        case exports.RESP_TYPES.VERBATIM_STRING:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_handleDecodedValue).call(this, this.onReply, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeVerbatimString).call(this, this.getTypeMapping()[exports.RESP_TYPES.VERBATIM_STRING], chunk));
+        case exports.RESP_TYPES.SIMPLE_ERROR:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_handleDecodedValue).call(this, this.onErrorReply, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeSimpleError).call(this, chunk));
+        case exports.RESP_TYPES.BLOB_ERROR:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_handleDecodedValue).call(this, this.onErrorReply, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBlobError).call(this, chunk));
+        case exports.RESP_TYPES.ARRAY:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_handleDecodedValue).call(this, this.onReply, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeArray).call(this, this.getTypeMapping(), chunk));
+        case exports.RESP_TYPES.SET:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_handleDecodedValue).call(this, this.onReply, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeSet).call(this, this.getTypeMapping(), chunk));
+        case exports.RESP_TYPES.MAP:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_handleDecodedValue).call(this, this.onReply, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeMap).call(this, this.getTypeMapping(), chunk));
+        case exports.RESP_TYPES.PUSH:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_handleDecodedValue).call(this, this.onPush, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeArray).call(this, __classPrivateFieldGet2(this, _Decoder_pushTypeMapping, "f"), chunk));
+        default:
+          throw new Error(`Unknown RESP type ${type} "${String.fromCharCode(type)}"`);
+      }
+    }, _Decoder_handleDecodedValue = function _Decoder_handleDecodedValue2(cb, value) {
+      if (typeof value === "function") {
+        __classPrivateFieldSet2(this, _Decoder_next, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeValue).bind(this, cb, value), "f");
+        return true;
+      }
+      cb(value);
+      return false;
+    }, _Decoder_continueDecodeValue = function _Decoder_continueDecodeValue2(cb, next, chunk) {
+      __classPrivateFieldSet2(this, _Decoder_next, void 0, "f");
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_handleDecodedValue).call(this, cb, next(chunk));
+    }, _Decoder_decodeNull = function _Decoder_decodeNull2() {
+      __classPrivateFieldSet2(this, _Decoder_cursor, __classPrivateFieldGet2(this, _Decoder_cursor, "f") + 2, "f");
+      return null;
+    }, _Decoder_decodeBoolean = function _Decoder_decodeBoolean2(type, chunk) {
+      const boolean = chunk[__classPrivateFieldGet2(this, _Decoder_cursor, "f")] === ASCII.t;
+      __classPrivateFieldSet2(this, _Decoder_cursor, __classPrivateFieldGet2(this, _Decoder_cursor, "f") + 3, "f");
+      return type === Number ? boolean ? 1 : 0 : boolean;
+    }, _Decoder_decodeNumber = function _Decoder_decodeNumber2(type, chunk) {
+      if (type === String) {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeSimpleString).call(this, String, chunk);
+      }
+      switch (chunk[__classPrivateFieldGet2(this, _Decoder_cursor, "f")]) {
+        case ASCII["+"]:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_maybeDecodeNumberValue).call(this, false, chunk);
+        case ASCII["-"]:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_maybeDecodeNumberValue).call(this, true, chunk);
+        default:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNumberValue).call(this, false, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeUnsingedNumber).bind(this, 0), chunk);
+      }
+    }, _Decoder_maybeDecodeNumberValue = function _Decoder_maybeDecodeNumberValue2(isNegative, chunk) {
+      var _b;
+      const cb = __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeUnsingedNumber).bind(this, 0);
+      return __classPrivateFieldSet2(this, _Decoder_cursor, (_b = __classPrivateFieldGet2(this, _Decoder_cursor, "f"), ++_b), "f") === chunk.length ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNumberValue).bind(this, isNegative, cb) : __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNumberValue).call(this, isNegative, cb, chunk);
+    }, _Decoder_decodeNumberValue = function _Decoder_decodeNumberValue2(isNegative, numberCb, chunk) {
+      const number = numberCb(chunk);
+      return typeof number === "function" ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNumberValue2).bind(this, isNegative, number) : isNegative ? -number : number;
+    }, _Decoder_decodeUnsingedNumber = function _Decoder_decodeUnsingedNumber2(number, chunk) {
+      let cursor = __classPrivateFieldGet2(this, _Decoder_cursor, "f");
+      do {
+        const byte = chunk[cursor];
+        if (byte === ASCII["\r"]) {
+          __classPrivateFieldSet2(this, _Decoder_cursor, cursor + 2, "f");
+          return number;
+        }
+        number = number * 10 + byte - ASCII["0"];
+      } while (++cursor < chunk.length);
+      __classPrivateFieldSet2(this, _Decoder_cursor, cursor, "f");
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeUnsingedNumber2).bind(this, number);
+    }, _Decoder_decodeBigNumber = function _Decoder_decodeBigNumber2(type, chunk) {
+      if (type === String) {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeSimpleString).call(this, String, chunk);
+      }
+      switch (chunk[__classPrivateFieldGet2(this, _Decoder_cursor, "f")]) {
+        case ASCII["+"]:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_maybeDecodeBigNumberValue).call(this, false, chunk);
+        case ASCII["-"]:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_maybeDecodeBigNumberValue).call(this, true, chunk);
+        default:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBigNumberValue).call(this, false, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeUnsingedBigNumber).bind(this, 0n), chunk);
+      }
+    }, _Decoder_maybeDecodeBigNumberValue = function _Decoder_maybeDecodeBigNumberValue2(isNegative, chunk) {
+      var _b;
+      const cb = __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeUnsingedBigNumber).bind(this, 0n);
+      return __classPrivateFieldSet2(this, _Decoder_cursor, (_b = __classPrivateFieldGet2(this, _Decoder_cursor, "f"), ++_b), "f") === chunk.length ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBigNumberValue).bind(this, isNegative, cb) : __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBigNumberValue).call(this, isNegative, cb, chunk);
+    }, _Decoder_decodeBigNumberValue = function _Decoder_decodeBigNumberValue2(isNegative, bigNumberCb, chunk) {
+      const bigNumber = bigNumberCb(chunk);
+      return typeof bigNumber === "function" ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBigNumberValue2).bind(this, isNegative, bigNumber) : isNegative ? -bigNumber : bigNumber;
+    }, _Decoder_decodeUnsingedBigNumber = function _Decoder_decodeUnsingedBigNumber2(bigNumber, chunk) {
+      let cursor = __classPrivateFieldGet2(this, _Decoder_cursor, "f");
+      do {
+        const byte = chunk[cursor];
+        if (byte === ASCII["\r"]) {
+          __classPrivateFieldSet2(this, _Decoder_cursor, cursor + 2, "f");
+          return bigNumber;
+        }
+        bigNumber = bigNumber * 10n + BigInt(byte - ASCII["0"]);
+      } while (++cursor < chunk.length);
+      __classPrivateFieldSet2(this, _Decoder_cursor, cursor, "f");
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeUnsingedBigNumber2).bind(this, bigNumber);
+    }, _Decoder_decodeDouble = function _Decoder_decodeDouble2(type, chunk) {
+      if (type === String || type === Buffer) {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeSimpleString).call(this, type, chunk);
+      }
+      switch (chunk[__classPrivateFieldGet2(this, _Decoder_cursor, "f")]) {
+        case ASCII.n:
+          __classPrivateFieldSet2(this, _Decoder_cursor, __classPrivateFieldGet2(this, _Decoder_cursor, "f") + 5, "f");
+          return NaN;
+        case ASCII["+"]:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_maybeDecodeDoubleInteger).call(this, false, chunk);
+        case ASCII["-"]:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_maybeDecodeDoubleInteger).call(this, true, chunk);
+        default:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeDoubleInteger).call(this, false, 0, chunk);
+      }
+    }, _Decoder_maybeDecodeDoubleInteger = function _Decoder_maybeDecodeDoubleInteger2(isNegative, chunk) {
+      var _b;
+      return __classPrivateFieldSet2(this, _Decoder_cursor, (_b = __classPrivateFieldGet2(this, _Decoder_cursor, "f"), ++_b), "f") === chunk.length ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeDoubleInteger).bind(this, isNegative, 0) : __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeDoubleInteger).call(this, isNegative, 0, chunk);
+    }, _Decoder_decodeDoubleInteger = function _Decoder_decodeDoubleInteger2(isNegative, integer, chunk) {
+      if (chunk[__classPrivateFieldGet2(this, _Decoder_cursor, "f")] === ASCII.i) {
+        __classPrivateFieldSet2(this, _Decoder_cursor, __classPrivateFieldGet2(this, _Decoder_cursor, "f") + 5, "f");
+        return isNegative ? -Infinity : Infinity;
+      }
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeDoubleInteger).call(this, isNegative, integer, chunk);
+    }, _Decoder_continueDecodeDoubleInteger = function _Decoder_continueDecodeDoubleInteger2(isNegative, integer, chunk) {
+      let cursor = __classPrivateFieldGet2(this, _Decoder_cursor, "f");
+      do {
+        const byte = chunk[cursor];
+        switch (byte) {
+          case ASCII["."]:
+            __classPrivateFieldSet2(this, _Decoder_cursor, cursor + 1, "f");
+            return __classPrivateFieldGet2(this, _Decoder_cursor, "f") < chunk.length ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeDoubleDecimal).call(this, isNegative, 0, integer, chunk) : __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeDoubleDecimal).bind(this, isNegative, 0, integer);
+          case ASCII.E:
+          case ASCII.e: {
+            __classPrivateFieldSet2(this, _Decoder_cursor, cursor + 1, "f");
+            const i = isNegative ? -integer : integer;
+            return __classPrivateFieldGet2(this, _Decoder_cursor, "f") < chunk.length ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeDoubleExponent).call(this, i, chunk) : __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeDoubleExponent).bind(this, i);
+          }
+          case ASCII["\r"]:
+            __classPrivateFieldSet2(this, _Decoder_cursor, cursor + 2, "f");
+            return isNegative ? -integer : integer;
+          default:
+            integer = integer * 10 + byte - ASCII["0"];
+        }
+      } while (++cursor < chunk.length);
+      __classPrivateFieldSet2(this, _Decoder_cursor, cursor, "f");
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeDoubleInteger2).bind(this, isNegative, integer);
+    }, _Decoder_decodeDoubleDecimal = function _Decoder_decodeDoubleDecimal2(isNegative, decimalIndex, double, chunk) {
+      let cursor = __classPrivateFieldGet2(this, _Decoder_cursor, "f");
+      do {
+        const byte = chunk[cursor];
+        switch (byte) {
+          case ASCII.E:
+          case ASCII.e: {
+            __classPrivateFieldSet2(this, _Decoder_cursor, cursor + 1, "f");
+            const d = isNegative ? -double : double;
+            return __classPrivateFieldGet2(this, _Decoder_cursor, "f") === chunk.length ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeDoubleExponent).bind(this, d) : __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeDoubleExponent).call(this, d, chunk);
+          }
+          case ASCII["\r"]:
+            __classPrivateFieldSet2(this, _Decoder_cursor, cursor + 2, "f");
+            return isNegative ? -double : double;
+        }
+        if (decimalIndex < __classPrivateFieldGet2(_a, _a, "f", _Decoder_DOUBLE_DECIMAL_MULTIPLIERS).length) {
+          double += (byte - ASCII["0"]) * __classPrivateFieldGet2(_a, _a, "f", _Decoder_DOUBLE_DECIMAL_MULTIPLIERS)[decimalIndex++];
+        }
+      } while (++cursor < chunk.length);
+      __classPrivateFieldSet2(this, _Decoder_cursor, cursor, "f");
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeDoubleDecimal2).bind(this, isNegative, decimalIndex, double);
+    }, _Decoder_decodeDoubleExponent = function _Decoder_decodeDoubleExponent2(double, chunk) {
+      var _b, _c;
+      switch (chunk[__classPrivateFieldGet2(this, _Decoder_cursor, "f")]) {
+        case ASCII["+"]:
+          return __classPrivateFieldSet2(this, _Decoder_cursor, (_b = __classPrivateFieldGet2(this, _Decoder_cursor, "f"), ++_b), "f") === chunk.length ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeDoubleExponent).bind(this, false, double, 0) : __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeDoubleExponent).call(this, false, double, 0, chunk);
+        case ASCII["-"]:
+          return __classPrivateFieldSet2(this, _Decoder_cursor, (_c = __classPrivateFieldGet2(this, _Decoder_cursor, "f"), ++_c), "f") === chunk.length ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeDoubleExponent).bind(this, true, double, 0) : __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeDoubleExponent).call(this, true, double, 0, chunk);
+      }
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeDoubleExponent).call(this, false, double, 0, chunk);
+    }, _Decoder_continueDecodeDoubleExponent = function _Decoder_continueDecodeDoubleExponent2(isNegative, double, exponent, chunk) {
+      let cursor = __classPrivateFieldGet2(this, _Decoder_cursor, "f");
+      do {
+        const byte = chunk[cursor];
+        if (byte === ASCII["\r"]) {
+          __classPrivateFieldSet2(this, _Decoder_cursor, cursor + 2, "f");
+          return double * 10 ** (isNegative ? -exponent : exponent);
+        }
+        exponent = exponent * 10 + byte - ASCII["0"];
+      } while (++cursor < chunk.length);
+      __classPrivateFieldSet2(this, _Decoder_cursor, cursor, "f");
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeDoubleExponent2).bind(this, isNegative, double, exponent);
+    }, _Decoder_findCRLF = function _Decoder_findCRLF2(chunk, cursor) {
+      while (chunk[cursor] !== ASCII["\r"]) {
+        if (++cursor === chunk.length) {
+          __classPrivateFieldSet2(this, _Decoder_cursor, chunk.length, "f");
+          return -1;
+        }
+      }
+      __classPrivateFieldSet2(this, _Decoder_cursor, cursor + 2, "f");
+      return cursor;
+    }, _Decoder_decodeSimpleString = function _Decoder_decodeSimpleString2(type, chunk) {
+      const start = __classPrivateFieldGet2(this, _Decoder_cursor, "f"), crlfIndex = __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_findCRLF).call(this, chunk, start);
+      if (crlfIndex === -1) {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeSimpleString).bind(this, [chunk.subarray(start)], type);
+      }
+      const slice = chunk.subarray(start, crlfIndex);
+      return type === Buffer ? slice : slice.toString();
+    }, _Decoder_continueDecodeSimpleString = function _Decoder_continueDecodeSimpleString2(chunks, type, chunk) {
+      const start = __classPrivateFieldGet2(this, _Decoder_cursor, "f"), crlfIndex = __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_findCRLF).call(this, chunk, start);
+      if (crlfIndex === -1) {
+        chunks.push(chunk.subarray(start));
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeSimpleString2).bind(this, chunks, type);
+      }
+      chunks.push(chunk.subarray(start, crlfIndex));
+      const buffer = Buffer.concat(chunks);
+      return type === Buffer ? buffer : buffer.toString();
+    }, _Decoder_decodeBlobString = function _Decoder_decodeBlobString2(type, chunk) {
+      if (chunk[__classPrivateFieldGet2(this, _Decoder_cursor, "f")] === ASCII["-"]) {
+        __classPrivateFieldSet2(this, _Decoder_cursor, __classPrivateFieldGet2(this, _Decoder_cursor, "f") + 4, "f");
+        return null;
+      }
+      const length = __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeUnsingedNumber).call(this, 0, chunk);
+      if (typeof length === "function") {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeBlobStringLength).bind(this, length, type);
+      } else if (__classPrivateFieldGet2(this, _Decoder_cursor, "f") >= chunk.length) {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBlobStringWithLength).bind(this, length, type);
+      }
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBlobStringWithLength).call(this, length, type, chunk);
+    }, _Decoder_continueDecodeBlobStringLength = function _Decoder_continueDecodeBlobStringLength2(lengthCb, type, chunk) {
+      const length = lengthCb(chunk);
+      if (typeof length === "function") {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeBlobStringLength2).bind(this, length, type);
+      } else if (__classPrivateFieldGet2(this, _Decoder_cursor, "f") >= chunk.length) {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBlobStringWithLength).bind(this, length, type);
+      }
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBlobStringWithLength).call(this, length, type, chunk);
+    }, _Decoder_decodeStringWithLength = function _Decoder_decodeStringWithLength2(length, skip, type, chunk) {
+      const end = __classPrivateFieldGet2(this, _Decoder_cursor, "f") + length;
+      if (end >= chunk.length) {
+        const slice2 = chunk.subarray(__classPrivateFieldGet2(this, _Decoder_cursor, "f"));
+        __classPrivateFieldSet2(this, _Decoder_cursor, chunk.length, "f");
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeStringWithLength).bind(this, length - slice2.length, [slice2], skip, type);
+      }
+      const slice = chunk.subarray(__classPrivateFieldGet2(this, _Decoder_cursor, "f"), end);
+      __classPrivateFieldSet2(this, _Decoder_cursor, end + skip, "f");
+      return type === Buffer ? slice : slice.toString();
+    }, _Decoder_continueDecodeStringWithLength = function _Decoder_continueDecodeStringWithLength2(length, chunks, skip, type, chunk) {
+      const end = __classPrivateFieldGet2(this, _Decoder_cursor, "f") + length;
+      if (end >= chunk.length) {
+        const slice = chunk.subarray(__classPrivateFieldGet2(this, _Decoder_cursor, "f"));
+        chunks.push(slice);
+        __classPrivateFieldSet2(this, _Decoder_cursor, chunk.length, "f");
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeStringWithLength2).bind(this, length - slice.length, chunks, skip, type);
+      }
+      chunks.push(chunk.subarray(__classPrivateFieldGet2(this, _Decoder_cursor, "f"), end));
+      __classPrivateFieldSet2(this, _Decoder_cursor, end + skip, "f");
+      const buffer = Buffer.concat(chunks);
+      return type === Buffer ? buffer : buffer.toString();
+    }, _Decoder_decodeBlobStringWithLength = function _Decoder_decodeBlobStringWithLength2(length, type, chunk) {
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeStringWithLength).call(this, length, 2, type, chunk);
+    }, _Decoder_decodeVerbatimString = function _Decoder_decodeVerbatimString2(type, chunk) {
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeVerbatimStringLength).call(this, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeUnsingedNumber).bind(this, 0), type, chunk);
+    }, _Decoder_continueDecodeVerbatimStringLength = function _Decoder_continueDecodeVerbatimStringLength2(lengthCb, type, chunk) {
+      const length = lengthCb(chunk);
+      return typeof length === "function" ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeVerbatimStringLength2).bind(this, length, type) : __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeVerbatimStringWithLength).call(this, length, type, chunk);
+    }, _Decoder_decodeVerbatimStringWithLength = function _Decoder_decodeVerbatimStringWithLength2(length, type, chunk) {
+      const stringLength = length - 4;
+      if (type === verbatim_string_1.VerbatimString) {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeVerbatimStringFormat).call(this, stringLength, chunk);
+      }
+      __classPrivateFieldSet2(this, _Decoder_cursor, __classPrivateFieldGet2(this, _Decoder_cursor, "f") + 4, "f");
+      return __classPrivateFieldGet2(this, _Decoder_cursor, "f") >= chunk.length ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBlobStringWithLength).bind(this, stringLength, type) : __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBlobStringWithLength).call(this, stringLength, type, chunk);
+    }, _Decoder_decodeVerbatimStringFormat = function _Decoder_decodeVerbatimStringFormat2(stringLength, chunk) {
+      const formatCb = __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeStringWithLength).bind(this, 3, 1, String);
+      return __classPrivateFieldGet2(this, _Decoder_cursor, "f") >= chunk.length ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeVerbatimStringFormat).bind(this, stringLength, formatCb) : __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeVerbatimStringFormat).call(this, stringLength, formatCb, chunk);
+    }, _Decoder_continueDecodeVerbatimStringFormat = function _Decoder_continueDecodeVerbatimStringFormat2(stringLength, formatCb, chunk) {
+      const format = formatCb(chunk);
+      return typeof format === "function" ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeVerbatimStringFormat2).bind(this, stringLength, format) : __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeVerbatimStringWithFormat).call(this, stringLength, format, chunk);
+    }, _Decoder_decodeVerbatimStringWithFormat = function _Decoder_decodeVerbatimStringWithFormat2(stringLength, format, chunk) {
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeVerbatimStringWithFormat).call(this, format, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBlobStringWithLength).bind(this, stringLength, String), chunk);
+    }, _Decoder_continueDecodeVerbatimStringWithFormat = function _Decoder_continueDecodeVerbatimStringWithFormat2(format, stringCb, chunk) {
+      const string = stringCb(chunk);
+      return typeof string === "function" ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeVerbatimStringWithFormat2).bind(this, format, string) : new verbatim_string_1.VerbatimString(format, string);
+    }, _Decoder_decodeSimpleError = function _Decoder_decodeSimpleError2(chunk) {
+      const string = __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeSimpleString).call(this, String, chunk);
+      return typeof string === "function" ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeSimpleError).bind(this, string) : new errors_1.SimpleError(string);
+    }, _Decoder_continueDecodeSimpleError = function _Decoder_continueDecodeSimpleError2(stringCb, chunk) {
+      const string = stringCb(chunk);
+      return typeof string === "function" ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeSimpleError2).bind(this, string) : new errors_1.SimpleError(string);
+    }, _Decoder_decodeBlobError = function _Decoder_decodeBlobError2(chunk) {
+      const string = __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBlobString).call(this, String, chunk);
+      return typeof string === "function" ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeBlobError).bind(this, string) : new errors_1.BlobError(string);
+    }, _Decoder_continueDecodeBlobError = function _Decoder_continueDecodeBlobError2(stringCb, chunk) {
+      const string = stringCb(chunk);
+      return typeof string === "function" ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeBlobError2).bind(this, string) : new errors_1.BlobError(string);
+    }, _Decoder_decodeNestedType = function _Decoder_decodeNestedType2(typeMapping, chunk) {
+      var _b;
+      const type = chunk[__classPrivateFieldGet2(this, _Decoder_cursor, "f")];
+      return __classPrivateFieldSet2(this, _Decoder_cursor, (_b = __classPrivateFieldGet2(this, _Decoder_cursor, "f"), ++_b), "f") === chunk.length ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNestedTypeValue).bind(this, type, typeMapping) : __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNestedTypeValue).call(this, type, typeMapping, chunk);
+    }, _Decoder_decodeNestedTypeValue = function _Decoder_decodeNestedTypeValue2(type, typeMapping, chunk) {
+      switch (type) {
+        case exports.RESP_TYPES.NULL:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNull).call(this);
+        case exports.RESP_TYPES.BOOLEAN:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBoolean).call(this, typeMapping[exports.RESP_TYPES.BOOLEAN], chunk);
+        case exports.RESP_TYPES.NUMBER:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNumber).call(this, typeMapping[exports.RESP_TYPES.NUMBER], chunk);
+        case exports.RESP_TYPES.BIG_NUMBER:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBigNumber).call(this, typeMapping[exports.RESP_TYPES.BIG_NUMBER], chunk);
+        case exports.RESP_TYPES.DOUBLE:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeDouble).call(this, typeMapping[exports.RESP_TYPES.DOUBLE], chunk);
+        case exports.RESP_TYPES.SIMPLE_STRING:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeSimpleString).call(this, typeMapping[exports.RESP_TYPES.SIMPLE_STRING], chunk);
+        case exports.RESP_TYPES.BLOB_STRING:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBlobString).call(this, typeMapping[exports.RESP_TYPES.BLOB_STRING], chunk);
+        case exports.RESP_TYPES.VERBATIM_STRING:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeVerbatimString).call(this, typeMapping[exports.RESP_TYPES.VERBATIM_STRING], chunk);
+        case exports.RESP_TYPES.SIMPLE_ERROR:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeSimpleError).call(this, chunk);
+        case exports.RESP_TYPES.BLOB_ERROR:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBlobError).call(this, chunk);
+        case exports.RESP_TYPES.ARRAY:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeArray).call(this, typeMapping, chunk);
+        case exports.RESP_TYPES.SET:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeSet).call(this, typeMapping, chunk);
+        case exports.RESP_TYPES.MAP:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeMap).call(this, typeMapping, chunk);
+        default:
+          throw new Error(`Unknown RESP type ${type} "${String.fromCharCode(type)}"`);
+      }
+    }, _Decoder_decodeArray = function _Decoder_decodeArray2(typeMapping, chunk) {
+      if (chunk[__classPrivateFieldGet2(this, _Decoder_cursor, "f")] === ASCII["-"]) {
+        __classPrivateFieldSet2(this, _Decoder_cursor, __classPrivateFieldGet2(this, _Decoder_cursor, "f") + 4, "f");
+        return null;
+      }
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeArrayWithLength).call(this, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeUnsingedNumber).call(this, 0, chunk), typeMapping, chunk);
+    }, _Decoder_decodeArrayWithLength = function _Decoder_decodeArrayWithLength2(length, typeMapping, chunk) {
+      return typeof length === "function" ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeArrayLength).bind(this, length, typeMapping) : __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeArrayItems).call(this, new Array(length), 0, typeMapping, chunk);
+    }, _Decoder_continueDecodeArrayLength = function _Decoder_continueDecodeArrayLength2(lengthCb, typeMapping, chunk) {
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeArrayWithLength).call(this, lengthCb(chunk), typeMapping, chunk);
+    }, _Decoder_decodeArrayItems = function _Decoder_decodeArrayItems2(array, filled, typeMapping, chunk) {
+      for (let i = filled; i < array.length; i++) {
+        if (__classPrivateFieldGet2(this, _Decoder_cursor, "f") >= chunk.length) {
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeArrayItems2).bind(this, array, i, typeMapping);
+        }
+        const item = __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNestedType).call(this, typeMapping, chunk);
+        if (typeof item === "function") {
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeArrayItems).bind(this, array, i, item, typeMapping);
+        }
+        array[i] = item;
+      }
+      return array;
+    }, _Decoder_continueDecodeArrayItems = function _Decoder_continueDecodeArrayItems2(array, filled, itemCb, typeMapping, chunk) {
+      const item = itemCb(chunk);
+      if (typeof item === "function") {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeArrayItems2).bind(this, array, filled, item, typeMapping);
+      }
+      array[filled++] = item;
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeArrayItems).call(this, array, filled, typeMapping, chunk);
+    }, _Decoder_decodeSet = function _Decoder_decodeSet2(typeMapping, chunk) {
+      const length = __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeUnsingedNumber).call(this, 0, chunk);
+      if (typeof length === "function") {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeSetLength).bind(this, length, typeMapping);
+      }
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeSetItems).call(this, length, typeMapping, chunk);
+    }, _Decoder_continueDecodeSetLength = function _Decoder_continueDecodeSetLength2(lengthCb, typeMapping, chunk) {
+      const length = lengthCb(chunk);
+      return typeof length === "function" ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeSetLength2).bind(this, length, typeMapping) : __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeSetItems).call(this, length, typeMapping, chunk);
+    }, _Decoder_decodeSetItems = function _Decoder_decodeSetItems2(length, typeMapping, chunk) {
+      return typeMapping[exports.RESP_TYPES.SET] === Set ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeSetAsSet).call(this, /* @__PURE__ */ new Set(), length, typeMapping, chunk) : __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeArrayItems).call(this, new Array(length), 0, typeMapping, chunk);
+    }, _Decoder_decodeSetAsSet = function _Decoder_decodeSetAsSet2(set, remaining, typeMapping, chunk) {
+      while (remaining > 0) {
+        if (__classPrivateFieldGet2(this, _Decoder_cursor, "f") >= chunk.length) {
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeSetAsSet2).bind(this, set, remaining, typeMapping);
+        }
+        const item = __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNestedType).call(this, typeMapping, chunk);
+        if (typeof item === "function") {
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeSetAsSet).bind(this, set, remaining, item, typeMapping);
+        }
+        set.add(item);
+        --remaining;
+      }
+      return set;
+    }, _Decoder_continueDecodeSetAsSet = function _Decoder_continueDecodeSetAsSet2(set, remaining, itemCb, typeMapping, chunk) {
+      const item = itemCb(chunk);
+      if (typeof item === "function") {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeSetAsSet2).bind(this, set, remaining, item, typeMapping);
+      }
+      set.add(item);
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeSetAsSet).call(this, set, remaining - 1, typeMapping, chunk);
+    }, _Decoder_decodeMap = function _Decoder_decodeMap2(typeMapping, chunk) {
+      const length = __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeUnsingedNumber).call(this, 0, chunk);
+      if (typeof length === "function") {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeMapLength).bind(this, length, typeMapping);
+      }
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeMapItems).call(this, length, typeMapping, chunk);
+    }, _Decoder_continueDecodeMapLength = function _Decoder_continueDecodeMapLength2(lengthCb, typeMapping, chunk) {
+      const length = lengthCb(chunk);
+      return typeof length === "function" ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeMapLength2).bind(this, length, typeMapping) : __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeMapItems).call(this, length, typeMapping, chunk);
+    }, _Decoder_decodeMapItems = function _Decoder_decodeMapItems2(length, typeMapping, chunk) {
+      switch (typeMapping[exports.RESP_TYPES.MAP]) {
+        case Map:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeMapAsMap).call(this, /* @__PURE__ */ new Map(), length, typeMapping, chunk);
+        case Array:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeArrayItems).call(this, new Array(length * 2), 0, typeMapping, chunk);
+        default:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeMapAsObject).call(this, {}, length, typeMapping, chunk);
+      }
+    }, _Decoder_decodeMapAsMap = function _Decoder_decodeMapAsMap2(map, remaining, typeMapping, chunk) {
+      while (remaining > 0) {
+        if (__classPrivateFieldGet2(this, _Decoder_cursor, "f") >= chunk.length) {
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeMapAsMap2).bind(this, map, remaining, typeMapping);
+        }
+        const key = __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeMapKey).call(this, typeMapping, chunk);
+        if (typeof key === "function") {
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeMapKey).bind(this, map, remaining, key, typeMapping);
+        }
+        if (__classPrivateFieldGet2(this, _Decoder_cursor, "f") >= chunk.length) {
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeMapValue).bind(this, map, remaining, key, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNestedType).bind(this, typeMapping), typeMapping);
+        }
+        const value = __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNestedType).call(this, typeMapping, chunk);
+        if (typeof value === "function") {
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeMapValue).bind(this, map, remaining, key, value, typeMapping);
+        }
+        map.set(key, value);
+        --remaining;
+      }
+      return map;
+    }, _Decoder_decodeMapKey = function _Decoder_decodeMapKey2(typeMapping, chunk) {
+      var _b;
+      const type = chunk[__classPrivateFieldGet2(this, _Decoder_cursor, "f")];
+      return __classPrivateFieldSet2(this, _Decoder_cursor, (_b = __classPrivateFieldGet2(this, _Decoder_cursor, "f"), ++_b), "f") === chunk.length ? __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeMapKeyValue).bind(this, type, typeMapping) : __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeMapKeyValue).call(this, type, typeMapping, chunk);
+    }, _Decoder_decodeMapKeyValue = function _Decoder_decodeMapKeyValue2(type, typeMapping, chunk) {
+      switch (type) {
+        // decode simple string map key as string (and not as buffer)
+        case exports.RESP_TYPES.SIMPLE_STRING:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeSimpleString).call(this, String, chunk);
+        // decode blob string map key as string (and not as buffer)
+        case exports.RESP_TYPES.BLOB_STRING:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeBlobString).call(this, String, chunk);
+        default:
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNestedTypeValue).call(this, type, typeMapping, chunk);
+      }
+    }, _Decoder_continueDecodeMapKey = function _Decoder_continueDecodeMapKey2(map, remaining, keyCb, typeMapping, chunk) {
+      const key = keyCb(chunk);
+      if (typeof key === "function") {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeMapKey2).bind(this, map, remaining, key, typeMapping);
+      }
+      if (__classPrivateFieldGet2(this, _Decoder_cursor, "f") >= chunk.length) {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeMapValue).bind(this, map, remaining, key, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNestedType).bind(this, typeMapping), typeMapping);
+      }
+      const value = __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNestedType).call(this, typeMapping, chunk);
+      if (typeof value === "function") {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeMapValue).bind(this, map, remaining, key, value, typeMapping);
+      }
+      map.set(key, value);
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeMapAsMap).call(this, map, remaining - 1, typeMapping, chunk);
+    }, _Decoder_continueDecodeMapValue = function _Decoder_continueDecodeMapValue2(map, remaining, key, valueCb, typeMapping, chunk) {
+      const value = valueCb(chunk);
+      if (typeof value === "function") {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeMapValue2).bind(this, map, remaining, key, value, typeMapping);
+      }
+      map.set(key, value);
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeMapAsMap).call(this, map, remaining - 1, typeMapping, chunk);
+    }, _Decoder_decodeMapAsObject = function _Decoder_decodeMapAsObject2(object, remaining, typeMapping, chunk) {
+      while (remaining > 0) {
+        if (__classPrivateFieldGet2(this, _Decoder_cursor, "f") >= chunk.length) {
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeMapAsObject2).bind(this, object, remaining, typeMapping);
+        }
+        const key = __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeMapKey).call(this, typeMapping, chunk);
+        if (typeof key === "function") {
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeMapAsObjectKey).bind(this, object, remaining, key, typeMapping);
+        }
+        if (__classPrivateFieldGet2(this, _Decoder_cursor, "f") >= chunk.length) {
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeMapAsObjectValue).bind(this, object, remaining, key, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNestedType).bind(this, typeMapping), typeMapping);
+        }
+        const value = __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNestedType).call(this, typeMapping, chunk);
+        if (typeof value === "function") {
+          return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeMapAsObjectValue).bind(this, object, remaining, key, value, typeMapping);
+        }
+        if (key === "__proto__" || key === "constructor") {
+          Object.defineProperty(object, key, {
+            value,
+            configurable: true,
+            enumerable: true,
+            writable: true
+          });
+        } else {
+          object[key] = value;
+        }
+        --remaining;
+      }
+      return object;
+    }, _Decoder_continueDecodeMapAsObjectKey = function _Decoder_continueDecodeMapAsObjectKey2(object, remaining, keyCb, typeMapping, chunk) {
+      const key = keyCb(chunk);
+      if (typeof key === "function") {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeMapAsObjectKey2).bind(this, object, remaining, key, typeMapping);
+      }
+      if (__classPrivateFieldGet2(this, _Decoder_cursor, "f") >= chunk.length) {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeMapAsObjectValue).bind(this, object, remaining, key, __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNestedType).bind(this, typeMapping), typeMapping);
+      }
+      const value = __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeNestedType).call(this, typeMapping, chunk);
+      if (typeof value === "function") {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeMapAsObjectValue).bind(this, object, remaining, key, value, typeMapping);
+      }
+      if (key === "__proto__" || key === "constructor") {
+        Object.defineProperty(object, key, {
+          value,
+          configurable: true,
+          enumerable: true,
+          writable: true
+        });
+      } else {
+        object[key] = value;
+      }
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeMapAsObject).call(this, object, remaining - 1, typeMapping, chunk);
+    }, _Decoder_continueDecodeMapAsObjectValue = function _Decoder_continueDecodeMapAsObjectValue2(object, remaining, key, valueCb, typeMapping, chunk) {
+      const value = valueCb(chunk);
+      if (typeof value === "function") {
+        return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_continueDecodeMapAsObjectValue2).bind(this, object, remaining, key, value, typeMapping);
+      }
+      if (key === "__proto__" || key === "constructor") {
+        Object.defineProperty(object, key, {
+          value,
+          configurable: true,
+          enumerable: true,
+          writable: true
+        });
+      } else {
+        object[key] = value;
+      }
+      return __classPrivateFieldGet2(this, _Decoder_instances, "m", _Decoder_decodeMapAsObject).call(this, object, remaining - 1, typeMapping, chunk);
+    };
+    _Decoder_DOUBLE_DECIMAL_MULTIPLIERS = { value: [
+      0.1,
+      0.01,
+      1e-3,
+      1e-4,
+      1e-5,
+      1e-6,
+      1e-7,
+      1e-8,
+      1e-9,
+      1e-10,
+      1e-11,
+      1e-12,
+      1e-13,
+      1e-14,
+      1e-15,
+      1e-16,
+      1e-17
+    ] };
+  }
+});
+
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/DataHandler.js
 var require_DataHandler = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/DataHandler.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/DataHandler.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var Command_1 = require_Command();
     var utils_1 = require_utils5();
-    var RedisParser = require_redis_parser();
     var SubscriptionSet_1 = require_SubscriptionSet();
+    var decoder_1 = require_decoder();
     var debug = (0, utils_1.Debug)("dataHandler");
     var DataHandler = class {
       constructor(redis, parserOptions) {
         this.redis = redis;
-        const parser = new RedisParser({
-          stringNumbers: parserOptions.stringNumbers,
-          returnBuffers: true,
-          returnError: (err) => {
-            this.returnError(err);
+        const typeMapping = getParserTypeMapping(parserOptions);
+        const decoder = new decoder_1.Decoder({
+          getTypeMapping: () => typeMapping,
+          onReply: (reply) => {
+            this.dispatch(() => this.returnReply(reply));
           },
-          returnFatalError: (err) => {
-            this.returnFatalError(err);
+          onErrorReply: (err) => {
+            this.dispatch(() => this.returnError(err));
           },
-          returnReply: (reply) => {
-            this.returnReply(reply);
+          onPush: (reply) => {
+            this.dispatch(() => this.returnPush(reply));
           }
         });
         redis.stream.prependListener("data", (data) => {
-          parser.execute(data);
+          try {
+            decoder.write(data);
+          } catch (err) {
+            this.returnFatalError(err);
+          }
         });
         redis.stream.resume();
+      }
+      // Rethrows user listener/transformer exceptions asynchronously so they
+      // surface as uncaught exceptions (as with redis-parser in v5) instead of
+      // unwinding the decoder mid-parse and tearing down the connection as a
+      // fatal protocol error.
+      dispatch(fn) {
+        try {
+          fn();
+        } catch (err) {
+          process.nextTick(() => {
+            throw err;
+          });
+        }
       }
       returnFatalError(err) {
         err.message += ". Please report this.";
@@ -50424,9 +62409,9 @@ var require_DataHandler = __commonJS({
           name: item.command.name,
           args: item.command.args
         };
-        if (item.command.name == "ssubscribe" && err.message.includes("MOVED")) {
+        const isMovedSsubscribe = item.command.name === "ssubscribe" && err.message.startsWith("MOVED ");
+        if (isMovedSsubscribe) {
           this.redis.emit("moved");
-          return;
         }
         this.redis.handleReconnection(err, item);
       }
@@ -50434,7 +62419,7 @@ var require_DataHandler = __commonJS({
         if (this.handleMonitorReply(reply)) {
           return;
         }
-        if (this.handleSubscriberReply(reply)) {
+        if (this.redis.condition.protocol !== 3 && this.handleSubscriberReply(reply)) {
           return;
         }
         const item = this.shiftCommand(reply);
@@ -50454,6 +62439,76 @@ var require_DataHandler = __commonJS({
         } else {
           item.command.resolve(reply);
         }
+      }
+      returnPush(reply) {
+        if (!Array.isArray(reply) || reply.length === 0) {
+          return;
+        }
+        const replyType = reply[0].toString();
+        debug('receive push "%s"', replyType);
+        switch (replyType) {
+          case "message":
+          case "pmessage":
+          case "smessage":
+            this.handleSubscriberReply(reply);
+            break;
+          case "ssubscribe":
+          case "subscribe":
+          case "psubscribe": {
+            if (!this.redis.condition.subscriber) {
+              this.redis.condition.subscriber = new SubscriptionSet_1.default();
+            }
+            const channel = reply[1].toString();
+            this.redis.condition.subscriber.add(replyType, channel);
+            const item = this.shiftCommand(reply);
+            if (!item) {
+              return;
+            }
+            if (!fillSubCommand(item.command, reply[2])) {
+              this.redis.commandQueue.unshift(item);
+            }
+            break;
+          }
+          case "sunsubscribe":
+          case "unsubscribe":
+          case "punsubscribe": {
+            if (this.redis.condition.subscriber) {
+              const channel = reply[1] ? reply[1].toString() : null;
+              if (channel) {
+                this.redis.condition.subscriber.del(replyType, channel);
+              }
+            }
+            const count = reply[2];
+            if (Number(count) === 0) {
+              this.redis.condition.subscriber = false;
+            }
+            if (this.handleUnsolicitedUnsubscribe(replyType)) {
+              return;
+            }
+            const item = this.shiftCommand(reply);
+            if (!item) {
+              return;
+            }
+            if (!fillUnsubCommand(item.command, count)) {
+              this.redis.commandQueue.unshift(item);
+            }
+            break;
+          }
+        }
+      }
+      // Cluster sends unsolicited `sunsubscribe` pushes on slot migration; those
+      // answer no queued command, so shifting the queue head would resolve an
+      // unrelated in-flight command. Detected via a non-matching queue head, and
+      // `sunsubscribe` reuses the ssubscribe-MOVED recovery path.
+      handleUnsolicitedUnsubscribe(replyType) {
+        const head2 = this.redis.commandQueue.peekFront();
+        if (head2 && head2.command.name.toLowerCase() === replyType) {
+          return false;
+        }
+        if (replyType === "sunsubscribe") {
+          this.redis.emit("moved");
+        }
+        return true;
       }
       handleSubscriberReply(reply) {
         if (!this.redis.condition.subscriber) {
@@ -50508,6 +62563,9 @@ var require_DataHandler = __commonJS({
             if (Number(count) === 0) {
               this.redis.condition.subscriber = false;
             }
+            if (this.handleUnsolicitedUnsubscribe(replyType)) {
+              break;
+            }
             const item = this.shiftCommand(reply);
             if (!item) {
               return;
@@ -50555,6 +62613,31 @@ var require_DataHandler = __commonJS({
       }
     };
     exports.default = DataHandler;
+    var legacyTypeMapping = {
+      [decoder_1.RESP_TYPES.SIMPLE_STRING]: Buffer,
+      [decoder_1.RESP_TYPES.BLOB_STRING]: Buffer,
+      [decoder_1.RESP_TYPES.VERBATIM_STRING]: Buffer,
+      [decoder_1.RESP_TYPES.BIG_NUMBER]: String,
+      // RESP2 represented doubles as bulk strings and booleans as `1`/`0`
+      // integers. Decode doubles to Buffer (like blob strings, so `replyEncoding`
+      // still chooses string-vs-buffer per command) and booleans to numbers, so
+      // RESP3 replies match the classic RESP2 shape.
+      [decoder_1.RESP_TYPES.DOUBLE]: Buffer,
+      [decoder_1.RESP_TYPES.BOOLEAN]: Number,
+      [decoder_1.RESP_TYPES.MAP]: Array,
+      [decoder_1.RESP_TYPES.SET]: Array
+    };
+    var resp3TypeMapping = {
+      [decoder_1.RESP_TYPES.SIMPLE_STRING]: Buffer,
+      [decoder_1.RESP_TYPES.BLOB_STRING]: Buffer,
+      [decoder_1.RESP_TYPES.VERBATIM_STRING]: Buffer,
+      [decoder_1.RESP_TYPES.BIG_NUMBER]: String,
+      [decoder_1.RESP_TYPES.SET]: Array
+    };
+    function getParserTypeMapping(parserOptions) {
+      const base = parserOptions.replyMapping === "resp3" ? resp3TypeMapping : legacyTypeMapping;
+      return parserOptions.stringNumbers ? { ...base, [decoder_1.RESP_TYPES.NUMBER]: String, [decoder_1.RESP_TYPES.DOUBLE]: String } : base;
+    }
     var remainingRepliesMap = /* @__PURE__ */ new WeakMap();
     function fillSubCommand(command, count) {
       let remainingReplies = remainingRepliesMap.has(command) ? remainingRepliesMap.get(command) : command.args.length;
@@ -50588,9 +62671,9 @@ var require_DataHandler = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/redis/event_handler.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/redis/event_handler.js
 var require_event_handler = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/redis/event_handler.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/redis/event_handler.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.readyHandler = exports.errorHandler = exports.closeHandler = exports.connectHandler = void 0;
@@ -50598,80 +62681,200 @@ var require_event_handler = __commonJS({
     var Command_1 = require_Command();
     var errors_1 = require_errors2();
     var utils_1 = require_utils5();
+    var version_1 = require_version3();
     var DataHandler_1 = require_DataHandler();
+    var HimportCoordinator_1 = require_HimportCoordinator();
     var debug = (0, utils_1.Debug)("connection");
-    function connectHandler(self2) {
-      return function() {
-        var _a;
-        self2.setStatus("connect");
-        self2.resetCommandQueue();
-        let flushed = false;
-        const { connectionEpoch } = self2;
+    function getHandshakeCommands(self2) {
+      const commands = [];
+      if (self2.condition.protocol === 3) {
+        const helloCommandArgs = [self2.condition.protocol];
         if (self2.condition.auth) {
-          self2.auth(self2.condition.auth, function(err) {
-            if (connectionEpoch !== self2.connectionEpoch) {
+          helloCommandArgs.push("AUTH");
+          if (Array.isArray(self2.condition.auth)) {
+            helloCommandArgs.push(self2.condition.auth[0], self2.condition.auth[1]);
+          } else {
+            helloCommandArgs.push("default", self2.condition.auth);
+          }
+        }
+        commands.push({
+          kind: "hello",
+          send: () => self2.hello(helloCommandArgs),
+          errorHandler: handleAuthError
+        });
+      } else if (self2.condition.auth) {
+        commands.push({
+          kind: "auth",
+          send: () => self2.auth(self2.condition.auth),
+          errorHandler: handleAuthError
+        });
+      }
+      if (self2.condition.select) {
+        commands.push({
+          kind: "select",
+          send: () => self2.select(self2.condition.select),
+          errorHandler: (err) => self2.silentEmit("error", err)
+        });
+      }
+      if (self2.options.connectionName) {
+        debug("set the connection name [%s]", self2.options.connectionName);
+        commands.push({
+          kind: "client",
+          send: () => self2.client("setname", self2.options.connectionName),
+          errorHandler: utils_1.noop
+        });
+      }
+      if (self2.options.readOnly) {
+        debug("set the connection to readonly mode");
+        commands.push({
+          kind: "readonly",
+          send: () => self2.readonly(),
+          errorHandler: utils_1.noop
+        });
+      }
+      if (!self2.options.disableClientInfo) {
+        debug("set the client info");
+        commands.push({
+          kind: "client",
+          send: () => self2.client("SETINFO", "LIB-VER", version_1.PACKAGE_VERSION),
+          errorHandler: utils_1.noop
+        });
+        commands.push({
+          kind: "client",
+          send: () => self2.client("SETINFO", "LIB-NAME", self2.options?.clientInfoTag ? `ioredis(${self2.options.clientInfoTag})` : "ioredis"),
+          errorHandler: utils_1.noop
+        });
+      }
+      const himportBinding = (0, HimportCoordinator_1.getHimportBinding)(self2);
+      if (himportBinding && himportBinding.role !== "replica") {
+        for (const definition of himportBinding.coordinator.getDefinitions()) {
+          commands.push({
+            kind: "himport",
+            send: () => himportBinding.coordinator.ensurePrepared(self2, definition) ?? Promise.resolve(),
+            errorHandler: (err) => self2.silentEmit("error", err)
+          });
+        }
+      }
+      return commands;
+    }
+    async function sendHandshake(commands, protocol) {
+      if (protocol !== 3) {
+        await Promise.all(commands.map(({ send, errorHandler: errorHandler2 }) => errorHandler2 ? send().catch(errorHandler2) : send()));
+        return;
+      }
+      const results = await Promise.allSettled(commands.map(({ send }) => send()));
+      const helloIndex = commands.findIndex(({ kind }) => kind === "hello");
+      const helloResult = helloIndex === -1 ? void 0 : results[helloIndex];
+      if (helloResult?.status === "rejected" && isProtocolNegotiationError(helloResult.reason)) {
+        throw helloResult.reason;
+      }
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        if (result.status === "rejected") {
+          const { errorHandler: errorHandler2 } = commands[i];
+          if (errorHandler2) {
+            errorHandler2(result.reason);
+            continue;
+          }
+          throw result.reason;
+        }
+      }
+    }
+    function connectHandler(self2) {
+      return async function() {
+        try {
+          self2.resetCommandQueue();
+          self2.condition.handshake = true;
+          self2.setStatus("connect");
+          new DataHandler_1.default(self2, {
+            stringNumbers: self2.options.stringNumbers,
+            replyMapping: self2.condition.replyMapping
+          });
+          const { connectionEpoch } = self2;
+          const himportBinding = (0, HimportCoordinator_1.getHimportBinding)(self2);
+          himportBinding?.coordinator.beginSession(self2);
+          const isActiveConnect = () => connectionEpoch === self2.connectionEpoch && self2.status === "connect";
+          const finishHandshake = () => {
+            if (!isActiveConnect()) {
+              return false;
+            }
+            self2.condition.handshake = false;
+            return true;
+          };
+          try {
+            await sendHandshake(getHandshakeCommands(self2), self2.condition.protocol);
+          } catch (err) {
+            if (!isActiveConnect()) {
+              return;
+            }
+            if (!isProtocolNegotiationError(err)) {
+              return self2.recoverFromFatalError(err, err);
+            }
+            if (self2.options.replyMapping === "resp3") {
+              console.warn('[WARN] replyMapping "resp3" was requested, but the server does not support RESP3. Replies will use RESP2-compatible shapes until connected to a server that supports RESP3.');
+            }
+            debug("server rejected RESP3, downgrading connection to RESP2");
+            self2.condition.protocol = 2;
+            self2.condition.replyMapping = "legacy";
+            try {
+              await sendHandshake(getHandshakeCommands(self2), self2.condition.protocol);
+            } catch (downgradeErr) {
+              if (!isActiveConnect()) {
+                return;
+              }
+              return self2.recoverFromFatalError(downgradeErr, downgradeErr);
+            }
+          }
+          if (!isActiveConnect()) {
+            return;
+          }
+          if (!self2.options.enableReadyCheck) {
+            if (!finishHandshake()) {
+              return;
+            }
+            return exports.readyHandler(self2)();
+          }
+          self2._readyCheck(function(err, info) {
+            if (!isActiveConnect()) {
               return;
             }
             if (err) {
-              if (err.message.indexOf("no password is set") !== -1) {
-                console.warn("[WARN] Redis server does not require a password, but a password was supplied.");
-              } else if (err.message.indexOf("without any password configured for the default user") !== -1) {
-                console.warn("[WARN] This Redis server's `default` user does not require a password, but a password was supplied");
-              } else if (err.message.indexOf("wrong number of arguments for 'auth' command") !== -1) {
-                console.warn(`[ERROR] The server returned "wrong number of arguments for 'auth' command". You are probably passing both username and password to Redis version 5 or below. You should only pass the 'password' option for Redis version 5 and under.`);
-              } else {
-                flushed = true;
-                self2.recoverFromFatalError(err, err);
-              }
-            }
-          });
-        }
-        if (self2.condition.select) {
-          self2.select(self2.condition.select).catch((err) => {
-            self2.silentEmit("error", err);
-          });
-        }
-        new DataHandler_1.default(self2, {
-          stringNumbers: self2.options.stringNumbers
-        });
-        const clientCommandPromises = [];
-        if (self2.options.connectionName) {
-          debug("set the connection name [%s]", self2.options.connectionName);
-          clientCommandPromises.push(self2.client("setname", self2.options.connectionName).catch(utils_1.noop));
-        }
-        if (!self2.options.disableClientInfo) {
-          debug("set the client info");
-          clientCommandPromises.push((0, utils_1.getPackageMeta)().then((packageMeta) => {
-            return self2.client("SETINFO", "LIB-VER", packageMeta.version).catch(utils_1.noop);
-          }).catch(utils_1.noop));
-          clientCommandPromises.push(self2.client("SETINFO", "LIB-NAME", ((_a = self2.options) === null || _a === void 0 ? void 0 : _a.clientInfoTag) ? `ioredis(${self2.options.clientInfoTag})` : "ioredis").catch(utils_1.noop));
-        }
-        Promise.all(clientCommandPromises).catch(utils_1.noop).finally(() => {
-          if (!self2.options.enableReadyCheck) {
-            exports.readyHandler(self2)();
-          }
-          if (self2.options.enableReadyCheck) {
-            self2._readyCheck(function(err, info) {
-              if (connectionEpoch !== self2.connectionEpoch) {
+              self2.recoverFromFatalError(err, err);
+            } else if (self2.connector.check(info)) {
+              if (!finishHandshake()) {
                 return;
               }
-              if (err) {
-                if (!flushed) {
-                  self2.recoverFromFatalError(new Error("Ready check failed: " + err.message), err);
-                }
-              } else {
-                if (self2.connector.check(info)) {
-                  exports.readyHandler(self2)();
-                } else {
-                  self2.disconnect(true);
-                }
-              }
-            });
-          }
-        });
+              exports.readyHandler(self2)();
+            } else {
+              self2.disconnect(true);
+            }
+          });
+        } catch (err) {
+          self2.recoverFromFatalError(err, err);
+        }
       };
     }
     exports.connectHandler = connectHandler;
+    function handleAuthError(err) {
+      const msg = err.message || "";
+      if (msg.indexOf("no password is set") !== -1) {
+        console.warn("[WARN] Redis server does not require a password, but a password was supplied.");
+        return;
+      }
+      if (msg.indexOf("without any password configured for the default user") !== -1) {
+        console.warn("[WARN] This Redis server's `default` user does not require a password, but a password was supplied");
+        return;
+      }
+      if (msg.indexOf("wrong number of arguments for 'auth' command") !== -1) {
+        console.warn(`[ERROR] The server returned "wrong number of arguments for 'auth' command". You are probably passing both username and password to Redis version 5 or below. You should only pass the 'password' option for Redis version 5 and under.`);
+        return;
+      }
+      throw err;
+    }
+    function isProtocolNegotiationError(err) {
+      const msg = (err.message || "").toUpperCase();
+      return msg.includes("NOPROTO") || msg.includes("UNKNOWN COMMAND") && msg.includes("HELLO");
+    }
     function abortError(command) {
       const err = new redis_errors_1.AbortError("Command aborted due to connection close");
       err.command = {
@@ -50681,10 +62884,9 @@ var require_event_handler = __commonJS({
       return err;
     }
     function abortIncompletePipelines(commandQueue) {
-      var _a;
       let expectedIndex = 0;
       for (let i = 0; i < commandQueue.length; ) {
-        const command = (_a = commandQueue.peekAt(i)) === null || _a === void 0 ? void 0 : _a.command;
+        const command = commandQueue.peekAt(i)?.command;
         const pipelineIndex = command.pipelineIndex;
         if (pipelineIndex === void 0 || pipelineIndex === 0) {
           expectedIndex = 0;
@@ -50698,9 +62900,8 @@ var require_event_handler = __commonJS({
       }
     }
     function abortTransactionFragments(commandQueue) {
-      var _a;
       for (let i = 0; i < commandQueue.length; ) {
-        const command = (_a = commandQueue.peekAt(i)) === null || _a === void 0 ? void 0 : _a.command;
+        const command = commandQueue.peekAt(i)?.command;
         if (command.name === "multi") {
           break;
         }
@@ -50721,6 +62922,10 @@ var require_event_handler = __commonJS({
       return function() {
         const prevStatus = self2.status;
         self2.setStatus("close");
+        if (self2.socketTimeoutTimer !== void 0) {
+          clearTimeout(self2.socketTimeoutTimer);
+          self2.socketTimeoutTimer = void 0;
+        }
         if (self2.commandQueue.length) {
           abortIncompletePipelines(self2.commandQueue);
         }
@@ -50801,10 +63006,6 @@ var require_event_handler = __commonJS({
           return;
         }
         const finalSelect = self2.prevCondition ? self2.prevCondition.select : self2.condition.select;
-        if (self2.options.readOnly) {
-          debug("set the connection to readonly mode");
-          self2.readonly().catch(utils_1.noop);
-        }
         if (self2.prevCondition) {
           const condition = self2.prevCondition;
           self2.prevCondition = null;
@@ -50868,9 +63069,9 @@ var require_event_handler = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/redis/RedisOptions.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/redis/RedisOptions.js
 var require_RedisOptions = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/redis/RedisOptions.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/redis/RedisOptions.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.DEFAULT_REDIS_OPTIONS = void 0;
@@ -50882,9 +63083,11 @@ var require_RedisOptions = __commonJS({
       connectTimeout: 1e4,
       disconnectTimeout: 2e3,
       retryStrategy: function(times) {
-        return Math.min(times * 50, 2e3);
+        const jitter = Math.floor(Math.random() * 200);
+        const delay = Math.min(Math.pow(2, times - 1) * 50, 5e3);
+        return delay + jitter;
       },
-      keepAlive: 0,
+      keepAlive: 3e4,
       noDelay: true,
       connectionName: null,
       disableClientInfo: false,
@@ -50917,6 +63120,8 @@ var require_RedisOptions = __commonJS({
       reconnectOnError: null,
       readOnly: false,
       stringNumbers: false,
+      protocol: 3,
+      replyMapping: "legacy",
       maxRetriesPerRequest: 20,
       maxLoadingRetryTime: 1e4,
       enableAutoPipelining: false,
@@ -50927,10 +63132,11 @@ var require_RedisOptions = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/Redis.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/Redis.js
 var require_Redis = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/Redis.js"(exports) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/Redis.js"(exports) {
     "use strict";
+    var _a;
     Object.defineProperty(exports, "__esModule", { value: true });
     var commands_1 = require_built();
     var events_1 = __require("events");
@@ -50948,9 +63154,18 @@ var require_Redis = __commonJS({
     var applyMixin_1 = require_applyMixin();
     var Commander_1 = require_Commander();
     var lodash_1 = require_lodash();
+    var HimportCoordinator_1 = require_HimportCoordinator();
+    var HimportCoordinator_2 = require_HimportCoordinator();
     var Deque = require_denque();
     var debug = (0, utils_1.Debug)("redis");
-    var Redis2 = class _Redis extends Commander_1.default {
+    var Redis = class _Redis extends Commander_1.default {
+      /**
+       * Create a Redis instance.
+       * This is the same as `new Redis()` but is included for compatibility with node-redis.
+       */
+      static createClient(...args) {
+        return new _Redis(...args);
+      }
       constructor(arg1, arg2, arg3) {
         super();
         this.status = "wait";
@@ -50959,10 +63174,15 @@ var require_Redis = __commonJS({
         this.connectionEpoch = 0;
         this.retryAttempts = 0;
         this.manuallyClosing = false;
+        this[_a] = false;
         this._autoPipelines = /* @__PURE__ */ new Map();
         this._runningAutoPipelines = /* @__PURE__ */ new Set();
         this.parseOptions(arg1, arg2, arg3);
         events_1.EventEmitter.call(this);
+        this.options.himportFieldsets = (0, HimportCoordinator_2.cloneHimportFieldsets)(this.options.himportFieldsets);
+        if (this.options.himportFieldsets?.length) {
+          (0, HimportCoordinator_1.bindHimportCoordinator)(this, new HimportCoordinator_1.default(this.options.himportFieldsets), "standalone");
+        }
         this.resetCommandQueue();
         this.resetOfflineQueue();
         if (this.options.Connector) {
@@ -50984,13 +63204,6 @@ var require_Redis = __commonJS({
         } else {
           this.connect().catch(lodash_1.noop);
         }
-      }
-      /**
-       * Create a Redis instance.
-       * This is the same as `new Redis()` but is included for compatibility with node-redis.
-       */
-      static createClient(...args) {
-        return new _Redis(...args);
       }
       get autoPipelineQueueSize() {
         let queued = 0;
@@ -51031,7 +63244,10 @@ var require_Redis = __commonJS({
           this.condition = {
             select: options.db,
             auth: options.username ? [options.username, options.password] : options.password,
-            subscriber: false
+            subscriber: false,
+            protocol: options.protocol,
+            replyMapping: options.protocol === 3 && options.replyMapping === "resp3" ? "resp3" : "legacy",
+            handshake: false
           };
           const _this = this;
           (0, standard_as_callback_1.default)(this.connector.connect(function(type, err) {
@@ -51149,7 +63365,10 @@ var require_Redis = __commonJS({
        * ```
        */
       duplicate(override) {
-        return new _Redis({ ...this.options, ...override });
+        return new _Redis({
+          ...this.options,
+          ...override ?? {}
+        });
       }
       /**
        * Mode of the connection.
@@ -51158,8 +63377,7 @@ var require_Redis = __commonJS({
        * not in `"normal"` mode, certain commands are not allowed.
        */
       get mode() {
-        var _a;
-        return this.options.monitor ? "monitor" : ((_a = this.condition) === null || _a === void 0 ? void 0 : _a.subscriber) ? "subscriber" : "normal";
+        return this.options.monitor ? "monitor" : (0, utils_1.isResp2SubscriberMode)(this.condition) ? "subscriber" : "normal";
       }
       /**
        * Listen for all requests received by the server in real time.
@@ -51190,7 +63408,8 @@ var require_Redis = __commonJS({
       monitor(callback) {
         const monitorInstance = this.duplicate({
           monitor: true,
-          lazyConnect: false
+          lazyConnect: false,
+          himportFieldsets: void 0
         });
         return (0, standard_as_callback_1.default)(new Promise(function(resolve, reject) {
           monitorInstance.once("error", reject);
@@ -51217,7 +63436,7 @@ var require_Redis = __commonJS({
        * @ignore
        */
       sendCommand(command, stream) {
-        var _a, _b;
+        command.setReplyContext(this.condition ?? this.options);
         if (this.status === "wait") {
           this.connect().catch(lodash_1.noop);
         }
@@ -51225,15 +63444,22 @@ var require_Redis = __commonJS({
           command.reject(new Error(utils_1.CONNECTION_CLOSED_ERROR_MSG));
           return command.promise;
         }
-        if (((_a = this.condition) === null || _a === void 0 ? void 0 : _a.subscriber) && !Command_1.default.checkFlag("VALID_IN_SUBSCRIBER_MODE", command.name)) {
+        if ((0, utils_1.isResp2SubscriberMode)(this.condition) && !Command_1.default.checkFlag("VALID_IN_SUBSCRIBER_MODE", command.name)) {
           command.reject(new Error("Connection in subscriber mode, only subscriber commands may be used"));
           return command.promise;
         }
         if (typeof this.options.commandTimeout === "number") {
           command.setTimeout(this.options.commandTimeout);
         }
+        if (!stream && this[HimportCoordinator_1.hasHimportCoordinator] && (0, HimportCoordinator_1.interceptHimportCommand)(this, command, this.status === "ready", () => {
+          this.sendCommand(command);
+        })) {
+          return command.promise;
+        }
         const blockingTimeout = this.getBlockingTimeoutInMs(command);
-        let writable = this.status === "ready" || !stream && this.status === "connect" && (0, commands_1.exists)(command.name, { caseInsensitive: true }) && ((0, commands_1.hasFlag)(command.name, "loading", { nameCaseInsensitive: true }) || Command_1.default.checkFlag("HANDSHAKE_COMMANDS", command.name));
+        let writable = this.status === "ready" || // During handshake, only internal handshake commands may bypass the queue.
+        !stream && this.status === "connect" && this.condition?.handshake && (Command_1.default.checkFlag("HANDSHAKE_COMMANDS", command.name) || (0, HimportCoordinator_1.isInternalHimportCommand)(command)) || // Before ready, loading-safe commands remain writable after handshake.
+        !stream && this.status === "connect" && !this.condition?.handshake && (0, commands_1.exists)(command.name, { caseInsensitive: true }) && (0, commands_1.hasFlag)(command.name, "loading", { nameCaseInsensitive: true });
         if (!this.stream) {
           writable = false;
         } else if (!this.stream.writable) {
@@ -51267,7 +63493,7 @@ var require_Redis = __commonJS({
           }
         } else {
           if (debug.enabled) {
-            debug("write command[%s]: %d -> %s(%o)", this._getDescription(), (_b = this.condition) === null || _b === void 0 ? void 0 : _b.select, command.name, command.args);
+            debug("write command[%s]: %d -> %s(%o)", this._getDescription(), this.condition?.select, command.name, command.args);
           }
           if (stream) {
             if ("isPipeline" in stream && stream.isPipeline) {
@@ -51308,7 +63534,6 @@ var require_Redis = __commonJS({
         return (0, tracing_1.traceCommand)(() => command.promise, () => this._buildCommandContext(command));
       }
       getBlockingTimeoutInMs(command) {
-        var _a;
         if (!Command_1.default.checkFlag("BLOCKING_COMMANDS", command.name)) {
           return void 0;
         }
@@ -51319,7 +63544,7 @@ var require_Redis = __commonJS({
         const timeout = command.extractBlockingTimeout();
         if (typeof timeout === "number") {
           if (timeout > 0) {
-            return timeout + ((_a = this.options.blockingTimeoutGrace) !== null && _a !== void 0 ? _a : RedisOptions_1.DEFAULT_REDIS_OPTIONS.blockingTimeoutGrace);
+            return timeout + (this.options.blockingTimeoutGrace ?? RedisOptions_1.DEFAULT_REDIS_OPTIONS.blockingTimeoutGrace);
           }
           return configuredTimeout;
         }
@@ -51335,11 +63560,12 @@ var require_Redis = __commonJS({
         return void 0;
       }
       setSocketTimeout() {
+        const stream = this.stream;
         this.socketTimeoutTimer = setTimeout(() => {
-          this.stream.destroy(new Error(`Socket timeout. Expecting data, but didn't receive any in ${this.options.socketTimeout}ms.`));
+          stream.destroy(new Error(`Socket timeout. Expecting data, but didn't receive any in ${this.options.socketTimeout}ms.`));
           this.socketTimeoutTimer = void 0;
         }, this.options.socketTimeout);
-        this.stream.once("data", () => {
+        stream.once("data", () => {
           clearTimeout(this.socketTimeoutTimer);
           this.socketTimeoutTimer = void 0;
           if (this.commandQueue.length === 0)
@@ -51411,9 +63637,9 @@ var require_Redis = __commonJS({
        * @ignore
        */
       handleReconnection(err, item) {
-        var _a;
         let needReconnect = false;
-        if (this.options.reconnectOnError && !Command_1.default.checkFlag("IGNORE_RECONNECT_ON_ERROR", item.command.name)) {
+        const ignoreReconnectOnError = Command_1.default.checkFlag("IGNORE_RECONNECT_ON_ERROR", item.command.name) || this.condition?.handshake && Command_1.default.checkFlag("HANDSHAKE_COMMANDS", item.command.name);
+        if (this.options.reconnectOnError && !ignoreReconnectOnError) {
           needReconnect = this.options.reconnectOnError(err);
         }
         switch (needReconnect) {
@@ -51428,7 +63654,7 @@ var require_Redis = __commonJS({
             if (this.status !== "reconnecting") {
               this.disconnect(true);
             }
-            if (((_a = this.condition) === null || _a === void 0 ? void 0 : _a.select) !== item.select && item.command.name !== "select") {
+            if (this.condition?.select !== item.select && item.command.name !== "select") {
               this.select(item.select);
             }
             this.sendCommand(item.command);
@@ -51450,23 +63676,21 @@ var require_Redis = __commonJS({
         };
       }
       _buildCommandContext(command) {
-        var _a, _b, _c;
         const { address, port } = this._getServerAddress();
         return {
           command: command.name,
           args: (0, tracing_1.sanitizeArgs)(command.name, command.args),
-          database: (_c = (_b = (_a = this.condition) === null || _a === void 0 ? void 0 : _a.select) !== null && _b !== void 0 ? _b : this.options.db) !== null && _c !== void 0 ? _c : 0,
+          database: this.condition?.select ?? this.options.db ?? 0,
           serverAddress: address,
           serverPort: port
         };
       }
       _buildBatchContext(batchSize) {
-        var _a, _b, _c;
         const { address, port } = this._getServerAddress();
         return {
           batchMode: "MULTI",
           batchSize,
-          database: (_c = (_b = (_a = this.condition) === null || _a === void 0 ? void 0 : _a.select) !== null && _b !== void 0 ? _b : this.options.db) !== null && _c !== void 0 ? _c : 0,
+          database: this.condition?.select ?? this.options.db ?? 0,
           serverAddress: address,
           serverPort: port
         };
@@ -51526,6 +63750,9 @@ var require_Redis = __commonJS({
         }
         if (typeof options.db === "string") {
           options.db = parseInt(options.db, 10);
+        }
+        if (options.replyMapping === "resp3" && options.protocol !== 3) {
+          throw new Error('The "resp3" replyMapping is only supported with protocol 3');
         }
         this.options = (0, utils_1.resolveTLSProfile)(options);
       }
@@ -51615,18 +63842,19 @@ var require_Redis = __commonJS({
         }).catch(lodash_1.noop);
       }
     };
-    Redis2.Cluster = cluster_1.default;
-    Redis2.Command = Command_1.default;
-    Redis2.defaultOptions = RedisOptions_1.DEFAULT_REDIS_OPTIONS;
-    (0, applyMixin_1.default)(Redis2, events_1.EventEmitter);
-    (0, transaction_1.addTransactionSupport)(Redis2.prototype);
-    exports.default = Redis2;
+    _a = HimportCoordinator_1.hasHimportCoordinator;
+    Redis.Cluster = cluster_1.default;
+    Redis.Command = Command_1.default;
+    Redis.defaultOptions = RedisOptions_1.DEFAULT_REDIS_OPTIONS;
+    (0, applyMixin_1.default)(Redis, events_1.EventEmitter);
+    (0, transaction_1.addTransactionSupport)(Redis.prototype);
+    exports.default = Redis;
   }
 });
 
-// ../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/index.js
+// ../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/index.js
 var require_built3 = __commonJS({
-  "../../node_modules/.pnpm/ioredis@5.11.1/node_modules/ioredis/built/index.js"(exports, module) {
+  "../../node_modules/.pnpm/ioredis@6.0.0/node_modules/ioredis/built/index.js"(exports, module) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.print = exports.ReplyError = exports.SentinelIterator = exports.SentinelConnector = exports.AbstractConnector = exports.Pipeline = exports.ScanStream = exports.Command = exports.Cluster = exports.Redis = exports.default = void 0;
@@ -55810,9033 +68038,16 @@ var health_default = router;
 
 // src/routes/recordings.ts
 var import_express2 = __toESM(require_express2(), 1);
-
-// ../../node_modules/.pnpm/@supabase+supabase-js@2.107.0/node_modules/@supabase/supabase-js/dist/index.mjs
-var dist_exports = {};
-__export(dist_exports, {
-  FunctionRegion: () => import_functions_js.FunctionRegion,
-  FunctionsError: () => import_functions_js.FunctionsError,
-  FunctionsFetchError: () => import_functions_js.FunctionsFetchError,
-  FunctionsHttpError: () => import_functions_js.FunctionsHttpError,
-  FunctionsRelayError: () => import_functions_js.FunctionsRelayError,
-  PostgrestError: () => PostgrestError,
-  StorageApiError: () => StorageApiError,
-  SupabaseClient: () => SupabaseClient,
-  createClient: () => createClient
-});
-var import_functions_js = __toESM(require_main(), 1);
-
-// ../../node_modules/.pnpm/@supabase+postgrest-js@2.107.0/node_modules/@supabase/postgrest-js/dist/index.mjs
-var DEFAULT_MAX_RETRIES = 3;
-var getRetryDelay = (attemptIndex) => Math.min(1e3 * 2 ** attemptIndex, 3e4);
-var RETRYABLE_STATUS_CODES = [520, 503];
-var RETRYABLE_METHODS = [
-  "GET",
-  "HEAD",
-  "OPTIONS"
-];
-var PostgrestError = class extends Error {
-  /**
-  * @example
-  * ```ts
-  * import PostgrestError from '@supabase/postgrest-js'
-  *
-  * throw new PostgrestError({
-  *   message: 'Row level security prevented the request',
-  *   details: 'RLS denied the insert',
-  *   hint: 'Check your policies',
-  *   code: 'PGRST301',
-  * })
-  * ```
-  */
-  constructor(context) {
-    super(context.message);
-    this.name = "PostgrestError";
-    this.details = context.details;
-    this.hint = context.hint;
-    this.code = context.code;
-  }
-  toJSON() {
-    return {
-      name: this.name,
-      message: this.message,
-      details: this.details,
-      hint: this.hint,
-      code: this.code
-    };
-  }
-};
-function sleep(ms, signal) {
-  return new Promise((resolve) => {
-    if (signal === null || signal === void 0 ? void 0 : signal.aborted) {
-      resolve();
-      return;
-    }
-    const id = setTimeout(() => {
-      signal === null || signal === void 0 || signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    function onAbort() {
-      clearTimeout(id);
-      resolve();
-    }
-    signal === null || signal === void 0 || signal.addEventListener("abort", onAbort);
-  });
-}
-function shouldRetry(method, status, attemptCount, retryEnabled) {
-  if (!retryEnabled || attemptCount >= DEFAULT_MAX_RETRIES) return false;
-  if (!RETRYABLE_METHODS.includes(method)) return false;
-  if (!RETRYABLE_STATUS_CODES.includes(status)) return false;
-  return true;
-}
-var PostgrestBuilder = class {
-  /**
-  * Creates a builder configured for a specific PostgREST request.
-  *
-  * @example Using supabase-js (recommended)
-  * ```ts
-  * import { createClient } from '@supabase/supabase-js'
-  *
-  * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
-  * const { data, error } = await supabase.from('users').select('*')
-  * ```
-  *
-  * @category Database
-  *
-  * @example Standalone import for bundle-sensitive environments
-  * ```ts
-  * import { PostgrestQueryBuilder } from '@supabase/postgrest-js'
-  *
-  * const builder = new PostgrestQueryBuilder(
-  *   new URL('https://xyzcompany.supabase.co/rest/v1/users'),
-  *   { headers: new Headers({ apikey: 'your-publishable-key' }) }
-  * )
-  * ```
-  */
-  constructor(builder) {
-    var _builder$shouldThrowO, _builder$isMaybeSingl, _builder$shouldStripN, _builder$urlLengthLim, _builder$retry;
-    this.shouldThrowOnError = false;
-    this.retryEnabled = true;
-    this.method = builder.method;
-    this.url = builder.url;
-    this.headers = new Headers(builder.headers);
-    this.schema = builder.schema;
-    this.body = builder.body;
-    this.shouldThrowOnError = (_builder$shouldThrowO = builder.shouldThrowOnError) !== null && _builder$shouldThrowO !== void 0 ? _builder$shouldThrowO : false;
-    this.signal = builder.signal;
-    this.isMaybeSingle = (_builder$isMaybeSingl = builder.isMaybeSingle) !== null && _builder$isMaybeSingl !== void 0 ? _builder$isMaybeSingl : false;
-    this.shouldStripNulls = (_builder$shouldStripN = builder.shouldStripNulls) !== null && _builder$shouldStripN !== void 0 ? _builder$shouldStripN : false;
-    this.urlLengthLimit = (_builder$urlLengthLim = builder.urlLengthLimit) !== null && _builder$urlLengthLim !== void 0 ? _builder$urlLengthLim : 8e3;
-    this.retryEnabled = (_builder$retry = builder.retry) !== null && _builder$retry !== void 0 ? _builder$retry : true;
-    if (builder.fetch) this.fetch = builder.fetch;
-    else this.fetch = fetch;
-  }
-  /**
-  * If there's an error with the query, throwOnError will reject the promise by
-  * throwing the error instead of returning it as part of a successful response.
-  *
-  * {@link https://github.com/supabase/supabase-js/issues/92}
-  *
-  * @category Database
-  */
-  throwOnError() {
-    this.shouldThrowOnError = true;
-    return this;
-  }
-  /**
-  * Strip null values from the response data. Properties with `null` values
-  * will be omitted from the returned JSON objects.
-  *
-  * Requires PostgREST 11.2.0+.
-  *
-  * {@link https://docs.postgrest.org/en/stable/references/api/resource_representation.html#stripped-nulls}
-  *
-  * @category Database
-  * @subcategory Using modifiers
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select()
-  *   .stripNulls()
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text, bio text);
-  *
-  * insert into
-  *   characters (id, name, bio)
-  * values
-  *   (1, 'Luke', null),
-  *   (2, 'Leia', 'Princess of Alderaan');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "name": "Luke"
-  *     },
-  *     {
-  *       "id": 2,
-  *       "name": "Leia",
-  *       "bio": "Princess of Alderaan"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  stripNulls() {
-    if (this.headers.get("Accept") === "text/csv") throw new Error("stripNulls() cannot be used with csv()");
-    this.shouldStripNulls = true;
-    return this;
-  }
-  /**
-  * Set an HTTP header for the request.
-  *
-  * @category Database
-  */
-  setHeader(name, value) {
-    this.headers = new Headers(this.headers);
-    this.headers.set(name, value);
-    return this;
-  }
-  /**
-  * @category Database
-  *
-  * Configure retry behavior for this request.
-  *
-  * By default, retries are enabled for idempotent requests (GET, HEAD, OPTIONS)
-  * that fail with network errors or specific HTTP status codes (503, 520).
-  * Retries use exponential backoff (1s, 2s, 4s) with a maximum of 3 attempts.
-  *
-  * @param enabled - Whether to enable retries for this request
-  *
-  * @example
-  * ```ts
-  * // Disable retries for a specific query
-  * const { data, error } = await supabase
-  *   .from('users')
-  *   .select()
-  *   .retry(false)
-  * ```
-  */
-  retry(enabled) {
-    this.retryEnabled = enabled;
-    return this;
-  }
-  then(onfulfilled, onrejected) {
-    var _this = this;
-    if (this.schema === void 0) {
-    } else if (["GET", "HEAD"].includes(this.method)) this.headers.set("Accept-Profile", this.schema);
-    else this.headers.set("Content-Profile", this.schema);
-    if (this.method !== "GET" && this.method !== "HEAD") this.headers.set("Content-Type", "application/json");
-    if (this.shouldStripNulls) {
-      const currentAccept = this.headers.get("Accept");
-      if (currentAccept === "application/vnd.pgrst.object+json") this.headers.set("Accept", "application/vnd.pgrst.object+json;nulls=stripped");
-      else if (!currentAccept || currentAccept === "application/json") this.headers.set("Accept", "application/vnd.pgrst.array+json;nulls=stripped");
-    }
-    const _fetch = this.fetch;
-    const executeWithRetry = async () => {
-      let attemptCount = 0;
-      while (true) {
-        const requestHeaders = new Headers(_this.headers);
-        if (attemptCount > 0) requestHeaders.set("X-Retry-Count", String(attemptCount));
-        let res$1;
-        try {
-          res$1 = await _fetch(_this.url.toString(), {
-            method: _this.method,
-            headers: requestHeaders,
-            body: JSON.stringify(_this.body, (_, value) => typeof value === "bigint" ? value.toString() : value),
-            signal: _this.signal
-          });
-        } catch (fetchError) {
-          if ((fetchError === null || fetchError === void 0 ? void 0 : fetchError.name) === "AbortError" || (fetchError === null || fetchError === void 0 ? void 0 : fetchError.code) === "ABORT_ERR") throw fetchError;
-          if (!RETRYABLE_METHODS.includes(_this.method)) throw fetchError;
-          if (_this.retryEnabled && attemptCount < DEFAULT_MAX_RETRIES) {
-            const delay = getRetryDelay(attemptCount);
-            attemptCount++;
-            await sleep(delay, _this.signal);
-            continue;
-          }
-          throw fetchError;
-        }
-        if (shouldRetry(_this.method, res$1.status, attemptCount, _this.retryEnabled)) {
-          var _res$headers$get, _res$headers;
-          const retryAfterHeader = (_res$headers$get = (_res$headers = res$1.headers) === null || _res$headers === void 0 ? void 0 : _res$headers.get("Retry-After")) !== null && _res$headers$get !== void 0 ? _res$headers$get : null;
-          const delay = retryAfterHeader !== null ? Math.max(0, parseInt(retryAfterHeader, 10) || 0) * 1e3 : getRetryDelay(attemptCount);
-          await res$1.text();
-          attemptCount++;
-          await sleep(delay, _this.signal);
-          continue;
-        }
-        return await _this.processResponse(res$1);
-      }
-    };
-    let res = executeWithRetry();
-    if (!this.shouldThrowOnError) res = res.catch((fetchError) => {
-      var _fetchError$name2;
-      let errorDetails = "";
-      let hint = "";
-      let code = "";
-      const cause = fetchError === null || fetchError === void 0 ? void 0 : fetchError.cause;
-      if (cause) {
-        var _cause$message, _cause$code, _fetchError$name, _cause$name;
-        const causeMessage = (_cause$message = cause === null || cause === void 0 ? void 0 : cause.message) !== null && _cause$message !== void 0 ? _cause$message : "";
-        const causeCode = (_cause$code = cause === null || cause === void 0 ? void 0 : cause.code) !== null && _cause$code !== void 0 ? _cause$code : "";
-        errorDetails = `${(_fetchError$name = fetchError === null || fetchError === void 0 ? void 0 : fetchError.name) !== null && _fetchError$name !== void 0 ? _fetchError$name : "FetchError"}: ${fetchError === null || fetchError === void 0 ? void 0 : fetchError.message}`;
-        errorDetails += `
-
-Caused by: ${(_cause$name = cause === null || cause === void 0 ? void 0 : cause.name) !== null && _cause$name !== void 0 ? _cause$name : "Error"}: ${causeMessage}`;
-        if (causeCode) errorDetails += ` (${causeCode})`;
-        if (cause === null || cause === void 0 ? void 0 : cause.stack) errorDetails += `
-${cause.stack}`;
-      } else {
-        var _fetchError$stack;
-        errorDetails = (_fetchError$stack = fetchError === null || fetchError === void 0 ? void 0 : fetchError.stack) !== null && _fetchError$stack !== void 0 ? _fetchError$stack : "";
-      }
-      const urlLength = this.url.toString().length;
-      if ((fetchError === null || fetchError === void 0 ? void 0 : fetchError.name) === "AbortError" || (fetchError === null || fetchError === void 0 ? void 0 : fetchError.code) === "ABORT_ERR") {
-        code = "";
-        hint = "Request was aborted (timeout or manual cancellation)";
-        if (urlLength > this.urlLengthLimit) hint += `. Note: Your request URL is ${urlLength} characters, which may exceed server limits. If selecting many fields, consider using views. If filtering with large arrays (e.g., .in('id', [many IDs])), consider using an RPC function to pass values server-side.`;
-      } else if ((cause === null || cause === void 0 ? void 0 : cause.name) === "HeadersOverflowError" || (cause === null || cause === void 0 ? void 0 : cause.code) === "UND_ERR_HEADERS_OVERFLOW") {
-        code = "";
-        hint = "HTTP headers exceeded server limits (typically 16KB)";
-        if (urlLength > this.urlLengthLimit) hint += `. Your request URL is ${urlLength} characters. If selecting many fields, consider using views. If filtering with large arrays (e.g., .in('id', [200+ IDs])), consider using an RPC function instead.`;
-      }
-      return {
-        success: false,
-        error: {
-          message: `${(_fetchError$name2 = fetchError === null || fetchError === void 0 ? void 0 : fetchError.name) !== null && _fetchError$name2 !== void 0 ? _fetchError$name2 : "FetchError"}: ${fetchError === null || fetchError === void 0 ? void 0 : fetchError.message}`,
-          details: errorDetails,
-          hint,
-          code
-        },
-        data: null,
-        count: null,
-        status: 0,
-        statusText: ""
-      };
-    });
-    return res.then(onfulfilled, onrejected);
-  }
-  /**
-  * Process a fetch response and return the standardized postgrest response.
-  */
-  async processResponse(res) {
-    var _this2 = this;
-    let error = null;
-    let data = null;
-    let count = null;
-    let status = res.status;
-    let statusText = res.statusText;
-    if (res.ok) {
-      var _this$headers$get2, _res$headers$get2;
-      if (_this2.method !== "HEAD") {
-        var _this$headers$get;
-        const body = await res.text();
-        if (body === "") {
-        } else if (_this2.headers.get("Accept") === "text/csv") data = body;
-        else if (_this2.headers.get("Accept") && ((_this$headers$get = _this2.headers.get("Accept")) === null || _this$headers$get === void 0 ? void 0 : _this$headers$get.includes("application/vnd.pgrst.plan+text"))) data = body;
-        else try {
-          data = JSON.parse(body);
-        } catch (_unused) {
-          error = { message: body };
-          data = null;
-          if (_this2.shouldThrowOnError) throw new PostgrestError({
-            message: body,
-            details: "",
-            hint: "",
-            code: ""
-          });
-        }
-      }
-      const countHeader = (_this$headers$get2 = _this2.headers.get("Prefer")) === null || _this$headers$get2 === void 0 ? void 0 : _this$headers$get2.match(/count=(exact|planned|estimated)/);
-      const contentRange = (_res$headers$get2 = res.headers.get("content-range")) === null || _res$headers$get2 === void 0 ? void 0 : _res$headers$get2.split("/");
-      if (countHeader && contentRange && contentRange.length > 1) count = parseInt(contentRange[1]);
-      if (_this2.isMaybeSingle && Array.isArray(data)) if (data.length > 1) {
-        error = {
-          code: "PGRST116",
-          details: `Results contain ${data.length} rows, application/vnd.pgrst.object+json requires 1 row`,
-          hint: null,
-          message: "JSON object requested, multiple (or no) rows returned"
-        };
-        data = null;
-        count = null;
-        status = 406;
-        statusText = "Not Acceptable";
-      } else if (data.length === 1) data = data[0];
-      else data = null;
-    } else {
-      const body = await res.text();
-      try {
-        error = JSON.parse(body);
-        if (Array.isArray(error) && res.status === 404) {
-          data = [];
-          error = null;
-          status = 200;
-          statusText = "OK";
-        }
-      } catch (_unused2) {
-        if (res.status === 404 && body === "") {
-          status = 204;
-          statusText = "No Content";
-        } else error = { message: body };
-      }
-      if (error && _this2.shouldThrowOnError) throw new PostgrestError(error);
-    }
-    return {
-      success: error === null,
-      error,
-      data,
-      count,
-      status,
-      statusText
-    };
-  }
-  /**
-  * Override the type of the returned `data`.
-  *
-  * @typeParam NewResult - The new result type to override with
-  * @deprecated Use overrideTypes<yourType, { merge: false }>() method at the end of your call chain instead
-  *
-  * @category Database
-  */
-  returns() {
-    return this;
-  }
-  /**
-  * Override the type of the returned `data` field in the response.
-  *
-  * @typeParam NewResult - The new type to cast the response data to
-  * @typeParam Options - Optional type configuration (defaults to { merge: true })
-  * @typeParam Options.merge - When true, merges the new type with existing return type. When false, replaces the existing types entirely (defaults to true)
-  * @example
-  * ```typescript
-  * // Merge with existing types (default behavior)
-  * const query = supabase
-  *   .from('users')
-  *   .select()
-  *   .overrideTypes<{ custom_field: string }>()
-  *
-  * // Replace existing types completely
-  * const replaceQuery = supabase
-  *   .from('users')
-  *   .select()
-  *   .overrideTypes<{ id: number; name: string }, { merge: false }>()
-  * ```
-  * @returns A PostgrestBuilder instance with the new type
-  *
-  * @category Database
-  * @subcategory Using modifiers
-  *
-  * @example Complete Override type of successful response
-  * ```ts
-  * const { data } = await supabase
-  *   .from('countries')
-  *   .select()
-  *   .overrideTypes<Array<MyType>, { merge: false }>()
-  * ```
-  *
-  * @exampleResponse Complete Override type of successful response
-  * ```ts
-  * let x: typeof data // MyType[]
-  * ```
-  *
-  * @example Complete Override type of object response
-  * ```ts
-  * const { data } = await supabase
-  *   .from('countries')
-  *   .select()
-  *   .maybeSingle()
-  *   .overrideTypes<MyType, { merge: false }>()
-  * ```
-  *
-  * @exampleResponse Complete Override type of object response
-  * ```ts
-  * let x: typeof data // MyType | null
-  * ```
-  *
-  * @example Partial Override type of successful response
-  * ```ts
-  * const { data } = await supabase
-  *   .from('countries')
-  *   .select()
-  *   .overrideTypes<Array<{ status: "A" | "B" }>>()
-  * ```
-  *
-  * @exampleResponse Partial Override type of successful response
-  * ```ts
-  * let x: typeof data // Array<CountryRowProperties & { status: "A" | "B" }>
-  * ```
-  *
-  * @example Partial Override type of object response
-  * ```ts
-  * const { data } = await supabase
-  *   .from('countries')
-  *   .select()
-  *   .maybeSingle()
-  *   .overrideTypes<{ status: "A" | "B" }>()
-  * ```
-  *
-  * @exampleResponse Partial Override type of object response
-  * ```ts
-  * let x: typeof data // CountryRowProperties & { status: "A" | "B" } | null
-  * ```
-  *
-  * @example Merge vs replace existing types
-  * ```typescript
-  * // Merge with existing types (default behavior)
-  * const query = supabase
-  *   .from('users')
-  *   .select()
-  *   .overrideTypes<{ custom_field: string }>()
-  *
-  * // Replace existing types completely
-  * const replaceQuery = supabase
-  *   .from('users')
-  *   .select()
-  *   .overrideTypes<{ id: number; name: string }, { merge: false }>()
-  * ```
-  */
-  overrideTypes() {
-    return this;
-  }
-};
-var PostgrestTransformBuilder = class extends PostgrestBuilder {
-  /**
-  * Perform a SELECT on the query result.
-  *
-  * By default, `.insert()`, `.update()`, `.upsert()`, and `.delete()` do not
-  * return modified rows. By calling this method, modified rows are returned in
-  * `data`.
-  *
-  * @param columns - The columns to retrieve, separated by commas
-  *
-  * @category Database
-  * @subcategory Using modifiers
-  *
-  * @example With `upsert()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .upsert({ id: 1, name: 'Han Solo' })
-  *   .select()
-  * ```
-  *
-  * @exampleSql With `upsert()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Han');
-  * ```
-  *
-  * @exampleResponse With `upsert()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "name": "Han Solo"
-  *     }
-  *   ],
-  *   "status": 201,
-  *   "statusText": "Created"
-  * }
-  * ```
-  */
-  select(columns) {
-    let quoted = false;
-    const cleanedColumns = (columns !== null && columns !== void 0 ? columns : "*").split("").map((c) => {
-      if (/\s/.test(c) && !quoted) return "";
-      if (c === '"') quoted = !quoted;
-      return c;
-    }).join("");
-    this.url.searchParams.set("select", cleanedColumns);
-    this.headers.append("Prefer", "return=representation");
-    return this;
-  }
-  /**
-  * Order the query result by `column`.
-  *
-  * You can call this method multiple times to order by multiple columns.
-  *
-  * You can order referenced tables, but it only affects the ordering of the
-  * parent table if you use `!inner` in the query.
-  *
-  * @param column - The column to order by
-  * @param options - Named parameters
-  * @param options.ascending - If `true`, the result will be in ascending order
-  * @param options.nullsFirst - If `true`, `null`s appear first. If `false`,
-  * `null`s appear last.
-  * @param options.referencedTable - Set this to order a referenced table by
-  * its columns
-  * @param options.foreignTable - Deprecated, use `options.referencedTable`
-  * instead
-  *
-  * @category Database
-  * @subcategory Using modifiers
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select('id, name')
-  *   .order('id', { ascending: false })
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 3,
-  *       "name": "Han"
-  *     },
-  *     {
-  *       "id": 2,
-  *       "name": "Leia"
-  *     },
-  *     {
-  *       "id": 1,
-  *       "name": "Luke"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @exampleDescription On a referenced table
-  * Ordering with `referencedTable` doesn't affect the ordering of the
-  * parent table.
-  *
-  * @example On a referenced table
-  * ```ts
-  *   const { data, error } = await supabase
-  *     .from('orchestral_sections')
-  *     .select(`
-  *       name,
-  *       instruments (
-  *         name
-  *       )
-  *     `)
-  *     .order('name', { referencedTable: 'instruments', ascending: false })
-  *
-  * ```
-  *
-  * @exampleSql On a referenced table
-  * ```sql
-  * create table
-  *   orchestral_sections (id int8 primary key, name text);
-  * create table
-  *   instruments (
-  *     id int8 primary key,
-  *     section_id int8 not null references orchestral_sections,
-  *     name text
-  *   );
-  *
-  * insert into
-  *   orchestral_sections (id, name)
-  * values
-  *   (1, 'strings'),
-  *   (2, 'woodwinds');
-  * insert into
-  *   instruments (id, section_id, name)
-  * values
-  *   (1, 1, 'harp'),
-  *   (2, 1, 'violin');
-  * ```
-  *
-  * @exampleResponse On a referenced table
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "strings",
-  *       "instruments": [
-  *         {
-  *           "name": "violin"
-  *         },
-  *         {
-  *           "name": "harp"
-  *         }
-  *       ]
-  *     },
-  *     {
-  *       "name": "woodwinds",
-  *       "instruments": []
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @exampleDescription Order parent table by a referenced table
-  * Ordering with `referenced_table(col)` affects the ordering of the
-  * parent table.
-  *
-  * @example Order parent table by a referenced table
-  * ```ts
-  *   const { data, error } = await supabase
-  *     .from('instruments')
-  *     .select(`
-  *       name,
-  *       section:orchestral_sections (
-  *         name
-  *       )
-  *     `)
-  *     .order('section(name)', { ascending: true })
-  *
-  * ```
-  *
-  * @exampleSql Order parent table by a referenced table
-  * ```sql
-  * create table
-  *   orchestral_sections (id int8 primary key, name text);
-  * create table
-  *   instruments (
-  *     id int8 primary key,
-  *     section_id int8 not null references orchestral_sections,
-  *     name text
-  *   );
-  *
-  * insert into
-  *   orchestral_sections (id, name)
-  * values
-  *   (1, 'strings'),
-  *   (2, 'woodwinds');
-  * insert into
-  *   instruments (id, section_id, name)
-  * values
-  *   (1, 2, 'flute'),
-  *   (2, 1, 'violin');
-  * ```
-  *
-  * @exampleResponse Order parent table by a referenced table
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "violin",
-  *       "orchestral_sections": {"name": "strings"}
-  *     },
-  *     {
-  *       "name": "flute",
-  *       "orchestral_sections": {"name": "woodwinds"}
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  order(column, { ascending = true, nullsFirst, foreignTable, referencedTable = foreignTable } = {}) {
-    const key = referencedTable ? `${referencedTable}.order` : "order";
-    const existingOrder = this.url.searchParams.get(key);
-    this.url.searchParams.set(key, `${existingOrder ? `${existingOrder},` : ""}${column}.${ascending ? "asc" : "desc"}${nullsFirst === void 0 ? "" : nullsFirst ? ".nullsfirst" : ".nullslast"}`);
-    return this;
-  }
-  /**
-  * Limit the query result by `count`.
-  *
-  * @param count - The maximum number of rows to return
-  * @param options - Named parameters
-  * @param options.referencedTable - Set this to limit rows of referenced
-  * tables instead of the parent table
-  * @param options.foreignTable - Deprecated, use `options.referencedTable`
-  * instead
-  *
-  * @category Database
-  * @subcategory Using modifiers
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select('name')
-  *   .limit(1)
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "Luke"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @example On a referenced table
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('orchestral_sections')
-  *   .select(`
-  *     name,
-  *     instruments (
-  *       name
-  *     )
-  *   `)
-  *   .limit(1, { referencedTable: 'instruments' })
-  * ```
-  *
-  * @exampleSql On a referenced table
-  * ```sql
-  * create table
-  *   orchestral_sections (id int8 primary key, name text);
-  * create table
-  *   instruments (
-  *     id int8 primary key,
-  *     section_id int8 not null references orchestral_sections,
-  *     name text
-  *   );
-  *
-  * insert into
-  *   orchestral_sections (id, name)
-  * values
-  *   (1, 'strings');
-  * insert into
-  *   instruments (id, section_id, name)
-  * values
-  *   (1, 1, 'harp'),
-  *   (2, 1, 'violin');
-  * ```
-  *
-  * @exampleResponse On a referenced table
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "strings",
-  *       "instruments": [
-  *         {
-  *           "name": "violin"
-  *         }
-  *       ]
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  limit(count, { foreignTable, referencedTable = foreignTable } = {}) {
-    const key = typeof referencedTable === "undefined" ? "limit" : `${referencedTable}.limit`;
-    this.url.searchParams.set(key, `${count}`);
-    return this;
-  }
-  /**
-  * Limit the query result by starting at an offset `from` and ending at the offset `to`.
-  * Only records within this range are returned.
-  * This respects the query order and if there is no order clause the range could behave unexpectedly.
-  * The `from` and `to` values are 0-based and inclusive: `range(1, 3)` will include the second, third
-  * and fourth rows of the query.
-  *
-  * @param from - The starting index from which to limit the result
-  * @param to - The last index to which to limit the result
-  * @param options - Named parameters
-  * @param options.referencedTable - Set this to limit rows of referenced
-  * tables instead of the parent table
-  * @param options.foreignTable - Deprecated, use `options.referencedTable`
-  * instead
-  *
-  * @category Database
-  * @subcategory Using modifiers
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select('name')
-  *   .range(0, 1)
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "Luke"
-  *     },
-  *     {
-  *       "name": "Leia"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  range(from, to, { foreignTable, referencedTable = foreignTable } = {}) {
-    const keyOffset = typeof referencedTable === "undefined" ? "offset" : `${referencedTable}.offset`;
-    const keyLimit = typeof referencedTable === "undefined" ? "limit" : `${referencedTable}.limit`;
-    this.url.searchParams.set(keyOffset, `${from}`);
-    this.url.searchParams.set(keyLimit, `${to - from + 1}`);
-    return this;
-  }
-  /**
-  * Set the AbortSignal for the fetch request.
-  *
-  * @param signal - The AbortSignal to use for the fetch request
-  *
-  * @category Database
-  * @subcategory Using modifiers
-  *
-  * @remarks
-  * You can use this to set a timeout for the request.
-  *
-  * @exampleDescription Aborting requests in-flight
-  * You can use an [`AbortController`](https://developer.mozilla.org/en-US/docs/Web/API/AbortController) to abort requests.
-  * Note that `status` and `statusText` don't mean anything for aborted requests as the request wasn't fulfilled.
-  *
-  * @example Aborting requests in-flight
-  * ```ts
-  * const ac = new AbortController()
-  *
-  * const { data, error } = await supabase
-  *   .from('very_big_table')
-  *   .select()
-  *   .abortSignal(ac.signal)
-  *
-  * // Abort the request after 100 ms
-  * setTimeout(() => ac.abort(), 100)
-  * ```
-  *
-  * @exampleResponse Aborting requests in-flight
-  * ```json
-  *   {
-  *     "error": {
-  *       "message": "AbortError: The user aborted a request.",
-  *       "details": "",
-  *       "hint": "The request was aborted locally via the provided AbortSignal.",
-  *       "code": ""
-  *     },
-  *     "status": 0,
-  *     "statusText": ""
-  *   }
-  *
-  * ```
-  *
-  * @example Set a timeout
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('very_big_table')
-  *   .select()
-  *   .abortSignal(AbortSignal.timeout(1000 /* ms *\/))
-  * ```
-  *
-  * @exampleResponse Set a timeout
-  * ```json
-  *   {
-  *     "error": {
-  *       "message": "FetchError: The user aborted a request.",
-  *       "details": "",
-  *       "hint": "",
-  *       "code": ""
-  *     },
-  *     "status": 400,
-  *     "statusText": "Bad Request"
-  *   }
-  *
-  * ```
-  */
-  abortSignal(signal) {
-    this.signal = signal;
-    return this;
-  }
-  /**
-  * Return `data` as a single object instead of an array of objects.
-  *
-  * Query result must be one row (e.g. using `.limit(1)`), otherwise this
-  * returns an error.
-  *
-  * @category Database
-  * @subcategory Using modifiers
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select('name')
-  *   .limit(1)
-  *   .single()
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": {
-  *     "name": "Luke"
-  *   },
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  single() {
-    this.headers.set("Accept", "application/vnd.pgrst.object+json");
-    return this;
-  }
-  /**
-  * Return `data` as a single object instead of an array of objects.
-  *
-  * Query result must be zero or one row (e.g. using `.limit(1)`), otherwise
-  * this returns an error.
-  *
-  * @category Database
-  * @subcategory Using modifiers
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select()
-  *   .eq('name', 'Katniss')
-  *   .maybeSingle()
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  maybeSingle() {
-    this.isMaybeSingle = true;
-    return this;
-  }
-  /**
-  * Return `data` as a string in CSV format.
-  *
-  * @category Database
-  * @subcategory Using modifiers
-  *
-  * @exampleDescription Return data as CSV
-  * By default, the data is returned in JSON format, but can also be returned as Comma Separated Values.
-  *
-  * @example Return data as CSV
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select()
-  *   .csv()
-  * ```
-  *
-  * @exampleSql Return data as CSV
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse Return data as CSV
-  * ```json
-  * {
-  *   "data": "id,name\n1,Luke\n2,Leia\n3,Han",
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  csv() {
-    this.headers.set("Accept", "text/csv");
-    return this;
-  }
-  /**
-  * Return `data` as an object in [GeoJSON](https://geojson.org) format.
-  *
-  * @category Database
-  */
-  geojson() {
-    this.headers.set("Accept", "application/geo+json");
-    return this;
-  }
-  /**
-  * Return `data` as the EXPLAIN plan for the query.
-  *
-  * You need to enable the
-  * [db_plan_enabled](https://supabase.com/docs/guides/database/debugging-performance#enabling-explain)
-  * setting before using this method.
-  *
-  * @param options - Named parameters
-  *
-  * @param options.analyze - If `true`, the query will be executed and the
-  * actual run time will be returned
-  *
-  * @param options.verbose - If `true`, the query identifier will be returned
-  * and `data` will include the output columns of the query
-  *
-  * @param options.settings - If `true`, include information on configuration
-  * parameters that affect query planning
-  *
-  * @param options.buffers - If `true`, include information on buffer usage
-  *
-  * @param options.wal - If `true`, include information on WAL record generation
-  *
-  * @param options.format - The format of the output, can be `"text"` (default)
-  * or `"json"`
-  *
-  * @category Database
-  * @subcategory Using modifiers
-  *
-  * @exampleDescription Get the execution plan
-  * By default, the data is returned in TEXT format, but can also be returned as JSON by using the `format` parameter.
-  *
-  * @example Get the execution plan
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select()
-  *   .explain()
-  * ```
-  *
-  * @exampleSql Get the execution plan
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse Get the execution plan
-  * ```js
-  * Aggregate  (cost=33.34..33.36 rows=1 width=112)
-  *   ->  Limit  (cost=0.00..18.33 rows=1000 width=40)
-  *         ->  Seq Scan on characters  (cost=0.00..22.00 rows=1200 width=40)
-  * ```
-  *
-  * @exampleDescription Get the execution plan with analyze and verbose
-  * By default, the data is returned in TEXT format, but can also be returned as JSON by using the `format` parameter.
-  *
-  * @example Get the execution plan with analyze and verbose
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select()
-  *   .explain({analyze:true,verbose:true})
-  * ```
-  *
-  * @exampleSql Get the execution plan with analyze and verbose
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse Get the execution plan with analyze and verbose
-  * ```js
-  * Aggregate  (cost=33.34..33.36 rows=1 width=112) (actual time=0.041..0.041 rows=1 loops=1)
-  *   Output: NULL::bigint, count(ROW(characters.id, characters.name)), COALESCE(json_agg(ROW(characters.id, characters.name)), '[]'::json), NULLIF(current_setting('response.headers'::text, true), ''::text), NULLIF(current_setting('response.status'::text, true), ''::text)
-  *   ->  Limit  (cost=0.00..18.33 rows=1000 width=40) (actual time=0.005..0.006 rows=3 loops=1)
-  *         Output: characters.id, characters.name
-  *         ->  Seq Scan on public.characters  (cost=0.00..22.00 rows=1200 width=40) (actual time=0.004..0.005 rows=3 loops=1)
-  *               Output: characters.id, characters.name
-  * Query Identifier: -4730654291623321173
-  * Planning Time: 0.407 ms
-  * Execution Time: 0.119 ms
-  * ```
-  */
-  explain({ analyze = false, verbose = false, settings = false, buffers = false, wal = false, format = "text" } = {}) {
-    var _this$headers$get;
-    const options = [
-      analyze ? "analyze" : null,
-      verbose ? "verbose" : null,
-      settings ? "settings" : null,
-      buffers ? "buffers" : null,
-      wal ? "wal" : null
-    ].filter(Boolean).join("|");
-    const forMediatype = (_this$headers$get = this.headers.get("Accept")) !== null && _this$headers$get !== void 0 ? _this$headers$get : "application/json";
-    this.headers.set("Accept", `application/vnd.pgrst.plan+${format}; for="${forMediatype}"; options=${options};`);
-    if (format === "json") return this;
-    else return this;
-  }
-  /**
-  * Rollback the query.
-  *
-  * `data` will still be returned, but the query is not committed.
-  *
-  * @category Database
-  */
-  rollback() {
-    this.headers.append("Prefer", "tx=rollback");
-    return this;
-  }
-  /**
-  * Override the type of the returned `data`.
-  *
-  * @typeParam NewResult - The new result type to override with
-  * @deprecated Use overrideTypes<yourType, { merge: false }>() method at the end of your call chain instead
-  *
-  * @category Database
-  * @subcategory Using modifiers
-  *
-  * @remarks
-  * - Deprecated: use overrideTypes method instead
-  *
-  * @example Override type of successful response
-  * ```ts
-  * const { data } = await supabase
-  *   .from('countries')
-  *   .select()
-  *   .returns<Array<MyType>>()
-  * ```
-  *
-  * @exampleResponse Override type of successful response
-  * ```js
-  * let x: typeof data // MyType[]
-  * ```
-  *
-  * @example Override type of object response
-  * ```ts
-  * const { data } = await supabase
-  *   .from('countries')
-  *   .select()
-  *   .maybeSingle()
-  *   .returns<MyType>()
-  * ```
-  *
-  * @exampleResponse Override type of object response
-  * ```js
-  * let x: typeof data // MyType | null
-  * ```
-  */
-  returns() {
-    return this;
-  }
-  /**
-  * Set the maximum number of rows that can be affected by the query.
-  * Only available in PostgREST v13+ and only works with PATCH and DELETE methods.
-  *
-  * @param value - The maximum number of rows that can be affected
-  *
-  * @category Database
-  */
-  maxAffected(value) {
-    this.headers.append("Prefer", "handling=strict");
-    this.headers.append("Prefer", `max-affected=${value}`);
-    return this;
-  }
-};
-var PostgrestReservedCharsRegexp = /* @__PURE__ */ new RegExp("[,()]");
-var PostgrestFilterBuilder = class extends PostgrestTransformBuilder {
-  /**
-  * Match only rows where `column` is equal to `value`.
-  *
-  * To check if the value of `column` is NULL, you should use `.is()` instead.
-  *
-  * @param column - The column to filter on
-  * @param value - The value to filter with
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select()
-  *   .eq('name', 'Leia')
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 2,
-  *       "name": "Leia"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  eq(column, value) {
-    this.url.searchParams.append(column, `eq.${value}`);
-    return this;
-  }
-  /**
-  * Match only rows where `column` is not equal to `value`.
-  *
-  * This filter does not include rows where `column` is `NULL`. To match null
-  * values, use `.is(column, null)` instead.
-  *
-  * @param column - The column to filter on
-  * @param value - The value to filter with
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select()
-  *   .neq('name', 'Leia')
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "name": "Luke"
-  *     },
-  *     {
-  *       "id": 3,
-  *       "name": "Han"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  neq(column, value) {
-    this.url.searchParams.append(column, `neq.${value}`);
-    return this;
-  }
-  /**
-  * Match only rows where `column` is greater than `value`.
-  *
-  * @param column - The column to filter on
-  * @param value - The value to filter with
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @exampleDescription With `select()`
-  * When using [reserved words](https://www.postgresql.org/docs/current/sql-keywords-appendix.html) for column names you need
-  * to add double quotes e.g. `.gt('"order"', 2)`
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select()
-  *   .gt('id', 2)
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 3,
-  *       "name": "Han"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  gt(column, value) {
-    this.url.searchParams.append(column, `gt.${value}`);
-    return this;
-  }
-  /**
-  * Match only rows where `column` is greater than or equal to `value`.
-  *
-  * @param column - The column to filter on
-  * @param value - The value to filter with
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select()
-  *   .gte('id', 2)
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 2,
-  *       "name": "Leia"
-  *     },
-  *     {
-  *       "id": 3,
-  *       "name": "Han"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  gte(column, value) {
-    this.url.searchParams.append(column, `gte.${value}`);
-    return this;
-  }
-  /**
-  * Match only rows where `column` is less than `value`.
-  *
-  * @param column - The column to filter on
-  * @param value - The value to filter with
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select()
-  *   .lt('id', 2)
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "name": "Luke"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  lt(column, value) {
-    this.url.searchParams.append(column, `lt.${value}`);
-    return this;
-  }
-  /**
-  * Match only rows where `column` is less than or equal to `value`.
-  *
-  * @param column - The column to filter on
-  * @param value - The value to filter with
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select()
-  *   .lte('id', 2)
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "name": "Luke"
-  *     },
-  *     {
-  *       "id": 2,
-  *       "name": "Leia"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  lte(column, value) {
-    this.url.searchParams.append(column, `lte.${value}`);
-    return this;
-  }
-  /**
-  * Match only rows where `column` matches `pattern` case-sensitively.
-  *
-  * @param column - The column to filter on
-  * @param pattern - The pattern to match with
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select()
-  *   .like('name', '%Lu%')
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "name": "Luke"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  like(column, pattern) {
-    this.url.searchParams.append(column, `like.${pattern}`);
-    return this;
-  }
-  /**
-  * Match only rows where `column` matches all of `patterns` case-sensitively.
-  *
-  * @param column - The column to filter on
-  * @param patterns - The patterns to match with
-  *
-  * @category Database
-  * @subcategory Using filters
-  */
-  likeAllOf(column, patterns) {
-    this.url.searchParams.append(column, `like(all).{${patterns.join(",")}}`);
-    return this;
-  }
-  /**
-  * Match only rows where `column` matches any of `patterns` case-sensitively.
-  *
-  * @param column - The column to filter on
-  * @param patterns - The patterns to match with
-  *
-  * @category Database
-  * @subcategory Using filters
-  */
-  likeAnyOf(column, patterns) {
-    this.url.searchParams.append(column, `like(any).{${patterns.join(",")}}`);
-    return this;
-  }
-  /**
-  * Match only rows where `column` matches `pattern` case-insensitively.
-  *
-  * @param column - The column to filter on
-  * @param pattern - The pattern to match with
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select()
-  *   .ilike('name', '%lu%')
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "name": "Luke"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  ilike(column, pattern) {
-    this.url.searchParams.append(column, `ilike.${pattern}`);
-    return this;
-  }
-  /**
-  * Match only rows where `column` matches all of `patterns` case-insensitively.
-  *
-  * @param column - The column to filter on
-  * @param patterns - The patterns to match with
-  *
-  * @category Database
-  * @subcategory Using filters
-  */
-  ilikeAllOf(column, patterns) {
-    this.url.searchParams.append(column, `ilike(all).{${patterns.join(",")}}`);
-    return this;
-  }
-  /**
-  * Match only rows where `column` matches any of `patterns` case-insensitively.
-  *
-  * @param column - The column to filter on
-  * @param patterns - The patterns to match with
-  *
-  * @category Database
-  * @subcategory Using filters
-  */
-  ilikeAnyOf(column, patterns) {
-    this.url.searchParams.append(column, `ilike(any).{${patterns.join(",")}}`);
-    return this;
-  }
-  /**
-  * Match only rows where `column` matches the PostgreSQL regex `pattern`
-  * case-sensitively (using the `~` operator).
-  *
-  * @param column - The column to filter on
-  * @param pattern - The PostgreSQL regular expression pattern to match with
-  */
-  regexMatch(column, pattern) {
-    this.url.searchParams.append(column, `match.${pattern}`);
-    return this;
-  }
-  /**
-  * Match only rows where `column` matches the PostgreSQL regex `pattern`
-  * case-insensitively (using the `~*` operator).
-  *
-  * @param column - The column to filter on
-  * @param pattern - The PostgreSQL regular expression pattern to match with
-  */
-  regexIMatch(column, pattern) {
-    this.url.searchParams.append(column, `imatch.${pattern}`);
-    return this;
-  }
-  /**
-  * Match only rows where `column` IS `value`.
-  *
-  * For non-boolean columns, this is only relevant for checking if the value of
-  * `column` is NULL by setting `value` to `null`.
-  *
-  * For boolean columns, you can also set `value` to `true` or `false` and it
-  * will behave the same way as `.eq()`.
-  *
-  * @param column - The column to filter on
-  * @param value - The value to filter with
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @exampleDescription Checking for nullness, true or false
-  * Using the `eq()` filter doesn't work when filtering for `null`.
-  *
-  * Instead, you need to use `is()`.
-  *
-  * @example Checking for nullness, true or false
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('countries')
-  *   .select()
-  *   .is('name', null)
-  * ```
-  *
-  * @exampleSql Checking for nullness, true or false
-  * ```sql
-  * create table
-  *   countries (id int8 primary key, name text);
-  *
-  * insert into
-  *   countries (id, name)
-  * values
-  *   (1, 'null'),
-  *   (2, null);
-  * ```
-  *
-  * @exampleResponse Checking for nullness, true or false
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 2,
-  *       "name": "null"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  is(column, value) {
-    this.url.searchParams.append(column, `is.${value}`);
-    return this;
-  }
-  /**
-  * Match only rows where `column` IS DISTINCT FROM `value`.
-  *
-  * Unlike `.neq()`, this treats `NULL` as a comparable value. Two `NULL` values
-  * are considered equal (not distinct), and comparing `NULL` with any non-NULL
-  * value returns true (distinct).
-  *
-  * @param column - The column to filter on
-  * @param value - The value to filter with
-  */
-  isDistinct(column, value) {
-    this.url.searchParams.append(column, `isdistinct.${value}`);
-    return this;
-  }
-  /**
-  * Match only rows where `column` is included in the `values` array.
-  *
-  * @param column - The column to filter on
-  * @param values - The values array to filter with
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select()
-  *   .in('name', ['Leia', 'Han'])
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 2,
-  *       "name": "Leia"
-  *     },
-  *     {
-  *       "id": 3,
-  *       "name": "Han"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  in(column, values) {
-    const cleanedValues = Array.from(new Set(values)).map((s) => {
-      if (typeof s === "string" && PostgrestReservedCharsRegexp.test(s)) return `"${s}"`;
-      else return `${s}`;
-    }).join(",");
-    this.url.searchParams.append(column, `in.(${cleanedValues})`);
-    return this;
-  }
-  /**
-  * Match only rows where `column` is NOT included in the `values` array.
-  *
-  * @param column - The column to filter on
-  * @param values - The values array to filter with
-  */
-  notIn(column, values) {
-    const cleanedValues = Array.from(new Set(values)).map((s) => {
-      if (typeof s === "string" && PostgrestReservedCharsRegexp.test(s)) return `"${s}"`;
-      else return `${s}`;
-    }).join(",");
-    this.url.searchParams.append(column, `not.in.(${cleanedValues})`);
-    return this;
-  }
-  /**
-  * Only relevant for jsonb, array, and range columns. Match only rows where
-  * `column` contains every element appearing in `value`.
-  *
-  * @param column - The jsonb, array, or range column to filter on
-  * @param value - The jsonb, array, or range value to filter with
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @example On array columns
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('issues')
-  *   .select()
-  *   .contains('tags', ['is:open', 'priority:low'])
-  * ```
-  *
-  * @exampleSql On array columns
-  * ```sql
-  * create table
-  *   issues (
-  *     id int8 primary key,
-  *     title text,
-  *     tags text[]
-  *   );
-  *
-  * insert into
-  *   issues (id, title, tags)
-  * values
-  *   (1, 'Cache invalidation is not working', array['is:open', 'severity:high', 'priority:low']),
-  *   (2, 'Use better names', array['is:open', 'severity:low', 'priority:medium']);
-  * ```
-  *
-  * @exampleResponse On array columns
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "title": "Cache invalidation is not working"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @exampleDescription On range columns
-  * Postgres supports a number of [range
-  * types](https://www.postgresql.org/docs/current/rangetypes.html). You
-  * can filter on range columns using the string representation of range
-  * values.
-  *
-  * @example On range columns
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('reservations')
-  *   .select()
-  *   .contains('during', '[2000-01-01 13:00, 2000-01-01 13:30)')
-  * ```
-  *
-  * @exampleSql On range columns
-  * ```sql
-  * create table
-  *   reservations (
-  *     id int8 primary key,
-  *     room_name text,
-  *     during tsrange
-  *   );
-  *
-  * insert into
-  *   reservations (id, room_name, during)
-  * values
-  *   (1, 'Emerald', '[2000-01-01 13:00, 2000-01-01 15:00)'),
-  *   (2, 'Topaz', '[2000-01-02 09:00, 2000-01-02 10:00)');
-  * ```
-  *
-  * @exampleResponse On range columns
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "room_name": "Emerald",
-  *       "during": "[\"2000-01-01 13:00:00\",\"2000-01-01 15:00:00\")"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @example On `jsonb` columns
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('users')
-  *   .select('name')
-  *   .contains('address', { postcode: 90210 })
-  * ```
-  *
-  * @exampleSql On `jsonb` columns
-  * ```sql
-  * create table
-  *   users (
-  *     id int8 primary key,
-  *     name text,
-  *     address jsonb
-  *   );
-  *
-  * insert into
-  *   users (id, name, address)
-  * values
-  *   (1, 'Michael', '{ "postcode": 90210, "street": "Melrose Place" }'),
-  *   (2, 'Jane', '{}');
-  * ```
-  *
-  * @exampleResponse On `jsonb` columns
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "Michael"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  contains(column, value) {
-    if (typeof value === "string") this.url.searchParams.append(column, `cs.${value}`);
-    else if (Array.isArray(value)) this.url.searchParams.append(column, `cs.{${value.join(",")}}`);
-    else this.url.searchParams.append(column, `cs.${JSON.stringify(value)}`);
-    return this;
-  }
-  /**
-  * Only relevant for jsonb, array, and range columns. Match only rows where
-  * every element appearing in `column` is contained by `value`.
-  *
-  * @param column - The jsonb, array, or range column to filter on
-  * @param value - The jsonb, array, or range value to filter with
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @example On array columns
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('classes')
-  *   .select('name')
-  *   .containedBy('days', ['monday', 'tuesday', 'wednesday', 'friday'])
-  * ```
-  *
-  * @exampleSql On array columns
-  * ```sql
-  * create table
-  *   classes (
-  *     id int8 primary key,
-  *     name text,
-  *     days text[]
-  *   );
-  *
-  * insert into
-  *   classes (id, name, days)
-  * values
-  *   (1, 'Chemistry', array['monday', 'friday']),
-  *   (2, 'History', array['monday', 'wednesday', 'thursday']);
-  * ```
-  *
-  * @exampleResponse On array columns
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "Chemistry"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @exampleDescription On range columns
-  * Postgres supports a number of [range
-  * types](https://www.postgresql.org/docs/current/rangetypes.html). You
-  * can filter on range columns using the string representation of range
-  * values.
-  *
-  * @example On range columns
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('reservations')
-  *   .select()
-  *   .containedBy('during', '[2000-01-01 00:00, 2000-01-01 23:59)')
-  * ```
-  *
-  * @exampleSql On range columns
-  * ```sql
-  * create table
-  *   reservations (
-  *     id int8 primary key,
-  *     room_name text,
-  *     during tsrange
-  *   );
-  *
-  * insert into
-  *   reservations (id, room_name, during)
-  * values
-  *   (1, 'Emerald', '[2000-01-01 13:00, 2000-01-01 15:00)'),
-  *   (2, 'Topaz', '[2000-01-02 09:00, 2000-01-02 10:00)');
-  * ```
-  *
-  * @exampleResponse On range columns
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "room_name": "Emerald",
-  *       "during": "[\"2000-01-01 13:00:00\",\"2000-01-01 15:00:00\")"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @example On `jsonb` columns
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('users')
-  *   .select('name')
-  *   .containedBy('address', {})
-  * ```
-  *
-  * @exampleSql On `jsonb` columns
-  * ```sql
-  * create table
-  *   users (
-  *     id int8 primary key,
-  *     name text,
-  *     address jsonb
-  *   );
-  *
-  * insert into
-  *   users (id, name, address)
-  * values
-  *   (1, 'Michael', '{ "postcode": 90210, "street": "Melrose Place" }'),
-  *   (2, 'Jane', '{}');
-  * ```
-  *
-  * @exampleResponse On `jsonb` columns
-  * ```json
-  *   {
-  *     "data": [
-  *       {
-  *         "name": "Jane"
-  *       }
-  *     ],
-  *     "status": 200,
-  *     "statusText": "OK"
-  *   }
-  *
-  * ```
-  */
-  containedBy(column, value) {
-    if (typeof value === "string") this.url.searchParams.append(column, `cd.${value}`);
-    else if (Array.isArray(value)) this.url.searchParams.append(column, `cd.{${value.join(",")}}`);
-    else this.url.searchParams.append(column, `cd.${JSON.stringify(value)}`);
-    return this;
-  }
-  /**
-  * Only relevant for range columns. Match only rows where every element in
-  * `column` is greater than any element in `range`.
-  *
-  * @param column - The range column to filter on
-  * @param range - The range to filter with
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @exampleDescription With `select()`
-  * Postgres supports a number of [range
-  * types](https://www.postgresql.org/docs/current/rangetypes.html). You
-  * can filter on range columns using the string representation of range
-  * values.
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('reservations')
-  *   .select()
-  *   .rangeGt('during', '[2000-01-02 08:00, 2000-01-02 09:00)')
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   reservations (
-  *     id int8 primary key,
-  *     room_name text,
-  *     during tsrange
-  *   );
-  *
-  * insert into
-  *   reservations (id, room_name, during)
-  * values
-  *   (1, 'Emerald', '[2000-01-01 13:00, 2000-01-01 15:00)'),
-  *   (2, 'Topaz', '[2000-01-02 09:00, 2000-01-02 10:00)');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  *   {
-  *     "data": [
-  *       {
-  *         "id": 2,
-  *         "room_name": "Topaz",
-  *         "during": "[\"2000-01-02 09:00:00\",\"2000-01-02 10:00:00\")"
-  *       }
-  *     ],
-  *     "status": 200,
-  *     "statusText": "OK"
-  *   }
-  *
-  * ```
-  */
-  rangeGt(column, range) {
-    this.url.searchParams.append(column, `sr.${range}`);
-    return this;
-  }
-  /**
-  * Only relevant for range columns. Match only rows where every element in
-  * `column` is either contained in `range` or greater than any element in
-  * `range`.
-  *
-  * @param column - The range column to filter on
-  * @param range - The range to filter with
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @exampleDescription With `select()`
-  * Postgres supports a number of [range
-  * types](https://www.postgresql.org/docs/current/rangetypes.html). You
-  * can filter on range columns using the string representation of range
-  * values.
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('reservations')
-  *   .select()
-  *   .rangeGte('during', '[2000-01-02 08:30, 2000-01-02 09:30)')
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   reservations (
-  *     id int8 primary key,
-  *     room_name text,
-  *     during tsrange
-  *   );
-  *
-  * insert into
-  *   reservations (id, room_name, during)
-  * values
-  *   (1, 'Emerald', '[2000-01-01 13:00, 2000-01-01 15:00)'),
-  *   (2, 'Topaz', '[2000-01-02 09:00, 2000-01-02 10:00)');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  *   {
-  *     "data": [
-  *       {
-  *         "id": 2,
-  *         "room_name": "Topaz",
-  *         "during": "[\"2000-01-02 09:00:00\",\"2000-01-02 10:00:00\")"
-  *       }
-  *     ],
-  *     "status": 200,
-  *     "statusText": "OK"
-  *   }
-  *
-  * ```
-  */
-  rangeGte(column, range) {
-    this.url.searchParams.append(column, `nxl.${range}`);
-    return this;
-  }
-  /**
-  * Only relevant for range columns. Match only rows where every element in
-  * `column` is less than any element in `range`.
-  *
-  * @param column - The range column to filter on
-  * @param range - The range to filter with
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @exampleDescription With `select()`
-  * Postgres supports a number of [range
-  * types](https://www.postgresql.org/docs/current/rangetypes.html). You
-  * can filter on range columns using the string representation of range
-  * values.
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('reservations')
-  *   .select()
-  *   .rangeLt('during', '[2000-01-01 15:00, 2000-01-01 16:00)')
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   reservations (
-  *     id int8 primary key,
-  *     room_name text,
-  *     during tsrange
-  *   );
-  *
-  * insert into
-  *   reservations (id, room_name, during)
-  * values
-  *   (1, 'Emerald', '[2000-01-01 13:00, 2000-01-01 15:00)'),
-  *   (2, 'Topaz', '[2000-01-02 09:00, 2000-01-02 10:00)');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "room_name": "Emerald",
-  *       "during": "[\"2000-01-01 13:00:00\",\"2000-01-01 15:00:00\")"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  rangeLt(column, range) {
-    this.url.searchParams.append(column, `sl.${range}`);
-    return this;
-  }
-  /**
-  * Only relevant for range columns. Match only rows where every element in
-  * `column` is either contained in `range` or less than any element in
-  * `range`.
-  *
-  * @param column - The range column to filter on
-  * @param range - The range to filter with
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @exampleDescription With `select()`
-  * Postgres supports a number of [range
-  * types](https://www.postgresql.org/docs/current/rangetypes.html). You
-  * can filter on range columns using the string representation of range
-  * values.
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('reservations')
-  *   .select()
-  *   .rangeLte('during', '[2000-01-01 14:00, 2000-01-01 16:00)')
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   reservations (
-  *     id int8 primary key,
-  *     room_name text,
-  *     during tsrange
-  *   );
-  *
-  * insert into
-  *   reservations (id, room_name, during)
-  * values
-  *   (1, 'Emerald', '[2000-01-01 13:00, 2000-01-01 15:00)'),
-  *   (2, 'Topaz', '[2000-01-02 09:00, 2000-01-02 10:00)');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  *   {
-  *     "data": [
-  *       {
-  *         "id": 1,
-  *         "room_name": "Emerald",
-  *         "during": "[\"2000-01-01 13:00:00\",\"2000-01-01 15:00:00\")"
-  *       }
-  *     ],
-  *     "status": 200,
-  *     "statusText": "OK"
-  *   }
-  *
-  * ```
-  */
-  rangeLte(column, range) {
-    this.url.searchParams.append(column, `nxr.${range}`);
-    return this;
-  }
-  /**
-  * Only relevant for range columns. Match only rows where `column` is
-  * mutually exclusive to `range` and there can be no element between the two
-  * ranges.
-  *
-  * @param column - The range column to filter on
-  * @param range - The range to filter with
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @exampleDescription With `select()`
-  * Postgres supports a number of [range
-  * types](https://www.postgresql.org/docs/current/rangetypes.html). You
-  * can filter on range columns using the string representation of range
-  * values.
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('reservations')
-  *   .select()
-  *   .rangeAdjacent('during', '[2000-01-01 12:00, 2000-01-01 13:00)')
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   reservations (
-  *     id int8 primary key,
-  *     room_name text,
-  *     during tsrange
-  *   );
-  *
-  * insert into
-  *   reservations (id, room_name, during)
-  * values
-  *   (1, 'Emerald', '[2000-01-01 13:00, 2000-01-01 15:00)'),
-  *   (2, 'Topaz', '[2000-01-02 09:00, 2000-01-02 10:00)');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "room_name": "Emerald",
-  *       "during": "[\"2000-01-01 13:00:00\",\"2000-01-01 15:00:00\")"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  rangeAdjacent(column, range) {
-    this.url.searchParams.append(column, `adj.${range}`);
-    return this;
-  }
-  /**
-  * Only relevant for array and range columns. Match only rows where
-  * `column` and `value` have an element in common.
-  *
-  * @param column - The array or range column to filter on
-  * @param value - The array or range value to filter with
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @example On array columns
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('issues')
-  *   .select('title')
-  *   .overlaps('tags', ['is:closed', 'severity:high'])
-  * ```
-  *
-  * @exampleSql On array columns
-  * ```sql
-  * create table
-  *   issues (
-  *     id int8 primary key,
-  *     title text,
-  *     tags text[]
-  *   );
-  *
-  * insert into
-  *   issues (id, title, tags)
-  * values
-  *   (1, 'Cache invalidation is not working', array['is:open', 'severity:high', 'priority:low']),
-  *   (2, 'Use better names', array['is:open', 'severity:low', 'priority:medium']);
-  * ```
-  *
-  * @exampleResponse On array columns
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "title": "Cache invalidation is not working"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @exampleDescription On range columns
-  * Postgres supports a number of [range
-  * types](https://www.postgresql.org/docs/current/rangetypes.html). You
-  * can filter on range columns using the string representation of range
-  * values.
-  *
-  * @example On range columns
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('reservations')
-  *   .select()
-  *   .overlaps('during', '[2000-01-01 12:45, 2000-01-01 13:15)')
-  * ```
-  *
-  * @exampleSql On range columns
-  * ```sql
-  * create table
-  *   reservations (
-  *     id int8 primary key,
-  *     room_name text,
-  *     during tsrange
-  *   );
-  *
-  * insert into
-  *   reservations (id, room_name, during)
-  * values
-  *   (1, 'Emerald', '[2000-01-01 13:00, 2000-01-01 15:00)'),
-  *   (2, 'Topaz', '[2000-01-02 09:00, 2000-01-02 10:00)');
-  * ```
-  *
-  * @exampleResponse On range columns
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "room_name": "Emerald",
-  *       "during": "[\"2000-01-01 13:00:00\",\"2000-01-01 15:00:00\")"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  overlaps(column, value) {
-    if (typeof value === "string") this.url.searchParams.append(column, `ov.${value}`);
-    else this.url.searchParams.append(column, `ov.{${value.join(",")}}`);
-    return this;
-  }
-  /**
-  * Only relevant for text and tsvector columns. Match only rows where
-  * `column` matches the query string in `query`.
-  *
-  * @param column - The text or tsvector column to filter on
-  * @param query - The query text to match with
-  * @param options - Named parameters
-  * @param options.config - The text search configuration to use
-  * @param options.type - Change how the `query` text is interpreted
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @remarks
-  * - For more information, see [Postgres full text search](/docs/guides/database/full-text-search).
-  *
-  * @example Text search
-  * ```ts
-  * const result = await supabase
-  *   .from("texts")
-  *   .select("content")
-  *   .textSearch("content", `'eggs' & 'ham'`, {
-  *     config: "english",
-  *   });
-  * ```
-  *
-  * @exampleSql Text search
-  * ```sql
-  * create table texts (
-  *   id      bigint
-  *           primary key
-  *           generated always as identity,
-  *   content text
-  * );
-  *
-  * insert into texts (content) values
-  *     ('Four score and seven years ago'),
-  *     ('The road goes ever on and on'),
-  *     ('Green eggs and ham')
-  * ;
-  * ```
-  *
-  * @exampleResponse Text search
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "content": "Green eggs and ham"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @exampleDescription Basic normalization
-  * Uses PostgreSQL's `plainto_tsquery` function.
-  *
-  * @example Basic normalization
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('quotes')
-  *   .select('catchphrase')
-  *   .textSearch('catchphrase', `'fat' & 'cat'`, {
-  *     type: 'plain',
-  *     config: 'english'
-  *   })
-  * ```
-  *
-  * @exampleDescription Full normalization
-  * Uses PostgreSQL's `phraseto_tsquery` function.
-  *
-  * @example Full normalization
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('quotes')
-  *   .select('catchphrase')
-  *   .textSearch('catchphrase', `'fat' & 'cat'`, {
-  *     type: 'phrase',
-  *     config: 'english'
-  *   })
-  * ```
-  *
-  * @exampleDescription Websearch
-  * Uses PostgreSQL's `websearch_to_tsquery` function.
-  * This function will never raise syntax errors, which makes it possible to use raw user-supplied input for search, and can be used
-  * with advanced operators.
-  *
-  * - `unquoted text`: text not inside quote marks will be converted to terms separated by & operators, as if processed by plainto_tsquery.
-  * - `"quoted text"`: text inside quote marks will be converted to terms separated by `<->` operators, as if processed by phraseto_tsquery.
-  * - `OR`: the word “or” will be converted to the | operator.
-  * - `-`: a dash will be converted to the ! operator.
-  *
-  * @example Websearch
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('quotes')
-  *   .select('catchphrase')
-  *   .textSearch('catchphrase', `'fat or cat'`, {
-  *     type: 'websearch',
-  *     config: 'english'
-  *   })
-  * ```
-  */
-  textSearch(column, query, { config, type } = {}) {
-    let typePart = "";
-    if (type === "plain") typePart = "pl";
-    else if (type === "phrase") typePart = "ph";
-    else if (type === "websearch") typePart = "w";
-    const configPart = config === void 0 ? "" : `(${config})`;
-    this.url.searchParams.append(column, `${typePart}fts${configPart}.${query}`);
-    return this;
-  }
-  /**
-  * Match only rows where each column in `query` keys is equal to its
-  * associated value. Shorthand for multiple `.eq()`s.
-  *
-  * @param query - The object to filter with, with column names as keys mapped
-  * to their filter values
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select('name')
-  *   .match({ id: 2, name: 'Leia' })
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "Leia"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  match(query) {
-    Object.entries(query).filter(([_, value]) => value !== void 0).forEach(([column, value]) => {
-      this.url.searchParams.append(column, `eq.${value}`);
-    });
-    return this;
-  }
-  /**
-  * Match only rows which doesn't satisfy the filter.
-  *
-  * Unlike most filters, `opearator` and `value` are used as-is and need to
-  * follow [PostgREST
-  * syntax](https://postgrest.org/en/stable/api.html#operators). You also need
-  * to make sure they are properly sanitized.
-  *
-  * @param column - The column to filter on
-  * @param operator - The operator to be negated to filter with, following
-  * PostgREST syntax
-  * @param value - The value to filter with, following PostgREST syntax
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @remarks
-  * not() expects you to use the raw PostgREST syntax for the filter values.
-  *
-  * ```ts
-  * .not('id', 'in', '(5,6,7)')  // Use `()` for `in` filter
-  * .not('arraycol', 'cs', '{"a","b"}')  // Use `cs` for `contains()`, `{}` for array values
-  * ```
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('countries')
-  *   .select()
-  *   .not('name', 'is', null)
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   countries (id int8 primary key, name text);
-  *
-  * insert into
-  *   countries (id, name)
-  * values
-  *   (1, 'null'),
-  *   (2, null);
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  *   {
-  *     "data": [
-  *       {
-  *         "id": 1,
-  *         "name": "null"
-  *       }
-  *     ],
-  *     "status": 200,
-  *     "statusText": "OK"
-  *   }
-  *
-  * ```
-  */
-  not(column, operator, value) {
-    this.url.searchParams.append(column, `not.${operator}.${value}`);
-    return this;
-  }
-  /**
-  * Match only rows which satisfy at least one of the filters.
-  *
-  * Unlike most filters, `filters` is used as-is and needs to follow [PostgREST
-  * syntax](https://postgrest.org/en/stable/api.html#operators). You also need
-  * to make sure it's properly sanitized.
-  *
-  * It's currently not possible to do an `.or()` filter across multiple tables.
-  *
-  * @param filters - The filters to use, following PostgREST syntax
-  * @param options - Named parameters
-  * @param options.referencedTable - Set this to filter on referenced tables
-  * instead of the parent table
-  * @param options.foreignTable - Deprecated, use `referencedTable` instead
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @remarks
-  * or() expects you to use the raw PostgREST syntax for the filter names and values.
-  *
-  * ```ts
-  * .or('id.in.(5,6,7), arraycol.cs.{"a","b"}')  // Use `()` for `in` filter, `{}` for array values and `cs` for `contains()`.
-  * .or('id.in.(5,6,7), arraycol.cd.{"a","b"}')  // Use `cd` for `containedBy()`
-  * ```
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select('name')
-  *   .or('id.eq.2,name.eq.Han')
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "Leia"
-  *     },
-  *     {
-  *       "name": "Han"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @example Use `or` with `and`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select('name')
-  *   .or('id.gt.3,and(id.eq.1,name.eq.Luke)')
-  * ```
-  *
-  * @exampleSql Use `or` with `and`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse Use `or` with `and`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "Luke"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @example Use `or` on referenced tables
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('orchestral_sections')
-  *   .select(`
-  *     name,
-  *     instruments!inner (
-  *       name
-  *     )
-  *   `)
-  *   .or('section_id.eq.1,name.eq.guzheng', { referencedTable: 'instruments' })
-  * ```
-  *
-  * @exampleSql Use `or` on referenced tables
-  * ```sql
-  * create table
-  *   orchestral_sections (id int8 primary key, name text);
-  * create table
-  *   instruments (
-  *     id int8 primary key,
-  *     section_id int8 not null references orchestral_sections,
-  *     name text
-  *   );
-  *
-  * insert into
-  *   orchestral_sections (id, name)
-  * values
-  *   (1, 'strings'),
-  *   (2, 'woodwinds');
-  * insert into
-  *   instruments (id, section_id, name)
-  * values
-  *   (1, 2, 'flute'),
-  *   (2, 1, 'violin');
-  * ```
-  *
-  * @exampleResponse Use `or` on referenced tables
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "strings",
-  *       "instruments": [
-  *         {
-  *           "name": "violin"
-  *         }
-  *       ]
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  or(filters, { foreignTable, referencedTable = foreignTable } = {}) {
-    const key = referencedTable ? `${referencedTable}.or` : "or";
-    this.url.searchParams.append(key, `(${filters})`);
-    return this;
-  }
-  /**
-  * Match only rows which satisfy the filter. This is an escape hatch - you
-  * should use the specific filter methods wherever possible.
-  *
-  * Unlike most filters, `opearator` and `value` are used as-is and need to
-  * follow [PostgREST
-  * syntax](https://postgrest.org/en/stable/api.html#operators). You also need
-  * to make sure they are properly sanitized.
-  *
-  * @param column - The column to filter on
-  * @param operator - The operator to filter with, following PostgREST syntax
-  * @param value - The value to filter with, following PostgREST syntax
-  *
-  * @category Database
-  * @subcategory Using filters
-  *
-  * @remarks
-  * filter() expects you to use the raw PostgREST syntax for the filter values.
-  *
-  * ```ts
-  * .filter('id', 'in', '(5,6,7)')  // Use `()` for `in` filter
-  * .filter('arraycol', 'cs', '{"a","b"}')  // Use `cs` for `contains()`, `{}` for array values
-  * ```
-  *
-  * @example With `select()`
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select()
-  *   .filter('name', 'in', '("Han","Yoda")')
-  * ```
-  *
-  * @exampleSql With `select()`
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse With `select()`
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 3,
-  *       "name": "Han"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @example On a referenced table
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('orchestral_sections')
-  *   .select(`
-  *     name,
-  *     instruments!inner (
-  *       name
-  *     )
-  *   `)
-  *   .filter('instruments.name', 'eq', 'flute')
-  * ```
-  *
-  * @exampleSql On a referenced table
-  * ```sql
-  * create table
-  *   orchestral_sections (id int8 primary key, name text);
-  * create table
-  *    instruments (
-  *     id int8 primary key,
-  *     section_id int8 not null references orchestral_sections,
-  *     name text
-  *   );
-  *
-  * insert into
-  *   orchestral_sections (id, name)
-  * values
-  *   (1, 'strings'),
-  *   (2, 'woodwinds');
-  * insert into
-  *   instruments (id, section_id, name)
-  * values
-  *   (1, 2, 'flute'),
-  *   (2, 1, 'violin');
-  * ```
-  *
-  * @exampleResponse On a referenced table
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "woodwinds",
-  *       "instruments": [
-  *         {
-  *           "name": "flute"
-  *         }
-  *       ]
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  filter(column, operator, value) {
-    this.url.searchParams.append(column, `${operator}.${value}`);
-    return this;
-  }
-};
-var PostgrestQueryBuilder = class {
-  /**
-  * Creates a query builder scoped to a Postgres table or view.
-  *
-  * @category Database
-  *
-  * @param url - The URL for the query
-  * @param options - Named parameters
-  * @param options.headers - Custom headers
-  * @param options.schema - Postgres schema to use
-  * @param options.fetch - Custom fetch implementation
-  * @param options.urlLengthLimit - Maximum URL length before warning
-  * @param options.retry - Enable automatic retries for transient errors (default: true)
-  *
-  * @example Using supabase-js (recommended)
-  * ```ts
-  * import { createClient } from '@supabase/supabase-js'
-  *
-  * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
-  * const { data, error } = await supabase.from('users').select('*')
-  * ```
-  *
-  * @example Standalone import for bundle-sensitive environments
-  * ```ts
-  * import { PostgrestQueryBuilder } from '@supabase/postgrest-js'
-  *
-  * const query = new PostgrestQueryBuilder(
-  *   new URL('https://xyzcompany.supabase.co/rest/v1/users'),
-  *   { headers: { apikey: 'your-publishable-key' }, retry: true }
-  * )
-  * ```
-  */
-  constructor(url, { headers = {}, schema, fetch: fetch$1, urlLengthLimit = 8e3, retry }) {
-    this.url = url;
-    this.headers = new Headers(headers);
-    this.schema = schema;
-    this.fetch = fetch$1;
-    this.urlLengthLimit = urlLengthLimit;
-    this.retry = retry;
-  }
-  /**
-  * Clone URL and headers to prevent shared state between operations.
-  */
-  cloneRequestState() {
-    return {
-      url: new URL(this.url.toString()),
-      headers: new Headers(this.headers)
-    };
-  }
-  /**
-  * Perform a SELECT query on the table or view.
-  *
-  * @param columns - The columns to retrieve, separated by commas. Columns can be renamed when returned with `customName:columnName`
-  *
-  * @param options - Named parameters
-  *
-  * @param options.head - When set to `true`, `data` will not be returned.
-  * Useful if you only need the count.
-  *
-  * @param options.count - Count algorithm to use to count rows in the table or view.
-  *
-  * `"exact"`: Exact but slow count algorithm. Performs a `COUNT(*)` under the
-  * hood.
-  *
-  * `"planned"`: Approximated but fast count algorithm. Uses the Postgres
-  * statistics under the hood.
-  *
-  * `"estimated"`: Uses exact count for low numbers and planned count for high
-  * numbers.
-  *
-  * @remarks
-  * When using `count` with `.range()` or `.limit()`, the returned `count` is the total number of rows
-  * that match your filters, not the number of rows in the current page. Use this to build pagination UI.
-  
-  * - By default, Supabase projects return a maximum of 1,000 rows. This setting can be changed in your project's [API settings](/dashboard/project/_/settings/api). It's recommended that you keep it low to limit the payload size of accidental or malicious requests. You can use `range()` queries to paginate through your data.
-  * - `select()` can be combined with [Filters](/docs/reference/javascript/using-filters)
-  * - `select()` can be combined with [Modifiers](/docs/reference/javascript/using-modifiers)
-  * - `apikey` is a reserved keyword if you're using the [Supabase Platform](/docs/guides/platform) and [should be avoided as a column name](https://github.com/supabase/supabase/issues/5465). *
-  * @category Database
-  *
-  * @example Getting your data
-  * ```js
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select()
-  * ```
-  *
-  * @exampleSql Getting your data
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Harry'),
-  *   (2, 'Frodo'),
-  *   (3, 'Katniss');
-  * ```
-  *
-  * @exampleResponse Getting your data
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "name": "Harry"
-  *     },
-  *     {
-  *       "id": 2,
-  *       "name": "Frodo"
-  *     },
-  *     {
-  *       "id": 3,
-  *       "name": "Katniss"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @exampleDescription Handling errors
-  * The most useful field on a Postgres error is usually `hint` — when the database knows the fix, it puts the literal SQL there. For example, a permission-denied error (`code: '42501'`) arrives with a `hint` like `"Grant the required privileges to the current role with: GRANT SELECT ON public.characters TO anon;"`. Log the full `error` object so the hint isn't hidden behind `error.message`.
-  *
-  * @example Handling errors
-  * ```js
-  * const { data, error } = await supabase.from('characters').select()
-  * if (error) {
-  *   // Logs the full error: message, code, details, and hint.
-  *   console.error(error)
-  *   return
-  * }
-  * ```
-  *
-  * @exampleResponse Handling errors
-  * ```json
-  * {
-  *   "error": {
-  *     "code": "42501",
-  *     "details": null,
-  *     "hint": "Grant the required privileges to the current role with: GRANT SELECT ON public.characters TO anon;",
-  *     "message": "permission denied for table characters"
-  *   },
-  *   "status": 401,
-  *   "statusText": "Unauthorized"
-  * }
-  * ```
-  *
-  * @example Selecting specific columns
-  * ```js
-  * const { data, error } = await supabase
-  *   .from('characters')
-  *   .select('name')
-  * ```
-  *
-  * @exampleSql Selecting specific columns
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Frodo'),
-  *   (2, 'Harry'),
-  *   (3, 'Katniss');
-  * ```
-  *
-  * @exampleResponse Selecting specific columns
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "Frodo"
-  *     },
-  *     {
-  *       "name": "Harry"
-  *     },
-  *     {
-  *       "name": "Katniss"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @exampleDescription Query referenced tables
-  * If your database has foreign key relationships, you can query related tables too.
-  *
-  * @example Query referenced tables
-  * ```js
-  * const { data, error } = await supabase
-  *   .from('orchestral_sections')
-  *   .select(`
-  *     name,
-  *     instruments (
-  *       name
-  *     )
-  *   `)
-  * ```
-  *
-  * @exampleSql Query referenced tables
-  * ```sql
-  * create table
-  *   orchestral_sections (id int8 primary key, name text);
-  * create table
-  *   instruments (
-  *     id int8 primary key,
-  *     section_id int8 not null references orchestral_sections,
-  *     name text
-  *   );
-  *
-  * insert into
-  *   orchestral_sections (id, name)
-  * values
-  *   (1, 'strings'),
-  *   (2, 'woodwinds');
-  * insert into
-  *   instruments (id, section_id, name)
-  * values
-  *   (1, 2, 'flute'),
-  *   (2, 1, 'violin');
-  * ```
-  *
-  * @exampleResponse Query referenced tables
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "strings",
-  *       "instruments": [
-  *         {
-  *           "name": "violin"
-  *         }
-  *       ]
-  *     },
-  *     {
-  *       "name": "woodwinds",
-  *       "instruments": [
-  *         {
-  *           "name": "flute"
-  *         }
-  *       ]
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @exampleDescription Query referenced tables with spaces in their names
-  * If your table name contains spaces, you must use double quotes in the `select` statement to reference the table.
-  *
-  * @example Query referenced tables with spaces in their names
-  * ```js
-  * const { data, error } = await supabase
-  *   .from('orchestral sections')
-  *   .select(`
-  *     name,
-  *     "musical instruments" (
-  *       name
-  *     )
-  *   `)
-  * ```
-  *
-  * @exampleSql Query referenced tables with spaces in their names
-  * ```sql
-  * create table
-  *   "orchestral sections" (id int8 primary key, name text);
-  * create table
-  *   "musical instruments" (
-  *     id int8 primary key,
-  *     section_id int8 not null references "orchestral sections",
-  *     name text
-  *   );
-  *
-  * insert into
-  *   "orchestral sections" (id, name)
-  * values
-  *   (1, 'strings'),
-  *   (2, 'woodwinds');
-  * insert into
-  *   "musical instruments" (id, section_id, name)
-  * values
-  *   (1, 2, 'flute'),
-  *   (2, 1, 'violin');
-  * ```
-  *
-  * @exampleResponse Query referenced tables with spaces in their names
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "strings",
-  *       "musical instruments": [
-  *         {
-  *           "name": "violin"
-  *         }
-  *       ]
-  *     },
-  *     {
-  *       "name": "woodwinds",
-  *       "musical instruments": [
-  *         {
-  *           "name": "flute"
-  *         }
-  *       ]
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @exampleDescription Query referenced tables through a join table
-  * If you're in a situation where your tables are **NOT** directly
-  * related, but instead are joined by a _join table_, you can still use
-  * the `select()` method to query the related data. The join table needs
-  * to have the foreign keys as part of its composite primary key.
-  *
-  * @example Query referenced tables through a join table
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('users')
-  *   .select(`
-  *     name,
-  *     teams (
-  *       name
-  *     )
-  *   `)
-  *   
-  * ```
-  *
-  * @exampleSql Query referenced tables through a join table
-  * ```sql
-  * create table
-  *   users (
-  *     id int8 primary key,
-  *     name text
-  *   );
-  * create table
-  *   teams (
-  *     id int8 primary key,
-  *     name text
-  *   );
-  * -- join table
-  * create table
-  *   users_teams (
-  *     user_id int8 not null references users,
-  *     team_id int8 not null references teams,
-  *     -- both foreign keys must be part of a composite primary key
-  *     primary key (user_id, team_id)
-  *   );
-  *
-  * insert into
-  *   users (id, name)
-  * values
-  *   (1, 'Kiran'),
-  *   (2, 'Evan');
-  * insert into
-  *   teams (id, name)
-  * values
-  *   (1, 'Green'),
-  *   (2, 'Blue');
-  * insert into
-  *   users_teams (user_id, team_id)
-  * values
-  *   (1, 1),
-  *   (1, 2),
-  *   (2, 2);
-  * ```
-  *
-  * @exampleResponse Query referenced tables through a join table
-  * ```json
-  *   {
-  *     "data": [
-  *       {
-  *         "name": "Kiran",
-  *         "teams": [
-  *           {
-  *             "name": "Green"
-  *           },
-  *           {
-  *             "name": "Blue"
-  *           }
-  *         ]
-  *       },
-  *       {
-  *         "name": "Evan",
-  *         "teams": [
-  *           {
-  *             "name": "Blue"
-  *           }
-  *         ]
-  *       }
-  *     ],
-  *     "status": 200,
-  *     "statusText": "OK"
-  *   }
-  *   
-  * ```
-  *
-  * @exampleDescription Query the same referenced table multiple times
-  * If you need to query the same referenced table twice, use the name of the
-  * joined column to identify which join to use. You can also give each
-  * column an alias.
-  *
-  * @example Query the same referenced table multiple times
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('messages')
-  *   .select(`
-  *     content,
-  *     from:sender_id(name),
-  *     to:receiver_id(name)
-  *   `)
-  *
-  * // To infer types, use the name of the table (in this case `users`) and
-  * // the name of the foreign key constraint.
-  * const { data, error } = await supabase
-  *   .from('messages')
-  *   .select(`
-  *     content,
-  *     from:users!messages_sender_id_fkey(name),
-  *     to:users!messages_receiver_id_fkey(name)
-  *   `)
-  * ```
-  *
-  * @exampleSql Query the same referenced table multiple times
-  * ```sql
-  *  create table
-  *  users (id int8 primary key, name text);
-  *
-  *  create table
-  *    messages (
-  *      sender_id int8 not null references users,
-  *      receiver_id int8 not null references users,
-  *      content text
-  *    );
-  *
-  *  insert into
-  *    users (id, name)
-  *  values
-  *    (1, 'Kiran'),
-  *    (2, 'Evan');
-  *
-  *  insert into
-  *    messages (sender_id, receiver_id, content)
-  *  values
-  *    (1, 2, '👋');
-  *  ```
-  * ```
-  *
-  * @exampleResponse Query the same referenced table multiple times
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "content": "👋",
-  *       "from": {
-  *         "name": "Kiran"
-  *       },
-  *       "to": {
-  *         "name": "Evan"
-  *       }
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @exampleDescription Query nested foreign tables through a join table
-  * You can use the result of a joined table to gather data in
-  * another foreign table. With multiple references to the same foreign
-  * table you must specify the column on which to conduct the join.
-  *
-  * @example Query nested foreign tables through a join table
-  * ```ts
-  *   const { data, error } = await supabase
-  *     .from('games')
-  *     .select(`
-  *       game_id:id,
-  *       away_team:teams!games_away_team_fkey (
-  *         users (
-  *           id,
-  *           name
-  *         )
-  *       )
-  *     `)
-  *   
-  * ```
-  *
-  * @exampleSql Query nested foreign tables through a join table
-  * ```sql
-  * ```sql
-  * create table
-  *   users (
-  *     id int8 primary key,
-  *     name text
-  *   );
-  * create table
-  *   teams (
-  *     id int8 primary key,
-  *     name text
-  *   );
-  * -- join table
-  * create table
-  *   users_teams (
-  *     user_id int8 not null references users,
-  *     team_id int8 not null references teams,
-  *
-  *     primary key (user_id, team_id)
-  *   );
-  * create table
-  *   games (
-  *     id int8 primary key,
-  *     home_team int8 not null references teams,
-  *     away_team int8 not null references teams,
-  *     name text
-  *   );
-  *
-  * insert into users (id, name)
-  * values
-  *   (1, 'Kiran'),
-  *   (2, 'Evan');
-  * insert into
-  *   teams (id, name)
-  * values
-  *   (1, 'Green'),
-  *   (2, 'Blue');
-  * insert into
-  *   users_teams (user_id, team_id)
-  * values
-  *   (1, 1),
-  *   (1, 2),
-  *   (2, 2);
-  * insert into
-  *   games (id, home_team, away_team, name)
-  * values
-  *   (1, 1, 2, 'Green vs Blue'),
-  *   (2, 2, 1, 'Blue vs Green');
-  * ```
-  *
-  * @exampleResponse Query nested foreign tables through a join table
-  * ```json
-  *   {
-  *     "data": [
-  *       {
-  *         "game_id": 1,
-  *         "away_team": {
-  *           "users": [
-  *             {
-  *               "id": 1,
-  *               "name": "Kiran"
-  *             },
-  *             {
-  *               "id": 2,
-  *               "name": "Evan"
-  *             }
-  *           ]
-  *         }
-  *       },
-  *       {
-  *         "game_id": 2,
-  *         "away_team": {
-  *           "users": [
-  *             {
-  *               "id": 1,
-  *               "name": "Kiran"
-  *             }
-  *           ]
-  *         }
-  *       }
-  *     ],
-  *     "status": 200,
-  *     "statusText": "OK"
-  *   }
-  *   
-  * ```
-  *
-  * @exampleDescription Filtering through referenced tables
-  * If the filter on a referenced table's column is not satisfied, the referenced
-  * table returns `[]` or `null` but the parent table is not filtered out.
-  * If you want to filter out the parent table rows, use the `!inner` hint
-  *
-  * @example Filtering through referenced tables
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('instruments')
-  *   .select('name, orchestral_sections(*)')
-  *   .eq('orchestral_sections.name', 'percussion')
-  * ```
-  *
-  * @exampleSql Filtering through referenced tables
-  * ```sql
-  * create table
-  *   orchestral_sections (id int8 primary key, name text);
-  * create table
-  *   instruments (
-  *     id int8 primary key,
-  *     section_id int8 not null references orchestral_sections,
-  *     name text
-  *   );
-  *
-  * insert into
-  *   orchestral_sections (id, name)
-  * values
-  *   (1, 'strings'),
-  *   (2, 'woodwinds');
-  * insert into
-  *   instruments (id, section_id, name)
-  * values
-  *   (1, 2, 'flute'),
-  *   (2, 1, 'violin');
-  * ```
-  *
-  * @exampleResponse Filtering through referenced tables
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "flute",
-  *       "orchestral_sections": null
-  *     },
-  *     {
-  *       "name": "violin",
-  *       "orchestral_sections": null
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @exampleDescription Querying referenced table with count
-  * You can get the number of rows in a related table by using the
-  * **count** property.
-  *
-  * @example Querying referenced table with count
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('orchestral_sections')
-  *   .select(`*, instruments(count)`)
-  * ```
-  *
-  * @exampleSql Querying referenced table with count
-  * ```sql
-  * create table orchestral_sections (
-  *   "id" "uuid" primary key default "extensions"."uuid_generate_v4"() not null,
-  *   "name" text
-  * );
-  *
-  * create table characters (
-  *   "id" "uuid" primary key default "extensions"."uuid_generate_v4"() not null,
-  *   "name" text,
-  *   "section_id" "uuid" references public.orchestral_sections on delete cascade
-  * );
-  *
-  * with section as (
-  *   insert into orchestral_sections (name)
-  *   values ('strings') returning id
-  * )
-  * insert into instruments (name, section_id) values
-  * ('violin', (select id from section)),
-  * ('viola', (select id from section)),
-  * ('cello', (select id from section)),
-  * ('double bass', (select id from section));
-  * ```
-  *
-  * @exampleResponse Querying referenced table with count
-  * ```json
-  * [
-  *   {
-  *     "id": "693694e7-d993-4360-a6d7-6294e325d9b6",
-  *     "name": "strings",
-  *     "instruments": [
-  *       {
-  *         "count": 4
-  *       }
-  *     ]
-  *   }
-  * ]
-  * ```
-  *
-  * @exampleDescription Querying with count option
-  * You can get the number of rows by using the
-  * [count](/docs/reference/javascript/select#parameters) option.
-  *
-  * @example Querying with count option
-  * ```ts
-  * const { count, error } = await supabase
-  *   .from('characters')
-  *   .select('*', { count: 'exact', head: true })
-  * ```
-  *
-  * @exampleSql Querying with count option
-  * ```sql
-  * create table
-  *   characters (id int8 primary key, name text);
-  *
-  * insert into
-  *   characters (id, name)
-  * values
-  *   (1, 'Luke'),
-  *   (2, 'Leia'),
-  *   (3, 'Han');
-  * ```
-  *
-  * @exampleResponse Querying with count option
-  * ```json
-  * {
-  *   "count": 3,
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @exampleDescription Querying JSON data
-  * You can select and filter data inside of
-  * [JSON](/docs/guides/database/json) columns. Postgres offers some
-  * [operators](/docs/guides/database/json#query-the-jsonb-data) for
-  * querying JSON data.
-  *
-  * @example Querying JSON data
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('users')
-  *   .select(`
-  *     id, name,
-  *     address->city
-  *   `)
-  * ```
-  *
-  * @exampleSql Querying JSON data
-  * ```sql
-  * create table
-  *   users (
-  *     id int8 primary key,
-  *     name text,
-  *     address jsonb
-  *   );
-  *
-  * insert into
-  *   users (id, name, address)
-  * values
-  *   (1, 'Frodo', '{"city":"Hobbiton"}');
-  * ```
-  *
-  * @exampleResponse Querying JSON data
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "name": "Frodo",
-  *       "city": "Hobbiton"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @exampleDescription Querying referenced table with inner join
-  * If you don't want to return the referenced table contents, you can leave the parenthesis empty.
-  * Like `.select('name, orchestral_sections!inner()')`.
-  *
-  * @example Querying referenced table with inner join
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('instruments')
-  *   .select('name, orchestral_sections!inner(name)')
-  *   .eq('orchestral_sections.name', 'woodwinds')
-  *   .limit(1)
-  * ```
-  *
-  * @exampleSql Querying referenced table with inner join
-  * ```sql
-  * create table orchestral_sections (
-  *   "id" "uuid" primary key default "extensions"."uuid_generate_v4"() not null,
-  *   "name" text
-  * );
-  *
-  * create table instruments (
-  *   "id" "uuid" primary key default "extensions"."uuid_generate_v4"() not null,
-  *   "name" text,
-  *   "section_id" "uuid" references public.orchestral_sections on delete cascade
-  * );
-  *
-  * with section as (
-  *   insert into orchestral_sections (name)
-  *   values ('woodwinds') returning id
-  * )
-  * insert into instruments (name, section_id) values
-  * ('flute', (select id from section)),
-  * ('clarinet', (select id from section)),
-  * ('bassoon', (select id from section)),
-  * ('piccolo', (select id from section));
-  * ```
-  *
-  * @exampleResponse Querying referenced table with inner join
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "flute",
-  *       "orchestral_sections": {"name": "woodwinds"}
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @exampleDescription Switching schemas per query
-  * In addition to setting the schema during initialization, you can also switch schemas on a per-query basis.
-  * Make sure you've set up your [database privileges and API settings](/docs/guides/api/using-custom-schemas).
-  *
-  * @example Switching schemas per query
-  * ```ts
-  * const { data, error } = await supabase
-  *   .schema('myschema')
-  *   .from('mytable')
-  *   .select()
-  * ```
-  *
-  * @exampleSql Switching schemas per query
-  * ```sql
-  * create schema myschema;
-  *
-  * create table myschema.mytable (
-  *   id uuid primary key default gen_random_uuid(),
-  *   data text
-  * );
-  *
-  * insert into myschema.mytable (data) values ('mydata');
-  * ```
-  *
-  * @exampleResponse Switching schemas per query
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": "4162e008-27b0-4c0f-82dc-ccaeee9a624d",
-  *       "data": "mydata"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  select(columns, options) {
-    const { head: head2 = false, count } = options !== null && options !== void 0 ? options : {};
-    const method = head2 ? "HEAD" : "GET";
-    let quoted = false;
-    const cleanedColumns = (columns !== null && columns !== void 0 ? columns : "*").split("").map((c) => {
-      if (/\s/.test(c) && !quoted) return "";
-      if (c === '"') quoted = !quoted;
-      return c;
-    }).join("");
-    const { url, headers } = this.cloneRequestState();
-    url.searchParams.set("select", cleanedColumns);
-    if (count) headers.append("Prefer", `count=${count}`);
-    return new PostgrestFilterBuilder({
-      method,
-      url,
-      headers,
-      schema: this.schema,
-      fetch: this.fetch,
-      urlLengthLimit: this.urlLengthLimit,
-      retry: this.retry
-    });
-  }
-  /**
-  * Perform an INSERT into the table or view.
-  *
-  * By default, inserted rows are not returned. To return it, chain the call
-  * with `.select()`.
-  *
-  * @param values - The values to insert. Pass an object to insert a single row
-  * or an array to insert multiple rows.
-  *
-  * @param options - Named parameters
-  *
-  * @param options.count - Count algorithm to use to count inserted rows.
-  *
-  * `"exact"`: Exact but slow count algorithm. Performs a `COUNT(*)` under the
-  * hood.
-  *
-  * `"planned"`: Approximated but fast count algorithm. Uses the Postgres
-  * statistics under the hood.
-  *
-  * `"estimated"`: Uses exact count for low numbers and planned count for high
-  * numbers.
-  *
-  * @param options.defaultToNull - Make missing fields default to `null`.
-  * Otherwise, use the default value for the column. Only applies for bulk
-  * inserts.
-  *
-  * @category Database
-  *
-  * @example Create a record
-  * ```ts
-  * const { error } = await supabase
-  *   .from('countries')
-  *   .insert({ id: 1, name: 'Mordor' })
-  * ```
-  *
-  * @exampleSql Create a record
-  * ```sql
-  * create table
-  *   countries (id int8 primary key, name text);
-  * ```
-  *
-  * @exampleResponse Create a record
-  * ```json
-  * {
-  *   "status": 201,
-  *   "statusText": "Created"
-  * }
-  * ```
-  *
-  * @exampleDescription Handling errors
-  * `error.hint` from Postgres often contains the actionable fix (e.g. `"Grant the required privileges to the current role with: GRANT INSERT ON public.countries TO anon;"` for a `42501` permission-denied error). Log the full `error` object so it isn't hidden behind `error.message`.
-  *
-  * @example Handling errors
-  * ```js
-  * const { error } = await supabase.from('countries').insert({ id: 1, name: 'Mordor' })
-  * if (error) console.error(error)
-  * ```
-  *
-  * @example Create a record and return it
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('countries')
-  *   .insert({ id: 1, name: 'Mordor' })
-  *   .select()
-  * ```
-  *
-  * @exampleSql Create a record and return it
-  * ```sql
-  * create table
-  *   countries (id int8 primary key, name text);
-  * ```
-  *
-  * @exampleResponse Create a record and return it
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "name": "Mordor"
-  *     }
-  *   ],
-  *   "status": 201,
-  *   "statusText": "Created"
-  * }
-  * ```
-  *
-  * @exampleDescription Bulk create
-  * A bulk create operation is handled in a single transaction.
-  * If any of the inserts fail, none of the rows are inserted.
-  *
-  * @example Bulk create
-  * ```ts
-  * const { error } = await supabase
-  *   .from('countries')
-  *   .insert([
-  *     { id: 1, name: 'Mordor' },
-  *     { id: 1, name: 'The Shire' },
-  *   ])
-  * ```
-  *
-  * @exampleSql Bulk create
-  * ```sql
-  * create table
-  *   countries (id int8 primary key, name text);
-  * ```
-  *
-  * @exampleResponse Bulk create
-  * ```json
-  * {
-  *   "error": {
-  *     "code": "23505",
-  *     "details": "Key (id)=(1) already exists.",
-  *     "hint": null,
-  *     "message": "duplicate key value violates unique constraint \"countries_pkey\""
-  *   },
-  *   "status": 409,
-  *   "statusText": "Conflict"
-  * }
-  * ```
-  */
-  insert(values, { count, defaultToNull = true } = {}) {
-    var _this$fetch;
-    const method = "POST";
-    const { url, headers } = this.cloneRequestState();
-    if (count) headers.append("Prefer", `count=${count}`);
-    if (!defaultToNull) headers.append("Prefer", `missing=default`);
-    if (Array.isArray(values)) {
-      const columns = values.reduce((acc, x) => acc.concat(Object.keys(x)), []);
-      if (columns.length > 0) {
-        const uniqueColumns = [...new Set(columns)].map((column) => `"${column}"`);
-        url.searchParams.set("columns", uniqueColumns.join(","));
-      }
-    }
-    return new PostgrestFilterBuilder({
-      method,
-      url,
-      headers,
-      schema: this.schema,
-      body: values,
-      fetch: (_this$fetch = this.fetch) !== null && _this$fetch !== void 0 ? _this$fetch : fetch,
-      urlLengthLimit: this.urlLengthLimit,
-      retry: this.retry
-    });
-  }
-  /**
-  * Perform an UPSERT on the table or view. Depending on the column(s) passed
-  * to `onConflict`, `.upsert()` allows you to perform the equivalent of
-  * `.insert()` if a row with the corresponding `onConflict` columns doesn't
-  * exist, or if it does exist, perform an alternative action depending on
-  * `ignoreDuplicates`.
-  *
-  * By default, upserted rows are not returned. To return it, chain the call
-  * with `.select()`.
-  *
-  * @param values - The values to upsert with. Pass an object to upsert a
-  * single row or an array to upsert multiple rows.
-  *
-  * @param options - Named parameters
-  *
-  * @param options.onConflict - Comma-separated UNIQUE column(s) to specify how
-  * duplicate rows are determined. Two rows are duplicates if all the
-  * `onConflict` columns are equal.
-  *
-  * @param options.ignoreDuplicates - If `true`, duplicate rows are ignored. If
-  * `false`, duplicate rows are merged with existing rows.
-  *
-  * @param options.count - Count algorithm to use to count upserted rows.
-  *
-  * `"exact"`: Exact but slow count algorithm. Performs a `COUNT(*)` under the
-  * hood.
-  *
-  * `"planned"`: Approximated but fast count algorithm. Uses the Postgres
-  * statistics under the hood.
-  *
-  * `"estimated"`: Uses exact count for low numbers and planned count for high
-  * numbers.
-  *
-  * @param options.defaultToNull - Make missing fields default to `null`.
-  * Otherwise, use the default value for the column. This only applies when
-  * inserting new rows, not when merging with existing rows under
-  * `ignoreDuplicates: false`. This also only applies when doing bulk upserts.
-  *
-  * @example Upsert a single row using a unique key
-  * ```ts
-  * // Upserting a single row, overwriting based on the 'username' unique column
-  * const { data, error } = await supabase
-  *   .from('users')
-  *   .upsert({ username: 'supabot' }, { onConflict: 'username' })
-  *
-  * // Example response:
-  * // {
-  * //   data: [
-  * //     { id: 4, message: 'bar', username: 'supabot' }
-  * //   ],
-  * //   error: null
-  * // }
-  * ```
-  *
-  * @example Upsert with conflict resolution and exact row counting
-  * ```ts
-  * // Upserting and returning exact count
-  * const { data, error, count } = await supabase
-  *   .from('users')
-  *   .upsert(
-  *     {
-  *       id: 3,
-  *       message: 'foo',
-  *       username: 'supabot'
-  *     },
-  *     {
-  *       onConflict: 'username',
-  *       count: 'exact'
-  *     }
-  *   )
-  *
-  * // Example response:
-  * // {
-  * //   data: [
-  * //     {
-  * //       id: 42,
-  * //       handle: "saoirse",
-  * //       display_name: "Saoirse"
-  * //     }
-  * //   ],
-  * //   count: 1,
-  * //   error: null
-  * // }
-  * ```
-  *
-  * @category Database
-  *
-  * @remarks
-  * - Primary keys must be included in `values` to use upsert.
-  *
-  * @example Upsert your data
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('instruments')
-  *   .upsert({ id: 1, name: 'piano' })
-  *   .select()
-  * ```
-  *
-  * @exampleSql Upsert your data
-  * ```sql
-  * create table
-  *   instruments (id int8 primary key, name text);
-  *
-  * insert into
-  *   instruments (id, name)
-  * values
-  *   (1, 'harpsichord');
-  * ```
-  *
-  * @exampleResponse Upsert your data
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "name": "piano"
-  *     }
-  *   ],
-  *   "status": 201,
-  *   "statusText": "Created"
-  * }
-  * ```
-  *
-  * @exampleDescription Handling errors
-  * `error.hint` from Postgres often contains the actionable fix (e.g. `"Grant the required privileges to the current role with: GRANT INSERT, UPDATE ON public.instruments TO anon;"` for a `42501` permission-denied error). Log the full `error` object so it isn't hidden behind `error.message`.
-  *
-  * @example Handling errors
-  * ```js
-  * const { data, error } = await supabase.from('instruments').upsert({ id: 1, name: 'piano' }).select()
-  * if (error) console.error(error)
-  * ```
-  *
-  * @example Bulk Upsert your data
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('instruments')
-  *   .upsert([
-  *     { id: 1, name: 'piano' },
-  *     { id: 2, name: 'harp' },
-  *   ])
-  *   .select()
-  * ```
-  *
-  * @exampleSql Bulk Upsert your data
-  * ```sql
-  * create table
-  *   instruments (id int8 primary key, name text);
-  *
-  * insert into
-  *   instruments (id, name)
-  * values
-  *   (1, 'harpsichord');
-  * ```
-  *
-  * @exampleResponse Bulk Upsert your data
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "name": "piano"
-  *     },
-  *     {
-  *       "id": 2,
-  *       "name": "harp"
-  *     }
-  *   ],
-  *   "status": 201,
-  *   "statusText": "Created"
-  * }
-  * ```
-  *
-  * @exampleDescription Upserting into tables with constraints
-  * In the following query, `upsert()` implicitly uses the `id`
-  * (primary key) column to determine conflicts. If there is no existing
-  * row with the same `id`, `upsert()` inserts a new row, which
-  * will fail in this case as there is already a row with `handle` `"saoirse"`.
-  * Using the `onConflict` option, you can instruct `upsert()` to use
-  * another column with a unique constraint to determine conflicts.
-  *
-  * @example Upserting into tables with constraints
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('users')
-  *   .upsert({ id: 42, handle: 'saoirse', display_name: 'Saoirse' })
-  *   .select()
-  * ```
-  *
-  * @exampleSql Upserting into tables with constraints
-  * ```sql
-  * create table
-  *   users (
-  *     id int8 generated by default as identity primary key,
-  *     handle text not null unique,
-  *     display_name text
-  *   );
-  *
-  * insert into
-  *   users (id, handle, display_name)
-  * values
-  *   (1, 'saoirse', null);
-  * ```
-  *
-  * @exampleResponse Upserting into tables with constraints
-  * ```json
-  * {
-  *   "error": {
-  *     "code": "23505",
-  *     "details": "Key (handle)=(saoirse) already exists.",
-  *     "hint": null,
-  *     "message": "duplicate key value violates unique constraint \"users_handle_key\""
-  *   },
-  *   "status": 409,
-  *   "statusText": "Conflict"
-  * }
-  * ```
-  */
-  upsert(values, { onConflict, ignoreDuplicates = false, count, defaultToNull = true } = {}) {
-    var _this$fetch2;
-    const method = "POST";
-    const { url, headers } = this.cloneRequestState();
-    headers.append("Prefer", `resolution=${ignoreDuplicates ? "ignore" : "merge"}-duplicates`);
-    if (onConflict !== void 0) url.searchParams.set("on_conflict", onConflict);
-    if (count) headers.append("Prefer", `count=${count}`);
-    if (!defaultToNull) headers.append("Prefer", "missing=default");
-    if (Array.isArray(values)) {
-      const columns = values.reduce((acc, x) => acc.concat(Object.keys(x)), []);
-      if (columns.length > 0) {
-        const uniqueColumns = [...new Set(columns)].map((column) => `"${column}"`);
-        url.searchParams.set("columns", uniqueColumns.join(","));
-      }
-    }
-    return new PostgrestFilterBuilder({
-      method,
-      url,
-      headers,
-      schema: this.schema,
-      body: values,
-      fetch: (_this$fetch2 = this.fetch) !== null && _this$fetch2 !== void 0 ? _this$fetch2 : fetch,
-      urlLengthLimit: this.urlLengthLimit,
-      retry: this.retry
-    });
-  }
-  /**
-  * Perform an UPDATE on the table or view.
-  *
-  * By default, updated rows are not returned. To return it, chain the call
-  * with `.select()` after filters.
-  *
-  * @param values - The values to update with
-  *
-  * @param options - Named parameters
-  *
-  * @param options.count - Count algorithm to use to count updated rows.
-  *
-  * `"exact"`: Exact but slow count algorithm. Performs a `COUNT(*)` under the
-  * hood.
-  *
-  * `"planned"`: Approximated but fast count algorithm. Uses the Postgres
-  * statistics under the hood.
-  *
-  * `"estimated"`: Uses exact count for low numbers and planned count for high
-  * numbers.
-  *
-  * @category Database
-  *
-  * @remarks
-  * - `update()` should always be combined with [Filters](/docs/reference/javascript/using-filters) to target the item(s) you wish to update.
-  *
-  * @example Updating your data
-  * ```ts
-  * const { error } = await supabase
-  *   .from('instruments')
-  *   .update({ name: 'piano' })
-  *   .eq('id', 1)
-  * ```
-  *
-  * @exampleSql Updating your data
-  * ```sql
-  * create table
-  *   instruments (id int8 primary key, name text);
-  *
-  * insert into
-  *   instruments (id, name)
-  * values
-  *   (1, 'harpsichord');
-  * ```
-  *
-  * @exampleResponse Updating your data
-  * ```json
-  * {
-  *   "status": 204,
-  *   "statusText": "No Content"
-  * }
-  * ```
-  *
-  * @exampleDescription Handling errors
-  * `error.hint` from Postgres often contains the actionable fix (e.g. `"Grant the required privileges to the current role with: GRANT UPDATE ON public.instruments TO anon;"` for a `42501` permission-denied error). Log the full `error` object so it isn't hidden behind `error.message`.
-  *
-  * @example Handling errors
-  * ```js
-  * const { error } = await supabase.from('instruments').update({ name: 'piano' }).eq('id', 1)
-  * if (error) console.error(error)
-  * ```
-  *
-  * @example Update a record and return it
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('instruments')
-  *   .update({ name: 'piano' })
-  *   .eq('id', 1)
-  *   .select()
-  * ```
-  *
-  * @exampleSql Update a record and return it
-  * ```sql
-  * create table
-  *   instruments (id int8 primary key, name text);
-  *
-  * insert into
-  *   instruments (id, name)
-  * values
-  *   (1, 'harpsichord');
-  * ```
-  *
-  * @exampleResponse Update a record and return it
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "name": "piano"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @exampleDescription Updating JSON data
-  * Postgres offers some
-  * [operators](/docs/guides/database/json#query-the-jsonb-data) for
-  * working with JSON data. Currently, it is only possible to update the entire JSON document.
-  *
-  * @example Updating JSON data
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('users')
-  *   .update({
-  *     address: {
-  *       street: 'Melrose Place',
-  *       postcode: 90210
-  *     }
-  *   })
-  *   .eq('address->postcode', 90210)
-  *   .select()
-  * ```
-  *
-  * @exampleSql Updating JSON data
-  * ```sql
-  * create table
-  *   users (
-  *     id int8 primary key,
-  *     name text,
-  *     address jsonb
-  *   );
-  *
-  * insert into
-  *   users (id, name, address)
-  * values
-  *   (1, 'Michael', '{ "postcode": 90210 }');
-  * ```
-  *
-  * @exampleResponse Updating JSON data
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "name": "Michael",
-  *       "address": {
-  *         "street": "Melrose Place",
-  *         "postcode": 90210
-  *       }
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  update(values, { count } = {}) {
-    var _this$fetch3;
-    const method = "PATCH";
-    const { url, headers } = this.cloneRequestState();
-    if (count) headers.append("Prefer", `count=${count}`);
-    return new PostgrestFilterBuilder({
-      method,
-      url,
-      headers,
-      schema: this.schema,
-      body: values,
-      fetch: (_this$fetch3 = this.fetch) !== null && _this$fetch3 !== void 0 ? _this$fetch3 : fetch,
-      urlLengthLimit: this.urlLengthLimit,
-      retry: this.retry
-    });
-  }
-  /**
-  * Perform a DELETE on the table or view.
-  *
-  * By default, deleted rows are not returned. To return it, chain the call
-  * with `.select()` after filters.
-  *
-  * @param options - Named parameters
-  *
-  * @param options.count - Count algorithm to use to count deleted rows.
-  *
-  * `"exact"`: Exact but slow count algorithm. Performs a `COUNT(*)` under the
-  * hood.
-  *
-  * `"planned"`: Approximated but fast count algorithm. Uses the Postgres
-  * statistics under the hood.
-  *
-  * `"estimated"`: Uses exact count for low numbers and planned count for high
-  * numbers.
-  *
-  * @category Database
-  *
-  * @remarks
-  * - `delete()` should always be combined with [filters](/docs/reference/javascript/using-filters) to target the item(s) you wish to delete.
-  * - If you use `delete()` with filters and you have
-  *   [RLS](/docs/learn/auth-deep-dive/auth-row-level-security) enabled, only
-  *   rows visible through `SELECT` policies are deleted. Note that by default
-  *   no rows are visible, so you need at least one `SELECT`/`ALL` policy that
-  *   makes the rows visible.
-  * - When using `delete().in()`, specify an array of values to target multiple rows with a single query. This is particularly useful for batch deleting entries that share common criteria, such as deleting users by their IDs. Ensure that the array you provide accurately represents all records you intend to delete to avoid unintended data removal.
-  *
-  * @example Delete a single record
-  * ```ts
-  * const response = await supabase
-  *   .from('countries')
-  *   .delete()
-  *   .eq('id', 1)
-  * ```
-  *
-  * @exampleSql Delete a single record
-  * ```sql
-  * create table
-  *   countries (id int8 primary key, name text);
-  *
-  * insert into
-  *   countries (id, name)
-  * values
-  *   (1, 'Mordor');
-  * ```
-  *
-  * @exampleResponse Delete a single record
-  * ```json
-  * {
-  *   "status": 204,
-  *   "statusText": "No Content"
-  * }
-  * ```
-  *
-  * @exampleDescription Handling errors
-  * `error.hint` from Postgres often contains the actionable fix (e.g. `"Grant the required privileges to the current role with: GRANT DELETE ON public.countries TO anon;"` for a `42501` permission-denied error). Log the full `error` object so it isn't hidden behind `error.message`.
-  *
-  * @example Handling errors
-  * ```js
-  * const { error } = await supabase.from('countries').delete().eq('id', 1)
-  * if (error) console.error(error)
-  * ```
-  *
-  * @example Delete a record and return it
-  * ```ts
-  * const { data, error } = await supabase
-  *   .from('countries')
-  *   .delete()
-  *   .eq('id', 1)
-  *   .select()
-  * ```
-  *
-  * @exampleSql Delete a record and return it
-  * ```sql
-  * create table
-  *   countries (id int8 primary key, name text);
-  *
-  * insert into
-  *   countries (id, name)
-  * values
-  *   (1, 'Mordor');
-  * ```
-  *
-  * @exampleResponse Delete a record and return it
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "id": 1,
-  *       "name": "Mordor"
-  *     }
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @example Delete multiple records
-  * ```ts
-  * const response = await supabase
-  *   .from('countries')
-  *   .delete()
-  *   .in('id', [1, 2, 3])
-  * ```
-  *
-  * @exampleSql Delete multiple records
-  * ```sql
-  * create table
-  *   countries (id int8 primary key, name text);
-  *
-  * insert into
-  *   countries (id, name)
-  * values
-  *   (1, 'Rohan'), (2, 'The Shire'), (3, 'Mordor');
-  * ```
-  *
-  * @exampleResponse Delete multiple records
-  * ```json
-  * {
-  *   "status": 204,
-  *   "statusText": "No Content"
-  * }
-  * ```
-  */
-  delete({ count } = {}) {
-    var _this$fetch4;
-    const method = "DELETE";
-    const { url, headers } = this.cloneRequestState();
-    if (count) headers.append("Prefer", `count=${count}`);
-    return new PostgrestFilterBuilder({
-      method,
-      url,
-      headers,
-      schema: this.schema,
-      fetch: (_this$fetch4 = this.fetch) !== null && _this$fetch4 !== void 0 ? _this$fetch4 : fetch,
-      urlLengthLimit: this.urlLengthLimit,
-      retry: this.retry
-    });
-  }
-};
-function _typeof(o) {
-  "@babel/helpers - typeof";
-  return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function(o$1) {
-    return typeof o$1;
-  } : function(o$1) {
-    return o$1 && "function" == typeof Symbol && o$1.constructor === Symbol && o$1 !== Symbol.prototype ? "symbol" : typeof o$1;
-  }, _typeof(o);
-}
-function toPrimitive(t, r) {
-  if ("object" != _typeof(t) || !t) return t;
-  var e = t[Symbol.toPrimitive];
-  if (void 0 !== e) {
-    var i = e.call(t, r || "default");
-    if ("object" != _typeof(i)) return i;
-    throw new TypeError("@@toPrimitive must return a primitive value.");
-  }
-  return ("string" === r ? String : Number)(t);
-}
-function toPropertyKey(t) {
-  var i = toPrimitive(t, "string");
-  return "symbol" == _typeof(i) ? i : i + "";
-}
-function _defineProperty(e, r, t) {
-  return (r = toPropertyKey(r)) in e ? Object.defineProperty(e, r, {
-    value: t,
-    enumerable: true,
-    configurable: true,
-    writable: true
-  }) : e[r] = t, e;
-}
-function ownKeys2(e, r) {
-  var t = Object.keys(e);
-  if (Object.getOwnPropertySymbols) {
-    var o = Object.getOwnPropertySymbols(e);
-    r && (o = o.filter(function(r$1) {
-      return Object.getOwnPropertyDescriptor(e, r$1).enumerable;
-    })), t.push.apply(t, o);
-  }
-  return t;
-}
-function _objectSpread2(e) {
-  for (var r = 1; r < arguments.length; r++) {
-    var t = null != arguments[r] ? arguments[r] : {};
-    r % 2 ? ownKeys2(Object(t), true).forEach(function(r$1) {
-      _defineProperty(e, r$1, t[r$1]);
-    }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys2(Object(t)).forEach(function(r$1) {
-      Object.defineProperty(e, r$1, Object.getOwnPropertyDescriptor(t, r$1));
-    });
-  }
-  return e;
-}
-var PostgrestClient = class PostgrestClient2 {
-  /**
-  * Creates a PostgREST client.
-  *
-  * @param url - URL of the PostgREST endpoint
-  * @param options - Named parameters
-  * @param options.headers - Custom headers
-  * @param options.schema - Postgres schema to switch to
-  * @param options.fetch - Custom fetch
-  * @param options.timeout - Optional timeout in milliseconds for all requests. When set, requests will automatically abort after this duration to prevent indefinite hangs.
-  * @param options.urlLengthLimit - Maximum URL length in characters before warnings/errors are triggered. Defaults to 8000.
-  * @param options.retry - Enable or disable automatic retries for transient errors.
-  *   When enabled, idempotent requests (GET, HEAD, OPTIONS) that fail with network
-  *   errors or HTTP 503/520 responses will be automatically retried up to 3 times
-  *   with exponential backoff (1s, 2s, 4s). Defaults to `true`.
-  * @example Using supabase-js (recommended)
-  * ```ts
-  * import { createClient } from '@supabase/supabase-js'
-  *
-  * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
-  * const { data, error } = await supabase.from('profiles').select('*')
-  * ```
-  *
-  * @category Database
-  *
-  * @remarks
-  * - A `timeout` option (in milliseconds) can be set to automatically abort requests that take too long.
-  * - A `urlLengthLimit` option (default: 8000) can be set to control when URL length warnings are included in error messages for aborted requests.
-  *
-  * @example Standalone import for bundle-sensitive environments
-  * ```ts
-  * import { PostgrestClient } from '@supabase/postgrest-js'
-  *
-  * const postgrest = new PostgrestClient('https://xyzcompany.supabase.co/rest/v1', {
-  *   headers: { apikey: 'your-publishable-key' },
-  *   schema: 'public',
-  *   timeout: 30000, // 30 second timeout
-  * })
-  * ```
-  */
-  constructor(url, { headers = {}, schema, fetch: fetch$1, timeout, urlLengthLimit = 8e3, retry } = {}) {
-    this.url = url;
-    this.headers = new Headers(headers);
-    this.schemaName = schema;
-    this.urlLengthLimit = urlLengthLimit;
-    const originalFetch = fetch$1 !== null && fetch$1 !== void 0 ? fetch$1 : globalThis.fetch;
-    if (timeout !== void 0 && timeout > 0) this.fetch = (input, init) => {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-      const existingSignal = init === null || init === void 0 ? void 0 : init.signal;
-      if (existingSignal) {
-        if (existingSignal.aborted) {
-          clearTimeout(timeoutId);
-          return originalFetch(input, init);
-        }
-        const abortHandler = () => {
-          clearTimeout(timeoutId);
-          controller.abort();
-        };
-        existingSignal.addEventListener("abort", abortHandler, { once: true });
-        return originalFetch(input, _objectSpread2(_objectSpread2({}, init), {}, { signal: controller.signal })).finally(() => {
-          clearTimeout(timeoutId);
-          existingSignal.removeEventListener("abort", abortHandler);
-        });
-      }
-      return originalFetch(input, _objectSpread2(_objectSpread2({}, init), {}, { signal: controller.signal })).finally(() => clearTimeout(timeoutId));
-    };
-    else this.fetch = originalFetch;
-    this.retry = retry;
-  }
-  /**
-  * Perform a query on a table or a view.
-  *
-  * @param relation - The table or view name to query
-  *
-  * @category Database
-  */
-  from(relation) {
-    if (!relation || typeof relation !== "string" || relation.trim() === "") throw new Error("Invalid relation name: relation must be a non-empty string.");
-    return new PostgrestQueryBuilder(new URL(`${this.url}/${relation}`), {
-      headers: new Headers(this.headers),
-      schema: this.schemaName,
-      fetch: this.fetch,
-      urlLengthLimit: this.urlLengthLimit,
-      retry: this.retry
-    });
-  }
-  /**
-  * Select a schema to query or perform an function (rpc) call.
-  *
-  * The schema needs to be on the list of exposed schemas inside Supabase.
-  *
-  * @param schema - The schema to query
-  *
-  * @category Database
-  */
-  schema(schema) {
-    return new PostgrestClient2(this.url, {
-      headers: this.headers,
-      schema,
-      fetch: this.fetch,
-      urlLengthLimit: this.urlLengthLimit,
-      retry: this.retry
-    });
-  }
-  /**
-  * Perform a function call.
-  *
-  * @param fn - The function name to call
-  * @param args - The arguments to pass to the function call
-  * @param options - Named parameters
-  * @param options.head - When set to `true`, `data` will not be returned.
-  * Useful if you only need the count.
-  * @param options.get - When set to `true`, the function will be called with
-  * read-only access mode.
-  * @param options.count - Count algorithm to use to count rows returned by the
-  * function. Only applicable for [set-returning
-  * functions](https://www.postgresql.org/docs/current/functions-srf.html).
-  *
-  * `"exact"`: Exact but slow count algorithm. Performs a `COUNT(*)` under the
-  * hood.
-  *
-  * `"planned"`: Approximated but fast count algorithm. Uses the Postgres
-  * statistics under the hood.
-  *
-  * `"estimated"`: Uses exact count for low numbers and planned count for high
-  * numbers.
-  *
-  * @example
-  * ```ts
-  * // For cross-schema functions where type inference fails, use overrideTypes:
-  * const { data } = await supabase
-  *   .schema('schema_b')
-  *   .rpc('function_a', {})
-  *   .overrideTypes<{ id: string; user_id: string }[]>()
-  * ```
-  *
-  * @category Database
-  *
-  * @example Call a Postgres function without arguments
-  * ```ts
-  * const { data, error } = await supabase.rpc('hello_world')
-  * ```
-  *
-  * @exampleSql Call a Postgres function without arguments
-  * ```sql
-  * create function hello_world() returns text as $$
-  *   select 'Hello world';
-  * $$ language sql;
-  * ```
-  *
-  * @exampleResponse Call a Postgres function without arguments
-  * ```json
-  * {
-  *   "data": "Hello world",
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @example Call a Postgres function with arguments
-  * ```ts
-  * const { data, error } = await supabase.rpc('echo', { say: '👋' })
-  * ```
-  *
-  * @exampleSql Call a Postgres function with arguments
-  * ```sql
-  * create function echo(say text) returns text as $$
-  *   select say;
-  * $$ language sql;
-  * ```
-  *
-  * @exampleResponse Call a Postgres function with arguments
-  * ```json
-  *   {
-  *     "data": "👋",
-  *     "status": 200,
-  *     "statusText": "OK"
-  *   }
-  *
-  * ```
-  *
-  * @exampleDescription Bulk processing
-  * You can process large payloads by passing in an array as an argument.
-  *
-  * @example Bulk processing
-  * ```ts
-  * const { data, error } = await supabase.rpc('add_one_each', { arr: [1, 2, 3] })
-  * ```
-  *
-  * @exampleSql Bulk processing
-  * ```sql
-  * create function add_one_each(arr int[]) returns int[] as $$
-  *   select array_agg(n + 1) from unnest(arr) as n;
-  * $$ language sql;
-  * ```
-  *
-  * @exampleResponse Bulk processing
-  * ```json
-  * {
-  *   "data": [
-  *     2,
-  *     3,
-  *     4
-  *   ],
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @exampleDescription Call a Postgres function with filters
-  * Postgres functions that return tables can also be combined with [Filters](/docs/reference/javascript/using-filters) and [Modifiers](/docs/reference/javascript/using-modifiers).
-  *
-  * @example Call a Postgres function with filters
-  * ```ts
-  * const { data, error } = await supabase
-  *   .rpc('list_stored_countries')
-  *   .eq('id', 1)
-  *   .single()
-  * ```
-  *
-  * @exampleSql Call a Postgres function with filters
-  * ```sql
-  * create table
-  *   countries (id int8 primary key, name text);
-  *
-  * insert into
-  *   countries (id, name)
-  * values
-  *   (1, 'Rohan'),
-  *   (2, 'The Shire');
-  *
-  * create function list_stored_countries() returns setof countries as $$
-  *   select * from countries;
-  * $$ language sql;
-  * ```
-  *
-  * @exampleResponse Call a Postgres function with filters
-  * ```json
-  * {
-  *   "data": {
-  *     "id": 1,
-  *     "name": "Rohan"
-  *   },
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  *
-  * @example Call a read-only Postgres function
-  * ```ts
-  * const { data, error } = await supabase.rpc('hello_world', undefined, { get: true })
-  * ```
-  *
-  * @exampleSql Call a read-only Postgres function
-  * ```sql
-  * create function hello_world() returns text as $$
-  *   select 'Hello world';
-  * $$ language sql;
-  * ```
-  *
-  * @exampleResponse Call a read-only Postgres function
-  * ```json
-  * {
-  *   "data": "Hello world",
-  *   "status": 200,
-  *   "statusText": "OK"
-  * }
-  * ```
-  */
-  rpc(fn, args = {}, { head: head2 = false, get: get2 = false, count } = {}) {
-    var _this$fetch;
-    let method;
-    const url = new URL(`${this.url}/rpc/${fn}`);
-    let body;
-    const _isObject = (v) => v !== null && typeof v === "object" && (!Array.isArray(v) || v.some(_isObject));
-    const _hasObjectArg = head2 && Object.values(args).some(_isObject);
-    if (_hasObjectArg) {
-      method = "POST";
-      body = args;
-    } else if (head2 || get2) {
-      method = head2 ? "HEAD" : "GET";
-      Object.entries(args).filter(([_, value]) => value !== void 0).map(([name, value]) => [name, Array.isArray(value) ? `{${value.join(",")}}` : `${value}`]).forEach(([name, value]) => {
-        url.searchParams.append(name, value);
-      });
-    } else {
-      method = "POST";
-      body = args;
-    }
-    const headers = new Headers(this.headers);
-    if (_hasObjectArg) headers.set("Prefer", count ? `count=${count},return=minimal` : "return=minimal");
-    else if (count) headers.set("Prefer", `count=${count}`);
-    return new PostgrestFilterBuilder({
-      method,
-      url,
-      headers,
-      schema: this.schemaName,
-      body,
-      fetch: (_this$fetch = this.fetch) !== null && _this$fetch !== void 0 ? _this$fetch : fetch,
-      urlLengthLimit: this.urlLengthLimit,
-      retry: this.retry
-    });
-  }
-};
-
-// ../../node_modules/.pnpm/@supabase+supabase-js@2.107.0/node_modules/@supabase/supabase-js/dist/index.mjs
-var import_realtime_js = __toESM(require_main2(), 1);
-
-// ../../node_modules/.pnpm/iceberg-js@0.8.1/node_modules/iceberg-js/dist/index.mjs
-var IcebergError = class extends Error {
-  constructor(message, opts) {
-    super(message);
-    this.name = "IcebergError";
-    this.status = opts.status;
-    this.icebergType = opts.icebergType;
-    this.icebergCode = opts.icebergCode;
-    this.details = opts.details;
-    this.isCommitStateUnknown = opts.icebergType === "CommitStateUnknownException" || [500, 502, 504].includes(opts.status) && opts.icebergType?.includes("CommitState") === true;
-  }
-  /**
-   * Returns true if the error is a 404 Not Found error.
-   */
-  isNotFound() {
-    return this.status === 404;
-  }
-  /**
-   * Returns true if the error is a 409 Conflict error.
-   */
-  isConflict() {
-    return this.status === 409;
-  }
-  /**
-   * Returns true if the error is a 419 Authentication Timeout error.
-   */
-  isAuthenticationTimeout() {
-    return this.status === 419;
-  }
-};
-function buildUrl(baseUrl, path, query) {
-  const url = new URL(path, baseUrl);
-  if (query) {
-    for (const [key, value] of Object.entries(query)) {
-      if (value !== void 0) {
-        url.searchParams.set(key, value);
-      }
-    }
-  }
-  return url.toString();
-}
-async function buildAuthHeaders(auth) {
-  if (!auth || auth.type === "none") {
-    return {};
-  }
-  if (auth.type === "bearer") {
-    return { Authorization: `Bearer ${auth.token}` };
-  }
-  if (auth.type === "header") {
-    return { [auth.name]: auth.value };
-  }
-  if (auth.type === "custom") {
-    return await auth.getHeaders();
-  }
-  return {};
-}
-function createFetchClient(options) {
-  const fetchFn = options.fetchImpl ?? globalThis.fetch;
-  return {
-    async request({
-      method,
-      path,
-      query,
-      body,
-      headers
-    }) {
-      const url = buildUrl(options.baseUrl, path, query);
-      const authHeaders = await buildAuthHeaders(options.auth);
-      const res = await fetchFn(url, {
-        method,
-        headers: {
-          ...body ? { "Content-Type": "application/json" } : {},
-          ...authHeaders,
-          ...headers
-        },
-        body: body ? JSON.stringify(body) : void 0
-      });
-      const text = await res.text();
-      const isJson = (res.headers.get("content-type") || "").includes("application/json");
-      const data = isJson && text ? JSON.parse(text) : text;
-      if (!res.ok) {
-        const errBody = isJson ? data : void 0;
-        const errorDetail = errBody?.error;
-        throw new IcebergError(
-          errorDetail?.message ?? `Request failed with status ${res.status}`,
-          {
-            status: res.status,
-            icebergType: errorDetail?.type,
-            icebergCode: errorDetail?.code,
-            details: errBody
-          }
-        );
-      }
-      return { status: res.status, headers: res.headers, data };
-    }
-  };
-}
-function namespaceToPath(namespace) {
-  return namespace.join("");
-}
-var NamespaceOperations = class {
-  constructor(client2, prefix = "") {
-    this.client = client2;
-    this.prefix = prefix;
-  }
-  async listNamespaces(parent) {
-    const query = parent ? { parent: namespaceToPath(parent.namespace) } : void 0;
-    const response = await this.client.request({
-      method: "GET",
-      path: `${this.prefix}/namespaces`,
-      query
-    });
-    return response.data.namespaces.map((ns) => ({ namespace: ns }));
-  }
-  async createNamespace(id, metadata) {
-    const request = {
-      namespace: id.namespace,
-      properties: metadata?.properties
-    };
-    const response = await this.client.request({
-      method: "POST",
-      path: `${this.prefix}/namespaces`,
-      body: request
-    });
-    return response.data;
-  }
-  async dropNamespace(id) {
-    await this.client.request({
-      method: "DELETE",
-      path: `${this.prefix}/namespaces/${namespaceToPath(id.namespace)}`
-    });
-  }
-  async loadNamespaceMetadata(id) {
-    const response = await this.client.request({
-      method: "GET",
-      path: `${this.prefix}/namespaces/${namespaceToPath(id.namespace)}`
-    });
-    return {
-      properties: response.data.properties
-    };
-  }
-  async namespaceExists(id) {
-    try {
-      await this.client.request({
-        method: "HEAD",
-        path: `${this.prefix}/namespaces/${namespaceToPath(id.namespace)}`
-      });
-      return true;
-    } catch (error) {
-      if (error instanceof IcebergError && error.status === 404) {
-        return false;
-      }
-      throw error;
-    }
-  }
-  async createNamespaceIfNotExists(id, metadata) {
-    try {
-      return await this.createNamespace(id, metadata);
-    } catch (error) {
-      if (error instanceof IcebergError && error.status === 409) {
-        return;
-      }
-      throw error;
-    }
-  }
-};
-function namespaceToPath2(namespace) {
-  return namespace.join("");
-}
-var TableOperations = class {
-  constructor(client2, prefix = "", accessDelegation) {
-    this.client = client2;
-    this.prefix = prefix;
-    this.accessDelegation = accessDelegation;
-  }
-  async listTables(namespace) {
-    const response = await this.client.request({
-      method: "GET",
-      path: `${this.prefix}/namespaces/${namespaceToPath2(namespace.namespace)}/tables`
-    });
-    return response.data.identifiers;
-  }
-  async createTable(namespace, request) {
-    const headers = {};
-    if (this.accessDelegation) {
-      headers["X-Iceberg-Access-Delegation"] = this.accessDelegation;
-    }
-    const response = await this.client.request({
-      method: "POST",
-      path: `${this.prefix}/namespaces/${namespaceToPath2(namespace.namespace)}/tables`,
-      body: request,
-      headers
-    });
-    return response.data.metadata;
-  }
-  async updateTable(id, request) {
-    const response = await this.client.request({
-      method: "POST",
-      path: `${this.prefix}/namespaces/${namespaceToPath2(id.namespace)}/tables/${id.name}`,
-      body: request
-    });
-    return {
-      "metadata-location": response.data["metadata-location"],
-      metadata: response.data.metadata
-    };
-  }
-  async dropTable(id, options) {
-    await this.client.request({
-      method: "DELETE",
-      path: `${this.prefix}/namespaces/${namespaceToPath2(id.namespace)}/tables/${id.name}`,
-      query: { purgeRequested: String(options?.purge ?? false) }
-    });
-  }
-  async loadTable(id) {
-    const headers = {};
-    if (this.accessDelegation) {
-      headers["X-Iceberg-Access-Delegation"] = this.accessDelegation;
-    }
-    const response = await this.client.request({
-      method: "GET",
-      path: `${this.prefix}/namespaces/${namespaceToPath2(id.namespace)}/tables/${id.name}`,
-      headers
-    });
-    return response.data.metadata;
-  }
-  async tableExists(id) {
-    const headers = {};
-    if (this.accessDelegation) {
-      headers["X-Iceberg-Access-Delegation"] = this.accessDelegation;
-    }
-    try {
-      await this.client.request({
-        method: "HEAD",
-        path: `${this.prefix}/namespaces/${namespaceToPath2(id.namespace)}/tables/${id.name}`,
-        headers
-      });
-      return true;
-    } catch (error) {
-      if (error instanceof IcebergError && error.status === 404) {
-        return false;
-      }
-      throw error;
-    }
-  }
-  async createTableIfNotExists(namespace, request) {
-    try {
-      return await this.createTable(namespace, request);
-    } catch (error) {
-      if (error instanceof IcebergError && error.status === 409) {
-        return await this.loadTable({ namespace: namespace.namespace, name: request.name });
-      }
-      throw error;
-    }
-  }
-};
-var IcebergRestCatalog = class {
-  /**
-   * Creates a new Iceberg REST Catalog client.
-   *
-   * @param options - Configuration options for the catalog client
-   */
-  constructor(options) {
-    let prefix = "v1";
-    if (options.catalogName) {
-      prefix += `/${options.catalogName}`;
-    }
-    const baseUrl = options.baseUrl.endsWith("/") ? options.baseUrl : `${options.baseUrl}/`;
-    this.client = createFetchClient({
-      baseUrl,
-      auth: options.auth,
-      fetchImpl: options.fetch
-    });
-    this.accessDelegation = options.accessDelegation?.join(",");
-    this.namespaceOps = new NamespaceOperations(this.client, prefix);
-    this.tableOps = new TableOperations(this.client, prefix, this.accessDelegation);
-  }
-  /**
-   * Lists all namespaces in the catalog.
-   *
-   * @param parent - Optional parent namespace to list children under
-   * @returns Array of namespace identifiers
-   *
-   * @example
-   * ```typescript
-   * // List all top-level namespaces
-   * const namespaces = await catalog.listNamespaces();
-   *
-   * // List namespaces under a parent
-   * const children = await catalog.listNamespaces({ namespace: ['analytics'] });
-   * ```
-   */
-  async listNamespaces(parent) {
-    return this.namespaceOps.listNamespaces(parent);
-  }
-  /**
-   * Creates a new namespace in the catalog.
-   *
-   * @param id - Namespace identifier to create
-   * @param metadata - Optional metadata properties for the namespace
-   * @returns Response containing the created namespace and its properties
-   *
-   * @example
-   * ```typescript
-   * const response = await catalog.createNamespace(
-   *   { namespace: ['analytics'] },
-   *   { properties: { owner: 'data-team' } }
-   * );
-   * console.log(response.namespace); // ['analytics']
-   * console.log(response.properties); // { owner: 'data-team', ... }
-   * ```
-   */
-  async createNamespace(id, metadata) {
-    return this.namespaceOps.createNamespace(id, metadata);
-  }
-  /**
-   * Drops a namespace from the catalog.
-   *
-   * The namespace must be empty (contain no tables) before it can be dropped.
-   *
-   * @param id - Namespace identifier to drop
-   *
-   * @example
-   * ```typescript
-   * await catalog.dropNamespace({ namespace: ['analytics'] });
-   * ```
-   */
-  async dropNamespace(id) {
-    await this.namespaceOps.dropNamespace(id);
-  }
-  /**
-   * Loads metadata for a namespace.
-   *
-   * @param id - Namespace identifier to load
-   * @returns Namespace metadata including properties
-   *
-   * @example
-   * ```typescript
-   * const metadata = await catalog.loadNamespaceMetadata({ namespace: ['analytics'] });
-   * console.log(metadata.properties);
-   * ```
-   */
-  async loadNamespaceMetadata(id) {
-    return this.namespaceOps.loadNamespaceMetadata(id);
-  }
-  /**
-   * Lists all tables in a namespace.
-   *
-   * @param namespace - Namespace identifier to list tables from
-   * @returns Array of table identifiers
-   *
-   * @example
-   * ```typescript
-   * const tables = await catalog.listTables({ namespace: ['analytics'] });
-   * console.log(tables); // [{ namespace: ['analytics'], name: 'events' }, ...]
-   * ```
-   */
-  async listTables(namespace) {
-    return this.tableOps.listTables(namespace);
-  }
-  /**
-   * Creates a new table in the catalog.
-   *
-   * @param namespace - Namespace to create the table in
-   * @param request - Table creation request including name, schema, partition spec, etc.
-   * @returns Table metadata for the created table
-   *
-   * @example
-   * ```typescript
-   * const metadata = await catalog.createTable(
-   *   { namespace: ['analytics'] },
-   *   {
-   *     name: 'events',
-   *     schema: {
-   *       type: 'struct',
-   *       fields: [
-   *         { id: 1, name: 'id', type: 'long', required: true },
-   *         { id: 2, name: 'timestamp', type: 'timestamp', required: true }
-   *       ],
-   *       'schema-id': 0
-   *     },
-   *     'partition-spec': {
-   *       'spec-id': 0,
-   *       fields: [
-   *         { source_id: 2, field_id: 1000, name: 'ts_day', transform: 'day' }
-   *       ]
-   *     }
-   *   }
-   * );
-   * ```
-   */
-  async createTable(namespace, request) {
-    return this.tableOps.createTable(namespace, request);
-  }
-  /**
-   * Updates an existing table's metadata.
-   *
-   * Can update the schema, partition spec, or properties of a table.
-   *
-   * @param id - Table identifier to update
-   * @param request - Update request with fields to modify
-   * @returns Response containing the metadata location and updated table metadata
-   *
-   * @example
-   * ```typescript
-   * const response = await catalog.updateTable(
-   *   { namespace: ['analytics'], name: 'events' },
-   *   {
-   *     properties: { 'read.split.target-size': '134217728' }
-   *   }
-   * );
-   * console.log(response['metadata-location']); // s3://...
-   * console.log(response.metadata); // TableMetadata object
-   * ```
-   */
-  async updateTable(id, request) {
-    return this.tableOps.updateTable(id, request);
-  }
-  /**
-   * Drops a table from the catalog.
-   *
-   * @param id - Table identifier to drop
-   *
-   * @example
-   * ```typescript
-   * await catalog.dropTable({ namespace: ['analytics'], name: 'events' });
-   * ```
-   */
-  async dropTable(id, options) {
-    await this.tableOps.dropTable(id, options);
-  }
-  /**
-   * Loads metadata for a table.
-   *
-   * @param id - Table identifier to load
-   * @returns Table metadata including schema, partition spec, location, etc.
-   *
-   * @example
-   * ```typescript
-   * const metadata = await catalog.loadTable({ namespace: ['analytics'], name: 'events' });
-   * console.log(metadata.schema);
-   * console.log(metadata.location);
-   * ```
-   */
-  async loadTable(id) {
-    return this.tableOps.loadTable(id);
-  }
-  /**
-   * Checks if a namespace exists in the catalog.
-   *
-   * @param id - Namespace identifier to check
-   * @returns True if the namespace exists, false otherwise
-   *
-   * @example
-   * ```typescript
-   * const exists = await catalog.namespaceExists({ namespace: ['analytics'] });
-   * console.log(exists); // true or false
-   * ```
-   */
-  async namespaceExists(id) {
-    return this.namespaceOps.namespaceExists(id);
-  }
-  /**
-   * Checks if a table exists in the catalog.
-   *
-   * @param id - Table identifier to check
-   * @returns True if the table exists, false otherwise
-   *
-   * @example
-   * ```typescript
-   * const exists = await catalog.tableExists({ namespace: ['analytics'], name: 'events' });
-   * console.log(exists); // true or false
-   * ```
-   */
-  async tableExists(id) {
-    return this.tableOps.tableExists(id);
-  }
-  /**
-   * Creates a namespace if it does not exist.
-   *
-   * If the namespace already exists, returns void. If created, returns the response.
-   *
-   * @param id - Namespace identifier to create
-   * @param metadata - Optional metadata properties for the namespace
-   * @returns Response containing the created namespace and its properties, or void if it already exists
-   *
-   * @example
-   * ```typescript
-   * const response = await catalog.createNamespaceIfNotExists(
-   *   { namespace: ['analytics'] },
-   *   { properties: { owner: 'data-team' } }
-   * );
-   * if (response) {
-   *   console.log('Created:', response.namespace);
-   * } else {
-   *   console.log('Already exists');
-   * }
-   * ```
-   */
-  async createNamespaceIfNotExists(id, metadata) {
-    return this.namespaceOps.createNamespaceIfNotExists(id, metadata);
-  }
-  /**
-   * Creates a table if it does not exist.
-   *
-   * If the table already exists, returns its metadata instead.
-   *
-   * @param namespace - Namespace to create the table in
-   * @param request - Table creation request including name, schema, partition spec, etc.
-   * @returns Table metadata for the created or existing table
-   *
-   * @example
-   * ```typescript
-   * const metadata = await catalog.createTableIfNotExists(
-   *   { namespace: ['analytics'] },
-   *   {
-   *     name: 'events',
-   *     schema: {
-   *       type: 'struct',
-   *       fields: [
-   *         { id: 1, name: 'id', type: 'long', required: true },
-   *         { id: 2, name: 'timestamp', type: 'timestamp', required: true }
-   *       ],
-   *       'schema-id': 0
-   *     }
-   *   }
-   * );
-   * ```
-   */
-  async createTableIfNotExists(namespace, request) {
-    return this.tableOps.createTableIfNotExists(namespace, request);
-  }
-};
-
-// ../../node_modules/.pnpm/@supabase+storage-js@2.107.0/node_modules/@supabase/storage-js/dist/index.mjs
-function _typeof2(o) {
-  "@babel/helpers - typeof";
-  return _typeof2 = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function(o$1) {
-    return typeof o$1;
-  } : function(o$1) {
-    return o$1 && "function" == typeof Symbol && o$1.constructor === Symbol && o$1 !== Symbol.prototype ? "symbol" : typeof o$1;
-  }, _typeof2(o);
-}
-function toPrimitive2(t, r) {
-  if ("object" != _typeof2(t) || !t) return t;
-  var e = t[Symbol.toPrimitive];
-  if (void 0 !== e) {
-    var i = e.call(t, r || "default");
-    if ("object" != _typeof2(i)) return i;
-    throw new TypeError("@@toPrimitive must return a primitive value.");
-  }
-  return ("string" === r ? String : Number)(t);
-}
-function toPropertyKey2(t) {
-  var i = toPrimitive2(t, "string");
-  return "symbol" == _typeof2(i) ? i : i + "";
-}
-function _defineProperty2(e, r, t) {
-  return (r = toPropertyKey2(r)) in e ? Object.defineProperty(e, r, {
-    value: t,
-    enumerable: true,
-    configurable: true,
-    writable: true
-  }) : e[r] = t, e;
-}
-function ownKeys3(e, r) {
-  var t = Object.keys(e);
-  if (Object.getOwnPropertySymbols) {
-    var o = Object.getOwnPropertySymbols(e);
-    r && (o = o.filter(function(r$1) {
-      return Object.getOwnPropertyDescriptor(e, r$1).enumerable;
-    })), t.push.apply(t, o);
-  }
-  return t;
-}
-function _objectSpread22(e) {
-  for (var r = 1; r < arguments.length; r++) {
-    var t = null != arguments[r] ? arguments[r] : {};
-    r % 2 ? ownKeys3(Object(t), true).forEach(function(r$1) {
-      _defineProperty2(e, r$1, t[r$1]);
-    }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys3(Object(t)).forEach(function(r$1) {
-      Object.defineProperty(e, r$1, Object.getOwnPropertyDescriptor(t, r$1));
-    });
-  }
-  return e;
-}
-var StorageError = class extends Error {
-  constructor(message, namespace = "storage", status, statusCode) {
-    super(message);
-    this.__isStorageError = true;
-    this.namespace = namespace;
-    this.name = namespace === "vectors" ? "StorageVectorsError" : "StorageError";
-    this.status = status;
-    this.statusCode = statusCode;
-  }
-  toJSON() {
-    return {
-      name: this.name,
-      message: this.message,
-      status: this.status,
-      statusCode: this.statusCode
-    };
-  }
-};
-function isStorageError(error) {
-  return typeof error === "object" && error !== null && "__isStorageError" in error;
-}
-var StorageApiError = class extends StorageError {
-  constructor(message, status, statusCode, namespace = "storage") {
-    super(message, namespace, status, statusCode);
-    this.name = namespace === "vectors" ? "StorageVectorsApiError" : "StorageApiError";
-    this.status = status;
-    this.statusCode = statusCode;
-  }
-  toJSON() {
-    return _objectSpread22({}, super.toJSON());
-  }
-};
-var StorageUnknownError = class extends StorageError {
-  constructor(message, originalError, namespace = "storage") {
-    super(message, namespace);
-    this.name = namespace === "vectors" ? "StorageVectorsUnknownError" : "StorageUnknownError";
-    this.originalError = originalError;
-  }
-};
-function setHeader(headers, name, value) {
-  const result = _objectSpread22({}, headers);
-  const nameLower = name.toLowerCase();
-  for (const key of Object.keys(result)) if (key.toLowerCase() === nameLower) delete result[key];
-  result[nameLower] = value;
-  return result;
-}
-function normalizeHeaders(headers) {
-  const result = {};
-  for (const [key, value] of Object.entries(headers)) result[key.toLowerCase()] = value;
-  return result;
-}
-var resolveFetch = (customFetch) => {
-  if (customFetch) return (...args) => customFetch(...args);
-  return (...args) => fetch(...args);
-};
-var isPlainObject = (value) => {
-  if (typeof value !== "object" || value === null) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return (prototype === null || prototype === Object.prototype || Object.getPrototypeOf(prototype) === null) && !(Symbol.toStringTag in value) && !(Symbol.iterator in value);
-};
-var recursiveToCamel = (item) => {
-  if (Array.isArray(item)) return item.map((el) => recursiveToCamel(el));
-  else if (typeof item === "function" || item !== Object(item)) return item;
-  const result = {};
-  Object.entries(item).forEach(([key, value]) => {
-    const newKey = key.replace(/([-_][a-z])/gi, (c) => c.toUpperCase().replace(/[-_]/g, ""));
-    result[newKey] = recursiveToCamel(value);
-  });
-  return result;
-};
-var isValidBucketName = (bucketName) => {
-  if (!bucketName || typeof bucketName !== "string") return false;
-  if (bucketName.length === 0 || bucketName.length > 100) return false;
-  if (bucketName.trim() !== bucketName) return false;
-  if (bucketName.includes("/") || bucketName.includes("\\")) return false;
-  return /^[\w!.\*'() &$@=;:+,?-]+$/.test(bucketName);
-};
-var _getErrorMessage = (err) => {
-  if (typeof err === "object" && err !== null) {
-    const e = err;
-    if (typeof e.msg === "string") return e.msg;
-    if (typeof e.message === "string") return e.message;
-    if (typeof e.error_description === "string") return e.error_description;
-    if (typeof e.error === "string") return e.error;
-    if (typeof e.error === "object" && e.error !== null) {
-      const nested = e.error;
-      if (typeof nested.message === "string") return nested.message;
-    }
-  }
-  return JSON.stringify(err);
-};
-var handleError = async (error, reject, options, namespace) => {
-  if (error !== null && typeof error === "object" && "json" in error && typeof error.json === "function") {
-    const responseError = error;
-    let status = parseInt(String(responseError.status), 10);
-    if (!Number.isFinite(status)) status = 500;
-    responseError.json().then((err) => {
-      const statusCode = (err === null || err === void 0 ? void 0 : err.statusCode) || (err === null || err === void 0 ? void 0 : err.code) || status + "";
-      reject(new StorageApiError(_getErrorMessage(err), status, statusCode, namespace));
-    }).catch(() => {
-      const statusCode = status + "";
-      reject(new StorageApiError(responseError.statusText || `HTTP ${status} error`, status, statusCode, namespace));
-    });
-  } else reject(new StorageUnknownError(_getErrorMessage(error), error, namespace));
-};
-var _getRequestParams = (method, options, parameters, body) => {
-  const params = {
-    method,
-    headers: (options === null || options === void 0 ? void 0 : options.headers) || {}
-  };
-  if (method === "GET" || method === "HEAD" || !body) return _objectSpread22(_objectSpread22({}, params), parameters);
-  if (isPlainObject(body)) {
-    var _contentType;
-    const headers = (options === null || options === void 0 ? void 0 : options.headers) || {};
-    let contentType;
-    for (const [key, value] of Object.entries(headers)) if (key.toLowerCase() === "content-type") contentType = value;
-    params.headers = setHeader(headers, "Content-Type", (_contentType = contentType) !== null && _contentType !== void 0 ? _contentType : "application/json");
-    params.body = JSON.stringify(body);
-  } else params.body = body;
-  if (options === null || options === void 0 ? void 0 : options.duplex) params.duplex = options.duplex;
-  return _objectSpread22(_objectSpread22({}, params), parameters);
-};
-async function _handleRequest(fetcher, method, url, options, parameters, body, namespace) {
-  return new Promise((resolve, reject) => {
-    fetcher(url, _getRequestParams(method, options, parameters, body)).then((result) => {
-      if (!result.ok) throw result;
-      if (options === null || options === void 0 ? void 0 : options.noResolveJson) return result;
-      if (namespace === "vectors") {
-        const contentType = result.headers.get("content-type");
-        if (result.headers.get("content-length") === "0" || result.status === 204) return {};
-        if (!contentType || !contentType.includes("application/json")) return {};
-      }
-      return result.json();
-    }).then((data) => resolve(data)).catch((error) => handleError(error, reject, options, namespace));
-  });
-}
-function createFetchApi(namespace = "storage") {
-  return {
-    get: async (fetcher, url, options, parameters) => {
-      return _handleRequest(fetcher, "GET", url, options, parameters, void 0, namespace);
-    },
-    post: async (fetcher, url, body, options, parameters) => {
-      return _handleRequest(fetcher, "POST", url, options, parameters, body, namespace);
-    },
-    put: async (fetcher, url, body, options, parameters) => {
-      return _handleRequest(fetcher, "PUT", url, options, parameters, body, namespace);
-    },
-    head: async (fetcher, url, options, parameters) => {
-      return _handleRequest(fetcher, "HEAD", url, _objectSpread22(_objectSpread22({}, options), {}, { noResolveJson: true }), parameters, void 0, namespace);
-    },
-    remove: async (fetcher, url, body, options, parameters) => {
-      return _handleRequest(fetcher, "DELETE", url, options, parameters, body, namespace);
-    }
-  };
-}
-var defaultApi = createFetchApi("storage");
-var { get, post, put, head, remove } = defaultApi;
-var vectorsApi = createFetchApi("vectors");
-var BaseApiClient = class {
-  /**
-  * Creates a new BaseApiClient instance
-  * @param url - Base URL for API requests
-  * @param headers - Default headers for API requests
-  * @param fetch - Optional custom fetch implementation
-  * @param namespace - Error namespace ('storage' or 'vectors')
-  */
-  constructor(url, headers = {}, fetch$1, namespace = "storage") {
-    this.shouldThrowOnError = false;
-    this.url = url;
-    this.headers = normalizeHeaders(headers);
-    this.fetch = resolveFetch(fetch$1);
-    this.namespace = namespace;
-  }
-  /**
-  * Enable throwing errors instead of returning them.
-  * When enabled, errors are thrown instead of returned in { data, error } format.
-  *
-  * @returns this - For method chaining
-  */
-  throwOnError() {
-    this.shouldThrowOnError = true;
-    return this;
-  }
-  /**
-  * Set an HTTP header for the request.
-  * Creates a shallow copy of headers to avoid mutating shared state.
-  *
-  * @param name - Header name
-  * @param value - Header value
-  * @returns this - For method chaining
-  */
-  setHeader(name, value) {
-    this.headers = setHeader(this.headers, name, value);
-    return this;
-  }
-  /**
-  * Handles API operation with standardized error handling
-  * Eliminates repetitive try-catch blocks across all API methods
-  *
-  * This wrapper:
-  * 1. Executes the operation
-  * 2. Returns { data, error: null } on success
-  * 3. Returns { data: null, error } on failure (if shouldThrowOnError is false)
-  * 4. Throws error on failure (if shouldThrowOnError is true)
-  *
-  * @typeParam T - The expected data type from the operation
-  * @param operation - Async function that performs the API call
-  * @returns Promise with { data, error } tuple
-  *
-  * @example Handling an operation
-  * ```typescript
-  * async listBuckets() {
-  *   return this.handleOperation(async () => {
-  *     return await get(this.fetch, `${this.url}/bucket`, {
-  *       headers: this.headers,
-  *     })
-  *   })
-  * }
-  * ```
-  */
-  async handleOperation(operation) {
-    var _this = this;
-    try {
-      return {
-        data: await operation(),
-        error: null
-      };
-    } catch (error) {
-      if (_this.shouldThrowOnError) throw error;
-      if (isStorageError(error)) return {
-        data: null,
-        error
-      };
-      throw error;
-    }
-  }
-};
-var _Symbol$toStringTag$1;
-_Symbol$toStringTag$1 = Symbol.toStringTag;
-var StreamDownloadBuilder = class {
-  constructor(downloadFn, shouldThrowOnError) {
-    this.downloadFn = downloadFn;
-    this.shouldThrowOnError = shouldThrowOnError;
-    this[_Symbol$toStringTag$1] = "StreamDownloadBuilder";
-    this.promise = null;
-  }
-  then(onfulfilled, onrejected) {
-    return this.getPromise().then(onfulfilled, onrejected);
-  }
-  catch(onrejected) {
-    return this.getPromise().catch(onrejected);
-  }
-  finally(onfinally) {
-    return this.getPromise().finally(onfinally);
-  }
-  getPromise() {
-    if (!this.promise) this.promise = this.execute();
-    return this.promise;
-  }
-  async execute() {
-    var _this = this;
-    try {
-      return {
-        data: (await _this.downloadFn()).body,
-        error: null
-      };
-    } catch (error) {
-      if (_this.shouldThrowOnError) throw error;
-      if (isStorageError(error)) return {
-        data: null,
-        error
-      };
-      throw error;
-    }
-  }
-};
-var _Symbol$toStringTag;
-_Symbol$toStringTag = Symbol.toStringTag;
-var BlobDownloadBuilder = class {
-  constructor(downloadFn, shouldThrowOnError) {
-    this.downloadFn = downloadFn;
-    this.shouldThrowOnError = shouldThrowOnError;
-    this[_Symbol$toStringTag] = "BlobDownloadBuilder";
-    this.promise = null;
-  }
-  asStream() {
-    return new StreamDownloadBuilder(this.downloadFn, this.shouldThrowOnError);
-  }
-  then(onfulfilled, onrejected) {
-    return this.getPromise().then(onfulfilled, onrejected);
-  }
-  catch(onrejected) {
-    return this.getPromise().catch(onrejected);
-  }
-  finally(onfinally) {
-    return this.getPromise().finally(onfinally);
-  }
-  getPromise() {
-    if (!this.promise) this.promise = this.execute();
-    return this.promise;
-  }
-  async execute() {
-    var _this = this;
-    try {
-      return {
-        data: await (await _this.downloadFn()).blob(),
-        error: null
-      };
-    } catch (error) {
-      if (_this.shouldThrowOnError) throw error;
-      if (isStorageError(error)) return {
-        data: null,
-        error
-      };
-      throw error;
-    }
-  }
-};
-var DEFAULT_SEARCH_OPTIONS = {
-  limit: 100,
-  offset: 0,
-  sortBy: {
-    column: "name",
-    order: "asc"
-  }
-};
-var DEFAULT_FILE_OPTIONS = {
-  cacheControl: "3600",
-  contentType: "text/plain;charset=UTF-8",
-  upsert: false
-};
-var StorageFileApi = class extends BaseApiClient {
-  constructor(url, headers = {}, bucketId, fetch$1) {
-    super(url, headers, fetch$1, "storage");
-    this.bucketId = bucketId;
-  }
-  /**
-  * Uploads a file to an existing bucket or replaces an existing file at the specified path with a new one.
-  *
-  * @param method HTTP method.
-  * @param path The relative file path. Should be of the format `folder/subfolder/filename.png`. The bucket must already exist before attempting to upload.
-  * @param fileBody The body of the file to be stored in the bucket.
-  */
-  async uploadOrUpdate(method, path, fileBody, fileOptions) {
-    var _this = this;
-    return _this.handleOperation(async () => {
-      let body;
-      const options = _objectSpread22(_objectSpread22({}, DEFAULT_FILE_OPTIONS), fileOptions);
-      let headers = _objectSpread22(_objectSpread22({}, _this.headers), method === "POST" && { "x-upsert": String(options.upsert) });
-      const metadata = options.metadata;
-      if (typeof Blob !== "undefined" && fileBody instanceof Blob) {
-        body = new FormData();
-        body.append("cacheControl", options.cacheControl);
-        if (metadata) body.append("metadata", _this.encodeMetadata(metadata));
-        body.append("", fileBody);
-      } else if (typeof FormData !== "undefined" && fileBody instanceof FormData) {
-        body = fileBody;
-        if (!body.has("cacheControl")) body.append("cacheControl", options.cacheControl);
-        if (metadata && !body.has("metadata")) body.append("metadata", _this.encodeMetadata(metadata));
-      } else {
-        body = fileBody;
-        headers["cache-control"] = `max-age=${options.cacheControl}`;
-        headers["content-type"] = options.contentType;
-        if (metadata) headers["x-metadata"] = _this.toBase64(_this.encodeMetadata(metadata));
-        if ((typeof ReadableStream !== "undefined" && body instanceof ReadableStream || body && typeof body === "object" && "pipe" in body && typeof body.pipe === "function") && !options.duplex) options.duplex = "half";
-      }
-      if (fileOptions === null || fileOptions === void 0 ? void 0 : fileOptions.headers) for (const [key, value] of Object.entries(fileOptions.headers)) headers = setHeader(headers, key, value);
-      const cleanPath = _this._removeEmptyFolders(path);
-      const _path = _this._getFinalPath(cleanPath);
-      const data = await (method == "PUT" ? put : post)(_this.fetch, `${_this.url}/object/${_path}`, body, _objectSpread22({ headers }, (options === null || options === void 0 ? void 0 : options.duplex) ? { duplex: options.duplex } : {}));
-      return {
-        path: cleanPath,
-        id: data.Id,
-        fullPath: data.Key
-      };
-    });
-  }
-  /**
-  * Uploads a file to an existing bucket.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param path The file path, including the file name. Should be of the format `folder/subfolder/filename.png`. The bucket must already exist before attempting to upload.
-  * @param fileBody The body of the file to be stored in the bucket.
-  * @param fileOptions Optional file upload options including cacheControl, contentType, upsert, and metadata.
-  * @returns Promise with response containing file path, id, and fullPath or error
-  *
-  * @example Upload file
-  * ```js
-  * const avatarFile = event.target.files[0]
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .upload('public/avatar1.png', avatarFile, {
-  *     cacheControl: '3600',
-  *     upsert: false
-  *   })
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": {
-  *     "path": "public/avatar1.png",
-  *     "fullPath": "avatars/public/avatar1.png"
-  *   },
-  *   "error": null
-  * }
-  * ```
-  *
-  * @example Upload file using `ArrayBuffer` from base64 file data
-  * ```js
-  * import { decode } from 'base64-arraybuffer'
-  *
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .upload('public/avatar1.png', decode('base64FileData'), {
-  *     contentType: 'image/png'
-  *   })
-  * ```
-  *
-  * @example Handling errors
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .upload('public/avatar1.png', avatarFile)
-  *
-  * if (error) {
-  *   // Log the full error so fields like `statusCode` and `error` (the
-  *   // Storage error name, e.g. "Duplicate") aren't hidden behind `error.message`.
-  *   console.error(error)
-  *   return
-  * }
-  * ```
-  *
-  * @remarks
-  * - RLS policy permissions required:
-  *   - `buckets` table permissions: none
-  *   - `objects` table permissions: only `insert` when you are uploading new files and `select`, `insert` and `update` when you are upserting files
-  * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
-  * - For React Native, using either `Blob`, `File` or `FormData` does not work as intended. Upload file using `ArrayBuffer` from base64 file data instead, see example below.
-  */
-  async upload(path, fileBody, fileOptions) {
-    return this.uploadOrUpdate("POST", path, fileBody, fileOptions);
-  }
-  /**
-  * Upload a file with a token generated from `createSignedUploadUrl`.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param path The file path, including the file name. Should be of the format `folder/subfolder/filename.png`. The bucket must already exist before attempting to upload.
-  * @param token The token generated from `createSignedUploadUrl`
-  * @param fileBody The body of the file to be stored in the bucket.
-  * @param fileOptions HTTP headers (cacheControl, contentType, etc.).
-  * **Note:** The `upsert` option has no effect here. To enable upsert behavior,
-  * pass `{ upsert: true }` when calling `createSignedUploadUrl()` instead.
-  * @returns Promise with response containing file path and fullPath or error
-  *
-  * @example Upload to a signed URL
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .uploadToSignedUrl('folder/cat.jpg', 'token-from-createSignedUploadUrl', file)
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": {
-  *     "path": "folder/cat.jpg",
-  *     "fullPath": "avatars/folder/cat.jpg"
-  *   },
-  *   "error": null
-  * }
-  * ```
-  *
-  * @remarks
-  * - RLS policy permissions required:
-  *   - `buckets` table permissions: none
-  *   - `objects` table permissions: none
-  * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
-  */
-  async uploadToSignedUrl(path, token, fileBody, fileOptions) {
-    var _this3 = this;
-    const cleanPath = _this3._removeEmptyFolders(path);
-    const _path = _this3._getFinalPath(cleanPath);
-    const url = new URL(_this3.url + `/object/upload/sign/${_path}`);
-    url.searchParams.set("token", token);
-    return _this3.handleOperation(async () => {
-      let body;
-      const options = _objectSpread22(_objectSpread22({}, DEFAULT_FILE_OPTIONS), fileOptions);
-      let headers = _objectSpread22(_objectSpread22({}, _this3.headers), { "x-upsert": String(options.upsert) });
-      const metadata = options.metadata;
-      if (typeof Blob !== "undefined" && fileBody instanceof Blob) {
-        body = new FormData();
-        body.append("cacheControl", options.cacheControl);
-        if (metadata) body.append("metadata", _this3.encodeMetadata(metadata));
-        body.append("", fileBody);
-      } else if (typeof FormData !== "undefined" && fileBody instanceof FormData) {
-        body = fileBody;
-        if (!body.has("cacheControl")) body.append("cacheControl", options.cacheControl);
-        if (metadata && !body.has("metadata")) body.append("metadata", _this3.encodeMetadata(metadata));
-      } else {
-        body = fileBody;
-        headers["cache-control"] = `max-age=${options.cacheControl}`;
-        headers["content-type"] = options.contentType;
-        if (metadata) headers["x-metadata"] = _this3.toBase64(_this3.encodeMetadata(metadata));
-        if ((typeof ReadableStream !== "undefined" && body instanceof ReadableStream || body && typeof body === "object" && "pipe" in body && typeof body.pipe === "function") && !options.duplex) options.duplex = "half";
-      }
-      if (fileOptions === null || fileOptions === void 0 ? void 0 : fileOptions.headers) for (const [key, value] of Object.entries(fileOptions.headers)) headers = setHeader(headers, key, value);
-      return {
-        path: cleanPath,
-        fullPath: (await put(_this3.fetch, url.toString(), body, _objectSpread22({ headers }, (options === null || options === void 0 ? void 0 : options.duplex) ? { duplex: options.duplex } : {}))).Key
-      };
-    });
-  }
-  /**
-  * Creates a signed upload URL.
-  * Signed upload URLs can be used to upload files to the bucket without further authentication.
-  * They are valid for 2 hours.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param path The file path, including the current file name. For example `folder/image.png`.
-  * @param options.upsert If set to true, allows the file to be overwritten if it already exists.
-  * @returns Promise with response containing signed upload URL, token, and path or error
-  *
-  * @example Create Signed Upload URL
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .createSignedUploadUrl('folder/cat.jpg')
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": {
-  *     "signedUrl": "https://example.supabase.co/storage/v1/object/upload/sign/avatars/folder/cat.jpg?token=<TOKEN>",
-  *     "path": "folder/cat.jpg",
-  *     "token": "<TOKEN>"
-  *   },
-  *   "error": null
-  * }
-  * ```
-  *
-  * @remarks
-  * - RLS policy permissions required:
-  *   - `buckets` table permissions: none
-  *   - `objects` table permissions: `insert`
-  * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
-  */
-  async createSignedUploadUrl(path, options) {
-    var _this4 = this;
-    return _this4.handleOperation(async () => {
-      let _path = _this4._getFinalPath(path);
-      const headers = _objectSpread22({}, _this4.headers);
-      if (options === null || options === void 0 ? void 0 : options.upsert) headers["x-upsert"] = "true";
-      const data = await post(_this4.fetch, `${_this4.url}/object/upload/sign/${_path}`, {}, { headers });
-      const url = new URL(_this4.url + data.url);
-      const token = url.searchParams.get("token");
-      if (!token) throw new StorageError("No token returned by API");
-      return {
-        signedUrl: url.toString(),
-        path,
-        token
-      };
-    });
-  }
-  /**
-  * Replaces an existing file at the specified path with a new one.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param path The relative file path. Should be of the format `folder/subfolder/filename.png`. The bucket must already exist before attempting to update.
-  * @param fileBody The body of the file to be stored in the bucket.
-  * @param fileOptions Optional file upload options including cacheControl, contentType, and metadata.
-  * **Note:** The `upsert` option has no effect here. `update()` always replaces the
-  * file at the given path, so the `x-upsert` header is not sent. To control upsert
-  * behavior, use `upload()` instead.
-  * @returns Promise with response containing file path, id, and fullPath or error
-  *
-  * @example Update file
-  * ```js
-  * const avatarFile = event.target.files[0]
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .update('public/avatar1.png', avatarFile, {
-  *     cacheControl: '3600'
-  *   })
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": {
-  *     "path": "public/avatar1.png",
-  *     "fullPath": "avatars/public/avatar1.png"
-  *   },
-  *   "error": null
-  * }
-  * ```
-  *
-  * @example Update file using `ArrayBuffer` from base64 file data
-  * ```js
-  * import {decode} from 'base64-arraybuffer'
-  *
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .update('public/avatar1.png', decode('base64FileData'), {
-  *     contentType: 'image/png'
-  *   })
-  * ```
-  *
-  * @remarks
-  * - RLS policy permissions required:
-  *   - `buckets` table permissions: none
-  *   - `objects` table permissions: `update` and `select`
-  * - `update()` always replaces the file at the given path regardless of the `upsert` option.
-  * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
-  * - For React Native, using either `Blob`, `File` or `FormData` does not work as intended. Update file using `ArrayBuffer` from base64 file data instead, see example below.
-  */
-  async update(path, fileBody, fileOptions) {
-    return this.uploadOrUpdate("PUT", path, fileBody, fileOptions);
-  }
-  /**
-  * Moves an existing file to a new path in the same bucket.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param fromPath The original file path, including the current file name. For example `folder/image.png`.
-  * @param toPath The new file path, including the new file name. For example `folder/image-new.png`.
-  * @param options The destination options.
-  * @returns Promise with response containing success message or error
-  *
-  * @example Move file
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .move('public/avatar1.png', 'private/avatar2.png')
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": {
-  *     "message": "Successfully moved"
-  *   },
-  *   "error": null
-  * }
-  * ```
-  *
-  * @remarks
-  * - RLS policy permissions required:
-  *   - `buckets` table permissions: none
-  *   - `objects` table permissions: `update` and `select`
-  * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
-  */
-  async move(fromPath, toPath, options) {
-    var _this6 = this;
-    return _this6.handleOperation(async () => {
-      return await post(_this6.fetch, `${_this6.url}/object/move`, {
-        bucketId: _this6.bucketId,
-        sourceKey: fromPath,
-        destinationKey: toPath,
-        destinationBucket: options === null || options === void 0 ? void 0 : options.destinationBucket
-      }, { headers: _this6.headers });
-    });
-  }
-  /**
-  * Copies an existing file to a new path in the same bucket.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param fromPath The original file path, including the current file name. For example `folder/image.png`.
-  * @param toPath The new file path, including the new file name. For example `folder/image-copy.png`.
-  * @param options The destination options.
-  * @returns Promise with response containing copied file path or error
-  *
-  * @example Copy file
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .copy('public/avatar1.png', 'private/avatar2.png')
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": {
-  *     "path": "avatars/private/avatar2.png"
-  *   },
-  *   "error": null
-  * }
-  * ```
-  *
-  * @remarks
-  * - RLS policy permissions required:
-  *   - `buckets` table permissions: none
-  *   - `objects` table permissions: `insert` and `select`
-  * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
-  */
-  async copy(fromPath, toPath, options) {
-    var _this7 = this;
-    return _this7.handleOperation(async () => {
-      return { path: (await post(_this7.fetch, `${_this7.url}/object/copy`, {
-        bucketId: _this7.bucketId,
-        sourceKey: fromPath,
-        destinationKey: toPath,
-        destinationBucket: options === null || options === void 0 ? void 0 : options.destinationBucket
-      }, { headers: _this7.headers })).Key };
-    });
-  }
-  /**
-  * Creates a signed URL. Use a signed URL to share a file for a fixed amount of time.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param path The file path, including the current file name. For example `folder/image.png`.
-  * @param expiresIn The number of seconds until the signed URL expires. For example, `60` for a URL which is valid for one minute.
-  * @param options.download triggers the file as a download if set to true. Set this parameter as the name of the file if you want to trigger the download with a different filename.
-  * @param options.transform Transform the asset before serving it to the client.
-  * @param options.cacheNonce Append a cache nonce parameter to the URL to invalidate the cache.
-  * @returns Promise with response containing signed URL or error
-  *
-  * @example Create Signed URL
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .createSignedUrl('folder/avatar1.png', 60)
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": {
-  *     "signedUrl": "https://example.supabase.co/storage/v1/object/sign/avatars/folder/avatar1.png?token=<TOKEN>"
-  *   },
-  *   "error": null
-  * }
-  * ```
-  *
-  * @example Create a signed URL for an asset with transformations
-  * ```js
-  * const { data } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .createSignedUrl('folder/avatar1.png', 60, {
-  *     transform: {
-  *       width: 100,
-  *       height: 100,
-  *     }
-  *   })
-  * ```
-  *
-  * @example Create a signed URL which triggers the download of the asset
-  * ```js
-  * const { data } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .createSignedUrl('folder/avatar1.png', 60, {
-  *     download: true,
-  *   })
-  * ```
-  *
-  * @remarks
-  * - RLS policy permissions required:
-  *   - `buckets` table permissions: none
-  *   - `objects` table permissions: `select`
-  * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
-  */
-  async createSignedUrl(path, expiresIn, options) {
-    var _this8 = this;
-    return _this8.handleOperation(async () => {
-      let _path = _this8._getFinalPath(path);
-      const hasTransform = typeof (options === null || options === void 0 ? void 0 : options.transform) === "object" && options.transform !== null && Object.keys(options.transform).length > 0;
-      let data = await post(_this8.fetch, `${_this8.url}/object/sign/${_path}`, _objectSpread22({ expiresIn }, hasTransform ? { transform: options.transform } : {}), { headers: _this8.headers });
-      const query = new URLSearchParams();
-      if (options === null || options === void 0 ? void 0 : options.download) query.set("download", options.download === true ? "" : options.download);
-      if ((options === null || options === void 0 ? void 0 : options.cacheNonce) != null) query.set("cacheNonce", String(options.cacheNonce));
-      const queryString = query.toString();
-      return { signedUrl: encodeURI(`${_this8.url}${data.signedURL}${queryString ? `&${queryString}` : ""}`) };
-    });
-  }
-  /**
-  * Creates multiple signed URLs. Use a signed URL to share a file for a fixed amount of time.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param paths The file paths to be downloaded, including the current file names. For example `['folder/image.png', 'folder2/image2.png']`.
-  * @param expiresIn The number of seconds until the signed URLs expire. For example, `60` for URLs which are valid for one minute.
-  * @param options.download triggers the file as a download if set to true. Set this parameter as the name of the file if you want to trigger the download with a different filename.
-  * @param options.cacheNonce Append a cache nonce parameter to the URL to invalidate the cache.
-  * @returns Promise with response containing array of objects with signedUrl, path, and error or error
-  *
-  * @example Create Signed URLs
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .createSignedUrls(['folder/avatar1.png', 'folder/avatar2.png'], 60)
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "error": null,
-  *       "path": "folder/avatar1.png",
-  *       "signedURL": "/object/sign/avatars/folder/avatar1.png?token=<TOKEN>",
-  *       "signedUrl": "https://example.supabase.co/storage/v1/object/sign/avatars/folder/avatar1.png?token=<TOKEN>"
-  *     },
-  *     {
-  *       "error": null,
-  *       "path": "folder/avatar2.png",
-  *       "signedURL": "/object/sign/avatars/folder/avatar2.png?token=<TOKEN>",
-  *       "signedUrl": "https://example.supabase.co/storage/v1/object/sign/avatars/folder/avatar2.png?token=<TOKEN>"
-  *     }
-  *   ],
-  *   "error": null
-  * }
-  * ```
-  *
-  * @remarks
-  * - RLS policy permissions required:
-  *   - `buckets` table permissions: none
-  *   - `objects` table permissions: `select`
-  * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
-  */
-  async createSignedUrls(paths, expiresIn, options) {
-    var _this9 = this;
-    return _this9.handleOperation(async () => {
-      const data = await post(_this9.fetch, `${_this9.url}/object/sign/${_this9.bucketId}`, {
-        expiresIn,
-        paths
-      }, { headers: _this9.headers });
-      const query = new URLSearchParams();
-      if (options === null || options === void 0 ? void 0 : options.download) query.set("download", options.download === true ? "" : options.download);
-      if ((options === null || options === void 0 ? void 0 : options.cacheNonce) != null) query.set("cacheNonce", String(options.cacheNonce));
-      const queryString = query.toString();
-      return data.map((datum) => _objectSpread22(_objectSpread22({}, datum), {}, { signedUrl: datum.signedURL ? encodeURI(`${_this9.url}${datum.signedURL}${queryString ? `&${queryString}` : ""}`) : null }));
-    });
-  }
-  /**
-  * Downloads a file from a private bucket. For public buckets, make a request to the URL returned from `getPublicUrl` instead.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param path The full path and file name of the file to be downloaded. For example `folder/image.png`.
-  * @param options.transform Transform the asset before serving it to the client.
-  * @param options.cacheNonce Append a cache nonce parameter to the URL to invalidate the cache.
-  * @param parameters Additional fetch parameters like signal for cancellation. Supports standard fetch options including cache control.
-  * @returns BlobDownloadBuilder instance for downloading the file
-  *
-  * @example Download file
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .download('folder/avatar1.png')
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": <BLOB>,
-  *   "error": null
-  * }
-  * ```
-  *
-  * @example Download file with transformations
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .download('folder/avatar1.png', {
-  *     transform: {
-  *       width: 100,
-  *       height: 100,
-  *       quality: 80
-  *     }
-  *   })
-  * ```
-  *
-  * @example Download with cache control (useful in Edge Functions)
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .download('folder/avatar1.png', {}, { cache: 'no-store' })
-  * ```
-  *
-  * @example Download with abort signal
-  * ```js
-  * const controller = new AbortController()
-  * setTimeout(() => controller.abort(), 5000)
-  *
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .download('folder/avatar1.png', {}, { signal: controller.signal })
-  * ```
-  *
-  * @remarks
-  * - RLS policy permissions required:
-  *   - `buckets` table permissions: none
-  *   - `objects` table permissions: `select`
-  * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
-  */
-  download(path, options, parameters) {
-    const renderPath = typeof (options === null || options === void 0 ? void 0 : options.transform) === "object" && options.transform !== null && Object.keys(options.transform).length > 0 ? "render/image/authenticated" : "object";
-    const query = new URLSearchParams();
-    if (options === null || options === void 0 ? void 0 : options.transform) this.applyTransformOptsToQuery(query, options.transform);
-    if ((options === null || options === void 0 ? void 0 : options.cacheNonce) != null) query.set("cacheNonce", String(options.cacheNonce));
-    const queryString = query.toString();
-    const _path = this._getFinalPath(path);
-    const downloadFn = () => get(this.fetch, `${this.url}/${renderPath}/${_path}${queryString ? `?${queryString}` : ""}`, {
-      headers: this.headers,
-      noResolveJson: true
-    }, parameters);
-    return new BlobDownloadBuilder(downloadFn, this.shouldThrowOnError);
-  }
-  /**
-  * Retrieves the details of an existing file.
-  *
-  * Returns detailed file metadata including size, content type, and timestamps.
-  * Note: The API returns `last_modified` field, not `updated_at`.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param path The file path, including the file name. For example `folder/image.png`.
-  * @returns Promise with response containing file metadata or error
-  *
-  * @example Get file info
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .info('folder/avatar1.png')
-  *
-  * if (data) {
-  *   console.log('Last modified:', data.lastModified)
-  *   console.log('Size:', data.size)
-  * }
-  * ```
-  */
-  async info(path) {
-    var _this10 = this;
-    const _path = _this10._getFinalPath(path);
-    return _this10.handleOperation(async () => {
-      return recursiveToCamel(await get(_this10.fetch, `${_this10.url}/object/info/${_path}`, { headers: _this10.headers }));
-    });
-  }
-  /**
-  * Checks the existence of a file.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param path The file path, including the file name. For example `folder/image.png`.
-  * @returns Promise with response containing boolean indicating file existence or error
-  *
-  * @example Check file existence
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .exists('folder/avatar1.png')
-  * ```
-  */
-  async exists(path) {
-    var _this11 = this;
-    const _path = _this11._getFinalPath(path);
-    try {
-      await head(_this11.fetch, `${_this11.url}/object/${_path}`, { headers: _this11.headers });
-      return {
-        data: true,
-        error: null
-      };
-    } catch (error) {
-      if (_this11.shouldThrowOnError) throw error;
-      if (isStorageError(error)) {
-        var _error$originalError;
-        const status = error instanceof StorageApiError ? error.status : error instanceof StorageUnknownError ? (_error$originalError = error.originalError) === null || _error$originalError === void 0 ? void 0 : _error$originalError.status : void 0;
-        if (status !== void 0 && [400, 404].includes(status)) return {
-          data: false,
-          error
-        };
-      }
-      throw error;
-    }
-  }
-  /**
-  * A simple convenience function to get the URL for an asset in a public bucket. If you do not want to use this function, you can construct the public URL by concatenating the bucket URL with the path to the asset.
-  * This function does not verify if the bucket is public. If a public URL is created for a bucket which is not public, you will not be able to download the asset.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param path The path and name of the file to generate the public URL for. For example `folder/image.png`.
-  * @param options.download Triggers the file as a download if set to true. Set this parameter as the name of the file if you want to trigger the download with a different filename.
-  * @param options.transform Transform the asset before serving it to the client.
-  * @param options.cacheNonce Append a cache nonce parameter to the URL to invalidate the cache.
-  * @returns Object with public URL
-  *
-  * @example Returns the URL for an asset in a public bucket
-  * ```js
-  * const { data } = supabase
-  *   .storage
-  *   .from('public-bucket')
-  *   .getPublicUrl('folder/avatar1.png')
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": {
-  *     "publicUrl": "https://example.supabase.co/storage/v1/object/public/public-bucket/folder/avatar1.png"
-  *   }
-  * }
-  * ```
-  *
-  * @example Returns the URL for an asset in a public bucket with transformations
-  * ```js
-  * const { data } = supabase
-  *   .storage
-  *   .from('public-bucket')
-  *   .getPublicUrl('folder/avatar1.png', {
-  *     transform: {
-  *       width: 100,
-  *       height: 100,
-  *     }
-  *   })
-  * ```
-  *
-  * @example Returns the URL which triggers the download of an asset in a public bucket
-  * ```js
-  * const { data } = supabase
-  *   .storage
-  *   .from('public-bucket')
-  *   .getPublicUrl('folder/avatar1.png', {
-  *     download: true,
-  *   })
-  * ```
-  *
-  * @remarks
-  * - The bucket needs to be set to public, either via [updateBucket()](/docs/reference/javascript/storage-updatebucket) or by going to Storage on [supabase.com/dashboard](https://supabase.com/dashboard), clicking the overflow menu on a bucket and choosing "Make public"
-  * - RLS policy permissions required:
-  *   - `buckets` table permissions: none
-  *   - `objects` table permissions: none
-  * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
-  */
-  getPublicUrl(path, options) {
-    const _path = this._getFinalPath(path);
-    const query = new URLSearchParams();
-    if (options === null || options === void 0 ? void 0 : options.download) query.set("download", options.download === true ? "" : options.download);
-    if (options === null || options === void 0 ? void 0 : options.transform) this.applyTransformOptsToQuery(query, options.transform);
-    if ((options === null || options === void 0 ? void 0 : options.cacheNonce) != null) query.set("cacheNonce", String(options.cacheNonce));
-    const queryString = query.toString();
-    const renderPath = typeof (options === null || options === void 0 ? void 0 : options.transform) === "object" && options.transform !== null && Object.keys(options.transform).length > 0 ? "render/image" : "object";
-    return { data: { publicUrl: encodeURI(`${this.url}/${renderPath}/public/${_path}`) + (queryString ? `?${queryString}` : "") } };
-  }
-  /**
-  * Deletes files within the same bucket
-  *
-  * Returns an array of FileObject entries for the deleted files. Note that deprecated
-  * fields like `bucket_id` may or may not be present in the response - do not rely on them.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param paths An array of files to delete, including the path and file name. For example [`'folder/image.png'`].
-  * @returns Promise with response containing array of deleted file objects or error
-  *
-  * @example Delete file
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .remove(['folder/avatar1.png'])
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": [],
-  *   "error": null
-  * }
-  * ```
-  *
-  * @remarks
-  * - RLS policy permissions required:
-  *   - `buckets` table permissions: none
-  *   - `objects` table permissions: `delete` and `select`
-  * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
-  */
-  async remove(paths) {
-    var _this12 = this;
-    return _this12.handleOperation(async () => {
-      return await remove(_this12.fetch, `${_this12.url}/object/${_this12.bucketId}`, { prefixes: paths }, { headers: _this12.headers });
-    });
-  }
-  /**
-  * Get file metadata
-  * @param id the file id to retrieve metadata
-  */
-  /**
-  * Update file metadata
-  * @param id the file id to update metadata
-  * @param meta the new file metadata
-  */
-  /**
-  * Lists all the files and folders within a path of the bucket.
-  *
-  * **Important:** For folder entries, fields like `id`, `updated_at`, `created_at`,
-  * `last_accessed_at`, and `metadata` will be `null`. Only files have these fields populated.
-  * Additionally, deprecated fields like `bucket_id`, `owner`, and `buckets` are NOT returned
-  * by this method.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param path The folder path.
-  * @param options Search options including limit (defaults to 100), offset, sortBy, and search
-  * @param parameters Optional fetch parameters including signal for cancellation
-  * @returns Promise with response containing array of files/folders or error
-  *
-  * @example List files in a bucket
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .list('folder', {
-  *     limit: 100,
-  *     offset: 0,
-  *     sortBy: { column: 'name', order: 'asc' },
-  *   })
-  *
-  * // Handle files vs folders
-  * data?.forEach(item => {
-  *   if (item.id !== null) {
-  *     // It's a file
-  *     console.log('File:', item.name, 'Size:', item.metadata?.size)
-  *   } else {
-  *     // It's a folder
-  *     console.log('Folder:', item.name)
-  *   }
-  * })
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "avatar1.png",
-  *       "id": "e668cf7f-821b-4a2f-9dce-7dfa5dd1cfd2",
-  *       "updated_at": "2024-05-22T23:06:05.580Z",
-  *       "created_at": "2024-05-22T23:04:34.443Z",
-  *       "last_accessed_at": "2024-05-22T23:04:34.443Z",
-  *       "metadata": {
-  *         "eTag": "\"c5e8c553235d9af30ef4f6e280790b92\"",
-  *         "size": 32175,
-  *         "mimetype": "image/png",
-  *         "cacheControl": "max-age=3600",
-  *         "lastModified": "2024-05-22T23:06:05.574Z",
-  *         "contentLength": 32175,
-  *         "httpStatusCode": 200
-  *       }
-  *     }
-  *   ],
-  *   "error": null
-  * }
-  * ```
-  *
-  * @example Search files in a bucket
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .list('folder', {
-  *     limit: 100,
-  *     offset: 0,
-  *     sortBy: { column: 'name', order: 'asc' },
-  *     search: 'jon'
-  *   })
-  * ```
-  *
-  * @remarks
-  * - RLS policy permissions required:
-  *   - `buckets` table permissions: none
-  *   - `objects` table permissions: `select`
-  * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
-  */
-  async list(path, options, parameters) {
-    var _this13 = this;
-    return _this13.handleOperation(async () => {
-      const body = _objectSpread22(_objectSpread22(_objectSpread22({}, DEFAULT_SEARCH_OPTIONS), options), {}, { prefix: path || "" });
-      return await post(_this13.fetch, `${_this13.url}/object/list/${_this13.bucketId}`, body, { headers: _this13.headers }, parameters);
-    });
-  }
-  /**
-  * Lists all the files and folders within a bucket using the V2 API with pagination support.
-  *
-  * **Important:** Folder entries in the `folders` array only contain `name` and optionally `key` —
-  * they have no `id`, timestamps, or `metadata` fields. Full file metadata is only available
-  * on entries in the `objects` array.
-  *
-  * @experimental this method signature might change in the future
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param options Search options including prefix, cursor for pagination, limit, with_delimiter
-  * @param parameters Optional fetch parameters including signal for cancellation
-  * @returns Promise with response containing folders/objects arrays with pagination info or error
-  *
-  * @example List files with pagination
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .from('avatars')
-  *   .listV2({
-  *     prefix: 'folder/',
-  *     limit: 100,
-  *   })
-  *
-  * // Handle pagination
-  * if (data?.hasNext) {
-  *   const nextPage = await supabase
-  *     .storage
-  *     .from('avatars')
-  *     .listV2({
-  *       prefix: 'folder/',
-  *       cursor: data.nextCursor,
-  *     })
-  * }
-  *
-  * // Handle files vs folders
-  * data?.objects.forEach(file => {
-  *   if (file.id !== null) {
-  *     console.log('File:', file.name, 'Size:', file.metadata?.size)
-  *   }
-  * })
-  * data?.folders.forEach(folder => {
-  *   console.log('Folder:', folder.name)
-  * })
-  * ```
-  */
-  async listV2(options, parameters) {
-    var _this14 = this;
-    return _this14.handleOperation(async () => {
-      const body = _objectSpread22({}, options);
-      return await post(_this14.fetch, `${_this14.url}/object/list-v2/${_this14.bucketId}`, body, { headers: _this14.headers }, parameters);
-    });
-  }
-  encodeMetadata(metadata) {
-    return JSON.stringify(metadata);
-  }
-  toBase64(data) {
-    if (typeof Buffer !== "undefined") return Buffer.from(data).toString("base64");
-    return btoa(data);
-  }
-  _getFinalPath(path) {
-    return `${this.bucketId}/${path.replace(/^\/+/, "")}`;
-  }
-  _removeEmptyFolders(path) {
-    return path.replace(/^\/|\/$/g, "").replace(/\/+/g, "/");
-  }
-  /** Modifies the `query`, appending values the from `transform` */
-  applyTransformOptsToQuery(query, transform) {
-    if (transform.width) query.set("width", transform.width.toString());
-    if (transform.height) query.set("height", transform.height.toString());
-    if (transform.resize) query.set("resize", transform.resize);
-    if (transform.format) query.set("format", transform.format);
-    if (transform.quality) query.set("quality", transform.quality.toString());
-    return query;
-  }
-};
-var version = "2.107.0";
-var DEFAULT_HEADERS = { "X-Client-Info": `storage-js/${version}` };
-var StorageBucketApi = class extends BaseApiClient {
-  constructor(url, headers = {}, fetch$1, opts) {
-    const baseUrl = new URL(url);
-    if (opts === null || opts === void 0 ? void 0 : opts.useNewHostname) {
-      if (/supabase\.(co|in|red)$/.test(baseUrl.hostname) && !baseUrl.hostname.includes("storage.supabase.")) baseUrl.hostname = baseUrl.hostname.replace("supabase.", "storage.supabase.");
-    }
-    const finalUrl = baseUrl.href.replace(/\/$/, "");
-    const finalHeaders = _objectSpread22(_objectSpread22({}, DEFAULT_HEADERS), headers);
-    super(finalUrl, finalHeaders, fetch$1, "storage");
-  }
-  /**
-  * Retrieves the details of all Storage buckets within an existing project.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param options Query parameters for listing buckets
-  * @param options.limit Maximum number of buckets to return
-  * @param options.offset Number of buckets to skip
-  * @param options.sortColumn Column to sort by ('id', 'name', 'created_at', 'updated_at')
-  * @param options.sortOrder Sort order ('asc' or 'desc')
-  * @param options.search Search term to filter bucket names
-  * @returns Promise with response containing array of buckets or error
-  *
-  * @example List buckets
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .listBuckets()
-  * ```
-  *
-  * @example List buckets with options
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .listBuckets({
-  *     limit: 10,
-  *     offset: 0,
-  *     sortColumn: 'created_at',
-  *     sortOrder: 'desc',
-  *     search: 'prod'
-  *   })
-  * ```
-  *
-  * @remarks
-  * - RLS policy permissions required:
-  *   - `buckets` table permissions: `select`
-  *   - `objects` table permissions: none
-  * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
-  */
-  async listBuckets(options) {
-    var _this = this;
-    return _this.handleOperation(async () => {
-      const queryString = _this.listBucketOptionsToQueryString(options);
-      return await get(_this.fetch, `${_this.url}/bucket${queryString}`, { headers: _this.headers });
-    });
-  }
-  /**
-  * Retrieves the details of an existing Storage bucket.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param id The unique identifier of the bucket you would like to retrieve.
-  * @returns Promise with response containing bucket details or error
-  *
-  * @example Get bucket
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .getBucket('avatars')
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": {
-  *     "id": "avatars",
-  *     "name": "avatars",
-  *     "owner": "",
-  *     "public": false,
-  *     "file_size_limit": 1024,
-  *     "allowed_mime_types": [
-  *       "image/png"
-  *     ],
-  *     "created_at": "2024-05-22T22:26:05.100Z",
-  *     "updated_at": "2024-05-22T22:26:05.100Z"
-  *   },
-  *   "error": null
-  * }
-  * ```
-  *
-  * @remarks
-  * - RLS policy permissions required:
-  *   - `buckets` table permissions: `select`
-  *   - `objects` table permissions: none
-  * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
-  */
-  async getBucket(id) {
-    var _this2 = this;
-    return _this2.handleOperation(async () => {
-      return await get(_this2.fetch, `${_this2.url}/bucket/${id}`, { headers: _this2.headers });
-    });
-  }
-  /**
-  * Creates a new Storage bucket
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param id A unique identifier for the bucket you are creating.
-  * @param options.public The visibility of the bucket. Public buckets don't require an authorization token to download objects, but still require a valid token for all other operations. By default, buckets are private.
-  * @param options.fileSizeLimit specifies the max file size in bytes that can be uploaded to this bucket.
-  * The global file size limit takes precedence over this value.
-  * The default value is null, which doesn't set a per bucket file size limit.
-  * @param options.allowedMimeTypes specifies the allowed mime types that this bucket can accept during upload.
-  * The default value is null, which allows files with all mime types to be uploaded.
-  * Each mime type specified can be a wildcard, e.g. image/*, or a specific mime type, e.g. image/png.
-  * @param options.type (private-beta) specifies the bucket type. see `BucketType` for more details.
-  *   - default bucket type is `STANDARD`
-  * @returns Promise with response containing newly created bucket name or error
-  *
-  * @example Create bucket
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .createBucket('avatars', {
-  *     public: false,
-  *     allowedMimeTypes: ['image/png'],
-  *     fileSizeLimit: 1024
-  *   })
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": {
-  *     "name": "avatars"
-  *   },
-  *   "error": null
-  * }
-  * ```
-  *
-  * @remarks
-  * - RLS policy permissions required:
-  *   - `buckets` table permissions: `insert`
-  *   - `objects` table permissions: none
-  * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
-  */
-  async createBucket(id, options = { public: false }) {
-    var _this3 = this;
-    return _this3.handleOperation(async () => {
-      return await post(_this3.fetch, `${_this3.url}/bucket`, {
-        id,
-        name: id,
-        type: options.type,
-        public: options.public,
-        file_size_limit: options.fileSizeLimit,
-        allowed_mime_types: options.allowedMimeTypes
-      }, { headers: _this3.headers });
-    });
-  }
-  /**
-  * Updates a Storage bucket
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param id A unique identifier for the bucket you are updating.
-  * @param options.public The visibility of the bucket. Public buckets don't require an authorization token to download objects, but still require a valid token for all other operations.
-  * @param options.fileSizeLimit specifies the max file size in bytes that can be uploaded to this bucket.
-  * The global file size limit takes precedence over this value.
-  * The default value is null, which doesn't set a per bucket file size limit.
-  * @param options.allowedMimeTypes specifies the allowed mime types that this bucket can accept during upload.
-  * The default value is null, which allows files with all mime types to be uploaded.
-  * Each mime type specified can be a wildcard, e.g. image/*, or a specific mime type, e.g. image/png.
-  * @returns Promise with response containing success message or error
-  *
-  * @example Update bucket
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .updateBucket('avatars', {
-  *     public: false,
-  *     allowedMimeTypes: ['image/png'],
-  *     fileSizeLimit: 1024
-  *   })
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": {
-  *     "message": "Successfully updated"
-  *   },
-  *   "error": null
-  * }
-  * ```
-  *
-  * @remarks
-  * - RLS policy permissions required:
-  *   - `buckets` table permissions: `select` and `update`
-  *   - `objects` table permissions: none
-  * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
-  */
-  async updateBucket(id, options) {
-    var _this4 = this;
-    return _this4.handleOperation(async () => {
-      return await put(_this4.fetch, `${_this4.url}/bucket/${id}`, {
-        id,
-        name: id,
-        public: options.public,
-        file_size_limit: options.fileSizeLimit,
-        allowed_mime_types: options.allowedMimeTypes
-      }, { headers: _this4.headers });
-    });
-  }
-  /**
-  * Removes all objects inside a single bucket.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param id The unique identifier of the bucket you would like to empty.
-  * @returns Promise with success message or error
-  *
-  * @example Empty bucket
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .emptyBucket('avatars')
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": {
-  *     "message": "Successfully emptied"
-  *   },
-  *   "error": null
-  * }
-  * ```
-  *
-  * @remarks
-  * - RLS policy permissions required:
-  *   - `buckets` table permissions: `select`
-  *   - `objects` table permissions: `select` and `delete`
-  * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
-  */
-  async emptyBucket(id) {
-    var _this5 = this;
-    return _this5.handleOperation(async () => {
-      return await post(_this5.fetch, `${_this5.url}/bucket/${id}/empty`, {}, { headers: _this5.headers });
-    });
-  }
-  /**
-  * Deletes an existing bucket. A bucket can't be deleted with existing objects inside it.
-  * You must first `empty()` the bucket.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  * @param id The unique identifier of the bucket you would like to delete.
-  * @returns Promise with success message or error
-  *
-  * @example Delete bucket
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .deleteBucket('avatars')
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": {
-  *     "message": "Successfully deleted"
-  *   },
-  *   "error": null
-  * }
-  * ```
-  *
-  * @remarks
-  * - RLS policy permissions required:
-  *   - `buckets` table permissions: `select` and `delete`
-  *   - `objects` table permissions: none
-  * - Refer to the [Storage guide](/docs/guides/storage/security/access-control) on how access control works
-  */
-  async deleteBucket(id) {
-    var _this6 = this;
-    return _this6.handleOperation(async () => {
-      return await remove(_this6.fetch, `${_this6.url}/bucket/${id}`, {}, { headers: _this6.headers });
-    });
-  }
-  listBucketOptionsToQueryString(options) {
-    const params = {};
-    if (options) {
-      if ("limit" in options) params.limit = String(options.limit);
-      if ("offset" in options) params.offset = String(options.offset);
-      if (options.search) params.search = options.search;
-      if (options.sortColumn) params.sortColumn = options.sortColumn;
-      if (options.sortOrder) params.sortOrder = options.sortOrder;
-    }
-    return Object.keys(params).length > 0 ? "?" + new URLSearchParams(params).toString() : "";
-  }
-};
-var StorageAnalyticsClient = class extends BaseApiClient {
-  /**
-  * @alpha
-  *
-  * Creates a new StorageAnalyticsClient instance
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Analytics Buckets
-  * @param url - The base URL for the storage API
-  * @param headers - HTTP headers to include in requests
-  * @param fetch - Optional custom fetch implementation
-  *
-  * @example Using supabase-js (recommended)
-  * ```typescript
-  * import { createClient } from '@supabase/supabase-js'
-  *
-  * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
-  * const { data, error } = await supabase.storage.analytics.listBuckets()
-  * ```
-  *
-  * @example Standalone import for bundle-sensitive environments
-  * ```typescript
-  * import { StorageAnalyticsClient } from '@supabase/storage-js'
-  *
-  * const client = new StorageAnalyticsClient(url, headers)
-  * ```
-  */
-  constructor(url, headers = {}, fetch$1) {
-    const finalUrl = url.replace(/\/$/, "");
-    const finalHeaders = _objectSpread22(_objectSpread22({}, DEFAULT_HEADERS), headers);
-    super(finalUrl, finalHeaders, fetch$1, "storage");
-  }
-  /**
-  * @alpha
-  *
-  * Creates a new analytics bucket using Iceberg tables
-  * Analytics buckets are optimized for analytical queries and data processing
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Analytics Buckets
-  * @param name A unique name for the bucket you are creating
-  * @returns Promise with response containing newly created analytics bucket or error
-  *
-  * @example Create analytics bucket
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .analytics
-  *   .createBucket('analytics-data')
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": {
-  *     "name": "analytics-data",
-  *     "type": "ANALYTICS",
-  *     "format": "iceberg",
-  *     "created_at": "2024-05-22T22:26:05.100Z",
-  *     "updated_at": "2024-05-22T22:26:05.100Z"
-  *   },
-  *   "error": null
-  * }
-  * ```
-  *
-  * @remarks
-  * - Creates a new analytics bucket using Iceberg tables
-  * - Analytics buckets are optimized for analytical queries and data processing
-  */
-  async createBucket(name) {
-    var _this = this;
-    return _this.handleOperation(async () => {
-      return await post(_this.fetch, `${_this.url}/bucket`, { name }, { headers: _this.headers });
-    });
-  }
-  /**
-  * @alpha
-  *
-  * Retrieves the details of all Analytics Storage buckets within an existing project
-  * Only returns buckets of type 'ANALYTICS'
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Analytics Buckets
-  * @param options Query parameters for listing buckets
-  * @param options.limit Maximum number of buckets to return
-  * @param options.offset Number of buckets to skip
-  * @param options.sortColumn Column to sort by ('name', 'created_at', 'updated_at')
-  * @param options.sortOrder Sort order ('asc' or 'desc')
-  * @param options.search Search term to filter bucket names
-  * @returns Promise with response containing array of analytics buckets or error
-  *
-  * @example List analytics buckets
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .analytics
-  *   .listBuckets({
-  *     limit: 10,
-  *     offset: 0,
-  *     sortColumn: 'created_at',
-  *     sortOrder: 'desc'
-  *   })
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": [
-  *     {
-  *       "name": "analytics-data",
-  *       "type": "ANALYTICS",
-  *       "format": "iceberg",
-  *       "created_at": "2024-05-22T22:26:05.100Z",
-  *       "updated_at": "2024-05-22T22:26:05.100Z"
-  *     }
-  *   ],
-  *   "error": null
-  * }
-  * ```
-  *
-  * @remarks
-  * - Retrieves the details of all Analytics Storage buckets within an existing project
-  * - Only returns buckets of type 'ANALYTICS'
-  */
-  async listBuckets(options) {
-    var _this2 = this;
-    return _this2.handleOperation(async () => {
-      const queryParams = new URLSearchParams();
-      if ((options === null || options === void 0 ? void 0 : options.limit) !== void 0) queryParams.set("limit", options.limit.toString());
-      if ((options === null || options === void 0 ? void 0 : options.offset) !== void 0) queryParams.set("offset", options.offset.toString());
-      if (options === null || options === void 0 ? void 0 : options.sortColumn) queryParams.set("sortColumn", options.sortColumn);
-      if (options === null || options === void 0 ? void 0 : options.sortOrder) queryParams.set("sortOrder", options.sortOrder);
-      if (options === null || options === void 0 ? void 0 : options.search) queryParams.set("search", options.search);
-      const queryString = queryParams.toString();
-      const url = queryString ? `${_this2.url}/bucket?${queryString}` : `${_this2.url}/bucket`;
-      return await get(_this2.fetch, url, { headers: _this2.headers });
-    });
-  }
-  /**
-  * @alpha
-  *
-  * Deletes an existing analytics bucket
-  * A bucket can't be deleted with existing objects inside it
-  * You must first empty the bucket before deletion
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Analytics Buckets
-  * @param bucketName The unique identifier of the bucket you would like to delete
-  * @returns Promise with response containing success message or error
-  *
-  * @example Delete analytics bucket
-  * ```js
-  * const { data, error } = await supabase
-  *   .storage
-  *   .analytics
-  *   .deleteBucket('analytics-data')
-  * ```
-  *
-  * Response:
-  * ```json
-  * {
-  *   "data": {
-  *     "message": "Successfully deleted"
-  *   },
-  *   "error": null
-  * }
-  * ```
-  *
-  * @remarks
-  * - Deletes an analytics bucket
-  */
-  async deleteBucket(bucketName) {
-    var _this3 = this;
-    return _this3.handleOperation(async () => {
-      return await remove(_this3.fetch, `${_this3.url}/bucket/${bucketName}`, {}, { headers: _this3.headers });
-    });
-  }
-  /**
-  * @alpha
-  *
-  * Get an Iceberg REST Catalog client configured for a specific analytics bucket
-  * Use this to perform advanced table and namespace operations within the bucket
-  * The returned client provides full access to the Apache Iceberg REST Catalog API
-  * with the Supabase `{ data, error }` pattern for consistent error handling on all operations.
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Analytics Buckets
-  * @param bucketName - The name of the analytics bucket (warehouse) to connect to
-  * @returns The wrapped Iceberg catalog client
-  * @throws {StorageError} If the bucket name is invalid
-  *
-  * @example Get catalog and create table
-  * ```js
-  * // First, create an analytics bucket
-  * const { data: bucket, error: bucketError } = await supabase
-  *   .storage
-  *   .analytics
-  *   .createBucket('analytics-data')
-  *
-  * // Get the Iceberg catalog for that bucket
-  * const catalog = supabase.storage.analytics.from('analytics-data')
-  *
-  * // Create a namespace
-  * const { error: nsError } = await catalog.createNamespace({ namespace: ['default'] })
-  *
-  * // Create a table with schema
-  * const { data: tableMetadata, error: tableError } = await catalog.createTable(
-  *   { namespace: ['default'] },
-  *   {
-  *     name: 'events',
-  *     schema: {
-  *       type: 'struct',
-  *       fields: [
-  *         { id: 1, name: 'id', type: 'long', required: true },
-  *         { id: 2, name: 'timestamp', type: 'timestamp', required: true },
-  *         { id: 3, name: 'user_id', type: 'string', required: false }
-  *       ],
-  *       'schema-id': 0,
-  *       'identifier-field-ids': [1]
-  *     },
-  *     'partition-spec': {
-  *       'spec-id': 0,
-  *       fields: []
-  *     },
-  *     'write-order': {
-  *       'order-id': 0,
-  *       fields: []
-  *     },
-  *     properties: {
-  *       'write.format.default': 'parquet'
-  *     }
-  *   }
-  * )
-  * ```
-  *
-  * @example List tables in namespace
-  * ```js
-  * const catalog = supabase.storage.analytics.from('analytics-data')
-  *
-  * // List all tables in the default namespace
-  * const { data: tables, error: listError } = await catalog.listTables({ namespace: ['default'] })
-  * if (listError) {
-  *   if (listError.isNotFound()) {
-  *     console.log('Namespace not found')
-  *   }
-  *   return
-  * }
-  * console.log(tables) // [{ namespace: ['default'], name: 'events' }]
-  * ```
-  *
-  * @example Working with namespaces
-  * ```js
-  * const catalog = supabase.storage.analytics.from('analytics-data')
-  *
-  * // List all namespaces
-  * const { data: namespaces } = await catalog.listNamespaces()
-  *
-  * // Create namespace with properties
-  * await catalog.createNamespace(
-  *   { namespace: ['production'] },
-  *   { properties: { owner: 'data-team', env: 'prod' } }
-  * )
-  * ```
-  *
-  * @example Cleanup operations
-  * ```js
-  * const catalog = supabase.storage.analytics.from('analytics-data')
-  *
-  * // Drop table with purge option (removes all data)
-  * const { error: dropError } = await catalog.dropTable(
-  *   { namespace: ['default'], name: 'events' },
-  *   { purge: true }
-  * )
-  *
-  * if (dropError?.isNotFound()) {
-  *   console.log('Table does not exist')
-  * }
-  *
-  * // Drop namespace (must be empty)
-  * await catalog.dropNamespace({ namespace: ['default'] })
-  * ```
-  *
-  * @remarks
-  * This method provides a bridge between Supabase's bucket management and the standard
-  * Apache Iceberg REST Catalog API. The bucket name maps to the Iceberg warehouse parameter.
-  * All authentication and configuration is handled automatically using your Supabase credentials.
-  *
-  * **Error Handling**: Invalid bucket names throw immediately. All catalog
-  * operations return `{ data, error }` where errors are `IcebergError` instances from iceberg-js.
-  * Use helper methods like `error.isNotFound()` or check `error.status` for specific error handling.
-  * Use `.throwOnError()` on the analytics client if you prefer exceptions for catalog operations.
-  *
-  * **Cleanup Operations**: When using `dropTable`, the `purge: true` option permanently
-  * deletes all table data. Without it, the table is marked as deleted but data remains.
-  *
-  * **Library Dependency**: The returned catalog wraps `IcebergRestCatalog` from iceberg-js.
-  * For complete API documentation and advanced usage, refer to the
-  * [iceberg-js documentation](https://supabase.github.io/iceberg-js/).
-  */
-  from(bucketName) {
-    var _this4 = this;
-    if (!isValidBucketName(bucketName)) throw new StorageError("Invalid bucket name: File, folder, and bucket names must follow AWS object key naming guidelines and should avoid the use of any other characters.");
-    const catalog = new IcebergRestCatalog({
-      baseUrl: this.url,
-      catalogName: bucketName,
-      auth: {
-        type: "custom",
-        getHeaders: async () => _this4.headers
-      },
-      fetch: this.fetch
-    });
-    const shouldThrowOnError = this.shouldThrowOnError;
-    return new Proxy(catalog, { get(target, prop) {
-      const value = target[prop];
-      if (typeof value !== "function") return value;
-      return async (...args) => {
-        try {
-          return {
-            data: await value.apply(target, args),
-            error: null
-          };
-        } catch (error) {
-          if (shouldThrowOnError) throw error;
-          return {
-            data: null,
-            error
-          };
-        }
-      };
-    } });
-  }
-};
-var VectorIndexApi = class extends BaseApiClient {
-  /** Creates a new VectorIndexApi instance */
-  constructor(url, headers = {}, fetch$1) {
-    const finalUrl = url.replace(/\/$/, "");
-    const finalHeaders = _objectSpread22(_objectSpread22({}, DEFAULT_HEADERS), {}, { "Content-Type": "application/json" }, headers);
-    super(finalUrl, finalHeaders, fetch$1, "vectors");
-  }
-  /** Creates a new vector index within a bucket */
-  async createIndex(options) {
-    var _this = this;
-    return _this.handleOperation(async () => {
-      return await vectorsApi.post(_this.fetch, `${_this.url}/CreateIndex`, options, { headers: _this.headers }) || {};
-    });
-  }
-  /** Retrieves metadata for a specific vector index */
-  async getIndex(vectorBucketName, indexName) {
-    var _this2 = this;
-    return _this2.handleOperation(async () => {
-      return await vectorsApi.post(_this2.fetch, `${_this2.url}/GetIndex`, {
-        vectorBucketName,
-        indexName
-      }, { headers: _this2.headers });
-    });
-  }
-  /** Lists vector indexes within a bucket with optional filtering and pagination */
-  async listIndexes(options) {
-    var _this3 = this;
-    return _this3.handleOperation(async () => {
-      return await vectorsApi.post(_this3.fetch, `${_this3.url}/ListIndexes`, options, { headers: _this3.headers });
-    });
-  }
-  /** Deletes a vector index and all its data */
-  async deleteIndex(vectorBucketName, indexName) {
-    var _this4 = this;
-    return _this4.handleOperation(async () => {
-      return await vectorsApi.post(_this4.fetch, `${_this4.url}/DeleteIndex`, {
-        vectorBucketName,
-        indexName
-      }, { headers: _this4.headers }) || {};
-    });
-  }
-};
-var VectorDataApi = class extends BaseApiClient {
-  /** Creates a new VectorDataApi instance */
-  constructor(url, headers = {}, fetch$1) {
-    const finalUrl = url.replace(/\/$/, "");
-    const finalHeaders = _objectSpread22(_objectSpread22({}, DEFAULT_HEADERS), {}, { "Content-Type": "application/json" }, headers);
-    super(finalUrl, finalHeaders, fetch$1, "vectors");
-  }
-  /** Inserts or updates vectors in batch (1-500 per request) */
-  async putVectors(options) {
-    var _this = this;
-    if (options.vectors.length < 1 || options.vectors.length > 500) throw new Error("Vector batch size must be between 1 and 500 items");
-    return _this.handleOperation(async () => {
-      return await vectorsApi.post(_this.fetch, `${_this.url}/PutVectors`, options, { headers: _this.headers }) || {};
-    });
-  }
-  /** Retrieves vectors by their keys in batch */
-  async getVectors(options) {
-    var _this2 = this;
-    return _this2.handleOperation(async () => {
-      return await vectorsApi.post(_this2.fetch, `${_this2.url}/GetVectors`, options, { headers: _this2.headers });
-    });
-  }
-  /** Lists vectors in an index with pagination */
-  async listVectors(options) {
-    var _this3 = this;
-    if (options.segmentCount !== void 0) {
-      if (options.segmentCount < 1 || options.segmentCount > 16) throw new Error("segmentCount must be between 1 and 16");
-      if (options.segmentIndex !== void 0) {
-        if (options.segmentIndex < 0 || options.segmentIndex >= options.segmentCount) throw new Error(`segmentIndex must be between 0 and ${options.segmentCount - 1}`);
-      }
-    }
-    return _this3.handleOperation(async () => {
-      return await vectorsApi.post(_this3.fetch, `${_this3.url}/ListVectors`, options, { headers: _this3.headers });
-    });
-  }
-  /** Queries for similar vectors using approximate nearest neighbor search */
-  async queryVectors(options) {
-    var _this4 = this;
-    return _this4.handleOperation(async () => {
-      return await vectorsApi.post(_this4.fetch, `${_this4.url}/QueryVectors`, options, { headers: _this4.headers });
-    });
-  }
-  /** Deletes vectors by their keys in batch (1-500 per request) */
-  async deleteVectors(options) {
-    var _this5 = this;
-    if (options.keys.length < 1 || options.keys.length > 500) throw new Error("Keys batch size must be between 1 and 500 items");
-    return _this5.handleOperation(async () => {
-      return await vectorsApi.post(_this5.fetch, `${_this5.url}/DeleteVectors`, options, { headers: _this5.headers }) || {};
-    });
-  }
-};
-var VectorBucketApi = class extends BaseApiClient {
-  /** Creates a new VectorBucketApi instance */
-  constructor(url, headers = {}, fetch$1) {
-    const finalUrl = url.replace(/\/$/, "");
-    const finalHeaders = _objectSpread22(_objectSpread22({}, DEFAULT_HEADERS), {}, { "Content-Type": "application/json" }, headers);
-    super(finalUrl, finalHeaders, fetch$1, "vectors");
-  }
-  /** Creates a new vector bucket */
-  async createBucket(vectorBucketName) {
-    var _this = this;
-    return _this.handleOperation(async () => {
-      return await vectorsApi.post(_this.fetch, `${_this.url}/CreateVectorBucket`, { vectorBucketName }, { headers: _this.headers }) || {};
-    });
-  }
-  /** Retrieves metadata for a specific vector bucket */
-  async getBucket(vectorBucketName) {
-    var _this2 = this;
-    return _this2.handleOperation(async () => {
-      return await vectorsApi.post(_this2.fetch, `${_this2.url}/GetVectorBucket`, { vectorBucketName }, { headers: _this2.headers });
-    });
-  }
-  /** Lists vector buckets with optional filtering and pagination */
-  async listBuckets(options = {}) {
-    var _this3 = this;
-    return _this3.handleOperation(async () => {
-      return await vectorsApi.post(_this3.fetch, `${_this3.url}/ListVectorBuckets`, options, { headers: _this3.headers });
-    });
-  }
-  /** Deletes a vector bucket (must be empty first) */
-  async deleteBucket(vectorBucketName) {
-    var _this4 = this;
-    return _this4.handleOperation(async () => {
-      return await vectorsApi.post(_this4.fetch, `${_this4.url}/DeleteVectorBucket`, { vectorBucketName }, { headers: _this4.headers }) || {};
-    });
-  }
-};
-var StorageVectorsClient = class extends VectorBucketApi {
-  /**
-  * @alpha
-  *
-  * Creates a StorageVectorsClient that can manage buckets, indexes, and vectors.
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  * @param url - Base URL of the Storage Vectors REST API.
-  * @param options.headers - Optional headers (for example `Authorization`) applied to every request.
-  * @param options.fetch - Optional custom `fetch` implementation for non-browser runtimes.
-  *
-  * @example Using supabase-js (recommended)
-  * ```typescript
-  * import { createClient } from '@supabase/supabase-js'
-  *
-  * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
-  * const bucket = supabase.storage.vectors.from('embeddings-prod')
-  * ```
-  *
-  * @example Standalone import for bundle-sensitive environments
-  * ```typescript
-  * import { StorageVectorsClient } from '@supabase/storage-js'
-  *
-  * const client = new StorageVectorsClient(url, options)
-  * ```
-  */
-  constructor(url, options = {}) {
-    super(url, options.headers || {}, options.fetch);
-  }
-  /**
-  *
-  * @alpha
-  *
-  * Access operations for a specific vector bucket
-  * Returns a scoped client for index and vector operations within the bucket
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  * @param vectorBucketName - Name of the vector bucket
-  * @returns Bucket-scoped client with index and vector operations
-  *
-  * @example Accessing a vector bucket
-  * ```typescript
-  * const bucket = supabase.storage.vectors.from('embeddings-prod')
-  * ```
-  */
-  from(vectorBucketName) {
-    return new VectorBucketScope(this.url, this.headers, vectorBucketName, this.fetch);
-  }
-  /**
-  *
-  * @alpha
-  *
-  * Creates a new vector bucket
-  * Vector buckets are containers for vector indexes and their data
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  * @param vectorBucketName - Unique name for the vector bucket
-  * @returns Promise with empty response on success or error
-  *
-  * @example Creating a vector bucket
-  * ```typescript
-  * const { data, error } = await supabase
-  *   .storage
-  *   .vectors
-  *   .createBucket('embeddings-prod')
-  * ```
-  */
-  async createBucket(vectorBucketName) {
-    var _superprop_getCreateBucket = () => super.createBucket, _this = this;
-    return _superprop_getCreateBucket().call(_this, vectorBucketName);
-  }
-  /**
-  *
-  * @alpha
-  *
-  * Retrieves metadata for a specific vector bucket
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  * @param vectorBucketName - Name of the vector bucket
-  * @returns Promise with bucket metadata or error
-  *
-  * @example Get bucket metadata
-  * ```typescript
-  * const { data, error } = await supabase
-  *   .storage
-  *   .vectors
-  *   .getBucket('embeddings-prod')
-  *
-  * console.log('Bucket created:', data?.vectorBucket.creationTime)
-  * ```
-  */
-  async getBucket(vectorBucketName) {
-    var _superprop_getGetBucket = () => super.getBucket, _this2 = this;
-    return _superprop_getGetBucket().call(_this2, vectorBucketName);
-  }
-  /**
-  *
-  * @alpha
-  *
-  * Lists all vector buckets with optional filtering and pagination
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  * @param options - Optional filters (prefix, maxResults, nextToken)
-  * @returns Promise with list of buckets or error
-  *
-  * @example List vector buckets
-  * ```typescript
-  * const { data, error } = await supabase
-  *   .storage
-  *   .vectors
-  *   .listBuckets({ prefix: 'embeddings-' })
-  *
-  * data?.vectorBuckets.forEach(bucket => {
-  *   console.log(bucket.vectorBucketName)
-  * })
-  * ```
-  */
-  async listBuckets(options = {}) {
-    var _superprop_getListBuckets = () => super.listBuckets, _this3 = this;
-    return _superprop_getListBuckets().call(_this3, options);
-  }
-  /**
-  *
-  * @alpha
-  *
-  * Deletes a vector bucket (bucket must be empty)
-  * All indexes must be deleted before deleting the bucket
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  * @param vectorBucketName - Name of the vector bucket to delete
-  * @returns Promise with empty response on success or error
-  *
-  * @example Delete a vector bucket
-  * ```typescript
-  * const { data, error } = await supabase
-  *   .storage
-  *   .vectors
-  *   .deleteBucket('embeddings-old')
-  * ```
-  */
-  async deleteBucket(vectorBucketName) {
-    var _superprop_getDeleteBucket = () => super.deleteBucket, _this4 = this;
-    return _superprop_getDeleteBucket().call(_this4, vectorBucketName);
-  }
-};
-var VectorBucketScope = class extends VectorIndexApi {
-  /**
-  * @alpha
-  *
-  * Creates a helper that automatically scopes all index operations to the provided bucket.
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  * @example Creating a vector bucket scope
-  * ```typescript
-  * const bucket = supabase.storage.vectors.from('embeddings-prod')
-  * ```
-  */
-  constructor(url, headers, vectorBucketName, fetch$1) {
-    super(url, headers, fetch$1);
-    this.vectorBucketName = vectorBucketName;
-  }
-  /**
-  *
-  * @alpha
-  *
-  * Creates a new vector index in this bucket
-  * Convenience method that automatically includes the bucket name
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  * @param options - Index configuration (vectorBucketName is automatically set)
-  * @returns Promise with empty response on success or error
-  *
-  * @example Creating a vector index
-  * ```typescript
-  * const bucket = supabase.storage.vectors.from('embeddings-prod')
-  * await bucket.createIndex({
-  *   indexName: 'documents-openai',
-  *   dataType: 'float32',
-  *   dimension: 1536,
-  *   distanceMetric: 'cosine',
-  *   metadataConfiguration: {
-  *     nonFilterableMetadataKeys: ['raw_text']
-  *   }
-  * })
-  * ```
-  */
-  async createIndex(options) {
-    var _superprop_getCreateIndex = () => super.createIndex, _this5 = this;
-    return _superprop_getCreateIndex().call(_this5, _objectSpread22(_objectSpread22({}, options), {}, { vectorBucketName: _this5.vectorBucketName }));
-  }
-  /**
-  *
-  * @alpha
-  *
-  * Lists indexes in this bucket
-  * Convenience method that automatically includes the bucket name
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  * @param options - Listing options (vectorBucketName is automatically set)
-  * @returns Promise with response containing indexes array and pagination token or error
-  *
-  * @example List indexes
-  * ```typescript
-  * const bucket = supabase.storage.vectors.from('embeddings-prod')
-  * const { data } = await bucket.listIndexes({ prefix: 'documents-' })
-  * ```
-  */
-  async listIndexes(options = {}) {
-    var _superprop_getListIndexes = () => super.listIndexes, _this6 = this;
-    return _superprop_getListIndexes().call(_this6, _objectSpread22(_objectSpread22({}, options), {}, { vectorBucketName: _this6.vectorBucketName }));
-  }
-  /**
-  *
-  * @alpha
-  *
-  * Retrieves metadata for a specific index in this bucket
-  * Convenience method that automatically includes the bucket name
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  * @param indexName - Name of the index to retrieve
-  * @returns Promise with index metadata or error
-  *
-  * @example Get index metadata
-  * ```typescript
-  * const bucket = supabase.storage.vectors.from('embeddings-prod')
-  * const { data } = await bucket.getIndex('documents-openai')
-  * console.log('Dimension:', data?.index.dimension)
-  * ```
-  */
-  async getIndex(indexName) {
-    var _superprop_getGetIndex = () => super.getIndex, _this7 = this;
-    return _superprop_getGetIndex().call(_this7, _this7.vectorBucketName, indexName);
-  }
-  /**
-  *
-  * @alpha
-  *
-  * Deletes an index from this bucket
-  * Convenience method that automatically includes the bucket name
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  * @param indexName - Name of the index to delete
-  * @returns Promise with empty response on success or error
-  *
-  * @example Delete an index
-  * ```typescript
-  * const bucket = supabase.storage.vectors.from('embeddings-prod')
-  * await bucket.deleteIndex('old-index')
-  * ```
-  */
-  async deleteIndex(indexName) {
-    var _superprop_getDeleteIndex = () => super.deleteIndex, _this8 = this;
-    return _superprop_getDeleteIndex().call(_this8, _this8.vectorBucketName, indexName);
-  }
-  /**
-  *
-  * @alpha
-  *
-  * Access operations for a specific index within this bucket
-  * Returns a scoped client for vector data operations
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  * @param indexName - Name of the index
-  * @returns Index-scoped client with vector data operations
-  *
-  * @example Accessing an index
-  * ```typescript
-  * const index = supabase.storage.vectors.from('embeddings-prod').index('documents-openai')
-  *
-  * // Insert vectors
-  * await index.putVectors({
-  *   vectors: [
-  *     { key: 'doc-1', data: { float32: [...] }, metadata: { title: 'Intro' } }
-  *   ]
-  * })
-  *
-  * // Query similar vectors
-  * const { data } = await index.queryVectors({
-  *   queryVector: { float32: [...] },
-  *   topK: 5
-  * })
-  * ```
-  */
-  index(indexName) {
-    return new VectorIndexScope(this.url, this.headers, this.vectorBucketName, indexName, this.fetch);
-  }
-};
-var VectorIndexScope = class extends VectorDataApi {
-  /**
-  *
-  * @alpha
-  *
-  * Creates a helper that automatically scopes all vector operations to the provided bucket/index names.
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  * @example Creating a vector index scope
-  * ```typescript
-  * const index = supabase.storage.vectors.from('embeddings-prod').index('documents-openai')
-  * ```
-  */
-  constructor(url, headers, vectorBucketName, indexName, fetch$1) {
-    super(url, headers, fetch$1);
-    this.vectorBucketName = vectorBucketName;
-    this.indexName = indexName;
-  }
-  /**
-  *
-  * @alpha
-  *
-  * Inserts or updates vectors in this index
-  * Convenience method that automatically includes bucket and index names
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  * @param options - Vector insertion options (bucket and index names automatically set)
-  * @returns Promise with empty response on success or error
-  *
-  * @example Insert vectors into an index
-  * ```typescript
-  * const index = supabase.storage.vectors.from('embeddings-prod').index('documents-openai')
-  * await index.putVectors({
-  *   vectors: [
-  *     {
-  *       key: 'doc-1',
-  *       data: { float32: [0.1, 0.2, ...] },
-  *       metadata: { title: 'Introduction', page: 1 }
-  *     }
-  *   ]
-  * })
-  * ```
-  */
-  async putVectors(options) {
-    var _superprop_getPutVectors = () => super.putVectors, _this9 = this;
-    return _superprop_getPutVectors().call(_this9, _objectSpread22(_objectSpread22({}, options), {}, {
-      vectorBucketName: _this9.vectorBucketName,
-      indexName: _this9.indexName
-    }));
-  }
-  /**
-  *
-  * @alpha
-  *
-  * Retrieves vectors by keys from this index
-  * Convenience method that automatically includes bucket and index names
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  * @param options - Vector retrieval options (bucket and index names automatically set)
-  * @returns Promise with response containing vectors array or error
-  *
-  * @example Get vectors by keys
-  * ```typescript
-  * const index = supabase.storage.vectors.from('embeddings-prod').index('documents-openai')
-  * const { data } = await index.getVectors({
-  *   keys: ['doc-1', 'doc-2'],
-  *   returnMetadata: true
-  * })
-  * ```
-  */
-  async getVectors(options) {
-    var _superprop_getGetVectors = () => super.getVectors, _this10 = this;
-    return _superprop_getGetVectors().call(_this10, _objectSpread22(_objectSpread22({}, options), {}, {
-      vectorBucketName: _this10.vectorBucketName,
-      indexName: _this10.indexName
-    }));
-  }
-  /**
-  *
-  * @alpha
-  *
-  * Lists vectors in this index with pagination
-  * Convenience method that automatically includes bucket and index names
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  * @param options - Listing options (bucket and index names automatically set)
-  * @returns Promise with response containing vectors array and pagination token or error
-  *
-  * @example List vectors with pagination
-  * ```typescript
-  * const index = supabase.storage.vectors.from('embeddings-prod').index('documents-openai')
-  * const { data } = await index.listVectors({
-  *   maxResults: 500,
-  *   returnMetadata: true
-  * })
-  * ```
-  */
-  async listVectors(options = {}) {
-    var _superprop_getListVectors = () => super.listVectors, _this11 = this;
-    return _superprop_getListVectors().call(_this11, _objectSpread22(_objectSpread22({}, options), {}, {
-      vectorBucketName: _this11.vectorBucketName,
-      indexName: _this11.indexName
-    }));
-  }
-  /**
-  *
-  * @alpha
-  *
-  * Queries for similar vectors in this index
-  * Convenience method that automatically includes bucket and index names
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  * @param options - Query options (bucket and index names automatically set)
-  * @returns Promise with response containing matches array of similar vectors ordered by distance or error
-  *
-  * @example Query similar vectors
-  * ```typescript
-  * const index = supabase.storage.vectors.from('embeddings-prod').index('documents-openai')
-  * const { data } = await index.queryVectors({
-  *   queryVector: { float32: [0.1, 0.2, ...] },
-  *   topK: 5,
-  *   filter: { category: 'technical' },
-  *   returnDistance: true,
-  *   returnMetadata: true
-  * })
-  * ```
-  */
-  async queryVectors(options) {
-    var _superprop_getQueryVectors = () => super.queryVectors, _this12 = this;
-    return _superprop_getQueryVectors().call(_this12, _objectSpread22(_objectSpread22({}, options), {}, {
-      vectorBucketName: _this12.vectorBucketName,
-      indexName: _this12.indexName
-    }));
-  }
-  /**
-  *
-  * @alpha
-  *
-  * Deletes vectors by keys from this index
-  * Convenience method that automatically includes bucket and index names
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  * @param options - Deletion options (bucket and index names automatically set)
-  * @returns Promise with empty response on success or error
-  *
-  * @example Delete vectors by keys
-  * ```typescript
-  * const index = supabase.storage.vectors.from('embeddings-prod').index('documents-openai')
-  * await index.deleteVectors({
-  *   keys: ['doc-1', 'doc-2', 'doc-3']
-  * })
-  * ```
-  */
-  async deleteVectors(options) {
-    var _superprop_getDeleteVectors = () => super.deleteVectors, _this13 = this;
-    return _superprop_getDeleteVectors().call(_this13, _objectSpread22(_objectSpread22({}, options), {}, {
-      vectorBucketName: _this13.vectorBucketName,
-      indexName: _this13.indexName
-    }));
-  }
-};
-var StorageClient = class extends StorageBucketApi {
-  /**
-  * Creates a client for Storage buckets, files, analytics, and vectors.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  *
-  * @example Using supabase-js (recommended)
-  * ```ts
-  * import { createClient } from '@supabase/supabase-js'
-  *
-  * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
-  * const avatars = supabase.storage.from('avatars')
-  * ```
-  *
-  * @example Standalone import for bundle-sensitive environments
-  * ```ts
-  * import { StorageClient } from '@supabase/storage-js'
-  *
-  * const storage = new StorageClient('https://xyzcompany.supabase.co/storage/v1', {
-  *   apikey: 'your-publishable-key',
-  * })
-  * const avatars = storage.from('avatars')
-  * ```
-  */
-  constructor(url, headers = {}, fetch$1, opts) {
-    super(url, headers, fetch$1, opts);
-  }
-  /**
-  * Perform file operation in a bucket.
-  *
-  * @category Storage
-  * @subcategory File Buckets
-  *
-  * @param id The bucket id to operate on.
-  *
-  * @example Accessing a bucket
-  * ```typescript
-  * const avatars = supabase.storage.from('avatars')
-  * ```
-  */
-  from(id) {
-    return new StorageFileApi(this.url, this.headers, id, this.fetch);
-  }
-  /**
-  *
-  * @alpha
-  *
-  * Access vector storage operations.
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Vector Buckets
-  *
-  * @returns A StorageVectorsClient instance configured with the current storage settings.
-  */
-  get vectors() {
-    return new StorageVectorsClient(this.url + "/vector", {
-      headers: this.headers,
-      fetch: this.fetch
-    });
-  }
-  /**
-  *
-  * @alpha
-  *
-  * Access analytics storage operations using Iceberg tables.
-  *
-  * **Public alpha:** This API is part of a public alpha release and may not be available to your account type.
-  *
-  * @category Storage
-  * @subcategory Analytics Buckets
-  *
-  * @returns A StorageAnalyticsClient instance configured with the current storage settings.
-  */
-  get analytics() {
-    return new StorageAnalyticsClient(this.url + "/iceberg", this.headers, this.fetch);
-  }
-};
-
-// ../../node_modules/.pnpm/@supabase+supabase-js@2.107.0/node_modules/@supabase/supabase-js/dist/index.mjs
-var import_auth_js = __toESM(require_main3(), 1);
-__reExport(dist_exports, __toESM(require_main2(), 1));
-__reExport(dist_exports, __toESM(require_main3(), 1));
-var version2 = "2.107.0";
-var JS_ENV = "";
-var JS_RUNTIME_VERSION;
-if (typeof Deno !== "undefined") {
-  JS_ENV = "deno";
-  JS_RUNTIME_VERSION = (_Deno$version = Deno.version) === null || _Deno$version === void 0 ? void 0 : _Deno$version.deno;
-} else if (typeof document !== "undefined") JS_ENV = "web";
-else if (typeof navigator !== "undefined" && navigator.product === "ReactNative") JS_ENV = "react-native";
-else {
-  JS_ENV = "node";
-  JS_RUNTIME_VERSION = typeof process !== "undefined" ? (_process$version = process.version) === null || _process$version === void 0 ? void 0 : _process$version.replace(/^v/, "") : void 0;
-}
-var _Deno$version;
-var _process$version;
-var _runtimeMeta = [`runtime=${JS_ENV}`];
-if (JS_RUNTIME_VERSION) _runtimeMeta.push(`runtime-version=${JS_RUNTIME_VERSION}`);
-var DEFAULT_HEADERS2 = { "X-Client-Info": `supabase-js/${version2}; ${_runtimeMeta.join("; ")}` };
-var DEFAULT_GLOBAL_OPTIONS = { headers: DEFAULT_HEADERS2 };
-var DEFAULT_DB_OPTIONS = { schema: "public" };
-var DEFAULT_AUTH_OPTIONS = {
-  autoRefreshToken: true,
-  persistSession: true,
-  detectSessionInUrl: true,
-  flowType: "implicit"
-};
-var DEFAULT_REALTIME_OPTIONS = {};
-var DEFAULT_TRACE_PROPAGATION_OPTIONS = {
-  enabled: false,
-  respectSamplingDecision: true
-};
-function __awaiter2(thisArg, _arguments, P, generator) {
-  function adopt(value) {
-    return value instanceof P ? value : new P(function(resolve) {
-      resolve(value);
-    });
-  }
-  return new (P || (P = Promise))(function(resolve, reject) {
-    function fulfilled(value) {
-      try {
-        step(generator.next(value));
-      } catch (e) {
-        reject(e);
-      }
-    }
-    function rejected(value) {
-      try {
-        step(generator["throw"](value));
-      } catch (e) {
-        reject(e);
-      }
-    }
-    function step(result) {
-      result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected);
-    }
-    step((generator = generator.apply(thisArg, _arguments || [])).next());
-  });
-}
-var otelModulePromise = null;
-var OTEL_PKG = "@opentelemetry/api";
-function loadOtel() {
-  if (otelModulePromise === null) otelModulePromise = import(
-    /* webpackIgnore: true */
-    /* turbopackIgnore: true */
-    /* @vite-ignore */
-    OTEL_PKG
-  ).catch(() => null);
-  return otelModulePromise;
-}
-function extractTraceContext() {
-  return __awaiter2(this, void 0, void 0, function* () {
-    try {
-      const otel = yield loadOtel();
-      if (!otel || !otel.propagation || !otel.context) return null;
-      const carrier = {};
-      otel.propagation.inject(otel.context.active(), carrier);
-      const traceparent = carrier["traceparent"];
-      if (!traceparent) return null;
-      return {
-        traceparent,
-        tracestate: carrier["tracestate"],
-        baggage: carrier["baggage"]
-      };
-    } catch (_a) {
-      return null;
-    }
-  });
-}
-function parseTraceParent(traceparent) {
-  if (!traceparent || typeof traceparent !== "string") return null;
-  const parts = traceparent.split("-");
-  if (parts.length !== 4) return null;
-  const [version$1, traceId, parentId, traceFlags] = parts;
-  if (version$1.length !== 2 || traceId.length !== 32 || parentId.length !== 16 || traceFlags.length !== 2) return null;
-  const hexRegex = /^[0-9a-f]+$/i;
-  if (!hexRegex.test(version$1) || !hexRegex.test(traceId) || !hexRegex.test(parentId) || !hexRegex.test(traceFlags)) return null;
-  if (traceId === "00000000000000000000000000000000" || parentId === "0000000000000000") return null;
-  return {
-    version: version$1,
-    traceId,
-    parentId,
-    traceFlags,
-    isSampled: (parseInt(traceFlags, 16) & 1) === 1
-  };
-}
-function shouldPropagateToTarget(targetUrl, targets) {
-  if (!targetUrl || !targets || targets.length === 0) return false;
-  let url;
-  if (targetUrl instanceof URL) url = targetUrl;
-  else try {
-    url = new URL(targetUrl);
-  } catch (error) {
-    return false;
-  }
-  for (const target of targets) try {
-    if (typeof target === "string") {
-      if (matchStringTarget(url.hostname, target)) return true;
-    } else if (target instanceof RegExp) {
-      if (target.test(url.hostname)) return true;
-    } else if (typeof target === "function") {
-      if (target(url)) return true;
-    }
-  } catch (error) {
-    continue;
-  }
-  return false;
-}
-function matchStringTarget(hostname, target) {
-  if (target === hostname) return true;
-  if (target.startsWith("*.")) {
-    const domain = target.slice(2);
-    if (hostname.endsWith(domain)) {
-      if (hostname === domain || hostname.endsWith("." + domain)) return true;
-    }
-  }
-  return false;
-}
-function getDefaultPropagationTargets(supabaseUrl2) {
-  const targets = [];
-  try {
-    const url = new URL(supabaseUrl2);
-    targets.push(url.hostname);
-  } catch (error) {
-  }
-  targets.push("*.supabase.co", "*.supabase.in");
-  targets.push("localhost", "127.0.0.1", "[::1]");
-  return targets;
-}
-function _typeof3(o) {
-  "@babel/helpers - typeof";
-  return _typeof3 = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function(o$1) {
-    return typeof o$1;
-  } : function(o$1) {
-    return o$1 && "function" == typeof Symbol && o$1.constructor === Symbol && o$1 !== Symbol.prototype ? "symbol" : typeof o$1;
-  }, _typeof3(o);
-}
-function toPrimitive3(t, r) {
-  if ("object" != _typeof3(t) || !t) return t;
-  var e = t[Symbol.toPrimitive];
-  if (void 0 !== e) {
-    var i = e.call(t, r || "default");
-    if ("object" != _typeof3(i)) return i;
-    throw new TypeError("@@toPrimitive must return a primitive value.");
-  }
-  return ("string" === r ? String : Number)(t);
-}
-function toPropertyKey3(t) {
-  var i = toPrimitive3(t, "string");
-  return "symbol" == _typeof3(i) ? i : i + "";
-}
-function _defineProperty3(e, r, t) {
-  return (r = toPropertyKey3(r)) in e ? Object.defineProperty(e, r, {
-    value: t,
-    enumerable: true,
-    configurable: true,
-    writable: true
-  }) : e[r] = t, e;
-}
-function ownKeys4(e, r) {
-  var t = Object.keys(e);
-  if (Object.getOwnPropertySymbols) {
-    var o = Object.getOwnPropertySymbols(e);
-    r && (o = o.filter(function(r$1) {
-      return Object.getOwnPropertyDescriptor(e, r$1).enumerable;
-    })), t.push.apply(t, o);
-  }
-  return t;
-}
-function _objectSpread23(e) {
-  for (var r = 1; r < arguments.length; r++) {
-    var t = null != arguments[r] ? arguments[r] : {};
-    r % 2 ? ownKeys4(Object(t), true).forEach(function(r$1) {
-      _defineProperty3(e, r$1, t[r$1]);
-    }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys4(Object(t)).forEach(function(r$1) {
-      Object.defineProperty(e, r$1, Object.getOwnPropertyDescriptor(t, r$1));
-    });
-  }
-  return e;
-}
-var resolveFetch2 = (customFetch) => {
-  if (customFetch) return (...args) => customFetch(...args);
-  return (...args) => fetch(...args);
-};
-var resolveHeadersConstructor = () => {
-  return Headers;
-};
-var fetchWithAuth = (supabaseKey2, supabaseUrl2, getAccessToken, customFetch, tracePropagationOptions) => {
-  const fetch$1 = resolveFetch2(customFetch);
-  const HeadersConstructor = resolveHeadersConstructor();
-  const traceEnabled = (tracePropagationOptions === null || tracePropagationOptions === void 0 ? void 0 : tracePropagationOptions.enabled) === true;
-  const respectSampling = (tracePropagationOptions === null || tracePropagationOptions === void 0 ? void 0 : tracePropagationOptions.respectSamplingDecision) !== false;
-  const traceTargets = traceEnabled ? getDefaultPropagationTargets(supabaseUrl2) : null;
-  return async (input, init) => {
-    var _await$getAccessToken;
-    const accessToken = (_await$getAccessToken = await getAccessToken()) !== null && _await$getAccessToken !== void 0 ? _await$getAccessToken : supabaseKey2;
-    let headers = new HeadersConstructor(init === null || init === void 0 ? void 0 : init.headers);
-    if (!headers.has("apikey")) headers.set("apikey", supabaseKey2);
-    if (!headers.has("Authorization")) headers.set("Authorization", `Bearer ${accessToken}`);
-    if (traceTargets) {
-      const traceHeaders = await getTraceHeaders(input, traceTargets, respectSampling);
-      if (traceHeaders) {
-        if (traceHeaders.traceparent && !headers.has("traceparent")) headers.set("traceparent", traceHeaders.traceparent);
-        if (traceHeaders.tracestate && !headers.has("tracestate")) headers.set("tracestate", traceHeaders.tracestate);
-        if (traceHeaders.baggage && !headers.has("baggage")) headers.set("baggage", traceHeaders.baggage);
-      }
-    }
-    return fetch$1(input, _objectSpread23(_objectSpread23({}, init), {}, { headers }));
-  };
-};
-async function getTraceHeaders(input, targets, respectSampling) {
-  if (!shouldPropagateToTarget(typeof input === "string" ? input : input instanceof URL ? input : input.url, targets)) return null;
-  const traceContext = await extractTraceContext();
-  if (!traceContext || !traceContext.traceparent) return null;
-  if (respectSampling) {
-    const parsed = parseTraceParent(traceContext.traceparent);
-    if (parsed && !parsed.isSampled) return null;
-  }
-  return traceContext;
-}
-function normalizeTracePropagation(value) {
-  return typeof value === "boolean" ? { enabled: value } : value;
-}
-function ensureTrailingSlash(url) {
-  return url.endsWith("/") ? url : url + "/";
-}
-function applySettingDefaults(options, defaults) {
-  var _DEFAULT_GLOBAL_OPTIO, _globalOptions$header, _ref, _tracePropagationOpti, _ref2, _tracePropagationOpti2;
-  const { db: dbOptions, auth: authOptions, realtime: realtimeOptions, global: globalOptions } = options;
-  const { db: DEFAULT_DB_OPTIONS$1, auth: DEFAULT_AUTH_OPTIONS$1, realtime: DEFAULT_REALTIME_OPTIONS$1, global: DEFAULT_GLOBAL_OPTIONS$1 } = defaults;
-  const tracePropagationOptions = normalizeTracePropagation(options.tracePropagation);
-  const DEFAULT_TRACE_PROPAGATION_OPTIONS$1 = normalizeTracePropagation(defaults.tracePropagation);
-  const result = {
-    db: _objectSpread23(_objectSpread23({}, DEFAULT_DB_OPTIONS$1), dbOptions),
-    auth: _objectSpread23(_objectSpread23({}, DEFAULT_AUTH_OPTIONS$1), authOptions),
-    realtime: _objectSpread23(_objectSpread23({}, DEFAULT_REALTIME_OPTIONS$1), realtimeOptions),
-    storage: {},
-    global: _objectSpread23(_objectSpread23(_objectSpread23({}, DEFAULT_GLOBAL_OPTIONS$1), globalOptions), {}, { headers: _objectSpread23(_objectSpread23({}, (_DEFAULT_GLOBAL_OPTIO = DEFAULT_GLOBAL_OPTIONS$1 === null || DEFAULT_GLOBAL_OPTIONS$1 === void 0 ? void 0 : DEFAULT_GLOBAL_OPTIONS$1.headers) !== null && _DEFAULT_GLOBAL_OPTIO !== void 0 ? _DEFAULT_GLOBAL_OPTIO : {}), (_globalOptions$header = globalOptions === null || globalOptions === void 0 ? void 0 : globalOptions.headers) !== null && _globalOptions$header !== void 0 ? _globalOptions$header : {}) }),
-    tracePropagation: {
-      enabled: (_ref = (_tracePropagationOpti = tracePropagationOptions === null || tracePropagationOptions === void 0 ? void 0 : tracePropagationOptions.enabled) !== null && _tracePropagationOpti !== void 0 ? _tracePropagationOpti : DEFAULT_TRACE_PROPAGATION_OPTIONS$1 === null || DEFAULT_TRACE_PROPAGATION_OPTIONS$1 === void 0 ? void 0 : DEFAULT_TRACE_PROPAGATION_OPTIONS$1.enabled) !== null && _ref !== void 0 ? _ref : false,
-      respectSamplingDecision: (_ref2 = (_tracePropagationOpti2 = tracePropagationOptions === null || tracePropagationOptions === void 0 ? void 0 : tracePropagationOptions.respectSamplingDecision) !== null && _tracePropagationOpti2 !== void 0 ? _tracePropagationOpti2 : DEFAULT_TRACE_PROPAGATION_OPTIONS$1 === null || DEFAULT_TRACE_PROPAGATION_OPTIONS$1 === void 0 ? void 0 : DEFAULT_TRACE_PROPAGATION_OPTIONS$1.respectSamplingDecision) !== null && _ref2 !== void 0 ? _ref2 : true
-    },
-    accessToken: async () => ""
-  };
-  if (options.accessToken) result.accessToken = options.accessToken;
-  else delete result.accessToken;
-  return result;
-}
-function validateSupabaseUrl(supabaseUrl2) {
-  const trimmedUrl = supabaseUrl2 === null || supabaseUrl2 === void 0 ? void 0 : supabaseUrl2.trim();
-  if (!trimmedUrl) throw new Error("supabaseUrl is required.");
-  if (!trimmedUrl.match(/^https?:\/\//i)) throw new Error("Invalid supabaseUrl: Must be a valid HTTP or HTTPS URL.");
-  try {
-    return new URL(ensureTrailingSlash(trimmedUrl));
-  } catch (_unused) {
-    throw Error("Invalid supabaseUrl: Provided URL is malformed.");
-  }
-}
-var SupabaseAuthClient = class extends import_auth_js.AuthClient {
-  constructor(options) {
-    super(options);
-  }
-};
-var SupabaseClient = class {
-  /**
-  * Create a new client for use in the browser.
-  *
-  * @category Initializing
-  *
-  * @param supabaseUrl The unique Supabase URL which is supplied when you create a new project in your project dashboard.
-  * @param supabaseKey The unique Supabase Key which is supplied when you create a new project in your project dashboard.
-  * @param options.db.schema You can switch in between schemas. The schema needs to be on the list of exposed schemas inside Supabase.
-  * @param options.auth.autoRefreshToken Set to "true" if you want to automatically refresh the token before expiring.
-  * @param options.auth.persistSession Set to "true" if you want to automatically save the user session into local storage.
-  * @param options.auth.detectSessionInUrl Set to "true" if you want to automatically detects OAuth grants in the URL and signs in the user.
-  * @param options.realtime Options passed along to realtime-js constructor.
-  * @param options.storage Options passed along to the storage-js constructor.
-  * @param options.global.fetch A custom fetch implementation.
-  * @param options.global.headers Any additional headers to send with each network request.
-  *
-  * @example Creating a client
-  * ```js
-  * import { createClient } from '@supabase/supabase-js'
-  *
-  * // Create a single supabase client for interacting with your database
-  * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
-  * ```
-  *
-  * @example With a custom domain
-  * ```js
-  * import { createClient } from '@supabase/supabase-js'
-  *
-  * // Use a custom domain as the supabase URL
-  * const supabase = createClient('https://my-custom-domain.com', 'your-publishable-key')
-  * ```
-  *
-  * @example With additional parameters
-  * ```js
-  * import { createClient } from '@supabase/supabase-js'
-  *
-  * const options = {
-  *   db: {
-  *     schema: 'public',
-  *   },
-  *   auth: {
-  *     autoRefreshToken: true,
-  *     persistSession: true,
-  *     detectSessionInUrl: true
-  *   },
-  *   global: {
-  *     headers: { 'x-my-custom-header': 'my-app-name' },
-  *   },
-  * }
-  * const supabase = createClient("https://xyzcompany.supabase.co", "your-publishable-key", options)
-  * ```
-  *
-  * @exampleDescription With custom schemas
-  * By default the API server points to the `public` schema. You can enable other database schemas within the Dashboard.
-  * Go to [Settings > API > Exposed schemas](/dashboard/project/_/settings/api) and add the schema which you want to expose to the API.
-  *
-  * Note: each client connection can only access a single schema, so the code above can access the `other_schema` schema but cannot access the `public` schema.
-  *
-  * @example With custom schemas
-  * ```js
-  * import { createClient } from '@supabase/supabase-js'
-  *
-  * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key', {
-  *   // Provide a custom schema. Defaults to "public".
-  *   db: { schema: 'other_schema' }
-  * })
-  * ```
-  *
-  * @exampleDescription Custom fetch implementation
-  * `supabase-js` uses the [`cross-fetch`](https://www.npmjs.com/package/cross-fetch) library to make HTTP requests,
-  * but an alternative `fetch` implementation can be provided as an option.
-  * This is most useful in environments where `cross-fetch` is not compatible (for instance Cloudflare Workers).
-  *
-  * @example Custom fetch implementation
-  * ```js
-  * import { createClient } from '@supabase/supabase-js'
-  *
-  * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key', {
-  *   global: { fetch: fetch.bind(globalThis) }
-  * })
-  * ```
-  *
-  * @exampleDescription React Native options with AsyncStorage
-  * For React Native we recommend using `AsyncStorage` as the storage implementation for Supabase Auth.
-  *
-  * @example React Native options with AsyncStorage
-  * ```js
-  * import 'react-native-url-polyfill/auto'
-  * import { createClient } from '@supabase/supabase-js'
-  * import AsyncStorage from "@react-native-async-storage/async-storage";
-  *
-  * const supabase = createClient("https://xyzcompany.supabase.co", "your-publishable-key", {
-  *   auth: {
-  *     storage: AsyncStorage,
-  *     autoRefreshToken: true,
-  *     persistSession: true,
-  *     detectSessionInUrl: false,
-  *   },
-  * });
-  * ```
-  *
-  * @exampleDescription React Native options with Expo SecureStore
-  * If you wish to encrypt the user's session information, you can use `aes-js` and store the encryption key in Expo SecureStore.
-  * The `aes-js` library, a reputable JavaScript-only implementation of the AES encryption algorithm in CTR mode.
-  * A new 256-bit encryption key is generated using the `react-native-get-random-values` library.
-  * This key is stored inside Expo's SecureStore, while the value is encrypted and placed inside AsyncStorage.
-  *
-  * Please make sure that:
-  * - You keep the `expo-secure-store`, `aes-js` and `react-native-get-random-values` libraries up-to-date.
-  * - Choose the correct [`SecureStoreOptions`](https://docs.expo.dev/versions/latest/sdk/securestore/#securestoreoptions) for your app's needs.
-  *   E.g. [`SecureStore.WHEN_UNLOCKED`](https://docs.expo.dev/versions/latest/sdk/securestore/#securestorewhen_unlocked) regulates when the data can be accessed.
-  * - Carefully consider optimizations or other modifications to the above example, as those can lead to introducing subtle security vulnerabilities.
-  *
-  * @example React Native options with Expo SecureStore
-  * ```ts
-  * import 'react-native-url-polyfill/auto'
-  * import { createClient } from '@supabase/supabase-js'
-  * import AsyncStorage from '@react-native-async-storage/async-storage';
-  * import * as SecureStore from 'expo-secure-store';
-  * import * as aesjs from 'aes-js';
-  * import 'react-native-get-random-values';
-  *
-  * // As Expo's SecureStore does not support values larger than 2048
-  * // bytes, an AES-256 key is generated and stored in SecureStore, while
-  * // it is used to encrypt/decrypt values stored in AsyncStorage.
-  * class LargeSecureStore {
-  *   private async _encrypt(key: string, value: string) {
-  *     const encryptionKey = crypto.getRandomValues(new Uint8Array(256 / 8));
-  *
-  *     const cipher = new aesjs.ModeOfOperation.ctr(encryptionKey, new aesjs.Counter(1));
-  *     const encryptedBytes = cipher.encrypt(aesjs.utils.utf8.toBytes(value));
-  *
-  *     await SecureStore.setItemAsync(key, aesjs.utils.hex.fromBytes(encryptionKey));
-  *
-  *     return aesjs.utils.hex.fromBytes(encryptedBytes);
-  *   }
-  *
-  *   private async _decrypt(key: string, value: string) {
-  *     const encryptionKeyHex = await SecureStore.getItemAsync(key);
-  *     if (!encryptionKeyHex) {
-  *       return encryptionKeyHex;
-  *     }
-  *
-  *     const cipher = new aesjs.ModeOfOperation.ctr(aesjs.utils.hex.toBytes(encryptionKeyHex), new aesjs.Counter(1));
-  *     const decryptedBytes = cipher.decrypt(aesjs.utils.hex.toBytes(value));
-  *
-  *     return aesjs.utils.utf8.fromBytes(decryptedBytes);
-  *   }
-  *
-  *   async getItem(key: string) {
-  *     const encrypted = await AsyncStorage.getItem(key);
-  *     if (!encrypted) { return encrypted; }
-  *
-  *     return await this._decrypt(key, encrypted);
-  *   }
-  *
-  *   async removeItem(key: string) {
-  *     await AsyncStorage.removeItem(key);
-  *     await SecureStore.deleteItemAsync(key);
-  *   }
-  *
-  *   async setItem(key: string, value: string) {
-  *     const encrypted = await this._encrypt(key, value);
-  *
-  *     await AsyncStorage.setItem(key, encrypted);
-  *   }
-  * }
-  *
-  * const supabase = createClient("https://xyzcompany.supabase.co", "your-publishable-key", {
-  *   auth: {
-  *     storage: new LargeSecureStore(),
-  *     autoRefreshToken: true,
-  *     persistSession: true,
-  *     detectSessionInUrl: false,
-  *   },
-  * });
-  * ```
-  *
-  * @example With a database query
-  * ```ts
-  * import { createClient } from '@supabase/supabase-js'
-  *
-  * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key')
-  *
-  * const { data } = await supabase.from('profiles').select('*')
-  * ```
-  *
-  * @exampleDescription With OpenTelemetry tracing
-  * Opt in to W3C trace context propagation so the `trace_id` from your
-  * client-side spans is attached to Supabase requests and appears in API
-  * Gateway and Edge Function logs. Requires `@opentelemetry/api` to be
-  * installed in your application. See [Tracing with the JS SDK](https://supabase.com/docs/guides/telemetry/client-side-tracing).
-  *
-  * @example With OpenTelemetry tracing
-  * ```ts
-  * import { createClient } from '@supabase/supabase-js'
-  * import { trace } from '@opentelemetry/api'
-  *
-  * const supabase = createClient('https://xyzcompany.supabase.co', 'your-publishable-key', {
-  *   tracePropagation: true,
-  * })
-  *
-  * const tracer = trace.getTracer('my-app')
-  *
-  * await tracer.startActiveSpan('fetch-users', async (span) => {
-  *   // Outgoing request carries the active trace context.
-  *   const { data, error } = await supabase.from('users').select('*')
-  *   span.end()
-  * })
-  * ```
-  */
-  constructor(supabaseUrl2, supabaseKey2, options) {
-    var _settings$auth$storag, _settings$global$head;
-    this.supabaseUrl = supabaseUrl2;
-    this.supabaseKey = supabaseKey2;
-    const baseUrl = validateSupabaseUrl(supabaseUrl2);
-    if (!supabaseKey2) throw new Error("supabaseKey is required.");
-    this.realtimeUrl = new URL("realtime/v1", baseUrl);
-    this.realtimeUrl.protocol = this.realtimeUrl.protocol.replace("http", "ws");
-    this.authUrl = new URL("auth/v1", baseUrl);
-    this.storageUrl = new URL("storage/v1", baseUrl);
-    this.functionsUrl = new URL("functions/v1", baseUrl);
-    const defaultStorageKey = `sb-${baseUrl.hostname.split(".")[0]}-auth-token`;
-    const DEFAULTS = {
-      db: DEFAULT_DB_OPTIONS,
-      realtime: DEFAULT_REALTIME_OPTIONS,
-      auth: _objectSpread23(_objectSpread23({}, DEFAULT_AUTH_OPTIONS), {}, { storageKey: defaultStorageKey }),
-      global: DEFAULT_GLOBAL_OPTIONS,
-      tracePropagation: DEFAULT_TRACE_PROPAGATION_OPTIONS
-    };
-    const settings = applySettingDefaults(options !== null && options !== void 0 ? options : {}, DEFAULTS);
-    this.settings = settings;
-    this.storageKey = (_settings$auth$storag = settings.auth.storageKey) !== null && _settings$auth$storag !== void 0 ? _settings$auth$storag : "";
-    this.headers = (_settings$global$head = settings.global.headers) !== null && _settings$global$head !== void 0 ? _settings$global$head : {};
-    if (!settings.accessToken) {
-      var _settings$auth;
-      this.auth = this._initSupabaseAuthClient((_settings$auth = settings.auth) !== null && _settings$auth !== void 0 ? _settings$auth : {}, this.headers, settings.global.fetch);
-    } else {
-      this.accessToken = settings.accessToken;
-      this.auth = new Proxy({}, { get: (_, prop) => {
-        throw new Error(`@supabase/supabase-js: Supabase Client is configured with the accessToken option, accessing supabase.auth.${String(prop)} is not possible`);
-      } });
-    }
-    this.fetch = fetchWithAuth(supabaseKey2, supabaseUrl2, this._getAccessToken.bind(this), settings.global.fetch, settings.tracePropagation);
-    this.realtime = this._initRealtimeClient(_objectSpread23({
-      headers: this.headers,
-      accessToken: this._getAccessToken.bind(this),
-      fetch: this.fetch
-    }, settings.realtime));
-    if (this.accessToken) Promise.resolve(this.accessToken()).then((token) => this.realtime.setAuth(token)).catch((e) => console.warn("Failed to set initial Realtime auth token:", e));
-    this.rest = new PostgrestClient(new URL("rest/v1", baseUrl).href, {
-      headers: this.headers,
-      schema: settings.db.schema,
-      fetch: this.fetch,
-      timeout: settings.db.timeout,
-      urlLengthLimit: settings.db.urlLengthLimit
-    });
-    this.storage = new StorageClient(this.storageUrl.href, this.headers, this.fetch, options === null || options === void 0 ? void 0 : options.storage);
-    if (!settings.accessToken) this._listenForAuthEvents();
-  }
-  /**
-  * Supabase Functions allows you to deploy and invoke edge functions.
-  */
-  get functions() {
-    return new import_functions_js.FunctionsClient(this.functionsUrl.href, {
-      headers: this.headers,
-      customFetch: this.fetch
-    });
-  }
-  /**
-  * Perform a query on a table or a view.
-  *
-  * @param relation - The table or view name to query
-  */
-  from(relation) {
-    return this.rest.from(relation);
-  }
-  /**
-  * Select a schema to query or perform an function (rpc) call.
-  *
-  * The schema needs to be on the list of exposed schemas inside Supabase.
-  *
-  * @param schema - The schema to query
-  */
-  schema(schema) {
-    return this.rest.schema(schema);
-  }
-  /**
-  * Perform a function call.
-  *
-  * @param fn - The function name to call
-  * @param args - The arguments to pass to the function call
-  * @param options - Named parameters
-  * @param options.head - When set to `true`, `data` will not be returned.
-  * Useful if you only need the count.
-  * @param options.get - When set to `true`, the function will be called with
-  * read-only access mode.
-  * @param options.count - Count algorithm to use to count rows returned by the
-  * function. Only applicable for [set-returning
-  * functions](https://www.postgresql.org/docs/current/functions-srf.html).
-  *
-  * `"exact"`: Exact but slow count algorithm. Performs a `COUNT(*)` under the
-  * hood.
-  *
-  * `"planned"`: Approximated but fast count algorithm. Uses the Postgres
-  * statistics under the hood.
-  *
-  * `"estimated"`: Uses exact count for low numbers and planned count for high
-  * numbers.
-  */
-  rpc(fn, args = {}, options = {
-    head: false,
-    get: false,
-    count: void 0
-  }) {
-    return this.rest.rpc(fn, args, options);
-  }
-  /**
-  * Creates a Realtime channel with Broadcast, Presence, and Postgres Changes.
-  *
-  * @param {string} name - The name of the Realtime channel.
-  * @param {Object} opts - The options to pass to the Realtime channel.
-  *
-  * @category Realtime
-  */
-  channel(name, opts = { config: {} }) {
-    return this.realtime.channel(name, opts);
-  }
-  /**
-  * Returns all Realtime channels.
-  *
-  * @category Realtime
-  *
-  * @example Get all channels
-  * ```js
-  * const channels = supabase.getChannels()
-  * ```
-  */
-  getChannels() {
-    return this.realtime.getChannels();
-  }
-  /**
-  * Unsubscribes and removes Realtime channel from Realtime client.
-  *
-  * @param {RealtimeChannel} channel - The name of the Realtime channel.
-  *
-  *
-  * @category Realtime
-  *
-  * @remarks
-  * - Removing a channel is a great way to maintain the performance of your project's Realtime service as well as your database if you're listening to Postgres changes. Supabase will automatically handle cleanup 30 seconds after a client is disconnected, but unused channels may cause degradation as more clients are simultaneously subscribed.
-  *
-  * @example Removes a channel
-  * ```js
-  * supabase.removeChannel(myChannel)
-  * ```
-  */
-  removeChannel(channel) {
-    return this.realtime.removeChannel(channel);
-  }
-  /**
-  * Unsubscribes and removes all Realtime channels from Realtime client.
-  *
-  * @category Realtime
-  *
-  * @remarks
-  * - Removing channels is a great way to maintain the performance of your project's Realtime service as well as your database if you're listening to Postgres changes. Supabase will automatically handle cleanup 30 seconds after a client is disconnected, but unused channels may cause degradation as more clients are simultaneously subscribed.
-  *
-  * @example Remove all channels
-  * ```js
-  * supabase.removeAllChannels()
-  * ```
-  */
-  removeAllChannels() {
-    return this.realtime.removeAllChannels();
-  }
-  async _getAccessToken() {
-    var _this = this;
-    var _data$session$access_, _data$session;
-    if (_this.accessToken) return await _this.accessToken();
-    const { data } = await _this.auth.getSession();
-    return (_data$session$access_ = (_data$session = data.session) === null || _data$session === void 0 ? void 0 : _data$session.access_token) !== null && _data$session$access_ !== void 0 ? _data$session$access_ : _this.supabaseKey;
-  }
-  _initSupabaseAuthClient({ autoRefreshToken, persistSession, detectSessionInUrl, storage, userStorage, storageKey, flowType, lock, debug, throwOnError, experimental, lockAcquireTimeout, skipAutoInitialize }, headers, fetch$1) {
-    const authHeaders = {
-      Authorization: `Bearer ${this.supabaseKey}`,
-      apikey: `${this.supabaseKey}`
-    };
-    return new SupabaseAuthClient({
-      url: this.authUrl.href,
-      headers: _objectSpread23(_objectSpread23({}, authHeaders), headers),
-      storageKey,
-      autoRefreshToken,
-      persistSession,
-      detectSessionInUrl,
-      storage,
-      userStorage,
-      flowType,
-      lock,
-      debug,
-      throwOnError,
-      experimental,
-      fetch: fetch$1,
-      lockAcquireTimeout,
-      skipAutoInitialize,
-      hasCustomAuthorizationHeader: Object.keys(this.headers).some((key) => key.toLowerCase() === "authorization")
-    });
-  }
-  _initRealtimeClient(options) {
-    return new import_realtime_js.RealtimeClient(this.realtimeUrl.href, _objectSpread23(_objectSpread23({}, options), {}, { params: _objectSpread23(_objectSpread23({}, { apikey: this.supabaseKey }), options === null || options === void 0 ? void 0 : options.params) }));
-  }
-  _listenForAuthEvents() {
-    return this.auth.onAuthStateChange((event, session) => {
-      this._handleTokenChanged(event, "CLIENT", session === null || session === void 0 ? void 0 : session.access_token);
-    });
-  }
-  _handleTokenChanged(event, source, token) {
-    if ((event === "TOKEN_REFRESHED" || event === "SIGNED_IN") && this.changedAccessToken !== token) {
-      this.changedAccessToken = token;
-      this.realtime.setAuth(token);
-    } else if (event === "SIGNED_OUT") {
-      this.realtime.setAuth();
-      if (source == "STORAGE") this.auth.signOut();
-      this.changedAccessToken = void 0;
-    }
-  }
-};
-var createClient = (supabaseUrl2, supabaseKey2, options) => {
-  return new SupabaseClient(supabaseUrl2, supabaseKey2, options);
-};
-function shouldShowDeprecationWarning() {
-  if (typeof window !== "undefined") return false;
-  const _process = globalThis["process"];
-  if (!_process) return false;
-  const processVersion = _process["version"];
-  if (processVersion === void 0 || processVersion === null) return false;
-  const versionMatch = processVersion.match(/^v(\d+)\./);
-  if (!versionMatch) return false;
-  return parseInt(versionMatch[1], 10) <= 18;
-}
-if (shouldShowDeprecationWarning()) console.warn("\u26A0\uFE0F  Node.js 18 and below are deprecated and will no longer be supported in future versions of @supabase/supabase-js. Please upgrade to Node.js 20 or later. For more information, visit: https://github.com/orgs/supabase/discussions/37217");
-
-// src/lib/supabase.ts
-var supabaseUrl = process.env.SUPABASE_URL;
-var supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error(
-    "SUPABASE_URL and either SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY are required"
-  );
-}
-var supabase = createClient(supabaseUrl, supabaseKey);
-function createUserClient(token) {
-  return createClient(supabaseUrl, supabaseKey, {
-    global: {
-      headers: { Authorization: `Bearer ${token}` }
-    },
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false
-    }
-  });
-}
-async function fetchAll(build, pageSize = 1e3) {
-  const all = [];
-  let start = 0;
-  for (; ; ) {
-    const { data, error } = await build(start, start + pageSize - 1);
-    if (error) return { data: null, error };
-    if (!data || data.length === 0) break;
-    all.push(...data);
-    if (data.length < pageSize) break;
-    start += pageSize;
-  }
-  return { data: all, error: null };
-}
+init_supabase();
 
 // src/middleware/cache.ts
 import { createHash } from "node:crypto";
 
-// src/lib/redis.ts
-var import_ioredis = __toESM(require_built3(), 1);
-
 // src/lib/logger.ts
 var import_pino = __toESM(require_pino(), 1);
-var isProduction = process.env.NODE_ENV === "production";
+var isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NETLIFY);
+var isProduction = true;
+var usePretty = !isProduction && Boolean(process.stdout?.isTTY);
 var logger = (0, import_pino.default)({
   level: process.env.LOG_LEVEL ?? "info",
   redact: [
@@ -64844,54 +68055,67 @@ var logger = (0, import_pino.default)({
     "req.headers.cookie",
     "res.headers['set-cookie']"
   ],
-  ...isProduction ? {} : {
+  ...usePretty ? {
     transport: {
       target: "pino-pretty",
       options: { colorize: true }
     }
-  }
+  } : {}
 });
 
 // src/lib/redis.ts
+function tryImportRedis() {
+  try {
+    return require_built3();
+  } catch {
+    return null;
+  }
+}
 var redisUrl = process.env.REDIS_URL;
 var client = null;
 var isConnected = false;
 if (redisUrl) {
-  client = new import_ioredis.default(redisUrl, {
-    maxRetriesPerRequest: 3,
-    retryStrategy(times) {
-      const delay = Math.min(100 * Math.pow(3, times - 1), 5e3);
-      if (times > 5) {
-        logger.error("Redis max retries reached, giving up");
-        return null;
-      }
-      return delay;
-    },
-    enableReadyCheck: true,
-    lazyConnect: true,
-    commandTimeout: 5e3
-  });
-  client.on("error", (err) => {
-    isConnected = false;
-    logger.error({ err: { message: err.message, code: err.code } }, "Redis error");
-  });
-  client.on("connect", () => {
-    logger.info("Redis connecting\u2026");
-  });
-  client.on("ready", () => {
-    isConnected = true;
-    logger.info("Redis ready");
-  });
-  client.on("close", () => {
-    isConnected = false;
-    logger.warn("Redis closed");
-  });
-  client.on("reconnecting", () => {
-    logger.info("Redis reconnecting\u2026");
-  });
-  client.connect().catch((err) => {
-    logger.error({ err: { message: err.message } }, "Redis initial connection failed");
-  });
+  const mod = tryImportRedis();
+  if (!mod) {
+    logger.warn("ioredis not available, Redis caching disabled");
+  } else {
+    const Redis = mod.Redis || mod;
+    client = new Redis(redisUrl, {
+      maxRetriesPerRequest: 3,
+      retryStrategy(times) {
+        const delay = Math.min(100 * Math.pow(3, times - 1), 5e3);
+        if (times > 5) {
+          logger.error("Redis max retries reached, giving up");
+          return null;
+        }
+        return delay;
+      },
+      enableReadyCheck: true,
+      lazyConnect: true,
+      commandTimeout: 5e3
+    });
+    client.on("error", (err) => {
+      isConnected = false;
+      logger.error({ err: { message: err.message, code: err.code } }, "Redis error");
+    });
+    client.on("connect", () => {
+      logger.info("Redis connecting\u2026");
+    });
+    client.on("ready", () => {
+      isConnected = true;
+      logger.info("Redis ready");
+    });
+    client.on("close", () => {
+      isConnected = false;
+      logger.warn("Redis closed");
+    });
+    client.on("reconnecting", () => {
+      logger.info("Redis reconnecting\u2026");
+    });
+    client.connect().catch((err) => {
+      logger.error({ err: { message: err.message } }, "Redis initial connection failed");
+    });
+  }
 } else {
   logger.warn("REDIS_URL not set, caching disabled");
 }
@@ -65432,7 +68656,7 @@ async function fetchMirrors(ids) {
   if (ids.length === 0) return mirrorMap;
   for (let i = 0; i < ids.length; i += 100) {
     const chunk = ids.slice(i, i + 100);
-    const { data } = await supabase.from("recordings").select(MIRROR_COLS).in("id", chunk);
+    const { data } = await supabaseProxy.from("recordings").select(MIRROR_COLS).in("id", chunk);
     if (data) for (const row of data) mirrorMap.set(row.id, row);
   }
   return mirrorMap;
@@ -65448,7 +68672,7 @@ async function enrichWithMirrors(rows) {
 }
 async function enrichSingleWithMirrors(row) {
   if (!row?.id) return row;
-  const { data } = await supabase.from("recordings").select(MIRROR_COLS_SINGLE).eq("id", row.id).single();
+  const { data } = await supabaseProxy.from("recordings").select(MIRROR_COLS_SINGLE).eq("id", row.id).single();
   if (!data) return row;
   return { ...row, ...data };
 }
@@ -65462,7 +68686,7 @@ router2.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["re
     const { page = 1, limit = 24, search, tags, gender, username, resolution, sort } = parsed.data;
     const normalizedPage = Math.max(1, page);
     const normalizedLimit = Math.min(Math.max(1, limit), 100);
-    let query = supabase.from("recordings_with_links").select(LIST_COLS, { count: "exact" }).not("links", "is", "null");
+    let query = supabaseProxy.from("recordings_with_links").select(LIST_COLS, { count: "exact" }).not("links", "is", "null");
     if (search?.trim()) {
       const s = search.trim();
       query = query.or(`username.ilike.%${s}%,room_title.ilike.%${s}%,filename.ilike.%${s}%`);
@@ -65478,7 +68702,29 @@ router2.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["re
     const sortCol = sort === "largest" ? "filesize" : sort === "popular" ? "viewers" : "timestamp";
     query = query.order(sortCol, { ascending, nullsFirst: false });
     const offset = (normalizedPage - 1) * normalizedLimit;
-    const { data, error, count } = await query.range(offset, offset + normalizedLimit - 1);
+    let data = null;
+    let error = null;
+    let count = null;
+    try {
+      const result = await query.range(offset, offset + normalizedLimit - 1);
+      data = result.data;
+      error = result.error;
+      count = result.count;
+    } catch (e) {
+      error = e;
+    }
+    if (error && typeof error === "object" && error.code === "PGRST205") {
+      req.log.warn("Schema cache miss (PGRST205), refreshing and retrying");
+      await Promise.resolve().then(() => (init_supabase(), supabase_exports)).then((m) => m.refreshSupabaseSchema());
+      const refreshed = supabaseProxy.from("recordings_with_links").select(LIST_COLS, { count: "exact" }).not("links", "is", "null");
+      const ascending2 = sort === "oldest";
+      const sortCol2 = sort === "largest" ? "filesize" : sort === "popular" ? "viewers" : "timestamp";
+      const retryQuery = refreshed.order(sortCol2, { ascending: ascending2, nullsFirst: false }).range(offset, offset + normalizedLimit - 1);
+      const retryResult = await retryQuery;
+      data = retryResult.data;
+      error = retryResult.error;
+      count = retryResult.count;
+    }
     if (error) {
       req.log.error({ err: error }, "Supabase error listing recordings");
       res.status(500).json({ error: "Failed to fetch recordings" });
@@ -65516,11 +68762,11 @@ router2.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds:
     const authHeader = req.headers.authorization;
     if (authHeader?.startsWith("Bearer ")) {
       try {
-        const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.slice(7));
+        const { data: { user }, error: authError } = await supabaseProxy.auth.getUser(authHeader.slice(7));
         if (!authError && user) {
           isAuthenticated = true;
           const uid = user.id;
-          const { data: history } = await supabase.from("watch_history").select("recording_id, metadata, progress_seconds, duration_seconds, watched_at").eq("user_id", uid).order("watched_at", { ascending: false }).limit(100);
+          const { data: history } = await supabaseProxy.from("watch_history").select("recording_id, metadata, progress_seconds, duration_seconds, watched_at").eq("user_id", uid).order("watched_at", { ascending: false }).limit(100);
           const historyRecordingIds = [];
           const completionWeights = /* @__PURE__ */ new Map();
           if (history && history.length > 0) {
@@ -65537,11 +68783,11 @@ router2.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds:
               }
             }
           }
-          const { data: follows } = await supabase.from("performer_follows").select("performer_username").eq("user_id", uid);
+          const { data: follows } = await supabaseProxy.from("performer_follows").select("performer_username").eq("user_id", uid);
           if (follows) for (const f of follows) {
             if (f.performer_username) followedPerformers.add(f.performer_username);
           }
-          const { data: saved } = await supabase.from("saved_videos").select("recording_id").eq("user_id", uid);
+          const { data: saved } = await supabaseProxy.from("saved_videos").select("recording_id").eq("user_id", uid);
           const savedRecordingIds = [];
           if (saved) for (const s of saved) {
             if (s.recording_id) {
@@ -65549,7 +68795,7 @@ router2.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds:
               seenIds.add(s.recording_id);
             }
           }
-          const { data: watchLater } = await supabase.from("watch_later_items").select("recording_id").eq("user_id", uid);
+          const { data: watchLater } = await supabaseProxy.from("watch_later_items").select("recording_id").eq("user_id", uid);
           const watchLaterRecordingIds = [];
           if (watchLater) for (const w of watchLater) {
             if (w.recording_id) {
@@ -65560,7 +68806,7 @@ router2.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds:
           }
           const allIds = [.../* @__PURE__ */ new Set([...historyRecordingIds, ...savedRecordingIds, ...watchLaterRecordingIds])];
           if (allIds.length > 0) {
-            const { data: metaRows } = await supabase.from("recordings_with_links").select("id, username, tags, gender").in("id", allIds);
+            const { data: metaRows } = await supabaseProxy.from("recordings_with_links").select("id, username, tags, gender").in("id", allIds);
             if (metaRows) {
               const idToMeta = new Map(metaRows.map((r) => [r.id, r]));
               for (const hid of historyRecordingIds) {
@@ -65632,14 +68878,14 @@ router2.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds:
     };
     if (isAuthenticated) {
       const POOL = Math.min(Math.max(page * limit * 4, limit * 10), MAX_POOL);
-      const { data } = await supabase.from("recordings_with_links").select(POOL_COLS).not("links", "is", "null").order("timestamp", { ascending: false }).limit(POOL * 2);
+      const { data } = await supabaseProxy.from("recordings_with_links").select(POOL_COLS).not("links", "is", "null").order("timestamp", { ascending: false }).limit(POOL * 2);
       addScored(data, 0);
       scored.sort((a, b) => b._score - a._score);
     } else {
       const POOL = Math.min(Math.max(page * limit * 4, limit * 10), MAX_POOL);
       const [newest, popular] = await Promise.all([
-        supabase.from("recordings_with_links").select(POOL_COLS).not("links", "is", "null").order("timestamp", { ascending: false }).limit(POOL),
-        supabase.from("recordings_with_links").select(POOL_COLS).not("links", "is", "null").order("viewers", { ascending: false, nullsFirst: false }).limit(POOL)
+        supabaseProxy.from("recordings_with_links").select(POOL_COLS).not("links", "is", "null").order("timestamp", { ascending: false }).limit(POOL),
+        supabaseProxy.from("recordings_with_links").select(POOL_COLS).not("links", "is", "null").order("viewers", { ascending: false, nullsFirst: false }).limit(POOL)
       ]);
       addScored(newest.data, 80);
       addScored(popular.data, 20);
@@ -65665,7 +68911,7 @@ router2.get("/recordings/random", cache({ ttlSeconds: 30, staleSeconds: 60, tags
       excludeRaw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 100)
     );
     const POOL_SIZE = Math.max(200, excludeIds.size + 50);
-    const { data: pool, error } = await supabase.from("recordings_with_links").select("id").not("links", "is", "null").limit(POOL_SIZE);
+    const { data: pool, error } = await supabaseProxy.from("recordings_with_links").select("id").not("links", "is", "null").limit(POOL_SIZE);
     if (error) {
       req.log.error({ err: error }, "Supabase error getting recordings for random");
       res.status(500).json({ error: "Failed to get random recording" });
@@ -65673,7 +68919,7 @@ router2.get("/recordings/random", cache({ ttlSeconds: 30, staleSeconds: 60, tags
     }
     const candidates = (pool ?? []).filter((r) => !excludeIds.has(r.id));
     if (candidates.length === 0) {
-      const { data: fallback } = await supabase.from("recordings_with_links").select("id").not("links", "is", "null").limit(1);
+      const { data: fallback } = await supabaseProxy.from("recordings_with_links").select("id").not("links", "is", "null").limit(1);
       if (fallback && fallback.length > 0) {
         res.json({ id: fallback[0].id });
         return;
@@ -65700,7 +68946,7 @@ router2.get("/recordings/related", cache({ ttlSeconds: 120, staleSeconds: 300, t
       res.json([]);
       return;
     }
-    const { data: recording, error: recError } = await supabase.from("recordings_with_links").select("username, tags, gender").not("links", "is", "null").eq("id", id).single();
+    const { data: recording, error: recError } = await supabaseProxy.from("recordings_with_links").select("username, tags, gender").not("links", "is", "null").eq("id", id).single();
     if (recError || !recording) {
       res.json([]);
       return;
@@ -65712,15 +68958,15 @@ router2.get("/recordings/related", cache({ ttlSeconds: 120, staleSeconds: 300, t
     const authHeader = req.headers.authorization;
     if (authHeader?.startsWith("Bearer ")) {
       try {
-        const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.slice(7));
+        const { data: { user }, error: authError } = await supabaseProxy.auth.getUser(authHeader.slice(7));
         if (!authError && user) {
           isAuthenticated = true;
-          const { data: history } = await supabase.from("watch_history").select("recording_id").eq("user_id", user.id).order("watched_at", { ascending: false }).limit(50);
+          const { data: history } = await supabaseProxy.from("watch_history").select("recording_id").eq("user_id", user.id).order("watched_at", { ascending: false }).limit(50);
           if (history && history.length > 0) {
             for (const h of history) if (h.recording_id) seenIds.add(h.recording_id);
             const historyIds = history.map((h) => h.recording_id).filter(Boolean);
             if (historyIds.length > 0) {
-              const { data: hr } = await supabase.from("recordings_with_links").select("username, tags").in("id", historyIds);
+              const { data: hr } = await supabaseProxy.from("recordings_with_links").select("username, tags").in("id", historyIds);
               if (hr) for (const r of hr) {
                 if (r.tags) for (const tag of r.tags) userTagFreq[tag] = (userTagFreq[tag] ?? 0) + 1;
                 if (r.username) userPerformerFreq[r.username] = (userPerformerFreq[r.username] ?? 0) + 1;
@@ -65731,11 +68977,11 @@ router2.get("/recordings/related", cache({ ttlSeconds: 120, staleSeconds: 300, t
       } catch {
       }
     }
-    const { data: performerData } = await supabase.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).eq("username", recording.username).order("timestamp", { ascending: false }).limit(limit);
+    const { data: performerData } = await supabaseProxy.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).eq("username", recording.username).order("timestamp", { ascending: false }).limit(limit);
     let tagResults = [];
     if (recording.tags && recording.tags.length > 0) {
       const sourceTags = new Set(recording.tags);
-      const { data } = await supabase.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).neq("username", recording.username).overlaps("tags", recording.tags).order("timestamp", { ascending: false }).limit(limit * 3);
+      const { data } = await supabaseProxy.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).neq("username", recording.username).overlaps("tags", recording.tags).order("timestamp", { ascending: false }).limit(limit * 3);
       tagResults = (data ?? []).map((r) => {
         let score = (r.tags ?? []).filter((t) => sourceTags.has(t)).length * 15;
         if (isAuthenticated) {
@@ -65769,7 +69015,7 @@ router2.get("/recordings/related", cache({ ttlSeconds: 120, staleSeconds: 300, t
       }
     }
     if (merged.length < limit && recording.gender) {
-      const { data } = await supabase.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).neq("username", recording.username).eq("gender", recording.gender).order("viewers", { ascending: false, nullsFirst: false }).limit(limit * 2);
+      const { data } = await supabaseProxy.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).neq("username", recording.username).eq("gender", recording.gender).order("viewers", { ascending: false, nullsFirst: false }).limit(limit * 2);
       for (const r of data ?? []) {
         if (merged.length >= limit) break;
         if (!seen.has(r.id)) {
@@ -65779,7 +69025,7 @@ router2.get("/recordings/related", cache({ ttlSeconds: 120, staleSeconds: 300, t
       }
     }
     if (merged.length < limit) {
-      const { data } = await supabase.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).neq("username", recording.username).order("viewers", { ascending: false, nullsFirst: false }).limit(limit * 3);
+      const { data } = await supabaseProxy.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).neq("username", recording.username).order("viewers", { ascending: false, nullsFirst: false }).limit(limit * 3);
       for (const r of data ?? []) {
         if (merged.length >= limit) break;
         if (!seen.has(r.id)) {
@@ -65807,7 +69053,7 @@ router2.get("/recordings/:id", cache({ ttlSeconds: 600, staleSeconds: 900, tags:
       res.status(404).json({ error: "Recording not found" });
       return;
     }
-    const { data, error } = await supabase.from("recordings_with_links").select("*").not("links", "is", "null").eq("id", id).single();
+    const { data, error } = await supabaseProxy.from("recordings_with_links").select("*").not("links", "is", "null").eq("id", id).single();
     if (error) {
       if (error.code === "PGRST116") {
         res.status(404).json({ error: "Recording not found" });
@@ -65832,6 +69078,7 @@ var recordings_default = router2;
 
 // src/routes/performers.ts
 var import_express3 = __toESM(require_express2(), 1);
+init_supabase();
 var COOKIES = process.env.COOKIES ?? "";
 var CB_AFFILIATE = process.env.CHATURBATE_AFFILIATE_CODE ?? "";
 var UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -65959,7 +69206,7 @@ async function fetchMirrors2(ids) {
   if (ids.length === 0) return mirrorMap;
   for (let i = 0; i < ids.length; i += 100) {
     const chunk = ids.slice(i, i + 100);
-    const { data } = await supabase.from("recordings").select(MIRROR_COLS2).in("id", chunk);
+    const { data } = await supabaseProxy.from("recordings").select(MIRROR_COLS2).in("id", chunk);
     if (data) for (const row of data) mirrorMap.set(row.id, row);
   }
   return mirrorMap;
@@ -65999,7 +69246,7 @@ router3.get(
         in_archive: false
       };
       try {
-        const { data: archiveData } = await supabase.from("recordings_with_links").select(
+        const { data: archiveData } = await supabaseProxy.from("recordings_with_links").select(
           "thumbnail_url, sprite_url, preview_url, timestamp, username"
         ).eq("username", username).not("links", "is", "null").order("timestamp", { ascending: false }).limit(50);
         if (archiveData && archiveData.length > 0) {
@@ -66134,7 +69381,7 @@ function newerRow(cur, candidate) {
 }
 async function fetchPerformers() {
   const { data, error } = await fetchAll(
-    (start, end) => supabase.from("recordings_with_links").select("id,username,gender,timestamp,thumbnail_url,sprite_url").not("links", "is", "null").range(start, end)
+    (start, end) => supabaseProxy.from("recordings_with_links").select("id,username,gender,timestamp,thumbnail_url,sprite_url").not("links", "is", "null").range(start, end)
   );
   if (error) throw error;
   const byName = /* @__PURE__ */ new Map();
@@ -66274,7 +69521,7 @@ router3.get(
       }
       const { username } = parsed.data;
       const SELECT_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at";
-      const { data: validRecordings, error } = await supabase.from("recordings_with_links").select(SELECT_COLS).not("links", "is", "null").eq("username", username).order("timestamp", { ascending: false });
+      const { data: validRecordings, error } = await supabaseProxy.from("recordings_with_links").select(SELECT_COLS).not("links", "is", "null").eq("username", username).order("timestamp", { ascending: false });
       if (error) {
         req.log.error(
           { err: error, username },
@@ -66307,9 +69554,10 @@ var performers_default = router3;
 
 // src/routes/tags.ts
 var import_express4 = __toESM(require_express2(), 1);
+init_supabase();
 var router4 = (0, import_express4.Router)();
 async function fetchTagCountsViaRpc() {
-  const { data, error } = await supabase.rpc("get_tag_counts");
+  const { data, error } = await supabaseProxy.rpc("get_tag_counts");
   if (error) {
     const code = error.code;
     const message = error.message ?? "";
@@ -66322,7 +69570,7 @@ async function fetchTagCountsViaRpc() {
 }
 async function fetchTagCountsLegacy() {
   const { data, error } = await fetchAll(
-    (start, end) => supabase.from("recordings_with_links").select("tags").not("links", "is", "null").not("tags", "is", "null").range(start, end)
+    (start, end) => supabaseProxy.from("recordings_with_links").select("tags").not("links", "is", "null").not("tags", "is", "null").range(start, end)
   );
   if (error) {
     throw error;
@@ -66361,9 +69609,10 @@ var tags_default = router4;
 
 // src/routes/stats.ts
 var import_express5 = __toESM(require_express2(), 1);
+init_supabase();
 var router5 = (0, import_express5.Router)();
 async function fetchStatsViaRpc() {
-  const { data, error } = await supabase.rpc("get_site_stats");
+  const { data, error } = await supabaseProxy.rpc("get_site_stats");
   if (error) {
     const code = error.code;
     const message = error.message ?? "";
@@ -66384,7 +69633,7 @@ async function fetchStatsViaRpc() {
 }
 async function fetchStatsLegacy() {
   const { data, error } = await fetchAll(
-    (start, end) => supabase.from("recordings_with_links").select("username,timestamp,filesize,tags").not("links", "is", "null").range(start, end)
+    (start, end) => supabaseProxy.from("recordings_with_links").select("username,timestamp,filesize,tags").not("links", "is", "null").range(start, end)
   );
   if (error) {
     throw error;
@@ -66438,9 +69687,10 @@ var stats_default = router5;
 
 // src/routes/reactions.ts
 var import_express6 = __toESM(require_express2(), 1);
+init_supabase();
 async function getReactionCounts(recordingId) {
   const { data, error } = await fetchAll(
-    (start, end) => supabase.from("reactions").select("type").eq("recording_id", recordingId).range(start, end)
+    (start, end) => supabaseProxy.from("reactions").select("type").eq("recording_id", recordingId).range(start, end)
   );
   if (error) throw error;
   let likes = 0;
@@ -66452,21 +69702,21 @@ async function getReactionCounts(recordingId) {
   return { likes, dislikes };
 }
 async function getUserReaction(recordingId, sessionId) {
-  const { data } = await supabase.from("reactions").select("type").eq("recording_id", recordingId).eq("session_id", sessionId).maybeSingle();
+  const { data } = await supabaseProxy.from("reactions").select("type").eq("recording_id", recordingId).eq("session_id", sessionId).maybeSingle();
   return data?.type ?? null;
 }
 async function toggleReaction(recordingId, type, sessionId) {
-  const { data: existing } = await supabase.from("reactions").select("id, type").eq("recording_id", recordingId).eq("session_id", sessionId).maybeSingle();
+  const { data: existing } = await supabaseProxy.from("reactions").select("id, type").eq("recording_id", recordingId).eq("session_id", sessionId).maybeSingle();
   if (existing) {
     if (existing.type === type) {
-      const { error } = await supabase.from("reactions").delete().eq("recording_id", recordingId).eq("session_id", sessionId);
+      const { error } = await supabaseProxy.from("reactions").delete().eq("recording_id", recordingId).eq("session_id", sessionId);
       if (error) throw error;
     } else {
-      const { error } = await supabase.from("reactions").update({ type }).eq("recording_id", recordingId).eq("session_id", sessionId);
+      const { error } = await supabaseProxy.from("reactions").update({ type }).eq("recording_id", recordingId).eq("session_id", sessionId);
       if (error) throw error;
     }
   } else {
-    const { error } = await supabase.from("reactions").insert({ recording_id: recordingId, session_id: sessionId, type });
+    const { error } = await supabaseProxy.from("reactions").insert({ recording_id: recordingId, session_id: sessionId, type });
     if (error) throw error;
   }
 }
@@ -66553,6 +69803,7 @@ var reactions_default = router6;
 
 // src/routes/comments.ts
 var import_express7 = __toESM(require_express2(), 1);
+init_supabase();
 function buildCommentTree(rows, likedSet) {
   const map = /* @__PURE__ */ new Map();
   const roots = [];
@@ -66587,7 +69838,7 @@ async function fetchLikesForComments(commentIds) {
   const likedBySession = /* @__PURE__ */ new Map();
   for (let i = 0; i < commentIds.length; i += 1e3) {
     const chunk = commentIds.slice(i, i + 1e3);
-    const { data, error } = await supabase.from("comment_likes").select("comment_id, session_id").in("comment_id", chunk);
+    const { data, error } = await supabaseProxy.from("comment_likes").select("comment_id, session_id").in("comment_id", chunk);
     if (error) throw error;
     for (const r of data ?? []) {
       likeCounts.set(r.comment_id, (likeCounts.get(r.comment_id) ?? 0) + 1);
@@ -66610,7 +69861,7 @@ router7.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comm
       return;
     }
     const { data, error } = await fetchAll(
-      (start, end) => supabase.from("comments").select("id,recording_id,parent_id,author,content,deleted,created_at").eq("recording_id", recording_id).range(start, end)
+      (start, end) => supabaseProxy.from("comments").select("id,recording_id,parent_id,author,content,deleted,created_at").eq("recording_id", recording_id).range(start, end)
     );
     if (error) {
       req.log?.error?.({ err: error, recording_id }, "Supabase error fetching comments");
@@ -66667,7 +69918,7 @@ router7.post("/comments", invalidateOnSuccess(["comments", "stats"]), async (req
     }
     const safeAuthor = (author?.trim() || "Anonymous").slice(0, 100);
     const safeContent = content.trim().slice(0, 5e3);
-    const { data: row, error } = await supabase.from("comments").insert({ recording_id, author: safeAuthor, content: safeContent, session_id }).select("id,recording_id,parent_id,author,content,deleted,created_at").single();
+    const { data: row, error } = await supabaseProxy.from("comments").insert({ recording_id, author: safeAuthor, content: safeContent, session_id }).select("id,recording_id,parent_id,author,content,deleted,created_at").single();
     if (error) {
       req.log?.error?.({ err: error }, "Supabase error inserting comment");
       res.status(500).json({ error: "Failed to post comment" });
@@ -66687,7 +69938,7 @@ router7.post("/comments/:commentId/replies", invalidateOnSuccess(["comments", "s
       res.status(400).json({ error: "Valid commentId, content, and session_id are required" });
       return;
     }
-    const { data: parent, error: parentError } = await supabase.from("comments").select("id,recording_id,parent_id").eq("id", commentId).maybeSingle();
+    const { data: parent, error: parentError } = await supabaseProxy.from("comments").select("id,recording_id,parent_id").eq("id", commentId).maybeSingle();
     if (parentError) {
       req.log?.error?.({ err: parentError }, "Supabase error fetching parent comment");
       res.status(500).json({ error: "Failed to post reply" });
@@ -66701,7 +69952,7 @@ router7.post("/comments/:commentId/replies", invalidateOnSuccess(["comments", "s
     const rootId = parentRow.parent_id != null ? Number(parentRow.parent_id) : commentId;
     const safeAuthor = (author?.trim() || "Anonymous").slice(0, 100);
     const safeContent = content.trim().slice(0, 5e3);
-    const { data: row, error } = await supabase.from("comments").insert({ recording_id: parentRow.recording_id, parent_id: rootId, author: safeAuthor, content: safeContent, session_id }).select("id,recording_id,parent_id,author,content,deleted,created_at").single();
+    const { data: row, error } = await supabaseProxy.from("comments").insert({ recording_id: parentRow.recording_id, parent_id: rootId, author: safeAuthor, content: safeContent, session_id }).select("id,recording_id,parent_id,author,content,deleted,created_at").single();
     if (error) {
       req.log?.error?.({ err: error }, "Supabase error inserting reply");
       res.status(500).json({ error: "Failed to post reply" });
@@ -66721,23 +69972,23 @@ router7.post("/comments/:commentId/like", invalidateOnSuccess(["comments"]), asy
       res.status(400).json({ error: "Valid commentId and session_id are required" });
       return;
     }
-    const { data: existing } = await supabase.from("comment_likes").select("id").eq("comment_id", commentId).eq("session_id", session_id).maybeSingle();
+    const { data: existing } = await supabaseProxy.from("comment_likes").select("id").eq("comment_id", commentId).eq("session_id", session_id).maybeSingle();
     if (existing) {
-      const { error } = await supabase.from("comment_likes").delete().eq("comment_id", commentId).eq("session_id", session_id);
+      const { error } = await supabaseProxy.from("comment_likes").delete().eq("comment_id", commentId).eq("session_id", session_id);
       if (error) {
         req.log?.error?.({ err: error }, "Supabase error unliking comment");
         res.status(500).json({ error: "Failed to update like" });
         return;
       }
     } else {
-      const { error } = await supabase.from("comment_likes").insert({ comment_id: commentId, session_id });
+      const { error } = await supabaseProxy.from("comment_likes").insert({ comment_id: commentId, session_id });
       if (error && error.code !== "23505") {
         req.log?.error?.({ err: error }, "Supabase error liking comment");
         res.status(500).json({ error: "Failed to update like" });
         return;
       }
     }
-    const { count, error: countError } = await supabase.from("comment_likes").select("id", { count: "exact", head: true }).eq("comment_id", commentId);
+    const { count, error: countError } = await supabaseProxy.from("comment_likes").select("id", { count: "exact", head: true }).eq("comment_id", commentId);
     if (countError) {
       req.log?.error?.({ err: countError }, "Supabase error counting comment likes");
       res.status(500).json({ error: "Failed to update like" });
@@ -66756,8 +70007,10 @@ var comments_default = router7;
 
 // src/routes/requests.ts
 var import_express8 = __toESM(require_express2(), 1);
+init_supabase();
 
 // src/middleware/auth.ts
+init_supabase();
 async function requireAuth(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
@@ -66769,7 +70022,7 @@ async function requireAuth(req, res, next) {
     const {
       data: { user },
       error
-    } = await supabase.auth.getUser(token);
+    } = await supabaseProxy.auth.getUser(token);
     if (error || !user) {
       res.status(401).json({ error: "Invalid or expired token" });
       return;
@@ -66784,9 +70037,10 @@ async function requireAuth(req, res, next) {
 }
 
 // src/middleware/requireRole.ts
+init_supabase();
 var ROLE_HIERARCHY = { user: 0, moderator: 1, admin: 2 };
 async function getUserRole(userId) {
-  const { data } = await supabase.from("user_roles").select("role").eq("user_id", userId).maybeSingle();
+  const { data } = await supabaseProxy.from("user_roles").select("role").eq("user_id", userId).maybeSingle();
   return data?.role ?? "user";
 }
 function requireRole(minimumRole) {
@@ -66813,7 +70067,7 @@ var admin = requireRole("admin");
 var REQUEST_COLS = "id,user_id,platform,performer_username,stream_link,notes,priority,status,created_at";
 router8.get("/requests", requireAuth, async (req, res) => {
   try {
-    const { data, error } = await supabase.from("requests").select(REQUEST_COLS).eq("user_id", req.user.id).order("created_at", { ascending: false }).limit(200);
+    const { data, error } = await supabaseProxy.from("requests").select(REQUEST_COLS).eq("user_id", req.user.id).order("created_at", { ascending: false }).limit(200);
     if (error) {
       req.log?.error?.({ err: error }, "GET /requests supabase error");
       res.json([]);
@@ -66837,7 +70091,7 @@ router8.post("/requests", requireAuth, async (req, res) => {
   const validPriority = ["low", "normal", "high"].includes(priority ?? "") ? priority : "normal";
   if (performer_username) {
     try {
-      const { count, error } = await supabase.from("recordings_with_links").select("id", { count: "exact", head: true }).ilike("username", performer_username).not("links", "is", "null");
+      const { count, error } = await supabaseProxy.from("recordings_with_links").select("id", { count: "exact", head: true }).ilike("username", performer_username).not("links", "is", "null");
       if (error) throw error;
       const recordingCount = count ?? 0;
       if (recordingCount > 0) {
@@ -66863,7 +70117,7 @@ router8.post("/requests", requireAuth, async (req, res) => {
     }
   }
   try {
-    const { data: created, error } = await supabase.from("requests").insert({
+    const { data: created, error } = await supabaseProxy.from("requests").insert({
       user_id: req.user.id,
       platform,
       performer_username: performer_username ?? null,
@@ -66879,7 +70133,7 @@ router8.post("/requests", requireAuth, async (req, res) => {
       if (enabled) {
         const performerName = created.performer_username ?? "a performer";
         const message = `Your request for @${performerName} on ${created.platform} has been submitted and is pending review.`;
-        await supabase.from("user_notifications").insert({
+        await supabaseProxy.from("user_notifications").insert({
           user_id: created.user_id,
           type: "request_submitted",
           message,
@@ -66903,7 +70157,7 @@ router8.post("/requests", requireAuth, async (req, res) => {
   }
 });
 async function findDuplicate(userId, platform, performerUsername, streamLink) {
-  let query = supabase.from("requests").select(REQUEST_COLS).eq("user_id", userId).eq("platform", platform);
+  let query = supabaseProxy.from("requests").select(REQUEST_COLS).eq("user_id", userId).eq("platform", platform);
   if (performerUsername) {
     query = query.eq("performer_username", performerUsername);
   } else {
@@ -66918,7 +70172,7 @@ async function findDuplicate(userId, platform, performerUsername, streamLink) {
   return data;
 }
 async function getNotificationPref(userId, type) {
-  const { data } = await supabase.from("user_notification_preferences").select("enabled").eq("user_id", userId).eq("notification_type", type).maybeSingle();
+  const { data } = await supabaseProxy.from("user_notification_preferences").select("enabled").eq("user_id", userId).eq("notification_type", type).maybeSingle();
   return { enabled: data?.enabled ?? true };
 }
 router8.delete("/requests/:id", requireAuth, async (req, res) => {
@@ -66928,7 +70182,7 @@ router8.delete("/requests/:id", requireAuth, async (req, res) => {
       res.status(400).json({ error: "Invalid request ID" });
       return;
     }
-    const { data, error } = await supabase.from("requests").delete().eq("id", id).eq("user_id", req.user.id).select("id");
+    const { data, error } = await supabaseProxy.from("requests").delete().eq("id", id).eq("user_id", req.user.id).select("id");
     if (error) {
       req.log?.error?.({ err: error }, "DELETE /requests/:id supabase error");
       res.status(500).json({ error: "Failed to delete request" });
@@ -66939,7 +70193,7 @@ router8.delete("/requests/:id", requireAuth, async (req, res) => {
       return;
     }
     try {
-      await supabase.from("user_notifications").delete().eq("user_id", req.user.id).eq("related_id", String(id)).in("type", ["request_status", "request_submitted"]);
+      await supabaseProxy.from("user_notifications").delete().eq("user_id", req.user.id).eq("related_id", String(id)).in("type", ["request_status", "request_submitted"]);
     } catch {
     }
     res.json({ ok: true });
@@ -66956,7 +70210,7 @@ router8.patch("/requests/:id/status", ...admin, invalidateOnSuccess(["performers
     return;
   }
   try {
-    const { data, error } = await supabase.from("requests").update({ status }).eq("id", id).select(REQUEST_COLS).single();
+    const { data, error } = await supabaseProxy.from("requests").update({ status }).eq("id", id).select(REQUEST_COLS).single();
     if (error) {
       if (error.code === "PGRST116") {
         res.status(404).json({ error: "Request not found" });
@@ -66973,6 +70227,7 @@ var requests_default = router8;
 
 // src/routes/user.ts
 var import_express9 = __toESM(require_express2(), 1);
+init_supabase();
 var router9 = (0, import_express9.Router)();
 router9.get("/user/resolve-username", async (req, res) => {
   try {
@@ -66982,7 +70237,7 @@ router9.get("/user/resolve-username", async (req, res) => {
       return;
     }
     try {
-      const { data: profile } = await supabase.from("user_profiles").select("email").ilike("username", username).limit(1).single();
+      const { data: profile } = await supabaseProxy.from("user_profiles").select("email").ilike("username", username).limit(1).single();
       if (profile?.email) {
         res.json({ email: profile.email });
         return;
@@ -66990,7 +70245,7 @@ router9.get("/user/resolve-username", async (req, res) => {
     } catch {
     }
     try {
-      const { data: email, error: rpcError } = await supabase.rpc("resolve_username", {
+      const { data: email, error: rpcError } = await supabaseProxy.rpc("resolve_username", {
         p_username: username
       });
       if (!rpcError && email) {
@@ -67058,7 +70313,7 @@ router9.put("/user/profile", async (req, res) => {
 router9.get("/user/role", async (req, res) => {
   try {
     const userId = req.user.id;
-    const { data, error } = await supabase.from("user_roles").select("role").eq("user_id", userId).maybeSingle();
+    const { data, error } = await supabaseProxy.from("user_roles").select("role").eq("user_id", userId).maybeSingle();
     const role = data?.role ?? "user";
     res.json({
       role: role === "admin" || role === "moderator" || role === "user" ? role : "user"
@@ -67827,6 +71082,7 @@ var cache_admin_default = router10;
 
 // src/routes/admin.ts
 var import_express11 = __toESM(require_express2(), 1);
+init_supabase();
 var router11 = (0, import_express11.Router)();
 var admin3 = requireRole("admin");
 var REQUEST_COLS2 = "id,user_id,platform,performer_username,stream_link,notes,priority,status,created_at";
@@ -67835,7 +71091,7 @@ async function fetchProfiles(userIds) {
   const ids = [...new Set(userIds)].filter(Boolean);
   for (let i = 0; i < ids.length; i += 100) {
     const chunk = ids.slice(i, i + 100);
-    const { data, error } = await supabase.from("user_profiles").select("user_id,display_name,username,email").in("user_id", chunk);
+    const { data, error } = await supabaseProxy.from("user_profiles").select("user_id,display_name,username,email").in("user_id", chunk);
     if (error) throw error;
     for (const row of data ?? []) {
       profiles.set(row.user_id, {
@@ -67852,7 +71108,7 @@ async function fetchRoles(userIds) {
   const ids = [...new Set(userIds)].filter(Boolean);
   for (let i = 0; i < ids.length; i += 100) {
     const chunk = ids.slice(i, i + 100);
-    const { data, error } = await supabase.from("user_roles").select("user_id,role").in("user_id", chunk);
+    const { data, error } = await supabaseProxy.from("user_roles").select("user_id,role").in("user_id", chunk);
     if (error) throw error;
     for (const row of data ?? []) roles.set(row.user_id, row.role);
   }
@@ -67873,7 +71129,7 @@ router11.get("/admin/stats", ...admin3, async (_req, res) => {
     const fallback = { total: 0, pending: 0, approved: 0, rejected: 0, done: 0 };
     try {
       const { data, error } = await fetchAll(
-        (start, end) => supabase.from("requests").select("status").range(start, end)
+        (start, end) => supabaseProxy.from("requests").select("status").range(start, end)
       );
       if (error) throw error;
       const counts = { total: 0, pending: 0, approved: 0, rejected: 0, done: 0 };
@@ -67893,7 +71149,7 @@ router11.get("/admin/stats", ...admin3, async (_req, res) => {
   const performers = async () => {
     try {
       const { data, error } = await fetchAll(
-        (start, end) => supabase.from("recordings_with_links").select("username").not("links", "is", "null").range(start, end)
+        (start, end) => supabaseProxy.from("recordings_with_links").select("username").not("links", "is", "null").range(start, end)
       );
       if (error) throw error;
       return new Set((data ?? []).map((r) => r.username).filter(Boolean)).size;
@@ -67903,9 +71159,9 @@ router11.get("/admin/stats", ...admin3, async (_req, res) => {
     }
   };
   const [users, requestCounts, recordings, performerCount] = await Promise.all([
-    safeCount("users", async () => supabase.from("user_profiles").select("user_id", { count: "exact", head: true })),
+    safeCount("users", async () => supabaseProxy.from("user_profiles").select("user_id", { count: "exact", head: true })),
     requests(),
-    safeCount("recordings", async () => supabase.from("recordings").select("id", { count: "exact", head: true })),
+    safeCount("recordings", async () => supabaseProxy.from("recordings").select("id", { count: "exact", head: true })),
     performers()
   ]);
   res.json({ users, recordings, performers: performerCount, requests: requestCounts });
@@ -67914,7 +71170,7 @@ router11.get("/admin/requests", ...admin3, async (req, res) => {
   try {
     const status = req.query.status;
     const validStatuses = ["pending", "approved", "rejected", "done"];
-    let query = supabase.from("requests").select(REQUEST_COLS2).order("created_at", { ascending: false }).limit(500);
+    let query = supabaseProxy.from("requests").select(REQUEST_COLS2).order("created_at", { ascending: false }).limit(500);
     if (status && validStatuses.includes(status)) {
       query = query.eq("status", status);
     }
@@ -67951,7 +71207,7 @@ router11.patch("/admin/requests/:id/status", ...admin3, async (req, res) => {
     return;
   }
   try {
-    const { data: updated, error } = await supabase.from("requests").update({ status }).eq("id", id).select(REQUEST_COLS2).single();
+    const { data: updated, error } = await supabaseProxy.from("requests").update({ status }).eq("id", id).select(REQUEST_COLS2).single();
     if (error) {
       if (error.code === "PGRST116") {
         res.status(404).json({ error: "Request not found" });
@@ -67970,10 +71226,10 @@ router11.patch("/admin/requests/:id/status", ...admin3, async (req, res) => {
     const newLabel = statusLabels[updated.status] ?? updated.status;
     const message = `Your request for @${performerName} on ${updated.platform} has been ${newLabel}.`;
     try {
-      const { data: prefRow } = await supabase.from("user_notification_preferences").select("enabled").eq("user_id", updated.user_id).eq("notification_type", "request_status").maybeSingle();
+      const { data: prefRow } = await supabaseProxy.from("user_notification_preferences").select("enabled").eq("user_id", updated.user_id).eq("notification_type", "request_status").maybeSingle();
       const enabled = prefRow ? prefRow.enabled : true;
       if (enabled) {
-        await supabase.from("user_notifications").insert({
+        await supabaseProxy.from("user_notifications").insert({
           user_id: updated.user_id,
           type: "request_status",
           message,
@@ -67993,7 +71249,7 @@ router11.patch("/admin/requests/:id/status", ...admin3, async (req, res) => {
 router11.delete("/admin/requests/:id", ...admin3, async (req, res) => {
   const id = parseInt(String(req.params.id), 10);
   try {
-    const { data, error } = await supabase.from("requests").delete().eq("id", id).select("id");
+    const { data, error } = await supabaseProxy.from("requests").delete().eq("id", id).select("id");
     if (error) throw error;
     if (!data || data.length === 0) {
       res.status(404).json({ error: "Request not found" });
@@ -68008,7 +71264,7 @@ router11.delete("/admin/requests/:id", ...admin3, async (req, res) => {
 });
 router11.get("/admin/users", ...admin3, async (req, res) => {
   try {
-    const { data, error } = await supabase.from("user_profiles").select("user_id,display_name,username,email,avatar_url,created_at").order("created_at", { ascending: false }).limit(500);
+    const { data, error } = await supabaseProxy.from("user_profiles").select("user_id,display_name,username,email,avatar_url,created_at").order("created_at", { ascending: false }).limit(500);
     if (error) {
       req.log?.error?.({ err: error }, "GET /admin/users supabase error");
       res.status(500).json({ error: "Failed to fetch users" });
@@ -68036,7 +71292,7 @@ router11.patch("/admin/users/:id/role", ...admin3, async (req, res) => {
     return;
   }
   try {
-    const { error } = await supabase.from("user_roles").upsert({ user_id: id, role }, { onConflict: "user_id" });
+    const { error } = await supabaseProxy.from("user_roles").upsert({ user_id: id, role }, { onConflict: "user_id" });
     if (error) {
       req.log?.error?.({ err: error }, "PATCH /admin/users/:id/role supabase error");
       res.status(500).json({ error: "Failed to update role" });
@@ -68056,22 +71312,22 @@ router11.delete("/admin/users/:id", ...admin3, async (req, res) => {
       res.status(400).json({ error: "Cannot delete your own account" });
       return;
     }
-    await supabase.from("user_roles").delete().eq("user_id", id);
-    await supabase.from("saved_videos").delete().eq("user_id", id);
-    await supabase.from("watch_history").delete().eq("user_id", id);
-    await supabase.from("watch_later_items").delete().eq("user_id", id);
-    const { data: collections } = await supabase.from("user_collections").select("id").eq("user_id", id);
+    await supabaseProxy.from("user_roles").delete().eq("user_id", id);
+    await supabaseProxy.from("saved_videos").delete().eq("user_id", id);
+    await supabaseProxy.from("watch_history").delete().eq("user_id", id);
+    await supabaseProxy.from("watch_later_items").delete().eq("user_id", id);
+    const { data: collections } = await supabaseProxy.from("user_collections").select("id").eq("user_id", id);
     const collectionIds = (collections ?? []).map((c) => c.id);
     for (let i = 0; i < collectionIds.length; i += 100) {
       const chunk = collectionIds.slice(i, i + 100);
-      await supabase.from("user_collection_items").delete().in("collection_id", chunk);
+      await supabaseProxy.from("user_collection_items").delete().in("collection_id", chunk);
     }
-    await supabase.from("user_collections").delete().eq("user_id", id);
-    await supabase.from("performer_follows").delete().eq("user_id", id);
-    await supabase.from("user_notifications").delete().eq("user_id", id);
-    await supabase.from("user_notification_preferences").delete().eq("user_id", id);
-    await supabase.from("requests").delete().eq("user_id", id);
-    await supabase.from("user_profiles").delete().eq("user_id", id);
+    await supabaseProxy.from("user_collections").delete().eq("user_id", id);
+    await supabaseProxy.from("performer_follows").delete().eq("user_id", id);
+    await supabaseProxy.from("user_notifications").delete().eq("user_id", id);
+    await supabaseProxy.from("user_notification_preferences").delete().eq("user_id", id);
+    await supabaseProxy.from("requests").delete().eq("user_id", id);
+    await supabaseProxy.from("user_profiles").delete().eq("user_id", id);
     logger.info({ targetUserId: id, adminId: req.user.id }, "User deleted by admin");
     res.json({ ok: true });
   } catch (err) {
@@ -68172,6 +71428,7 @@ var admin_default = router11;
 
 // src/routes/search.ts
 var import_express12 = __toESM(require_express2(), 1);
+init_supabase();
 var router12 = (0, import_express12.Router)();
 router12.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search", "recordings", "performers", "tags"] }), async (req, res) => {
   const q = String(req.query.q ?? "").trim();
@@ -68181,7 +71438,7 @@ router12.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["searc
   }
   const suggestions = [];
   try {
-    const { data: performers } = await supabase.from("recordings_with_links").select("username, thumbnail_url, sprite_url, preview_url, links").not("links", "is", "null").ilike("username", `%${q}%`).order("timestamp", { ascending: false }).limit(4);
+    const { data: performers } = await supabaseProxy.from("recordings_with_links").select("username, thumbnail_url, sprite_url, preview_url, links").not("links", "is", "null").ilike("username", `%${q}%`).order("timestamp", { ascending: false }).limit(4);
     if (performers) {
       const seen = /* @__PURE__ */ new Set();
       for (const p of performers) {
@@ -68197,7 +71454,7 @@ router12.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["searc
         });
       }
     }
-    const { data: recordings } = await supabase.from("recordings_with_links").select("id, username, room_title, filename, thumbnail_url, links").not("links", "is", "null").or(
+    const { data: recordings } = await supabaseProxy.from("recordings_with_links").select("id, username, room_title, filename, thumbnail_url, links").not("links", "is", "null").or(
       `username.ilike.%${q}%,room_title.ilike.%${q}%,filename.ilike.%${q}%`
     ).order("timestamp", { ascending: false }).limit(4);
     if (recordings) {
@@ -68219,7 +71476,7 @@ router12.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["searc
         const matchedTags = [];
         const PAGE_SIZE = 1e3;
         for (let start = 0; ; start += PAGE_SIZE) {
-          const { data, error } = await supabase.from("recordings_with_links").select("tags").not("links", "is", "null").not("tags", "is", "null").range(start, start + PAGE_SIZE - 1);
+          const { data, error } = await supabaseProxy.from("recordings_with_links").select("tags").not("links", "is", "null").not("tags", "is", "null").range(start, start + PAGE_SIZE - 1);
           if (error) break;
           if (!data || data.length === 0) break;
           for (const r of data) {
@@ -68801,6 +72058,7 @@ var media_proxy_default = router13;
 
 // src/routes/views.ts
 var import_express14 = __toESM(require_express2(), 1);
+init_supabase();
 var router14 = (0, import_express14.Router)();
 router14.post("/recordings/:id/view", async (req, res) => {
   const { id } = req.params;
@@ -68809,13 +72067,13 @@ router14.post("/recordings/:id/view", async (req, res) => {
     return;
   }
   try {
-    const { data: current, error: fetchError } = await supabase.from("recordings").select("viewers").eq("id", id).single();
+    const { data: current, error: fetchError } = await supabaseProxy.from("recordings").select("viewers").eq("id", id).single();
     if (fetchError || !current) {
       res.status(404).json({ error: "Recording not found" });
       return;
     }
     const newCount = (current.viewers ?? 0) + 1;
-    const { error: updateError } = await supabase.from("recordings").update({ viewers: newCount }).eq("id", id);
+    const { error: updateError } = await supabaseProxy.from("recordings").update({ viewers: newCount }).eq("id", id);
     if (updateError) {
       req.log.error({ err: updateError, id }, "Failed to update view count");
       res.status(500).json({ error: "Failed to record view" });
@@ -68834,29 +72092,163 @@ var views_default = router14;
 
 // src/routes/rum.ts
 var import_express15 = __toESM(require_express2(), 1);
-var router15 = (0, import_express15.Router)();
-router15.post("/rum", (req, res) => {
+
+// src/lib/activity.ts
+init_supabase();
+var STREAM_KEY = "activity:stream";
+var GROUP_NAME = "activity-flushers";
+var MAX_FLUSH_ENTRIES = 200;
+var STREAM_MAXLEN = 5e3;
+async function pushActivityBatch(metrics2) {
+  if (metrics2.length === 0) return;
+  const redis = getRedis();
+  if (!redis || !isRedisConnected()) return;
   try {
-    const body = req.body;
-    const metrics2 = Array.isArray(body?.metrics) ? body.metrics.slice(0, 50) : [];
-    if (metrics2.length > 0) {
-      req.log?.info?.(
-        {
-          rum: true,
-          count: metrics2.length,
-          metrics: metrics2.map((m) => ({
-            name: typeof m.name === "string" ? m.name.slice(0, 32) : "unknown",
-            value: typeof m.value === "number" && Number.isFinite(m.value) ? m.value : -1,
-            path: typeof m.path === "string" ? m.path.slice(0, 128) : "/",
-            ts: typeof m.ts === "number" ? m.ts : 0
+    await redis.xadd(STREAM_KEY, "*", "payload", JSON.stringify(metrics2));
+    redis.xtrim(STREAM_KEY, "MAXLEN", "~", STREAM_MAXLEN).catch(() => {
+    });
+  } catch (err) {
+    logger.warn({ err }, "Activity push failed (batch dropped)");
+  }
+}
+async function ensureGroup(redis) {
+  try {
+    await redis.xgroup("CREATE", STREAM_KEY, GROUP_NAME, "0", "MKSTREAM");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/BUSYGROUP/i.test(msg)) throw err;
+  }
+}
+function parseEntries(raw) {
+  const groups = raw;
+  if (!groups || groups.length === 0) return [];
+  const entries = groups[0][1] ?? [];
+  const parsed = [];
+  for (const [id, fields] of entries) {
+    let payload = "";
+    for (let i = 0; i < fields.length; i += 2) {
+      if (fields[i] === "payload") payload = fields[i + 1] ?? "";
+    }
+    try {
+      const metrics2 = JSON.parse(payload);
+      if (Array.isArray(metrics2)) {
+        parsed.push({
+          id,
+          metrics: metrics2.filter(
+            (m) => !!m && typeof m.name === "string" && typeof m.value === "number" && Number.isFinite(m.value)
+          ).map((m) => ({
+            name: m.name.slice(0, 64),
+            value: m.value,
+            path: typeof m.path === "string" ? m.path.slice(0, 256) : void 0,
+            ts: typeof m.ts === "number" ? m.ts : void 0,
+            meta: m.meta && typeof m.meta === "object" ? m.meta : void 0
           }))
-        },
-        "RUM batch"
-      );
+        });
+      }
+    } catch {
+      parsed.push({ id, metrics: [] });
+    }
+  }
+  return parsed;
+}
+async function flushActivity() {
+  const redis = getRedis();
+  if (!redis || !isRedisConnected()) return 0;
+  try {
+    await ensureGroup(redis);
+    const consumer = `flusher-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+    const raw = await redis.xreadgroup(
+      "GROUP",
+      GROUP_NAME,
+      consumer,
+      "COUNT",
+      MAX_FLUSH_ENTRIES,
+      "STREAMS",
+      STREAM_KEY,
+      ">"
+    );
+    const entries = parseEntries(raw);
+    if (entries.length === 0) return 0;
+    const rows = [];
+    const ids = [];
+    for (const entry of entries) {
+      ids.push(entry.id);
+      entry.metrics.forEach((m, idx) => {
+        rows.push({
+          id: `${entry.id}:${idx}`,
+          name: m.name.slice(0, 64),
+          value: m.value,
+          path: m.path?.slice(0, 256) ?? null,
+          ts: typeof m.ts === "number" && Number.isFinite(m.ts) ? m.ts : null,
+          meta: m.meta && typeof m.meta === "object" ? m.meta : null
+        });
+      });
+    }
+    if (rows.length > 0) {
+      const { error } = await supabaseProxy.from("activity_events").upsert(rows, { onConflict: "id" });
+      if (error) throw error;
+    }
+    await redis.xack(STREAM_KEY, GROUP_NAME, ...ids);
+    return entries.length;
+  } catch (err) {
+    logger.warn({ err }, "Activity flush failed (entries will be redelivered)");
+    return 0;
+  }
+}
+
+// src/routes/rum.ts
+var router15 = (0, import_express15.Router)();
+var FLUSH_PROBABILITY = Number.parseFloat(process.env.ACTIVITY_FLUSH_PROBABILITY ?? "0.05") || 0.05;
+var MAX_METRICS_PER_BATCH = 50;
+function normalizeMeta(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return void 0;
+  const obj = raw;
+  const meta = {};
+  for (const [key, value] of Object.entries(obj).slice(0, 8)) {
+    try {
+      const serialized = JSON.stringify(value);
+      if (serialized && serialized.length <= 256) meta[key.slice(0, 32)] = value;
+    } catch {
+    }
+  }
+  return Object.keys(meta).length > 0 ? meta : void 0;
+}
+function normalizeMetrics(body) {
+  const raw = body?.metrics;
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const m of raw.slice(0, MAX_METRICS_PER_BATCH)) {
+    if (typeof m !== "object" || m === null) continue;
+    const metric = m;
+    if (typeof metric.name === "string" && typeof metric.value === "number" && Number.isFinite(metric.value)) {
+      out.push({
+        name: metric.name.slice(0, 64),
+        value: metric.value,
+        path: typeof metric.path === "string" ? metric.path.slice(0, 256) : void 0,
+        ts: typeof metric.ts === "number" ? metric.ts : void 0,
+        meta: normalizeMeta(metric.meta)
+      });
+    }
+  }
+  return out;
+}
+router15.post("/rum", async (req, res) => {
+  try {
+    const metrics2 = normalizeMetrics(req.body);
+    if (metrics2.length > 0) {
+      await pushActivityBatch(metrics2);
+      if (Math.random() < FLUSH_PROBABILITY) {
+        flushActivity().catch(() => {
+        });
+      }
     }
   } catch {
   }
   res.status(204).end();
+});
+router15.get("/rum/flush", async (_req, res) => {
+  const processed = await flushActivity();
+  res.json({ ok: true, processed });
 });
 var rum_default = router15;
 
