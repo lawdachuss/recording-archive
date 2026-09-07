@@ -1,5 +1,5 @@
 import { getApiBaseUrl } from "./api-base";
-import { getAdaptiveImageWidth } from "./adaptive-quality";
+import { getAdaptiveImageWidth } from "./connection";
 
 const PROXY_PATH = "/api/media";
 
@@ -184,9 +184,8 @@ export interface ProxyImageOptions {
  * of KB instead of a full-resolution JPEG — the single biggest factor in
  * first-paint time on a slow connection.
  *
- * Width defaults to the live adaptive-quality tier, which is measured from how
- * long past thumbnails actually took to load on THIS connection (and honors
- * Data Saver). Hosts the server proxy can't reach (NO_PROXY_HOSTS, e.g. catbox)
+ * Width is full quality (1200px) unless the user enabled Data Saver (400px).
+ * Hosts the server proxy can't reach (NO_PROXY_HOSTS, e.g. catbox)
  * route their static raster thumbnails through wsrv.nl's edge instead — still
  * resized + webp, plus a shared global CDN cache for repeat hits.
  */

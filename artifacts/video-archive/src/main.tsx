@@ -2,7 +2,12 @@ import { createRoot } from "react-dom/client";
 import { setBaseUrl } from "@workspace/api-client-react";
 import { getApiBaseUrl } from "./lib/api-base";
 import App from "./App";
+import { initRum } from "./lib/rum";
 import "./index.css";
+
+// Real-user monitoring: Core Web Vitals + resource timing, 10% sampled,
+// beaconed fire-and-forget. Must never affect the page (see lib/rum.ts).
+initRum();
 
 const baseUrl = getApiBaseUrl();
 if (baseUrl) {

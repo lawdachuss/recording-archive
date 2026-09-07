@@ -3,7 +3,6 @@ import { cn } from "@/lib/utils";
 import { isConnectionConstrained } from "@/lib/connection";
 import { proxyImageUrl, isHttp2ResetHost } from "@/lib/proxy-url";
 import { cacheImage } from "@/lib/image-cache";
-import { recordImageLoad } from "@/lib/adaptive-quality";
 
 interface OptimizedImageProps {
   src: string;
@@ -104,11 +103,6 @@ export const OptimizedImage = memo(function OptimizedImage({
   // against the host (catbox throttling made the first row wait 4-13s).
   const [inView, setInView] = useState(true);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  // When the <img> element started fetching — feeds the adaptive-speed
-  // measurement (median thumbnail load time auto-tunes the connection tier
-  // that gates hover previews / preloads / sprite animation on slow links).
-  // Set via ref callback so retries (attempt re-key) get fresh timestamps.
-  const loadStartRef = useRef<number | null>(null);
 
   // Reset state when the src changes. Note: we deliberately do NOT warm the
   // IDB cache here on mount — the <img> below is already fetching this exact
@@ -124,14 +118,6 @@ export const OptimizedImage = memo(function OptimizedImage({
     setError(false);
     setAttempt(0);
   }, [resolvedSrc]);
-
-  // Timestamp the moment a deferred image actually starts fetching (right
-  // after `inView` assigns a src) so the adaptive-speed sample measures real
-  // perceived load time — the ref callback alone can't catch deferred images
-  // because React updates src on a mounted <img> without re-running its ref.
-  useEffect(() => {
-    if (inView) loadStartRef.current = performance.now();
-  }, [inView, resolvedSrc, attempt]);
 
   // Below-fold lazy images wait for near-viewport intersection before fetching.
   // The window is taller than the first couple of grid rows, so a generous
@@ -166,13 +152,6 @@ export const OptimizedImage = memo(function OptimizedImage({
     // network entirely. Cheap: cacheImage's force-cache fetch resolves from
     // the HTTP cache this <img> just populated — no extra bytes downloaded.
     cacheImage(resolvedSrc, 3).catch(() => {});
-    // Feed the adaptive-speed measurement: how long this thumbnail really
-    // took to arrive on THIS network, right now. The median of these samples
-    // drives the slow-connection tier (≥2s → constrained), so even browsers
-    // without the Network Information API (Safari) get automatic adaptation.
-    if (loadStartRef.current != null) {
-      recordImageLoad(performance.now() - loadStartRef.current);
-    }
   }, [resolvedSrc]);
 
   const onError = useCallback(() => {

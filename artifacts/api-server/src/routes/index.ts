@@ -13,6 +13,7 @@ import adminRouter from "./admin.js";
 import searchRouter from "./search.js";
 import mediaProxyRouter from "./media-proxy.js";
 import viewsRouter from "./views.js";
+import rumRouter from "./rum.js";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use(adminRouter);
 router.use(searchRouter);
 router.use(mediaProxyRouter);
 router.use(viewsRouter);
+router.use(rumRouter);
 
 export default router;

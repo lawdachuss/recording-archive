@@ -20503,27 +20503,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router16;
+    module.exports = Router17;
     module.exports.Route = Route;
-    function Router16(options) {
-      if (!(this instanceof Router16)) {
-        return new Router16(options);
+    function Router17(options) {
+      if (!(this instanceof Router17)) {
+        return new Router17(options);
       }
       const opts = options || {};
-      function router16(req, res, next) {
-        router16.handle(req, res, next);
+      function router17(req, res, next) {
+        router17.handle(req, res, next);
       }
-      Object.setPrototypeOf(router16, this);
-      router16.caseSensitive = opts.caseSensitive;
-      router16.mergeParams = opts.mergeParams;
-      router16.params = {};
-      router16.strict = opts.strict;
-      router16.stack = [];
-      return router16;
+      Object.setPrototypeOf(router17, this);
+      router17.caseSensitive = opts.caseSensitive;
+      router17.mergeParams = opts.mergeParams;
+      router17.params = {};
+      router17.strict = opts.strict;
+      router17.stack = [];
+      return router17;
     }
-    Router16.prototype = function() {
+    Router17.prototype = function() {
     };
-    Router16.prototype.param = function param(name, fn) {
+    Router17.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20543,7 +20543,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router16.prototype.handle = function handle(req, res, callback) {
+    Router17.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20670,7 +20670,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router16.prototype.use = function use(handler) {
+    Router17.prototype.use = function use(handler) {
       let offset = 0;
       let path = "/";
       if (typeof handler !== "function") {
@@ -20703,7 +20703,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router16.prototype.route = function route(path) {
+    Router17.prototype.route = function route(path) {
       const route2 = new Route(path);
       const layer = new Layer(path, {
         sensitive: this.caseSensitive,
@@ -20718,7 +20718,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router16.prototype[method] = function(path) {
+      Router17.prototype[method] = function(path) {
         const route = this.route(path);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -20901,13 +20901,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router16 = require_router();
+    var Router17 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init() {
-      var router16 = null;
+      var router17 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -20916,13 +20916,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router16 === null) {
-            router16 = new Router16({
+          if (router17 === null) {
+            router17 = new Router17({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router16;
+          return router17;
         }
       });
     };
@@ -20993,15 +20993,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router16 = this.router;
+      var router17 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router16.use(path, fn2);
+          return router17.use(path, fn2);
         }
         debug(".use app under %s", path);
         fn2.mountpath = path;
         fn2.parent = this;
-        router16.use(path, function mounted_app(req, res, next) {
+        router17.use(path, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -23574,7 +23574,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router16 = require_router();
+    var Router17 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23596,8 +23596,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router16.Route;
-    exports.Router = Router16;
+    exports.Route = Router17.Route;
+    exports.Router = Router17;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -51688,12 +51688,12 @@ var require_built3 = __commonJS({
 });
 
 // src/app.ts
-var import_express16 = __toESM(require_express2(), 1);
+var import_express17 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 
 // src/routes/index.ts
-var import_express15 = __toESM(require_express2(), 1);
+var import_express16 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
@@ -64964,10 +64964,35 @@ function makeEtag(body) {
   const hash = createHash("sha256").update(stableStringify(body)).digest("base64url");
   return `"${hash.slice(0, 32)}"`;
 }
+var CACHEABLE_QUERY_PARAMS = /* @__PURE__ */ new Set([
+  "page",
+  "limit",
+  "search",
+  "q",
+  "query",
+  "tags",
+  "tag",
+  "gender",
+  "username",
+  "resolution",
+  "sort",
+  "order",
+  "platform",
+  "id",
+  "recording_id",
+  "performer",
+  "status",
+  "type",
+  "url",
+  "w",
+  "fmt",
+  "format",
+  "offset"
+]);
 function normalizeOriginalUrl(originalUrl) {
   const [pathname, rawQuery = ""] = originalUrl.split("?", 2);
   if (!rawQuery) return pathname;
-  const pairs = Array.from(new URLSearchParams(rawQuery).entries()).sort(([ak, av], [bk, bv]) => {
+  const pairs = Array.from(new URLSearchParams(rawQuery).entries()).filter(([key]) => CACHEABLE_QUERY_PARAMS.has(key)).sort(([ak, av], [bk, bv]) => {
     const keyCompare = ak.localeCompare(bk);
     return keyCompare === 0 ? av.localeCompare(bv) : keyCompare;
   });
@@ -66283,23 +66308,49 @@ var performers_default = router3;
 // src/routes/tags.ts
 var import_express4 = __toESM(require_express2(), 1);
 var router4 = (0, import_express4.Router)();
+async function fetchTagCountsViaRpc() {
+  const { data, error } = await supabase.rpc("get_tag_counts");
+  if (error) {
+    const code = error.code;
+    const message = error.message ?? "";
+    if (code === "PGRST202" || /function.*not.*found|Could not find the function/i.test(message)) {
+      return null;
+    }
+    throw error;
+  }
+  return data ?? [];
+}
+async function fetchTagCountsLegacy() {
+  const { data, error } = await fetchAll(
+    (start, end) => supabase.from("recordings_with_links").select("tags").not("links", "is", "null").not("tags", "is", "null").range(start, end)
+  );
+  if (error) {
+    throw error;
+  }
+  const counts = /* @__PURE__ */ new Map();
+  for (const r of data ?? []) {
+    for (const tag of r.tags ?? []) {
+      if (tag && tag !== "") counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count);
+}
 router4.get("/tags", cache({ ttlSeconds: 900, staleSeconds: 1800, tags: ["tags", "recordings", "search"] }), async (req, res) => {
   try {
-    const { data, error } = await fetchAll(
-      (start, end) => supabase.from("recordings_with_links").select("tags").not("links", "is", "null").not("tags", "is", "null").range(start, end)
-    );
-    if (error) {
-      req.log.error({ err: error }, "Supabase error fetching tags");
+    let tags;
+    try {
+      const viaRpc = await fetchTagCountsViaRpc();
+      if (viaRpc) {
+        tags = viaRpc;
+      } else {
+        req.log.warn("get_tag_counts RPC not available \u2014 falling back to legacy aggregation");
+        tags = await fetchTagCountsLegacy();
+      }
+    } catch (err) {
+      req.log.error({ err }, "Tag aggregation error");
       res.status(500).json({ error: "Failed to fetch tags" });
       return;
     }
-    const counts = /* @__PURE__ */ new Map();
-    for (const r of data ?? []) {
-      for (const tag of r.tags ?? []) {
-        if (tag && tag !== "") counts.set(tag, (counts.get(tag) ?? 0) + 1);
-      }
-    }
-    const tags = [...counts.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count);
     res.json(tags);
   } catch (err) {
     req.log.error({ err }, "GET /tags unexpected error");
@@ -66311,38 +66362,73 @@ var tags_default = router4;
 // src/routes/stats.ts
 var import_express5 = __toESM(require_express2(), 1);
 var router5 = (0, import_express5.Router)();
+async function fetchStatsViaRpc() {
+  const { data, error } = await supabase.rpc("get_site_stats");
+  if (error) {
+    const code = error.code;
+    const message = error.message ?? "";
+    if (code === "PGRST202" || /function.*not.*found|Could not find the function/i.test(message)) {
+      return null;
+    }
+    throw error;
+  }
+  const row = (data ?? [])[0];
+  if (!row) return null;
+  return {
+    total_recordings: Number(row.total_recordings ?? 0),
+    total_performers: Number(row.total_performers ?? 0),
+    total_tags: Number(row.total_tags ?? 0),
+    total_size_bytes: Number(row.total_size_bytes ?? 0),
+    newest_recording: row.newest_recording ?? null
+  };
+}
+async function fetchStatsLegacy() {
+  const { data, error } = await fetchAll(
+    (start, end) => supabase.from("recordings_with_links").select("username,timestamp,filesize,tags").not("links", "is", "null").range(start, end)
+  );
+  if (error) {
+    throw error;
+  }
+  const rows = data ?? [];
+  const performers = /* @__PURE__ */ new Set();
+  const tags = /* @__PURE__ */ new Set();
+  let totalSizeBytes = 0;
+  let newestRecording = null;
+  for (const r of rows) {
+    if (r.username) performers.add(r.username);
+    if (typeof r.filesize === "number") totalSizeBytes += r.filesize;
+    if (r.timestamp && (!newestRecording || r.timestamp > newestRecording)) {
+      newestRecording = r.timestamp;
+    }
+    for (const tag of r.tags ?? []) {
+      if (tag && tag !== "") tags.add(tag);
+    }
+  }
+  return {
+    total_recordings: rows.length,
+    total_performers: performers.size,
+    total_tags: tags.size,
+    total_size_bytes: totalSizeBytes,
+    newest_recording: newestRecording
+  };
+}
 router5.get("/stats", cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["stats", "recordings"] }), async (req, res) => {
   try {
-    const { data, error } = await fetchAll(
-      (start, end) => supabase.from("recordings_with_links").select("username,timestamp,filesize,tags").not("links", "is", "null").range(start, end)
-    );
-    if (error) {
-      req.log.error({ err: error }, "Supabase error fetching stats rows");
+    let stats;
+    try {
+      const viaRpc = await fetchStatsViaRpc();
+      if (viaRpc) {
+        stats = viaRpc;
+      } else {
+        req.log.warn("get_site_stats RPC not available \u2014 falling back to legacy aggregation");
+        stats = await fetchStatsLegacy();
+      }
+    } catch (err) {
+      req.log.error({ err }, "Stats aggregation error");
       res.status(500).json({ error: "Failed to fetch stats" });
       return;
     }
-    const rows = data ?? [];
-    const performers = /* @__PURE__ */ new Set();
-    const tags = /* @__PURE__ */ new Set();
-    let totalSizeBytes = 0;
-    let newestRecording = null;
-    for (const r of rows) {
-      if (r.username) performers.add(r.username);
-      if (typeof r.filesize === "number") totalSizeBytes += r.filesize;
-      if (r.timestamp && (!newestRecording || r.timestamp > newestRecording)) {
-        newestRecording = r.timestamp;
-      }
-      for (const tag of r.tags ?? []) {
-        if (tag && tag !== "") tags.add(tag);
-      }
-    }
-    res.json({
-      total_recordings: rows.length,
-      total_performers: performers.size,
-      total_tags: tags.size,
-      total_size_bytes: totalSizeBytes,
-      newest_recording: newestRecording
-    });
+    res.json(stats);
   } catch (err) {
     req.log.error({ err }, "GET /stats unexpected error");
     res.status(500).json({ error: "Failed to fetch stats" });
@@ -68746,26 +68832,152 @@ router14.post("/recordings/:id/view", async (req, res) => {
 });
 var views_default = router14;
 
-// src/routes/index.ts
+// src/routes/rum.ts
+var import_express15 = __toESM(require_express2(), 1);
 var router15 = (0, import_express15.Router)();
-router15.use(health_default);
-router15.use(recordings_default);
-router15.use(performers_default);
-router15.use(tags_default);
-router15.use(stats_default);
-router15.use(reactions_default);
-router15.use(comments_default);
-router15.use(requests_default);
-router15.use(user_default);
-router15.use(cache_admin_default);
-router15.use(admin_default);
-router15.use(search_default);
-router15.use(media_proxy_default);
-router15.use(views_default);
-var routes_default = router15;
+router15.post("/rum", (req, res) => {
+  try {
+    const body = req.body;
+    const metrics2 = Array.isArray(body?.metrics) ? body.metrics.slice(0, 50) : [];
+    if (metrics2.length > 0) {
+      req.log?.info?.(
+        {
+          rum: true,
+          count: metrics2.length,
+          metrics: metrics2.map((m) => ({
+            name: typeof m.name === "string" ? m.name.slice(0, 32) : "unknown",
+            value: typeof m.value === "number" && Number.isFinite(m.value) ? m.value : -1,
+            path: typeof m.path === "string" ? m.path.slice(0, 128) : "/",
+            ts: typeof m.ts === "number" ? m.ts : 0
+          }))
+        },
+        "RUM batch"
+      );
+    }
+  } catch {
+  }
+  res.status(204).end();
+});
+var rum_default = router15;
+
+// src/routes/index.ts
+var router16 = (0, import_express16.Router)();
+router16.use(health_default);
+router16.use(recordings_default);
+router16.use(performers_default);
+router16.use(tags_default);
+router16.use(stats_default);
+router16.use(reactions_default);
+router16.use(comments_default);
+router16.use(requests_default);
+router16.use(user_default);
+router16.use(cache_admin_default);
+router16.use(admin_default);
+router16.use(search_default);
+router16.use(media_proxy_default);
+router16.use(views_default);
+router16.use(rum_default);
+var routes_default = router16;
+
+// src/middleware/rate-limit.ts
+var ENABLED = (process.env.RATE_LIMIT_ENABLED ?? "true") !== "false";
+var WINDOW_SECONDS = Number.parseInt(process.env.RATE_LIMIT_WINDOW ?? "", 10) || 60;
+var LIMITS = {
+  read: Number.parseInt(process.env.RATE_LIMIT_READ ?? "", 10) || 300,
+  // per IP/min
+  write: Number.parseInt(process.env.RATE_LIMIT_WRITE ?? "", 10) || 60,
+  // per IP/min
+  search: Number.parseInt(process.env.RATE_LIMIT_SEARCH ?? "", 10) || 45,
+  // per IP/min
+  user: Number.parseInt(process.env.RATE_LIMIT_USER ?? "", 10) || 600
+  // per auth token/min
+};
+var KEY_PREFIX = "rl:v1";
+var memoryWindows = /* @__PURE__ */ new Map();
+var lastCleanup = Date.now();
+function memoryIncrement(key) {
+  const now = Date.now();
+  if (now - lastCleanup > 3e4) {
+    lastCleanup = now;
+    for (const [k, w] of memoryWindows) {
+      if (w.resetAt <= now) memoryWindows.delete(k);
+    }
+  }
+  const existing = memoryWindows.get(key);
+  if (existing && existing.resetAt > now) {
+    existing.count += 1;
+    return existing;
+  }
+  const fresh = { count: 1, resetAt: now + WINDOW_SECONDS * 1e3 };
+  memoryWindows.set(key, fresh);
+  return fresh;
+}
+async function redisIncrement(key) {
+  const redis = getRedis();
+  if (!redis || !isRedisConnected()) return null;
+  try {
+    const window2 = Math.floor(Date.now() / (WINDOW_SECONDS * 1e3));
+    const redisKey = `${KEY_PREFIX}:${key}:${window2}`;
+    const resetAt = (window2 + 1) * WINDOW_SECONDS * 1e3;
+    const count = await redis.incr(redisKey);
+    if (count === 1) {
+      redis.expire(redisKey, WINDOW_SECONDS + 5).catch(() => {
+      });
+    }
+    return { count, resetAt };
+  } catch (err) {
+    logger.error({ err }, "Rate limiter Redis error (failing open)");
+    return null;
+  }
+}
+function clientIp(req) {
+  const realIp = req.headers["x-real-ip"];
+  if (typeof realIp === "string" && realIp.length > 0) return realIp.trim();
+  const xff = req.headers["x-forwarded-for"];
+  if (typeof xff === "string" && xff.length > 0) {
+    return xff.split(",")[0].trim();
+  }
+  return req.socket.remoteAddress ?? "unknown";
+}
+function sendLimited(res, limit, resetAt, bucket) {
+  const retryAfter = Math.max(1, Math.ceil((resetAt - Date.now()) / 1e3));
+  res.set({
+    "RateLimit-Limit": String(limit),
+    "RateLimit-Remaining": "0",
+    "RateLimit-Reset": String(Math.ceil(resetAt / 1e3)),
+    "Retry-After": String(retryAfter)
+  });
+  res.status(429).json({ error: "Too many requests", bucket });
+}
+function rateLimit(options) {
+  const limit = options.limit ?? LIMITS[options.bucket];
+  return async (req, res, next) => {
+    if (!ENABLED) {
+      next();
+      return;
+    }
+    if (options.skip?.(req)) {
+      next();
+      return;
+    }
+    const keyPart = options.keyFn?.(req) ?? clientIp(req);
+    const result = await redisIncrement(`${options.bucket}:${keyPart}`) ?? memoryIncrement(`${options.bucket}:${keyPart}`);
+    if (result.count > limit) {
+      sendLimited(res, limit, result.resetAt, options.bucket);
+      return;
+    }
+    res.set("RateLimit-Limit", String(limit));
+    res.set("RateLimit-Remaining", String(Math.max(0, limit - result.count)));
+    next();
+  };
+}
+var globalRateLimiter = rateLimit({
+  bucket: "read",
+  skip: (req) => req.path === "/healthz" || req.path.startsWith("/admin") || req.path.startsWith("/cache")
+});
 
 // src/app.ts
-var app = (0, import_express16.default)();
+var app = (0, import_express17.default)();
 app.use(
   (0, import_pino_http.default)({
     logger,
@@ -68791,8 +69003,9 @@ app.use(
     credentials: true
   })
 );
-app.use(import_express16.default.json());
-app.use(import_express16.default.urlencoded({ extended: true }));
+app.use(import_express17.default.json());
+app.use(import_express17.default.urlencoded({ extended: true }));
+app.use("/api", globalRateLimiter);
 app.use("/api", routes_default);
 app.use((err, _req, res, _next) => {
   logger.error({ err }, "Unhandled route error");

@@ -2,6 +2,7 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes/index.js";
+import { globalRateLimiter } from "./middleware/rate-limit.js";
 import { logger } from "./lib/logger.js";
 
 const app: Express = express();
@@ -33,6 +34,10 @@ app.use(
 );
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Rate limiting: per-IP global limiter with a stricter budget for writes.
+// Runs before the router so abuse is rejected before touching caches or DB.
+app.use("/api", globalRateLimiter);
 
 // Cache-Control is managed per-route by the cache() middleware.
 // This ensures Redis caching and browser caching work together properly.

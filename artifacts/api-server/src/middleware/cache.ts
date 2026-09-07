@@ -123,14 +123,48 @@ function makeEtag(body: unknown): string {
   return `"${hash.slice(0, 32)}"`;
 }
 
+// ─── Cache-key normalization ──────────────────────────────────────
+// Only known, meaningful query params may differentiate cache entries.
+// Everything else (tracking junk, cache-busting noise like ?t=1234567)
+// is dropped, so attackers/bots can't multiply origin load with random
+// query strings. Params not in this list are still passed to the route
+// handler — they only stop participating in the cache identity.
+const CACHEABLE_QUERY_PARAMS = new Set([
+  "page",
+  "limit",
+  "search",
+  "q",
+  "query",
+  "tags",
+  "tag",
+  "gender",
+  "username",
+  "resolution",
+  "sort",
+  "order",
+  "platform",
+  "id",
+  "recording_id",
+  "performer",
+  "status",
+  "type",
+  "url",
+  "w",
+  "fmt",
+  "format",
+  "offset",
+]);
+
 function normalizeOriginalUrl(originalUrl: string): string {
   const [pathname, rawQuery = ""] = originalUrl.split("?", 2);
   if (!rawQuery) return pathname;
 
-  const pairs = Array.from(new URLSearchParams(rawQuery).entries()).sort(([ak, av], [bk, bv]) => {
-    const keyCompare = ak.localeCompare(bk);
-    return keyCompare === 0 ? av.localeCompare(bv) : keyCompare;
-  });
+  const pairs = Array.from(new URLSearchParams(rawQuery).entries())
+    .filter(([key]) => CACHEABLE_QUERY_PARAMS.has(key))
+    .sort(([ak, av], [bk, bv]) => {
+      const keyCompare = ak.localeCompare(bk);
+      return keyCompare === 0 ? av.localeCompare(bv) : keyCompare;
+    });
   const params = new URLSearchParams();
   for (const [key, value] of pairs) params.append(key, value);
   const query = params.toString();
