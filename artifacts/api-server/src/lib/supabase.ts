@@ -1,9 +1,19 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-// These are also loaded from env vars at runtime.
-// Fall back to hardcoded values if env vars are not set (e.g. Vercel propagation delay).
-const supabaseUrl = process.env.SUPABASE_URL || "https://supabase.chuglii.in";
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "***REMOVED***";
+function normalizeUrl(url?: string): string {
+  const trimmed = url?.trim();
+  if (!trimmed) return "https://supabase.chuglii.in";
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
+}
+
+const supabaseUrl = normalizeUrl(process.env.SUPABASE_URL);
+const supabaseKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
+  process.env.SUPABASE_ANON_KEY?.trim() ||
+  "***REMOVED***";
 
 let _supabase: SupabaseClient | null = null;
 
