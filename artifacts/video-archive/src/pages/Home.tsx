@@ -152,12 +152,12 @@ export default function Home() {
     follow: "text-pink-500",
     like: "text-green-500",
   };
-  const recentParams = { limit: pageSize, sort: "newest" as const };
+  const recentParams = { limit: pageSize * 2, sort: "newest" as const };
   const { data: recentData, isLoading: recentLoading } = useListRecordings(
     recentParams,
     { query: { queryKey: getListRecordingsQueryKey(recentParams), staleTime: 30_000, placeholderData: keepPreviousData } },
   );
-  const popularParams = { limit: pageSize, sort: "popular" as const };
+  const popularParams = { limit: pageSize * 2, sort: "popular" as const };
   const { data: popularData, isLoading: popularLoading } = useListRecordings(
     popularParams,
     { query: { queryKey: getListRecordingsQueryKey(popularParams), staleTime: 30_000, placeholderData: keepPreviousData } },
@@ -165,16 +165,16 @@ export default function Home() {
   const recentlyWatched = useRecentlyWatched();
   const excludeIds = recentlyWatched.size > 0 ? [...recentlyWatched].join(",") : undefined;
   const { data: recData, isLoading: recLoading } = useListRecommendations(
-    { limit: 8, exclude: excludeIds },
+    { limit: 16, exclude: excludeIds },
     { enabled: true, placeholderData: keepPreviousData, staleTime: 30_000 },
   );
-  const recommendations = (recData?.data ?? []).filter(hasThumbnail);
+  const recommendations = (recData?.data ?? []).filter(hasThumbnail).slice(0, 8);
 
   const { data: topPerformersData, isLoading: performersLoading } = useListPerformers(undefined, { staleTime: 30_000 });
   const topPerformers = topPerformersData?.performers ?? [];
   const { data: tags } = useListTags({ query: { queryKey: getListTagsQueryKey(), staleTime: 30_000 } });
 
-  const recordings = (tab === "recent" ? recentData?.data : popularData?.data)?.filter(hasThumbnail);
+  const recordings = (tab === "recent" ? recentData?.data : popularData?.data)?.filter(hasThumbnail).slice(0, pageSize);
   const continueWithThumbnails = continueWatching.filter((item) => hasThumbnail(cloudItemToRecording(parseCloudItem(item))));
   const loading = tab === "recent" ? recentLoading : popularLoading;
 
