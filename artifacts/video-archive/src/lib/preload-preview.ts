@@ -13,7 +13,7 @@
  * starved the grid's visible thumbnails. Excess requests wait FIFO for a slot.
  */
 
-import { cacheImage } from "@/lib/image-cache";
+import { cacheImage, isCached } from "@/lib/image-cache";
 import { isConnectionConstrained } from "@/lib/connection";
 
 const preloadCache = new Map<string, HTMLVideoElement | HTMLImageElement | true>();
@@ -33,7 +33,10 @@ const videoKeys: string[] = [];
 const imageKeys: string[] = [];
 
 // ─── Global concurrency cap for speculative preview loads ─────────────────
-const MAX_CONCURRENT_PRELOADS = 3;
+// 6 parallel preview downloads: with previews now prefetched at page load
+// (use-preload-recordings), a higher cap fills the IDB/HTTP cache much
+// faster while still leaving connection headroom for the visible grid.
+const MAX_CONCURRENT_PRELOADS = 6;
 let activePreloads = 0;
 const preloadWaiters: Array<() => void> = [];
 
@@ -72,7 +75,10 @@ function releaseOnSettle(el: HTMLVideoElement | HTMLImageElement, release: () =>
     window.clearTimeout(timer);
     release();
   };
-  const timer = window.setTimeout(finish, 15_000);
+  // 8s, down from 15s: a throttled host (catbox answers ~16KB/s) must not
+  // hold a queue slot for a quarter of a minute while fast proxied previews
+  // wait behind it.
+  const timer = window.setTimeout(finish, 8_000);
   el.addEventListener("loadeddata", finish, { once: true });
   el.addEventListener("load", finish, { once: true });
   el.addEventListener("error", finish, { once: true });
@@ -180,44 +186,55 @@ export function preloadVideo(url: string): void {
   // for the actual page content, not speculative hover previews.
   if (isConnectionConstrained()) return;
 
-  // Enforce memory limit — evict oldest video if we're at capacity
-  if (videoKeys.length >= MAX_VIDEO_ELEMENTS) {
-    evictOldestVideo();
-  }
+  // Already persisted to the IDB blob cache (a previous visit / hover warmed
+  // it) — skip the full re-download entirely. Multi-MB previews must not be
+  // re-fetched speculatively on every page load just to warm a cache that
+  // already has them. Checked BEFORE taking a queue slot so cached URLs
+  // never occupy one of the 3 concurrent downloads.
+  void isCached(url).then((cached) => {
+    if (cached) return;
+    if (preloadCache.has(url)) return; // someone warmed it while we checked
 
-  // Cap concurrent speculative downloads (see global gate above) so a
-  // page-full of previews can't saturate the connection.
-  void acquirePreloadSlot().then((release) => {
-    // Re-check: another caller may have warmed this URL while we waited.
-    if (preloadCache.has(url)) {
-      release();
-      return;
+    // Enforce memory limit — evict oldest video if we're at capacity
+    if (videoKeys.length >= MAX_VIDEO_ELEMENTS) {
+      evictOldestVideo();
     }
-    const v = document.createElement("video");
-    v.muted = true;
-    // Full download ("auto"), NOT metadata. preloadVideo is only called for
-    // cards already near the viewport (useHoverPreview's IO, gated by the
-    // global 3-concurrent cap), so fetching the full preview now makes the
-    // hover instant AND lets onloadeddata persist the whole file to the IDB
-    // blob cache for zero-network repeat hovers. Metadata-only left the actual
-    // bytes to re-fetch on every hover.
-    v.preload = "auto";
-    (v as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
-    v.src = url;
-    // Persist to IDB blob cache after load (fire-and-forget)
-    v.onloadeddata = () => { cacheImage(url, 1).catch(() => {}); };
-    // Drop failed videos so they don't pin memory or consume the video-element
-    // budget; a future hover can retry them.
-    v.onerror = () => {
-      preloadCache.delete(url);
-      const i = videoKeys.indexOf(url);
-      if (i >= 0) videoKeys.splice(i, 1);
-    };
-    releaseOnSettle(v, release);
-    preloadCache.set(url, v);
-    videoKeys.push(url);
+
+    // Cap concurrent speculative downloads (see global gate above) so a
+    // page-full of previews can't saturate the connection.
+    void acquirePreloadSlot().then((release) => {
+      // Re-check: another caller may have warmed this URL while we waited.
+      if (preloadCache.has(url)) {
+        release();
+        return;
+      }
+      const v = document.createElement("video");
+      v.muted = true;
+      // Full download ("auto"), NOT metadata. preloadVideo is only called for
+      // cards already near the viewport (useHoverPreview's IO, gated by the
+      // global 3-concurrent cap), so fetching the full preview now makes the
+      // hover instant AND lets onloadeddata persist the whole file to the IDB
+      // blob cache for zero-network repeat hovers. Metadata-only left the actual
+      // bytes to re-fetch on every hover.
+      v.preload = "auto";
+      (v as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
+      v.src = url;
+      // Persist to IDB blob cache after load (fire-and-forget)
+      v.onloadeddata = () => { cacheImage(url, 1).catch(() => {}); };
+      // Drop failed videos so they don't pin memory or consume the video-element
+      // budget; a future hover can retry them.
+      v.onerror = () => {
+        preloadCache.delete(url);
+        const i = videoKeys.indexOf(url);
+        if (i >= 0) videoKeys.splice(i, 1);
+      };
+      releaseOnSettle(v, release);
+      preloadCache.set(url, v);
+      videoKeys.push(url);
+    });
   });
 }
+
 
 /**
  * Warm an animated image (.webp) into the browser HTTP cache.
@@ -232,39 +249,48 @@ export function preloadAnimatedImage(url: string, cors = false): void {
   // On slow connections, skip entirely — bandwidth is needed for the grid
   if (isConnectionConstrained()) return;
 
-  // Cap concurrent speculative downloads (see global gate above).
-  void acquirePreloadSlot().then((release) => {
-    if (preloadCache.has(url)) {
-      release();
-      return;
-    }
-    // Bound detached <img> memory — evict the oldest once at capacity.
-    if (imageKeys.length >= MAX_IMAGE_ELEMENTS) {
-      evictOldestImage();
-    }
-    const img = new Image();
-    img.referrerPolicy = "no-referrer";
-    img.decoding = "async";
-    // CORS-mode loads (catbox) share their HTTP-cache entry with cacheImage's
-    // fetch(), avoiding a duplicate download when persisting to IDB.
-    if (cors) img.crossOrigin = "anonymous";
-    img.onload = () => {
-      // Persist to IDB blob cache for repeat-visit speed (fire-and-forget)
-      cacheImage(url, 1).catch(() => {});
-    };
-    img.onerror = () => {
-      // Preload failed (DNS, CORS, network) — silently remove from cache
-      // so a future attempt can retry.
-      preloadCache.delete(url);
-      const i = imageKeys.indexOf(url);
-      if (i >= 0) imageKeys.splice(i, 1);
-    };
-    releaseOnSettle(img, release);
-    preloadCache.set(url, img);
-    imageKeys.push(url);
-    img.src = url;
+  // Already in the IDB blob cache — don't re-download just to warm it.
+  // Checked BEFORE taking a queue slot so cached URLs never hold one of the
+  // 3 concurrent downloads.
+  void isCached(url).then((cached) => {
+    if (cached) return;
+    if (preloadCache.has(url)) return; // someone warmed it while we checked
+
+    // Cap concurrent speculative downloads (see global gate above).
+    void acquirePreloadSlot().then((release) => {
+      if (preloadCache.has(url)) {
+        release();
+        return;
+      }
+      // Bound detached <img> memory — evict the oldest once at capacity.
+      if (imageKeys.length >= MAX_IMAGE_ELEMENTS) {
+        evictOldestImage();
+      }
+      const img = new Image();
+      img.referrerPolicy = "no-referrer";
+      img.decoding = "async";
+      // CORS-mode loads (catbox) share their HTTP-cache entry with cacheImage's
+      // fetch(), avoiding a duplicate download when persisting to IDB.
+      if (cors) img.crossOrigin = "anonymous";
+      img.onload = () => {
+        // Persist to IDB blob cache for repeat-visit speed (fire-and-forget)
+        cacheImage(url, 1).catch(() => {});
+      };
+      img.onerror = () => {
+        // Preload failed (DNS, CORS, network) — silently remove from cache
+        // so a future attempt can retry.
+        preloadCache.delete(url);
+        const i = imageKeys.indexOf(url);
+        if (i >= 0) imageKeys.splice(i, 1);
+      };
+      releaseOnSettle(img, release);
+      preloadCache.set(url, img);
+      imageKeys.push(url);
+      img.src = url;
+    });
   });
 }
+
 
 /**
  * Preload a preview URL using the best strategy for its (probable) type.

@@ -10,21 +10,23 @@ type RecordingLike = {
 };
 
 /**
- * Warm hover media (sprites + reachable previews) for a list of recordings as
- * soon as the page has them. On slow connections, only preload the first few
- * visible recordings — the rest will be warmed when the user scrolls and
- * their cards enter the viewport.
+ * Warm ALL hover media for a list of recordings as soon as the page has them:
+ *   - thumbnails: the DOM <img> tags fetch these themselves (no double fetch)
+ *   - sprites: queued immediate (jump ahead of idle warmers) at priority 2
+ *   - animated .webp previews: queued at priority 1 alongside the sprites
+ *
+ * Everything runs in parallel in the background (16-way preload queue +
+ * 6-way preview cap + 16-slot same-origin IDB pool) and lands in the IDB
+ * blob cache, so hovering a card finds its media already stored — sprite or
+ * preview paints instantly with zero network on hover.
  */
 export function usePreloadRecordings(recordings: RecordingLike[] | null | undefined): void {
   const ids = (recordings ?? []).map((r) => String(r.id)).join(",");
   useEffect(() => {
     if (!recordings || recordings.length === 0) return;
-    // On slow connections, only preload sprites for the first 6 recordings
-    // (roughly the visible row) instead of all 40+ on the page.
+    // On slow connections, only preload the first few visible recordings —
+    // the rest are warmed when their cards enter the viewport.
     const limited = isConnectionConstrained() ? recordings.slice(0, 6) : recordings;
-    // preloadRecordingSprites handles browser HTTP cache warming + IDB
-    // persistence (via img.onload → cacheImage() in preload-sprite.ts).
-    // No separate cacheImage loop needed — avoids duplicate network fetches.
-    preloadRecordingSprites(limited);
+    preloadRecordingSprites(limited, { immediate: true });
   }, [ids]); // eslint-disable-line react-hooks/exhaustive-deps
 }
