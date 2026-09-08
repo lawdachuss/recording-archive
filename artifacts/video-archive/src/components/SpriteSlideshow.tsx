@@ -242,7 +242,6 @@ export const SpriteSlideshow = memo(function SpriteSlideshow({
       className={className}
       style={{
         opacity: active && imageLoaded ? 1 : 0,
-        transition: "opacity 0.25s ease",
         contain: "strict",
       }}
     />

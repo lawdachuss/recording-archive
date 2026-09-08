@@ -59,7 +59,7 @@ const warmed = new Set<string>();
 // entire session. The cooldown bounds retry storms.
 const failedAt = new Map<string, number>();
 const FAILED_RETRY_COOLDOWN_MS = 5 * 60_000; // retry a failed URL after 5 min
-const MAX_ACTIVE = 12;
+const MAX_ACTIVE = 16;
 
 const queue: Array<{
   url: string;
@@ -193,7 +193,10 @@ export function preloadRecordingAssets(
   const previews: (string | null | undefined)[] = [];
   for (const rec of recs) {
     if (rec.thumbnail_url) thumbs.push(proxyImageUrl(rec.thumbnail_url));
-    if (rec.sprite_url) sprites.push(proxySpriteUrl(rec.sprite_url));
+    if (rec.sprite_url) {
+      const proxied = proxySpriteUrl(rec.sprite_url);
+      if (isReachablePreviewUrl(proxied)) sprites.push(proxied);
+    }
     if (rec.preview_url && isReachablePreviewUrl(rec.preview_url)) {
       previews.push(proxyUrl(rec.preview_url));
     }
@@ -216,16 +219,56 @@ export function preloadRecordingAssets(
  * files; warming a whole page of them saturated the connection and slowed the
  * grid. Cards near the viewport preload their own preview via useHoverPreview,
  * which preload-preview.ts caps to a few concurrent downloads.
+ *
+ * Sprites on unreachable hosts (catbox — throttled to ~16KB/s, blocks
+ * datacenter IPs) are skipped the same way the catalog warmer skips them: a
+ * speculative download there takes ~19s and holds a queue slot the whole time,
+ * starving the fast proxied sprites (pixhost: ~250ms). Those cards' sprites
+ * load on demand at hover time via useProgressiveImage instead.
  */
 export function preloadRecordingSprites(
   recs: Array<{ sprite_url?: string | null; preview_url?: string | null }>,
   opts: PreloadOptions = {},
 ): void {
   const sprites: (string | null | undefined)[] = [];
+  const previews: (string | null | undefined)[] = [];
   for (const rec of recs) {
-    if (rec.sprite_url) sprites.push(proxySpriteUrl(rec.sprite_url));
+    if (rec.sprite_url) {
+      const proxied = proxySpriteUrl(rec.sprite_url);
+      if (isReachablePreviewUrl(proxied)) sprites.push(proxied);
+    }
+    // Prefetch ANIMATED previews (.webp / .mp4_preview) alongside sprites so
+    // hover shows the full preview instantly. Videos (.mp4) are excluded —
+    // they're multi-MB and still stream on demand at hover time.
+    if (rec.preview_url) {
+      const proxied = proxyUrl(rec.preview_url);
+      if (proxied && isReachablePreviewUrl(proxied) && isAnimatedPreviewUrl(proxied)) {
+        previews.push(proxied);
+      }
+    }
   }
   preloadImages(sprites, { ...opts, priority: 2 });
+  if (previews.length) {
+    for (const p of previews) preloadPreviewMedia(p);
+  }
+}
+
+/** True when a (proxied) preview URL points at an animated image, not a video. */
+function isAnimatedPreviewUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    let inner = parsed.pathname;
+    // Unwrap the /api/media proxy so the upstream extension is visible.
+    if (parsed.pathname.startsWith("/api/media")) {
+      const u = parsed.searchParams.get("url");
+      if (u) inner = new URL(u).pathname;
+    }
+    const dot = inner.lastIndexOf(".");
+    const ext = dot >= 0 ? inner.slice(dot).toLowerCase() : "";
+    return ext === ".webp" || ext === ".mp4_preview";
+  } catch {
+    return false;
+  }
 }
 
 /** @deprecated alias — use preloadImage */

@@ -132,7 +132,7 @@ const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const FRESHNESS_MS = 30 * 60 * 1000; // 30 minutes — skip re-fetch if cached within this window
 const MAX_CACHE_BYTES = 200 * 1024 * 1024; // 200 MB — up from 150 MB to hold more sprites
 const FETCH_TIMEOUT_MS = 15_000; // 15s — HTTP/2 resets (ERR_HTTP2_PROTOCOL_ERROR) on some hosts timeout prematurely; give them room to recover
-const CONCURRENT_FETCHES = 4; // limit parallelism to reduce HTTP/2 connection resets on slow hosts
+const CONCURRENT_FETCHES = 8; // parallel workers for batch cacheImages (cacheImage() adds per-host limiting on top)
 
 // ─── Priority types ─────────────────────────────────────────────────────────
 
@@ -255,7 +255,10 @@ const HTTP2_RESET_HOSTS = new Set([
   "catbox.moe",
   "litter.catbox.moe",
 ]);
-const HOST_MAX_CONCURRENT = 8;
+// Same-origin /api/media (pixhost proxy) tolerates higher parallelism — the
+// proxy handles upstream rate limiting server-side. 16 slots let a page of
+// sprites + previews prefetch in a couple of seconds instead of trickling.
+const HOST_MAX_CONCURRENT = 16;
 const SLOW_HOST_MAX_CONCURRENT = 3;
 
 const hostSemaphores = new Map<string, { running: number; waiters: (() => void)[] }>();
@@ -764,11 +767,16 @@ async function _cacheImageInner(
     trackHit("fetch", url);
     const fetchStart = performance.now();
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
     // Cap concurrent in-flight requests to this host (catbox especially throttles).
     const host = hostOf(url);
     await acquireHost(host);
+
+    // Arm the timeout only AFTER the host slot is acquired. Arming it before
+    // the semaphore wait would let the 15s clock run while queued behind other
+    // in-flight fetches to a saturated host — the request would abort before
+    // it even started.
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     let res: Response;
     try {
       res = await fetch(url, {

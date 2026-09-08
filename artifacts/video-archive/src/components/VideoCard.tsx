@@ -478,7 +478,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               spriteUrl={spriteProgressive.src}
               cols={spriteGrid?.cols}
               rows={spriteGrid?.rows}
-              className="absolute inset-0 w-full h-full transition-opacity duration-300"
+              className="absolute inset-0 w-full h-full"
               active={showSprite}
               onLoaded={handleSpriteLoaded}
               onError={handleSpriteError}
@@ -497,7 +497,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               loading="eager"
               decoding="sync"
               fetchPriority="high"
-              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
+              className="absolute inset-0 w-full h-full object-cover"
               style={{ opacity: previewReady ? 1 : 0 }}
               onLoad={() => setPreviewReady(true)}
               onError={() => {
@@ -519,7 +519,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               loading="eager"
               decoding="sync"
               fetchPriority="high"
-              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
+              className="absolute inset-0 w-full h-full object-cover"
               style={{ opacity: previewReady ? 1 : 0 }}
               onLoad={() => {
                 dlog("hoverpreview", "[VideoCard] catbox webp loaded", { id: recording.id, src: previewProgressive.src });
@@ -542,7 +542,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               src={previewVideoSrc}
               poster={hasStaticImage ? staticImage! : undefined}
               className={cn(
-                "absolute inset-0 w-full h-full object-cover transition-opacity duration-300",
+                "absolute inset-0 w-full h-full object-cover",
                 previewReady ? "opacity-100" : "opacity-0"
               )}
               autoPlay muted playsInline loop
@@ -581,7 +581,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               src={animatedImageUrl}
               alt={recording.username}
               referrerPolicy="no-referrer"
-              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"              onLoad={() => setPreviewReady(true)}
+              className="absolute inset-0 w-full h-full object-cover"              onLoad={() => setPreviewReady(true)}
               onError={() => {
                 if (previewIndex + 1 < webpFallbacks.length) {
                   setMediaFail("none");
