@@ -74,6 +74,33 @@ function extractOriginalFromWsrv(proxiedUrl: string): string | null {
   }
 }
 
+/**
+ * Hosts that send `Access-Control-Allow-Origin` — the only cross-origin hosts
+ * where a CORS-mode <img> (crossOrigin="anonymous") is safe AND useful (the
+ * response lands in the CORS HTTP-cache bucket, shared with the CORS-mode
+ * preload/cacheImage fetches).
+ */
+const CORS_HOSTS = ["catbox.moe", "litter.catbox.moe", "files.catbox.moe"];
+
+/**
+ * True when an <img> may load `url` in CORS mode without being blocked.
+ * Same-origin URLs (relative /api/media proxy) are always readable; catbox
+ * family sends ACAO. Everything else (iili.io, freeimage.host, imgchest, ...)
+ * does NOT send CORS headers — a crossOrigin="anonymous" <img> there is
+ * blocked outright ("Access to image ... blocked by CORS policy"), so those
+ * must load as plain images.
+ */
+function canLoadInCorsMode(url: string): boolean {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.origin === window.location.origin) return true;
+    const hostname = parsed.hostname.toLowerCase();
+    return CORS_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
+  } catch {
+    return false;
+  }
+}
+
 export const OptimizedImage = memo(function OptimizedImage({
   src,
   alt,
@@ -176,6 +203,9 @@ export const OptimizedImage = memo(function OptimizedImage({
     return fallback ?? <DefaultFallback />;
   }
 
+  const actualSrc = inView ? (attempt >= 2 && directSrc ? directSrc : resolvedSrc) : undefined;
+  const corsMode = actualSrc ? canLoadInCorsMode(actualSrc) : false;
+
   return (
     <div
       ref={containerRef}
@@ -183,7 +213,7 @@ export const OptimizedImage = memo(function OptimizedImage({
     >
       <img
         key={`${resolvedSrc}-${attempt}`}
-        src={inView ? (attempt >= 2 && directSrc ? directSrc : resolvedSrc) : undefined}
+        src={actualSrc}
         alt={alt}
         referrerPolicy="no-referrer"
         loading={loading ?? (fetchPriority === "high" ? "eager" : "lazy")}
@@ -192,7 +222,7 @@ export const OptimizedImage = memo(function OptimizedImage({
         onLoad={onLoad}
         onError={onError}
         className={cn("absolute inset-0 w-full h-full object-cover", className)}
-        crossOrigin="anonymous"
+        crossOrigin={corsMode ? "anonymous" : undefined}
       />
       {!loaded && !noShimmer && (
         <div className="absolute inset-0 z-10 bg-secondary">

@@ -20503,27 +20503,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router17;
+    module.exports = Router19;
     module.exports.Route = Route;
-    function Router17(options) {
-      if (!(this instanceof Router17)) {
-        return new Router17(options);
+    function Router19(options) {
+      if (!(this instanceof Router19)) {
+        return new Router19(options);
       }
       const opts = options || {};
-      function router17(req, res, next) {
-        router17.handle(req, res, next);
+      function router19(req, res, next) {
+        router19.handle(req, res, next);
       }
-      Object.setPrototypeOf(router17, this);
-      router17.caseSensitive = opts.caseSensitive;
-      router17.mergeParams = opts.mergeParams;
-      router17.params = {};
-      router17.strict = opts.strict;
-      router17.stack = [];
-      return router17;
+      Object.setPrototypeOf(router19, this);
+      router19.caseSensitive = opts.caseSensitive;
+      router19.mergeParams = opts.mergeParams;
+      router19.params = {};
+      router19.strict = opts.strict;
+      router19.stack = [];
+      return router19;
     }
-    Router17.prototype = function() {
+    Router19.prototype = function() {
     };
-    Router17.prototype.param = function param(name, fn) {
+    Router19.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20543,7 +20543,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router17.prototype.handle = function handle(req, res, callback) {
+    Router19.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20670,7 +20670,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router17.prototype.use = function use(handler) {
+    Router19.prototype.use = function use(handler) {
       let offset = 0;
       let path = "/";
       if (typeof handler !== "function") {
@@ -20703,7 +20703,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router17.prototype.route = function route(path) {
+    Router19.prototype.route = function route(path) {
       const route2 = new Route(path);
       const layer = new Layer(path, {
         sensitive: this.caseSensitive,
@@ -20718,7 +20718,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router17.prototype[method] = function(path) {
+      Router19.prototype[method] = function(path) {
         const route = this.route(path);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -20901,13 +20901,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router17 = require_router();
+    var Router19 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init() {
-      var router17 = null;
+      var router19 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -20916,13 +20916,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router17 === null) {
-            router17 = new Router17({
+          if (router19 === null) {
+            router19 = new Router19({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router17;
+          return router19;
         }
       });
     };
@@ -20993,15 +20993,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router17 = this.router;
+      var router19 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router17.use(path, fn2);
+          return router19.use(path, fn2);
         }
         debug(".use app under %s", path);
         fn2.mountpath = path;
         fn2.parent = this;
-        router17.use(path, function mounted_app(req, res, next) {
+        router19.use(path, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -23574,7 +23574,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router17 = require_router();
+    var Router19 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23596,8 +23596,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router17.Route;
-    exports.Router = Router17;
+    exports.Route = Router19.Route;
+    exports.Router = Router19;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -63924,12 +63924,12 @@ var require_built3 = __commonJS({
 });
 
 // src/app.ts
-var import_express17 = __toESM(require_express2(), 1);
+var import_express19 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 
 // src/routes/index.ts
-var import_express16 = __toESM(require_express2(), 1);
+var import_express18 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
@@ -68091,16 +68091,21 @@ if (redisUrl) {
     client = new Redis(redisUrl, {
       maxRetriesPerRequest: 3,
       retryStrategy(times) {
-        const delay = Math.min(100 * Math.pow(3, times - 1), 5e3);
-        if (times > 5) {
-          logger.error("Redis max retries reached, giving up");
-          return null;
+        const delay = Math.min(250 * Math.pow(2, times - 1), 15e3);
+        if (times % 10 === 0) {
+          logger.warn({ attempt: times }, "Redis still reconnecting");
         }
         return delay;
       },
       enableReadyCheck: true,
       lazyConnect: true,
-      commandTimeout: 5e3
+      commandTimeout: 5e3,
+      // Never queue commands while disconnected: with the never-give-up
+      // retryStrategy above, the offline queue would buffer every command
+      // issued during a tunnel blip and replay the whole backlog on
+      // reconnect — stale writes racing newer ones. Fail fast instead and
+      // let the callers' graceful-degradation paths handle it.
+      enableOfflineQueue: false
     });
     client.on("error", (err) => {
       isConnected = false;
@@ -68413,33 +68418,6 @@ function cache(options) {
     if (existing && isFresh(existing)) {
       if (shouldTriggerPER(existing, ttlSeconds, perProbability)) {
         trackMetric("backgroundRefreshes");
-        const perKey = `per:${cacheKey}`;
-        if (!inflightReqMap.has(perKey)) {
-          let resolvePER = null;
-          const perPromise = new Promise((resolve) => {
-            resolvePER = resolve;
-          });
-          inflightReqMap.set(perKey, perPromise);
-          const fakeReq = { ...req, headers: { ...req.headers, "cache-control": "no-store" } };
-          const fakeRes = {
-            statusCode: 200,
-            json: (body) => {
-              return fakeRes;
-            },
-            set: () => fakeRes,
-            status: () => fakeRes,
-            end: () => {
-            },
-            type: () => fakeRes,
-            send: () => fakeRes
-          };
-          setTimeout(() => {
-            if (resolvePER) resolvePER();
-            inflightReqMap.delete(perKey);
-          }, ttlSeconds * 1e3 * PER_WINDOW_FRACTION);
-        }
-        sendEntry(req, res, existing, "HIT", ttlSeconds, staleSeconds);
-        return;
       }
       sendEntry(req, res, existing, "HIT", ttlSeconds, staleSeconds);
       return;
@@ -72064,11 +72042,252 @@ router13.get("/media", async (req, res) => {
 });
 var media_proxy_default = router13;
 
-// src/routes/views.ts
+// src/routes/edge-cache.ts
 var import_express14 = __toESM(require_express2(), 1);
-init_supabase();
+var PREFIX = "edge:";
+var MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
+var MAX_VALUE_BYTES = 25e4;
+var MAX_CDN_TTL_SECONDS = 300;
 var router14 = (0, import_express14.Router)();
-router14.post("/recordings/:id/view", async (req, res) => {
+router14.get("/cache", async (req, res) => {
+  const key = String(req.query.key ?? "");
+  if (!key) {
+    res.status(400).json({ error: "key query parameter required" });
+    return;
+  }
+  const redis = getRedis();
+  if (!redis || !isRedisConnected()) {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ exists: false, value: null, ttl: null });
+    return;
+  }
+  try {
+    const raw = await redis.get(PREFIX + key);
+    if (!raw) {
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ exists: false, value: null, ttl: null });
+      return;
+    }
+    const entry = JSON.parse(raw);
+    if (entry.expiresAt !== null && entry.expiresAt <= Date.now()) {
+      redis.del(PREFIX + key).catch(() => {
+      });
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ exists: false, value: null, ttl: null });
+      return;
+    }
+    const ttl = entry.expiresAt === null ? null : Math.max(0, Math.round((entry.expiresAt - Date.now()) / 1e3));
+    const cdnTtl = ttl === null ? MAX_CDN_TTL_SECONDS : Math.min(ttl, MAX_CDN_TTL_SECONDS);
+    res.setHeader(
+      "Cache-Control",
+      `public, max-age=0, must-revalidate, s-maxage=${cdnTtl}`
+    );
+    res.json({ exists: true, value: entry.value, ttl });
+  } catch (err) {
+    req.log.error({ err, key }, "Edge cache GET error");
+    res.status(500).json({ error: "cache read failed" });
+  }
+});
+router14.post("/cache", async (req, res) => {
+  const body = req.body ?? {};
+  if (typeof body.key !== "string" || body.key.length === 0) {
+    res.status(400).json({ error: "body must be { key, value, ttl? }" });
+    return;
+  }
+  if (body.value === void 0 || body.value === null) {
+    res.status(400).json({ error: "value is required" });
+    return;
+  }
+  const rawTtl = Number(body.ttl);
+  const ttlSec = Number.isFinite(rawTtl) && rawTtl > 0 ? Math.max(1, Math.min(MAX_TTL_SECONDS, Math.round(rawTtl))) : null;
+  const serialized = JSON.stringify(body.value);
+  if (serialized.length > MAX_VALUE_BYTES) {
+    res.status(413).json({ error: "value too large" });
+    return;
+  }
+  const redis = getRedis();
+  if (!redis || !isRedisConnected()) {
+    res.json({ success: false });
+    return;
+  }
+  try {
+    const entry = {
+      value: body.value,
+      expiresAt: ttlSec === null ? null : Date.now() + ttlSec * 1e3
+    };
+    const payload = JSON.stringify(entry);
+    if (ttlSec === null) {
+      await redis.set(PREFIX + body.key, payload);
+    } else {
+      await redis.setex(PREFIX + body.key, ttlSec, payload);
+    }
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err, key: body.key }, "Edge cache POST error");
+    res.status(500).json({ error: "cache write failed" });
+  }
+});
+router14.delete("/cache", async (req, res) => {
+  const key = String(req.query.key ?? "");
+  if (!key) {
+    res.status(400).json({ error: "key query parameter required" });
+    return;
+  }
+  const redis = getRedis();
+  if (!redis || !isRedisConnected()) {
+    res.json({ success: false });
+    return;
+  }
+  try {
+    await redis.del(PREFIX + key);
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err, key }, "Edge cache DELETE error");
+    res.status(500).json({ error: "cache delete failed" });
+  }
+});
+var edge_cache_default = router14;
+
+// src/routes/cache-warm.ts
+var import_express15 = __toESM(require_express2(), 1);
+
+// src/lib/cache-warmup.ts
+var WARMUP_ROUTES = [
+  // Tier 1 — homepage essentials (highest priority)
+  { path: "/api/stats", priority: 1 },
+  { path: "/api/tags", priority: 1 },
+  { path: "/api/performers", priority: 1 },
+  { path: "/api/recordings?limit=12&sort=newest", priority: 1 },
+  { path: "/api/recordings?limit=12&sort=popular", priority: 1 },
+  // Tier 2 — browse/discovery
+  { path: "/api/performers?sort=count&limit=24", priority: 2 },
+  { path: "/api/performers?sort=name&limit=24", priority: 2 }
+];
+async function waitForRedis(timeoutMs) {
+  if (isRedisConnected()) return true;
+  const pollInterval = 200;
+  const maxAttempts = Math.ceil(timeoutMs / pollInterval);
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise((r) => setTimeout(r, pollInterval));
+    if (isRedisConnected()) return true;
+  }
+  return false;
+}
+async function warmupCache(baseUrl, options) {
+  const purgeOnFailure = options?.purgeOnFailure ?? true;
+  await waitForRedis(5e3);
+  const start = Date.now();
+  const failedRoutes = [];
+  let succeeded = 0;
+  let total = 0;
+  logger.info({ routeCount: WARMUP_ROUTES.length }, "Cache warmup starting");
+  const sortedRoutes = [...WARMUP_ROUTES].sort((a, b) => a.priority - b.priority);
+  for (const { path } of sortedRoutes) {
+    const url = `${baseUrl}${path}`;
+    total++;
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1e4);
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { Accept: "application/json" }
+      });
+      clearTimeout(timeout);
+      if (response.ok) {
+        succeeded++;
+      } else {
+        failedRoutes.push({ path, status: response.status });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      failedRoutes.push({ path, status: 0 });
+      logger.error({ err: message, path }, "Cache warmup request failed");
+    }
+  }
+  try {
+    const perfResponse = await fetch(`${baseUrl}/api/performers?limit=5&sort=count`, {
+      headers: { Accept: "application/json" }
+    });
+    if (perfResponse.ok) {
+      const data = await perfResponse.json();
+      const topPerformers = data.performers ?? [];
+      const perfPromises = topPerformers.map(async (p) => {
+        total++;
+        try {
+          const res = await fetch(`${baseUrl}/api/performers/${encodeURIComponent(p.username)}`, {
+            headers: { Accept: "application/json" }
+          });
+          if (res.ok) succeeded++;
+          else failedRoutes.push({ path: `/api/performers/${p.username}`, status: res.status });
+        } catch {
+          failedRoutes.push({ path: `/api/performers/${p.username}`, status: 0 });
+        }
+      });
+      await Promise.allSettled(perfPromises);
+    }
+  } catch {
+  }
+  const durationMs = Date.now() - start;
+  if (failedRoutes.length > 0) {
+    if (purgeOnFailure) {
+      logger.warn(
+        {
+          succeeded,
+          failed: failedRoutes.length,
+          total,
+          durationMs,
+          failedRoutes: failedRoutes.slice(0, 5)
+        },
+        "Cache warmup completed with some failures \u2014 purging all cache entries"
+      );
+      purgeAllCache().catch(
+        (err) => logger.error({ err }, "Failed to purge cache after warmup failures")
+      );
+    } else {
+      logger.warn(
+        {
+          succeeded,
+          failed: failedRoutes.length,
+          total,
+          durationMs,
+          failedRoutes: failedRoutes.slice(0, 5)
+        },
+        "Cache warmup completed with some failures (kept existing cache)"
+      );
+    }
+  } else {
+    logger.info({ succeeded, total, durationMs }, "Cache warmup completed successfully");
+  }
+  return { total, succeeded, failed: failedRoutes.length, durationMs, failedRoutes };
+}
+
+// src/routes/cache-warm.ts
+var router15 = (0, import_express15.Router)();
+router15.get("/cache/warm", async (req, res) => {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    res.status(503).json({ error: "warm endpoint not configured (CRON_SECRET missing)" });
+    return;
+  }
+  if (req.headers.authorization !== `Bearer ${secret}`) {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  const host = String(req.headers["x-forwarded-host"] ?? req.headers.host ?? "");
+  if (!host) {
+    res.status(400).json({ error: "could not determine host" });
+    return;
+  }
+  const result = await warmupCache(`https://${host}`, { purgeOnFailure: false });
+  res.json(result);
+});
+var cache_warm_default = router15;
+
+// src/routes/views.ts
+var import_express16 = __toESM(require_express2(), 1);
+init_supabase();
+var router16 = (0, import_express16.Router)();
+router16.post("/recordings/:id/view", async (req, res) => {
   const { id } = req.params;
   if (!id) {
     res.status(400).json({ error: "Missing recording id" });
@@ -72096,10 +72315,10 @@ router14.post("/recordings/:id/view", async (req, res) => {
     res.status(500).json({ error: "Failed to record view" });
   }
 });
-var views_default = router14;
+var views_default = router16;
 
 // src/routes/rum.ts
-var import_express15 = __toESM(require_express2(), 1);
+var import_express17 = __toESM(require_express2(), 1);
 
 // src/lib/activity.ts
 init_supabase();
@@ -72205,7 +72424,7 @@ async function flushActivity() {
 }
 
 // src/routes/rum.ts
-var router15 = (0, import_express15.Router)();
+var router17 = (0, import_express17.Router)();
 var FLUSH_PROBABILITY = Number.parseFloat(process.env.ACTIVITY_FLUSH_PROBABILITY ?? "0.05") || 0.05;
 var MAX_METRICS_PER_BATCH = 50;
 function normalizeMeta(raw) {
@@ -72240,7 +72459,7 @@ function normalizeMetrics(body) {
   }
   return out;
 }
-router15.post("/rum", async (req, res) => {
+router17.post("/rum", async (req, res) => {
   try {
     const metrics2 = normalizeMetrics(req.body);
     if (metrics2.length > 0) {
@@ -72254,30 +72473,32 @@ router15.post("/rum", async (req, res) => {
   }
   res.status(204).end();
 });
-router15.get("/rum/flush", async (_req, res) => {
+router17.get("/rum/flush", async (_req, res) => {
   const processed = await flushActivity();
   res.json({ ok: true, processed });
 });
-var rum_default = router15;
+var rum_default = router17;
 
 // src/routes/index.ts
-var router16 = (0, import_express16.Router)();
-router16.use(health_default);
-router16.use(recordings_default);
-router16.use(performers_default);
-router16.use(tags_default);
-router16.use(stats_default);
-router16.use(reactions_default);
-router16.use(comments_default);
-router16.use(requests_default);
-router16.use(user_default);
-router16.use(cache_admin_default);
-router16.use(admin_default);
-router16.use(search_default);
-router16.use(media_proxy_default);
-router16.use(views_default);
-router16.use(rum_default);
-var routes_default = router16;
+var router18 = (0, import_express18.Router)();
+router18.use(health_default);
+router18.use(recordings_default);
+router18.use(performers_default);
+router18.use(tags_default);
+router18.use(stats_default);
+router18.use(reactions_default);
+router18.use(comments_default);
+router18.use(requests_default);
+router18.use(user_default);
+router18.use(cache_admin_default);
+router18.use(admin_default);
+router18.use(search_default);
+router18.use(media_proxy_default);
+router18.use(edge_cache_default);
+router18.use(cache_warm_default);
+router18.use(views_default);
+router18.use(rum_default);
+var routes_default = router18;
 
 // src/middleware/rate-limit.ts
 var ENABLED = (process.env.RATE_LIMIT_ENABLED ?? "true") !== "false";
@@ -72379,11 +72600,11 @@ function rateLimit(options) {
 }
 var globalRateLimiter = rateLimit({
   bucket: "read",
-  skip: (req) => req.path === "/healthz" || req.path.startsWith("/admin") || req.path.startsWith("/cache")
+  skip: (req) => req.path === "/healthz" || req.path === "/cache/warm"
 });
 
 // src/app.ts
-var app = (0, import_express17.default)();
+var app = (0, import_express19.default)();
 app.use(
   (0, import_pino_http.default)({
     logger,
@@ -72409,8 +72630,8 @@ app.use(
     credentials: true
   })
 );
-app.use(import_express17.default.json());
-app.use(import_express17.default.urlencoded({ extended: true }));
+app.use(import_express19.default.json({ limit: "1mb" }));
+app.use(import_express19.default.urlencoded({ extended: true, limit: "1mb" }));
 app.use("/api", globalRateLimiter);
 app.use("/api", routes_default);
 app.use((err, _req, res, _next) => {

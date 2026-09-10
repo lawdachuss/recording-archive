@@ -8,6 +8,12 @@
     "api/index.mjs": { "memory": 1024 },
     "api/media.mjs": { "memory": 2048 }
   },
+  "crons": [
+    {
+      "path": "/api/cache/warm",
+      "schedule": "30 4 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/assets/(.*)",

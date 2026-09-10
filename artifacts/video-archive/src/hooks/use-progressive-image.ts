@@ -24,6 +24,25 @@ import { getCachedBlobUrl, releaseBlobUrl, cacheImage } from "@/lib/image-cache"
 // anything (catbox-style stalls) must fall back to the native <img> path
 // instead of leaving the bar at 0 forever.
 const FIRST_BYTE_TIMEOUT_MS = 12_000;
+
+// Cross-origin hosts that send `Access-Control-Allow-Origin`, so a fetch()
+// here can actually read the body. Same-origin URLs (the /api/media proxy)
+// always qualify. Hosts NOT in this list (iili.io, freeimage.host, imgchest,
+// ...) reject CORS-mode fetches with a noisy-but-harmless console error and
+// never deliver bytes, so for them we skip streaming entirely and hand the
+// URL straight to the native <img> (which loads fine without CORS).
+const CORS_STREAM_HOSTS = ["catbox.moe", "litter.catbox.moe", "files.catbox.moe"];
+
+function isStreamable(url: string): boolean {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.origin === window.location.origin) return true;
+    const hostname = parsed.hostname.toLowerCase();
+    return CORS_STREAM_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
+  } catch {
+    return false;
+  }
+}
 // Stall watchdog: reset on every chunk. If the stream stops delivering bytes
 // mid-download (server hang), abort and fall back so the mirror chain engages.
 const STALL_TIMEOUT_MS = 20_000;
@@ -111,9 +130,17 @@ export function useProgressiveImage(
 
       // 2) Not cached — stream the fetch for real progress. Works for
       //    same-origin /api/media (pixhost) and cross-origin hosts that
-      //    send CORS headers (catbox). On any failure we fall back to the
-      //    original URL so the consumer's native loading + fallback chain
+      //    send CORS headers (catbox). Hosts that don't send CORS
+      //    (iili.io etc.) are handed to the native <img> directly — a
+      //    fetch() there only produces CORS console noise and never
+      //    delivers bytes. On any failure we fall back to the original
+      //    URL so the consumer's native loading + fallback chain
       //    (mirrors, wsrv → direct) engages as before.
+      if (!isStreamable(url)) {
+        setSrc(url);
+        setProgress(null);
+        return;
+      }
       const controller = new AbortController();
       abortRef.current = controller;
 

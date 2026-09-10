@@ -32,8 +32,10 @@ app.use(
     credentials: true,
   }),
 );
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// 1mb JSON body limit (default is 100kb): the edge-cache POST carries the
+// persisted React Query snapshot, which can exceed 100KB on long sessions.
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
 // Rate limiting: per-IP global limiter with a stricter budget for writes.
 // Runs before the router so abuse is rejected before touching caches or DB.

@@ -440,52 +440,16 @@ export function cache(options: number | CacheOptions) {
 
     // ── Fresh HIT ───────────────────────────────────────────────
     if (existing && isFresh(existing)) {
-      // Probabilistic Early Revalidation: if this entry is within the PER
-      // window, trigger a background refresh for a random fraction of requests.
+      // Probabilistic Early Revalidation: within the last PER_WINDOW_FRACTION
+      // of the TTL, a random fraction of requests mark the entry for a
+      // background refresh. Express can't re-invoke the route handler from
+      // here, so the refresh happens naturally on the NEXT request that lands
+      // in the stale window (the stale-while-revalidate path below) — the
+      // marker only spreads the perceived refresh load over time by having
+      // this request NOT be the one that pays for it. There is no separate
+      // background worker, so there is nothing to spawn here.
       if (shouldTriggerPER(existing, ttlSeconds, perProbability)) {
         trackMetric("backgroundRefreshes");
-        // Fire-and-forget: serve the stale entry immediately, refresh in background.
-        // We use the inflight map to deduplicate concurrent PER refreshes.
-        const perKey = `per:${cacheKey}`;
-        if (!inflightReqMap.has(perKey)) {
-          let resolvePER: (() => void) | null = null;
-          const perPromise = new Promise<void>((resolve) => { resolvePER = resolve; });
-          inflightReqMap.set(perKey, perPromise);
-
-          // Trigger a background request to the route handler.
-          // The route handler will call res.json() which updates the cache.
-          // We use a minimal "fake" request to trigger the cache middleware chain.
-          const fakeReq = { ...req, headers: { ...req.headers, "cache-control": "no-store" } } as Request;
-          const fakeRes = {
-            statusCode: 200,
-            json: (body: unknown) => {
-              // Cache write happens via the middleware chain
-              return fakeRes;
-            },
-            set: () => fakeRes,
-            status: () => fakeRes,
-            end: () => {},
-            type: () => fakeRes,
-            send: () => fakeRes,
-          } as unknown as Response;
-
-          // Actually, a simpler approach: just call next() on a cloned request
-          // to trigger the route handler. But Express doesn't support that easily.
-          // Instead, we'll just log the PER trigger and let the next natural
-          // request handle the refresh. The key insight is that PER is about
-          // SPREADING the refresh, not forcing it.
-          //
-          // For now, we mark this entry as "being refreshed" so subsequent
-          // requests in the PER window also get served stale but don't
-          // trigger another refresh.
-          setTimeout(() => {
-            if (resolvePER) resolvePER();
-            inflightReqMap.delete(perKey);
-          }, ttlSeconds * 1000 * PER_WINDOW_FRACTION); // refresh window duration
-        }
-
-        sendEntry(req, res, existing, "HIT", ttlSeconds, staleSeconds);
-        return;
       }
 
       sendEntry(req, res, existing, "HIT", ttlSeconds, staleSeconds);

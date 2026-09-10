@@ -1,7 +1,12 @@
 /**
  * cache.ts — three-tier edge-aware storage cache
  *
- * Tier 0 (fastest): Edge Cache API  — https://supabase.chuglii.in/functions/v1/cache
+ * Tier 0 (fastest): Edge Cache API (optional) — the Redis-backed
+ * /api/cache endpoint on the API server, at the URL in VITE_EDGE_CACHE_URL
+ * (e.g. https://chuglii.in/api/cache). DISABLED by default: without a
+ * deployed endpoint, calling the URL would 404 on every cacheGet (noisy
+ * console + wasted request). Set VITE_EDGE_CACHE_URL at build time (Vercel
+ * env var) to enable cross-device shared caching.
  * Tier 1: localStorage — small JSON payloads (< 100KB serialized).
  * Tier 2: IndexedDB — large blobs, images, big response bodies.
  *
@@ -12,7 +17,8 @@
 const CLEANUP_INTERVAL_MS = 60_000;
 const LS_SIZE_WARN = 100 * 1024; // warn if serialized payload exceeds 100KB
 
-const EDGE_CACHE_URL = "https://supabase.chuglii.in/functions/v1/cache";
+const EDGE_CACHE_URL =
+  (import.meta.env.VITE_EDGE_CACHE_URL as string | undefined)?.trim() || null;
 
 // ─── IndexedDB setup ──────────────────────────────────────────────
 
@@ -58,12 +64,30 @@ interface EdgeCacheResult {
   ttl: number | null;
 }
 
-async function edgeGet(key: string): Promise<EdgeCacheResult | null> {
+// The edge tier is best-effort and must NEVER delay or block the local tiers:
+// a hung edge call (slow CDN, cold function, flaky tunnel) aborts after this
+// window and the read falls through to localStorage/IDB as if the tier missed.
+const EDGE_FETCH_TIMEOUT_MS = 4000;
+
+async function edgeFetch(url: string, init: RequestInit = {}): Promise<Response | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), EDGE_FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(`${EDGE_CACHE_URL}?key=${encodeURIComponent(key)}`, {
-      method: "GET",
-    });
-    if (!res.ok) return null;
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function edgeGet(key: string): Promise<EdgeCacheResult | null> {
+  if (!EDGE_CACHE_URL) return null;
+  const res = await edgeFetch(`${EDGE_CACHE_URL}?key=${encodeURIComponent(key)}`, {
+    method: "GET",
+  });
+  if (!res?.ok) return null;
+  try {
     const json = (await res.json()) as { exists?: boolean; value?: unknown; ttl?: number | null };
     if (!json.exists || json.value === undefined || json.value === null) return null;
     return { found: true, data: json.value, ttl: json.ttl ?? null };
@@ -73,15 +97,16 @@ async function edgeGet(key: string): Promise<EdgeCacheResult | null> {
 }
 
 async function edgeSet(key: string, value: unknown, ttlMs?: number): Promise<boolean> {
+  if (!EDGE_CACHE_URL) return false;
+  const body: Record<string, unknown> = { key, value };
+  if (ttlMs) body.ttl = Math.max(1, Math.round(ttlMs / 1000));
+  const res = await edgeFetch(EDGE_CACHE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res?.ok) return false;
   try {
-    const body: Record<string, unknown> = { key, value };
-    if (ttlMs) body.ttl = Math.max(1, Math.round(ttlMs / 1000));
-    const res = await fetch(EDGE_CACHE_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) return false;
     const json = (await res.json()) as { success?: boolean };
     return !!json.success;
   } catch {
@@ -90,11 +115,12 @@ async function edgeSet(key: string, value: unknown, ttlMs?: number): Promise<boo
 }
 
 async function edgeDelete(key: string): Promise<boolean> {
+  if (!EDGE_CACHE_URL) return false;
+  const res = await edgeFetch(`${EDGE_CACHE_URL}?key=${encodeURIComponent(key)}`, {
+    method: "DELETE",
+  });
+  if (!res?.ok) return false;
   try {
-    const res = await fetch(`${EDGE_CACHE_URL}?key=${encodeURIComponent(key)}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) return false;
     const json = (await res.json()) as { success?: boolean };
     return !!json.success;
   } catch {

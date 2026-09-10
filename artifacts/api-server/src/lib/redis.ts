@@ -24,16 +24,26 @@ if (redisUrl) {
     client = new Redis(redisUrl, {
       maxRetriesPerRequest: 3,
       retryStrategy(times: number) {
-        const delay = Math.min(100 * Math.pow(3, times - 1), 5000);
-        if (times > 5) {
-          logger.error("Redis max retries reached, giving up");
-          return null;
+        // NEVER permanently give up. Redis is reached through a public tunnel
+        // that blips intermittently; a connection failure during a blip must
+        // not disable caching for this instance's whole lifetime. Cap the
+        // backoff so a long outage doesn't hammer the tunnel, but keep
+        // retrying so the client self-heals the moment it comes back.
+        const delay = Math.min(250 * Math.pow(2, times - 1), 15_000);
+        if (times % 10 === 0) {
+          logger.warn({ attempt: times }, "Redis still reconnecting");
         }
         return delay;
       },
       enableReadyCheck: true,
       lazyConnect: true,
       commandTimeout: 5000,
+      // Never queue commands while disconnected: with the never-give-up
+      // retryStrategy above, the offline queue would buffer every command
+      // issued during a tunnel blip and replay the whole backlog on
+      // reconnect — stale writes racing newer ones. Fail fast instead and
+      // let the callers' graceful-degradation paths handle it.
+      enableOfflineQueue: false,
     });
 
     client.on("error", (err: unknown) => {

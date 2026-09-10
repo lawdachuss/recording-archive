@@ -173,12 +173,14 @@ export function rateLimit(options: RateLimitOptions) {
 
 /**
  * Global /api limiter: per-IP with a method-aware budget (reads vs writes)
- * plus a per-auth-token bucket for authenticated traffic. Health check and
- * cache-admin endpoints are exempt (cache-admin already requires admin auth).
+ * plus a per-auth-token bucket for authenticated traffic. Only the health
+ * check and the cron-triggered cache warm are exempt. The PUBLIC edge cache
+ * (/api/cache GET/POST/DELETE) and admin cache routes stay rate-limited so
+ * the shared cache can't be used as an unbounded write surface.
  */
 export const globalRateLimiter = rateLimit({
   bucket: "read",
-  skip: (req) => req.path === "/healthz" || req.path.startsWith("/admin") || req.path.startsWith("/cache"),
+  skip: (req) => req.path === "/healthz" || req.path === "/cache/warm",
 });
 
 /** Convenience: per-token (authenticated) limiter for expensive endpoints. */

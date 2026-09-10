@@ -52,20 +52,30 @@ interface WarmupResult {
  * Call this after the server starts listening:
  *
  *   app.listen(port, () => {
- *     warmupCache(port).catch(() => {});
+ *     warmupCache(`http://127.0.0.1:${port}`).catch(() => {});
  *   });
  *
+ * On Vercel there is no listening port, so the cron-triggered warm
+ * (routes/cache-warm.ts) passes the public origin instead.
+ *
  * It runs entirely in the background — errors are logged but
- * never crash the server.
+ * never crash the server. purgeOnFailure defaults to true for the
+ * boot warmup (a partial warm after a cold start is worse than none
+ * until real traffic fills it); recurring crons pass false so a
+ * flaky Redis/tunnel can never wipe the whole cache.
  */
-export async function warmupCache(port: number): Promise<WarmupResult> {
+export async function warmupCache(
+  baseUrl: string,
+  options?: { purgeOnFailure?: boolean },
+): Promise<WarmupResult> {
+  const purgeOnFailure = options?.purgeOnFailure ?? true;
+
   // Wait briefly for Redis to connect (lazyConnect is enabled)
   // If Redis doesn't connect within 5s, the warmup still fires — the
   // cache middleware will handle Redis being unavailable gracefully.
   await waitForRedis(5000);
 
   const start = Date.now();
-  const baseUrl = `http://127.0.0.1:${port}`;
   const failedRoutes: { path: string; status: number }[] = [];
   let succeeded = 0;
   let total = 0;
@@ -134,22 +144,35 @@ export async function warmupCache(port: number): Promise<WarmupResult> {
   const durationMs = Date.now() - start;
 
   if (failedRoutes.length > 0) {
-    logger.warn(
-      {
-        succeeded,
-        failed: failedRoutes.length,
-        total,
-        durationMs,
-        failedRoutes: failedRoutes.slice(0, 5),
-      },
-      "Cache warmup completed with some failures — purging all cache entries",
-    );
+    if (purgeOnFailure) {
+      logger.warn(
+        {
+          succeeded,
+          failed: failedRoutes.length,
+          total,
+          durationMs,
+          failedRoutes: failedRoutes.slice(0, 5),
+        },
+        "Cache warmup completed with some failures — purging all cache entries",
+      );
 
-    // Purge the entire cache so no stale or partial data is served
-    // to users. The cache will be repopulated on the next real request.
-    purgeAllCache().catch((err) =>
-      logger.error({ err }, "Failed to purge cache after warmup failures"),
-    );
+      // Purge the entire cache so no stale or partial data is served
+      // to users. The cache will be repopulated on the next real request.
+      purgeAllCache().catch((err) =>
+        logger.error({ err }, "Failed to purge cache after warmup failures"),
+      );
+    } else {
+      logger.warn(
+        {
+          succeeded,
+          failed: failedRoutes.length,
+          total,
+          durationMs,
+          failedRoutes: failedRoutes.slice(0, 5),
+        },
+        "Cache warmup completed with some failures (kept existing cache)",
+      );
+    }
   } else {
     logger.info({ succeeded, total, durationMs }, "Cache warmup completed successfully");
 

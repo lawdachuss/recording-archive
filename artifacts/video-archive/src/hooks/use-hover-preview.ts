@@ -5,7 +5,7 @@ import {
   isAnimatedImageUrl,
   preloadPreviewMedia,
 } from "@/lib/preload-preview";
-import { preloadImage } from "@/lib/preload-sprite";
+import { preloadImage, isReachablePreviewUrl } from "@/lib/preload-sprite";
 import { isConnectionConstrained } from "@/lib/connection";
 import { dlog } from "@/lib/debug";
 
@@ -97,18 +97,23 @@ export function useHoverPreview({
           for (const entry of entries) {
             if (entry.isIntersecting && !intersectionPreloadedRef.current) {
               intersectionPreloadedRef.current = true;
-              // Always preload the sprite — it's the instant hover effect.
-              // Also preload the preview media when reachable (skip catbox
-              // which blocks datacenter IPs and many residential networks).
-              // On a constrained connection the sprite is the ONLY hover
-              // preview we still render (heavy video/webp is disabled), so it
-              // must warm even when slow. Marking it immediate bypasses the
-              // constrained skip while keeping the visible thumbnails' own
-              // <img> path (cacheImage) untouched.
-              if (spriteUrl) {
-                preloadImage(spriteUrl, { immediate: isConnectionConstrained() });
+              // Preload the sprite (instant hover effect) and the preview
+              // media — but ONLY for hosts worth preloading from. catbox
+              // throttles third-party hotlinking to ~16KB/s (a 261KB webp
+              // takes 16s): a speculative download there never finishes
+              // before the hover AND holds a queue slot the whole time,
+              // starving the fast proxied hosts (pixhost sprites load in
+              // ~250ms through /api/media). catbox sprites/previews load on
+              // demand at hover time via useProgressiveImage instead (with
+              // its progress bar), and the first hover persists them to the
+              // IDB blob cache so repeat hovers are zero-network.
+              //
+              // In-viewport sprites are marked immediate so they jump ahead
+              // of the idle catalog warmer instead of queuing behind it.
+              if (spriteUrl && isReachablePreviewUrl(spriteUrl)) {
+                preloadImage(spriteUrl, { immediate: true });
               }
-              if (previewUrl) {
+              if (previewUrl && isReachablePreviewUrl(previewUrl)) {
                 preloadPreviewMedia(previewUrl);
               }
               observer?.disconnect();
@@ -116,7 +121,11 @@ export function useHoverPreview({
             }
           }
         },
-        { rootMargin: isConnectionConstrained() ? "200px" : "800px" }
+        // Preload only cards close to the viewport. 800px meant a whole grid
+        // row of cards fired TWO speculative downloads each on first paint;
+        // 400px still starts the fetch well before the pointer arrives while
+        // cutting the initial preload burst roughly in half.
+        { rootMargin: isConnectionConstrained() ? "200px" : "400px" }
       );
       observer.observe(el);
     };

@@ -28757,7 +28757,7 @@ app.use((req, res, next) => {
   }
   next();
 });
-app.use(media_proxy_default);
+app.use("/api", media_proxy_default);
 app.use((err, _req, res, _next) => {
   logger.error({ err }, "Unhandled media-proxy error");
   if (res.headersSent) return;

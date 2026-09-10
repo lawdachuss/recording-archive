@@ -27,7 +27,7 @@ app.listen(port, (err) => {
   logger.info({ port }, "Server listening");
 
     // Fire cache warmup in the background — never blocks the server
-    warmupCache(port).catch((err) => {
+    warmupCache(`http://127.0.0.1:${port}`).catch((err) => {
       logger.error({ err }, "Cache warmup failed unexpectedly");
     });
 

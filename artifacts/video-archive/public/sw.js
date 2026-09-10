@@ -1,5 +1,5 @@
 // ─── Cache configuration ────────────────────────────────────────────────────
-// v8: force SW update to drop stale JS bundles
+// v9: removed dead staleWhileRevalidate handler (mediaCacheFirst covers it)
 
 const IMAGE_CACHE = "vault-images-v7";
 const API_CACHE = "vault-api-v1";
@@ -75,50 +75,6 @@ async function trimCache(cache) {
   const toDelete = keys.slice(0, keys.length - IMAGE_MAX_ENTRIES);
   for (const request of toDelete) {
     await cache.delete(request);
-  }
-}
-
-// ─── Stale-while-revalidate with tiered TTLs ───────────────────────────────
-
-async function staleWhileRevalidate(request) {
-  const cache = await caches.open(IMAGE_CACHE);
-  const cached = await cache.match(request);
-
-  // Check freshness using tier-specific TTL
-  if (cached) {
-    const cachedAt = cached.headers.get("sw-cached-at");
-    if (cachedAt) {
-      const age = Date.now() - Number(cachedAt);
-      const ttl = getTtlForUrl(request.url);
-      if (age < ttl) {
-        // Fresh — serve from cache without network
-        return cached;
-      }
-      // Stale — serve from cache but revalidate in background
-      revalidateInBackground(request, cache);
-      return cached;
-    }
-  }
-
-  // No cache or no timestamp — fetch fresh
-  try {
-    const response = await fetch(request, { cache: "no-cache" });
-    if (response.ok) {
-      await cacheResponse(cache, request, response);
-    }
-    return response;
-  } catch (err) {
-    // Network failed (CORS, offline, unreachable host, etc.).
-    // Prefer a stale cached copy; otherwise return the light
-    // "Image unavailable" placeholder so the card never renders black.
-    if (cached) return cached;
-    return new Response(PLACEHOLDER_SVG, {
-      status: 200,
-      headers: {
-        "Content-Type": "image/svg+xml",
-        "Cache-Control": "no-store",
-      },
-    });
   }
 }
 

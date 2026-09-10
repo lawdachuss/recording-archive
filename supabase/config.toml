@@ -1,0 +1,8 @@
+# Supabase project configuration.
+# The cache edge function is called directly from the browser (no auth
+# headers), so JWT verification is disabled for it. See
+# supabase/functions/cache/index.ts.
+project_id = "video-archive"
+
+[functions.cache]
+verify_jwt = false

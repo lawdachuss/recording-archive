@@ -47,7 +47,12 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(mediaProxyRouter);
+// Vercel invokes this function with the FULL request path (/api/media), so the
+// proxy router must be mounted at /api (its routes are defined as /media) —
+// exactly like the main app mounts its router in app.ts. Mounting at the root
+// made every /api/media request fall through to Express's 404 handler
+// ("Cannot GET /api/media"), breaking all proxied thumbnails/videos.
+app.use("/api", mediaProxyRouter);
 
 // Global error handler — same contract as app.ts.
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

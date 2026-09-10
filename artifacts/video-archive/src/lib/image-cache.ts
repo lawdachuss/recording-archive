@@ -756,12 +756,35 @@ function isValidImageMagic(head: Uint8Array): boolean {
   return jpeg || png || gif || webp || avif || mp4 || webm;
 }
 
+// Hosts that do NOT send Access-Control-Allow-Origin headers. A CORS-mode
+// fetch() to these hosts always fails with a noisy console error and never
+// delivers bytes. The <img> tag loads fine without CORS, so skip the
+// cacheImage fetch entirely to avoid the console noise.
+const NO_CORS_HOSTS = [
+  "imgchest.com",
+  "iili.io",
+  "freeimage.host",
+];
+
+function isNoCorsHost(hostname: string): boolean {
+  return NO_CORS_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
+}
+
 async function _cacheImageInner(
   url: string,
   priority: CachePriority,
 ): Promise<ImageCacheEntry | null> {
   // Skip if recently cached (stale-while-revalidate window)
   if (await isFresh(url, FRESHNESS_MS)) { trackHit("fresh_skip", url); return null; }
+
+  // Skip cross-origin hosts that don't send CORS headers — a fetch() there
+  // only produces console noise and never delivers bytes.
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.origin !== window.location.origin && isNoCorsHost(parsed.hostname)) {
+      return null;
+    }
+  } catch { /* not parseable — continue with the fetch */ }
 
   try {
     trackHit("fetch", url);
