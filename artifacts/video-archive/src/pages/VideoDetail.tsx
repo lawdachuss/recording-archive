@@ -77,6 +77,8 @@ function detectHostLabel(url: string): string {
     if (hostname.includes("seek") || hostname.includes("embedseek") || hostname.includes("seeks.cloud")) return "SeekStreaming";
     if (hostname.includes("upns")) return "UPNshare";
     if (hostname.includes("anonmp4")) return "AnonMP4";
+    if (hostname.includes("udrop")) return "UDrop";
+    if (hostname.includes("vidmoly")) return "VidMoly";
     return hostname.replace(/^www\./, "");
   } catch {
     return "Server";
