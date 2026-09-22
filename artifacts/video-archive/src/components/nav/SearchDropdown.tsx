@@ -407,7 +407,7 @@ function renderPredictions({
                       src={proxyImageUrl(suggestion.image_url) ?? ""}
                       alt=""
                       className="w-full h-full object-cover"
-                      loading="lazy"
+                      loading="eager"
                     />
                   </div>
                 ) : suggestion.type === "performer" ? (

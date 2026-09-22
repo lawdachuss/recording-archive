@@ -480,7 +480,6 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
                 src={staticImage!}
                 alt={recording.username}
                 fetchPriority={fetchPriority}
-                loading={fetchPriority === "high" ? "eager" : "lazy"}
                 className="opacity-100"
                 containerClassName="absolute inset-0 w-full h-full"
                 fallback={<ImageUnavailable initials={initials} />}

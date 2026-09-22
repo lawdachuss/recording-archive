@@ -148,10 +148,12 @@ export const OptimizedImage = memo(function OptimizedImage({
 
   const onLoad = useCallback(() => {
     setLoaded(true);
-    // Persist to IDB (thumbnail = hot, evict last) so repeat visits skip the
-    // network entirely.
-    cacheImage(resolvedSrc, 3).catch(() => {});
-  }, [resolvedSrc]);
+    // Cache the URL that actually loaded into IDB so repeat visits skip the
+    // network. When wsrv 404'd and we fell back to directSrc (attempt≥1), cache
+    // directSrc — NOT resolvedSrc (which would retry the broken wsrv URL again).
+    const urlToCache = (attempt >= 1 && directSrc) ? directSrc : resolvedSrc;
+    cacheImage(urlToCache, 3).catch(() => {});
+  }, [resolvedSrc, directSrc, attempt]);
 
   const onError = useCallback(() => {
     if (directSrc && attempt === 0) {
