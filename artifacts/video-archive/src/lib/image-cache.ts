@@ -21,8 +21,6 @@
  *   1 = preview   (large ~1MB, cold — evict first)
  */
 
-import { isWsrvFailedForHost, markWsrvFailedForHost } from "./proxy-url";
-
 // ─── Profiling ─────────────────────────────────────────────────────────────
 // Lightweight counters for measuring cache hit rates during development.
 // Zero-cost in production builds (tree-shaken via process.env check).
@@ -709,11 +707,6 @@ export async function cacheImage(
     // Relative URL — proceed normally
   }
 
-  // Skip wsrv.nl URLs that have already failed (circuit breaker). The <img>
-  // onError handler marks them via markWsrvFailedForHost(); fetching them again
-  // from the preloader would only produce duplicate 404 console errors.
-  if (isWsrvFailedForHost(url)) return null;
-
   const existing = inflight.get(url);
   if (existing) { trackHit("dedup", url); return existing; }
 
@@ -840,11 +833,6 @@ async function _cacheImageInner(
     profile.fetchCount++;
 
     if (!res.ok) {
-      // wsrv.nl returns 404 for 0-byte / corrupt catbox images. Mark this
-      // specific URL in the circuit breaker so the preloader never retries it.
-      if (url.includes("wsrv.nl") || url.includes("weserv.nl")) {
-        markWsrvFailedForHost(url);
-      }
       return null;
     }
 

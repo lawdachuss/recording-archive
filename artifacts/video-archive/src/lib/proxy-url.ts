@@ -59,83 +59,11 @@ const WSRV_HOSTS = ["catbox.moe", "litter.catbox.moe", "files.catbox.moe"];
 
 const STATIC_RASTER_RE = /\.(jpe?g|png)$/i;
 
-// ─── Persistent circuit breaker ─────────────────────────────────────────────
-// Tracks wsrv.nl URLs that returned 404 (catbox 0-byte/deleted files).
-// Persisted to localStorage so broken URLs are skipped on every page load,
-// not just within a single session. Cap at MAX_STORED entries so localStorage
-// never grows unbounded (each URL ~60 chars → 500 entries ≈ 30 KB).
-
-const LS_KEY = "wsrv-failed-v1";
-const MAX_STORED = 500;
-const HOST_FAILURE_THRESHOLD = 15;
-
-function loadPersistedFailures(): string[] {
-  try {
-    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(LS_KEY) : null;
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-// Load persisted set eagerly at module init (synchronous localStorage read).
-const wsrvFailedUrls = new Set<string>(loadPersistedFailures());
-const wsrvHostFailureCounts = new Map<string, number>();
-
-// Rebuild host failure counts from persisted URL set so host-threshold checks
-// work correctly even before any new failures arrive in this session.
-for (const url of wsrvFailedUrls) {
-  try {
-    const host = new URL(url).hostname.toLowerCase();
-    wsrvHostFailureCounts.set(host, (wsrvHostFailureCounts.get(host) ?? 0) + 1);
-  } catch {}
-}
-
-// Debounced persist: batch writes into a single localStorage.setItem per flush.
-let _persistTimer: ReturnType<typeof setTimeout> | null = null;
-function schedulePersist() {
-  if (_persistTimer !== null) return;
-  _persistTimer = setTimeout(() => {
-    _persistTimer = null;
-    try {
-      const entries = Array.from(wsrvFailedUrls);
-      // Keep only the most recent MAX_STORED entries to prevent unbounded growth.
-      const trimmed = entries.length > MAX_STORED ? entries.slice(entries.length - MAX_STORED) : entries;
-      localStorage.setItem(LS_KEY, JSON.stringify(trimmed));
-    } catch { /* localStorage unavailable (private mode / quota full) — non-fatal */ }
-  }, 1000);
-}
-
-export function markWsrvFailedForHost(hostOrUrl: string): void {
-  try {
-    if (hostOrUrl.includes("://")) {
-      if (wsrvFailedUrls.has(hostOrUrl)) return; // already known — skip redundant persist
-      wsrvFailedUrls.add(hostOrUrl);
-      const host = new URL(hostOrUrl).hostname.toLowerCase();
-      wsrvHostFailureCounts.set(host, (wsrvHostFailureCounts.get(host) ?? 0) + 1);
-      schedulePersist();
-    } else {
-      const host = hostOrUrl.toLowerCase();
-      wsrvHostFailureCounts.set(host, (wsrvHostFailureCounts.get(host) ?? 0) + 1);
-    }
-  } catch {}
-}
-
-export function isWsrvFailedForHost(hostOrUrl: string): boolean {
-  try {
-    if (hostOrUrl.includes("://")) {
-      if (wsrvFailedUrls.has(hostOrUrl)) return true;
-      const host = new URL(hostOrUrl).hostname.toLowerCase();
-      return (wsrvHostFailureCounts.get(host) ?? 0) >= HOST_FAILURE_THRESHOLD;
-    }
-    const host = hostOrUrl.toLowerCase();
-    return (wsrvHostFailureCounts.get(host) ?? 0) >= HOST_FAILURE_THRESHOLD;
-  } catch {
-    return false;
-  }
-}
+// No-op stubs kept for API compatibility — circuit breaker has been removed.
+// wsrv.nl 404s are expected for slow/delayed catbox images; the <img> onError
+// fallback to the direct catbox URL handles them. Nothing should be blocked.
+export function markWsrvFailedForHost(_hostOrUrl: string): void { /* no-op */ }
+export function isWsrvFailedForHost(_hostOrUrl: string): boolean { return false; }
 
 /**
  * Extract the original upstream URL from a wsrv.nl / images.weserv.nl proxy URL.
