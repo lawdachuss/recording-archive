@@ -25,7 +25,8 @@ export function NotificationBell() {
     queryKey: ["user", "notifications"],
     queryFn: () => userApi.getNotifications(),
     enabled: !!user,
-    // No refetchInterval needed — Realtime pushes changes instantly
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
   });
 
   // Play sound + vibrate + show toast when a new notification arrives

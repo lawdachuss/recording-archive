@@ -44,7 +44,9 @@ export default function Notifications() {
         : undefined;
     },
     enabled: !!user,
-    staleTime: 30_000,
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
   });
 
   const notifications = useMemo(() => {
