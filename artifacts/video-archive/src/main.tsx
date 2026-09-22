@@ -21,6 +21,35 @@ window.addEventListener("unhandledrejection", (e) => {
   e.preventDefault();
 });
 
+// Auto-recover when a user has an older version open during a new deployment.
+// If a hashed chunk can't be found on the server, reload the page to load the latest HTML.
+function handleChunkError(reason: string) {
+  const reloadKey = "app_stale_chunk_reload";
+  const lastReload = sessionStorage.getItem(reloadKey);
+  const now = Date.now();
+  if (!lastReload || now - Number(lastReload) > 10_000) {
+    sessionStorage.setItem(reloadKey, String(now));
+    console.warn(`[deploy] Stale chunk detected (${reason}), reloading latest version...`);
+    window.location.reload();
+  }
+}
+
+window.addEventListener("vite:preloadError", () => {
+  handleChunkError("vite:preloadError");
+});
+
+window.addEventListener("error", (e) => {
+  const msg = (e.message || "").toLowerCase();
+  if (
+    msg.includes("dynamically imported module") ||
+    msg.includes("mime type of \"text/html\"") ||
+    msg.includes("failed to fetch dynamically imported") ||
+    msg.includes("failed to load module script")
+  ) {
+    handleChunkError(e.message);
+  }
+});
+
 // Stable production service worker for repeat-view image caching.
 // API data stays under React Query so it can honor freshness rules.
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
