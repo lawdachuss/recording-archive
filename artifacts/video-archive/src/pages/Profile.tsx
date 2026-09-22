@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, parseCloudItem, type PerformerFollow } from "@/lib/user-api";
+import { useMyRequests } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/formatters";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -89,12 +90,7 @@ export default function Profile() {
     staleTime: 30_000,
   });
 
-  const { data: requests = [] } = useQuery({
-    queryKey: ["user", "requests"],
-    queryFn: () => userApi.getRequests(),
-    enabled: !!user,
-    staleTime: 60_000,
-  });
+  const { data: requests = [] } = useMyRequests({ enabled: !!user });
 
   const recentActivity = useMemo(() => {
     if (!user) return [];

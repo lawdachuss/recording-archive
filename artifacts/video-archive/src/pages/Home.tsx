@@ -20,7 +20,7 @@ import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { useConnectionConstrained } from "@/hooks/use-connection-quality";
 import { buildThumbnailFallbacks } from "@/lib/mirrors";
-import { Search, ArrowRight, TrendingUp, Clock, Users, Tags } from "lucide-react";
+import { Search, ArrowRight, TrendingUp, Clock, Users, Tags, Clapperboard, Star } from "lucide-react";
 import { AdSlot } from "@/components/ads/AdSlot";
 import { MarineAds } from "@/components/ads/MarineAds";
 
