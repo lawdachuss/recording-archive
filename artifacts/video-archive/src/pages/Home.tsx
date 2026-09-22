@@ -11,17 +11,16 @@ import { Link, useLocation } from "wouter";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
 import { PerformerCard } from "@/components/PerformerCard";
-import { formatBytes, formatRelativeTime } from "@/lib/formatters";
-import { useState, useEffect, useMemo } from "react";
+import { useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
-import { userApi, parseCloudItem, cloudItemToRecording, type PerformerFollow } from "@/lib/user-api";
+import { userApi, parseCloudItem, cloudItemToRecording } from "@/lib/user-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { useConnectionConstrained } from "@/hooks/use-connection-quality";
 import { buildThumbnailFallbacks } from "@/lib/mirrors";
-import { Search, ArrowRight, TrendingUp, Star, Clock, Heart, Bookmark, ThumbsUp, Users, Tags, Clapperboard } from "lucide-react";
+import { Search, ArrowRight, TrendingUp, Clock, Users, Tags } from "lucide-react";
 import { AdSlot } from "@/components/ads/AdSlot";
 import { MarineAds } from "@/components/ads/MarineAds";
 
@@ -44,15 +43,6 @@ function hasThumbnail(recording: {
   return buildThumbnailFallbacks(recording).length > 0;
 }
 
-interface ActivityEvent {
-  id: string;
-  type: "bookmark" | "history" | "follow" | "like";
-  label: string;
-  subtitle: string;
-  href: string;
-  timestamp: string;
-}
-
 export default function Home() {
   const [_, setLocation] = useLocation();
   const [search, setSearch] = useState("");
@@ -66,94 +56,12 @@ export default function Home() {
 
   const { data: stats } = useGetStats({ query: { queryKey: getGetStatsQueryKey(), staleTime: 30_000 } });
 
-  // ─── Activity feed ────────────────────────────────────
-  const { data: savedItems = [] } = useQuery({
-    queryKey: ["user", "saved"],
-    queryFn: () => userApi.getSaved(),
-    enabled: !!user,
-    staleTime: 30_000,
-  });
-
-  const { data: historyItems = [] } = useQuery({
-    queryKey: ["user", "history"],
-    queryFn: () => userApi.getHistory(),
-    enabled: !!user,
-    staleTime: 30_000,
-  });
-
-  const { data: follows = [] } = useQuery({
-    queryKey: ["user", "follows"],
-    queryFn: () => userApi.getFollows(),
-    enabled: !!user,
-    staleTime: 30_000,
-  });
-
   const { data: continueWatching = [] } = useQuery({
     queryKey: ["user", "continue-watching"],
     queryFn: () => userApi.getContinueWatching(8),
     enabled: !!user,
     staleTime: 60_000,
   });
-
-  const recentActivity = useMemo(() => {
-    if (!user) return [];
-    const events: ActivityEvent[] = [];
-
-    // Recent bookmarks (up to 5)
-    for (const item of savedItems.slice(0, 5)) {
-      const rec = parseCloudItem(item);
-      events.push({
-        id: `bookmark-${item.recording_id}`,
-        type: "bookmark",
-        label: rec.username || item.recording_id,
-        subtitle: "Saved to bookmarks",
-        href: `/video/${item.recording_id}`,
-        timestamp: item.saved_at ?? new Date().toISOString(),
-      });
-    }
-
-    // Recent history (up to 5)
-    for (const item of historyItems.slice(0, 5)) {
-      const rec = parseCloudItem(item);
-      events.push({
-        id: `history-${item.recording_id}`,
-        type: "history",
-        label: rec.username || item.recording_id,
-        subtitle: "Watched recently",
-        href: `/video/${item.recording_id}`,
-        timestamp: item.watched_at ?? item.added_at ?? new Date().toISOString(),
-      });
-    }
-
-    // Recent follows (up to 5)
-    for (const f of (follows as PerformerFollow[]).slice(0, 5)) {
-      events.push({
-        id: `follow-${f.performer_username}`,
-        type: "follow",
-        label: f.performer_username,
-        subtitle: "Started following",
-        href: `/performers/${f.performer_username}`,
-        timestamp: f.followed_at,
-      });
-    }
-
-    // Sort by most recent first, limit to 8
-    return events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 8);
-  }, [user, savedItems, historyItems, follows]);
-
-  const ACTIVITY_ICONS: Record<ActivityEvent["type"], typeof Heart> = {
-    bookmark: Bookmark,
-    history: Clock,
-    follow: Heart,
-    like: ThumbsUp,
-  };
-
-  const ACTIVITY_COLORS: Record<ActivityEvent["type"], string> = {
-    bookmark: "text-amber-500",
-    history: "text-blue-400",
-    follow: "text-pink-500",
-    like: "text-green-500",
-  };
   const recentParams = { limit: pageSize * 2, sort: "newest" as const };
   const { data: recentData, isLoading: recentLoading } = useListRecordings(
     recentParams,
@@ -435,42 +343,6 @@ export default function Home() {
         </section>
       )}
 
-      {/* Activity feed — only for signed-in users */}
-      {user && recentActivity.length > 0 && (
-        <section className="border-t border-border/50 px-4 sm:px-6 py-14 bg-secondary relative overflow-hidden">
-          <div className="container mx-auto max-w-lg">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold mb-6">
-              <Clock className="w-3.5 h-3.5 text-primary" />
-              Recent Activity
-            </div>
-            <div className="space-y-1">
-              {recentActivity.map((event) => {
-                const Icon = ACTIVITY_ICONS[event.type];
-                const colorClass = ACTIVITY_COLORS[event.type];
-                return (
-                  <Link key={event.id} href={event.href}>
-                    <div className="flex items-center gap-3 px-3 py-2.5 rounded-sm hover:bg-background/60 dark:hover:bg-white/5 transition-all group">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${event.type === "history" ? "bg-blue-500/10" : event.type === "bookmark" ? "bg-amber-500/10" : event.type === "follow" ? "bg-pink-500/10" : "bg-green-500/10"}`}>
-                        <Icon className={`w-3.5 h-3.5 ${colorClass}`} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium truncate group-hover:text-primary transition-colors">
-                          {event.label}
-                        </div>
-                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground/50">
-                          <span>{event.subtitle}</span>
-                          <span>·</span>
-                          <span>{formatRelativeTime(event.timestamp)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-      )}
 
       {/* Popular Tags */}
       {Array.isArray(tags) && tags.length > 0 && (

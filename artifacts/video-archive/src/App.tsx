@@ -53,6 +53,7 @@ const Signup = lazyWithSkeleton(() => import("@/pages/Signup"), <SkeletonAuthPag
 const ForgotPassword = lazyWithSkeleton(() => import("@/pages/ForgotPassword"), <SkeletonAuthPage />, "ForgotPassword");
 const AuthCallback = lazyWithSkeleton(() => import("@/pages/AuthCallback"), <SkeletonAuthPage />, "AuthCallback");
 const Settings = lazyWithSkeleton(() => import("@/pages/Settings"), <SkeletonSimplePage rows={6} />, "Settings");
+const Profile = lazyWithSkeleton(() => import("@/pages/Profile"), <SkeletonSimplePage rows={6} />, "Profile");
 const Following = lazyWithSkeleton(() => import("@/pages/Following"), <SkeletonGridPage count={8} />, "Following");
 const Notifications = lazyWithSkeleton(() => import("@/pages/Notifications"), <SkeletonSimplePage rows={6} />, "Notifications");
 const RequestPage = lazyWithSkeleton(() => import("@/pages/RequestPage"), <SkeletonSimplePage rows={6} />, "RequestPage");
@@ -215,6 +216,12 @@ function Router() {
         <Route path="/auth/callback" component={AuthCallback} />
         <Route path="/settings">
           <ProtectedRoute><Settings /></ProtectedRoute>
+        </Route>
+        <Route path="/profile">
+          <ProtectedRoute><Profile /></ProtectedRoute>
+        </Route>
+        <Route path="/user">
+          <ProtectedRoute><Profile /></ProtectedRoute>
         </Route>
         <Route path="/following">
           <ProtectedRoute><Following /></ProtectedRoute>

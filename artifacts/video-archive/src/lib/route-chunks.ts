@@ -28,6 +28,8 @@ const ROUTE_IMPORTS: ReadonlyArray<[string, () => Promise<unknown>]> = [
   ["/following", () => import("@/pages/Following")],
   ["/notifications", () => import("@/pages/Notifications")],
   ["/settings", () => import("@/pages/Settings")],
+  ["/profile", () => import("@/pages/Profile")],
+  ["/user", () => import("@/pages/Profile")],
   ["/premium", () => import("@/pages/Premium")],
   ["/login", () => import("@/pages/Login")],
   ["/signup", () => import("@/pages/Signup")],

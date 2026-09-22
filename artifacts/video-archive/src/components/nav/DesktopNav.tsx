@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { useCallback, memo } from "react";
 import { Clapperboard, Users, Tags, BarChart3, Send } from "lucide-react";
+import { prefetchRoute } from "@/lib/route-chunks";
 
 export const NAV_LINKS = [
   { href: "/browse", label: "Browse", icon: Clapperboard },
@@ -18,13 +19,6 @@ function isActive(href: string, location: string) {
   return href === "/" ? location === "/" : location.startsWith(href);
 }
 
-const PAGE_IMPORTS: Record<string, () => Promise<unknown>> = {
-  "/browse": () => import("@/pages/Browse"),
-  "/performers": () => import("@/pages/PerformersList"),
-  "/tags": () => import("@/pages/TagsPage"),
-  "/charts": () => import("@/pages/Charts"),
-};
-
 export const DesktopNav = memo(function DesktopNav({ location, onRequestOpen }: DesktopNavProps) {
   return (
     <nav className="hidden md:flex items-center gap-0.5 text-sm">
@@ -34,7 +28,7 @@ export const DesktopNav = memo(function DesktopNav({ location, onRequestOpen }: 
       <span className="w-px h-4 bg-border/20 mx-1" />
       <button
         onClick={onRequestOpen}
-        className="nav-underline px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5 transition-all duration-200 text-muted-foreground/70 hover:text-foreground"
+        className="nav-underline px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5 transition-all duration-200 text-muted-foreground/70 hover:text-foreground cursor-pointer"
       >
         <Send className="w-3.5 h-3.5 text-muted-foreground/40" />
         Request
@@ -52,8 +46,7 @@ interface NavLinkProps {
 
 const NavLink = memo(function NavLink({ href, label, icon: Icon, isActive: active }: NavLinkProps) {
   const prefetch = useCallback(() => {
-    const imp = PAGE_IMPORTS[href];
-    if (imp) imp().catch(() => {});
+    prefetchRoute(href);
   }, [href]);
 
   return (
@@ -61,7 +54,7 @@ const NavLink = memo(function NavLink({ href, label, icon: Icon, isActive: activ
       <span
         onMouseEnter={prefetch}
         onFocus={prefetch}
-        className={`nav-underline px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5 transition-all duration-200 ${
+        className={`nav-underline px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5 transition-all duration-200 cursor-pointer ${
           active
             ? "text-foreground font-medium active"
             : "text-muted-foreground/70 hover:text-foreground"

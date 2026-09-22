@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { Sun, Moon, Bookmark, FolderOpen, Clock, History, Heart, Bell, Settings, Send } from "lucide-react";
+import { Sun, Moon, Bookmark, FolderOpen, Clock, History, Heart, Bell, Settings, Send, User } from "lucide-react";
 import { NAV_LINKS } from "./DesktopNav";
 import { prefetchRoute } from "@/lib/route-chunks";
 
@@ -13,6 +13,7 @@ const LIBRARY_LINKS = [
 ] as const;
 
 const SETTINGS_LINKS = [
+  { href: "/profile", label: "Profile & Activity", icon: User },
   { href: "/notifications", label: "Notifications", icon: Bell },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
@@ -40,7 +41,7 @@ export function MobileMenu({
 }: MobileMenuProps) {
   return (
     <div
-      className={`md:hidden glass-dropdown border-t-0 rounded-b-xl mx-2 mb-2 overflow-hidden ${
+      className={`md:hidden glass-dropdown border-t-0 rounded-b-xl mx-2 mb-2 max-h-[calc(100dvh-4.5rem)] overflow-y-auto overscroll-contain shadow-2xl ${
         open
           ? "animate-in fade-in slide-in-from-top-1 zoom-in-95 duration-200"
           : "hidden"

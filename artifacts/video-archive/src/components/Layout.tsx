@@ -209,21 +209,31 @@ export function Navbar() {
   const { isPremium, loading } = usePremium();
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20);
+    let ticking = false;
+    const onScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const isScrolled = window.scrollY > 15;
+          setScrolled((prev) => (prev !== isScrolled ? isScrolled : prev));
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   return (
     <header
-      className={`sticky top-0 z-50 w-full transition-all duration-300 ${
+      className={`sticky top-0 z-[60] w-full ${
         scrolled ? "glass-panel scrolled" : "glass-panel"
       }`}
     >
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent pointer-events-none" />
       <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-primary/12 to-transparent pointer-events-none" />
 
-      <div className="nav-inner container mx-auto px-4 sm:px-6 h-14 md:h-16 flex items-center gap-4 relative transition-all duration-300">
+      <div className="nav-inner container mx-auto px-4 sm:px-6 h-14 md:h-16 flex items-center gap-4 relative">
         <Logo />
 
         <div className="hidden md:block w-px h-5 bg-border/30" />

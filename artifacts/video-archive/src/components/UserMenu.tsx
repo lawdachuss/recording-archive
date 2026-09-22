@@ -68,20 +68,33 @@ export function UserMenu() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1.5 w-52 glass-dropdown rounded-sm z-50 overflow-hidden">
-          <div className="px-3 py-2.5 border-b border-border/40">
-            <div className="text-xs font-semibold text-foreground truncate">{displayName}</div>
-            <div className="text-[11px] text-muted-foreground truncate">{user.email}</div>
-            {role && role !== "user" && (
-              <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-semibold uppercase tracking-wide text-primary">
-                <Shield className="w-2.5 h-2.5" />
-                {role}
-              </span>
-            )}
-          </div>
+        <div className="absolute right-0 top-full mt-1.5 w-52 glass-dropdown rounded-sm z-50 max-h-[calc(100dvh-4.5rem)] overflow-y-auto overscroll-contain shadow-2xl">
+          <Link href="/profile">
+            <div
+              onClick={() => setOpen(false)}
+              className="px-3 py-2.5 border-b border-border/40 hover:bg-secondary/40 transition-colors cursor-pointer group"
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors truncate">
+                  {displayName}
+                </div>
+                <span className="text-[10px] text-muted-foreground group-hover:text-primary transition-colors">
+                  Profile →
+                </span>
+              </div>
+              <div className="text-[11px] text-muted-foreground truncate">{user.email}</div>
+              {role && role !== "user" && (
+                <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                  <Shield className="w-2.5 h-2.5" />
+                  {role}
+                </span>
+              )}
+            </div>
+          </Link>
 
           <div className="py-1">
             {[
+              { href: "/profile", label: "Profile & Activity", Icon: User },
               { href: "/premium", label: "Go Premium", Icon: Crown },
               { href: "/bookmarks", label: "Bookmarks", Icon: Bookmark },
               { href: "/history", label: "History", Icon: Clock },

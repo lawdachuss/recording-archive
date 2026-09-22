@@ -94,6 +94,14 @@ export function SearchDropdown({ open, onOpenChange }: SearchDropdownProps) {
     }
   }, [open]);
 
+  // Close suggestions when user scrolls page
+  useEffect(() => {
+    if (!showSuggestions) return;
+    const handleScroll = () => setShowSuggestions(false);
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [showSuggestions]);
+
   const submitSearch = useCallback(
     (q: string) => {
       if (q.trim()) {
@@ -240,7 +248,7 @@ export function SearchDropdown({ open, onOpenChange }: SearchDropdownProps) {
             onFocus={() => setShowSuggestions(true)}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
             onKeyDown={handleKeyDown}
-            className="w-44 sm:w-64 h-9 pl-8 pr-3 bg-secondary dark:bg-white/[0.08] border border-border/50 focus:border-primary/40 rounded-full text-sm outline-none transition-all placeholder:text-muted-foreground/40"
+            className="w-36 min-[380px]:w-44 sm:w-64 h-9 pl-8 pr-3 bg-secondary dark:bg-white/[0.08] border border-border/50 focus:border-primary/40 rounded-full text-sm outline-none transition-all placeholder:text-muted-foreground/40"
           />
 
           {/* Suggestions dropdown */}

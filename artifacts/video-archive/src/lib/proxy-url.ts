@@ -59,23 +59,37 @@ const WSRV_HOSTS = ["catbox.moe", "litter.catbox.moe", "files.catbox.moe"];
 
 const STATIC_RASTER_RE = /\.(jpe?g|png)$/i;
 
-// In-memory circuit breaker: if wsrv fails (404/DNS/502) for a host during the session,
-// we stop sending further requests for that host to wsrv and load direct instead.
-const wsrvFailedHosts = new Set<string>();
+// In-memory circuit breaker: tracks failed individual URLs, and only trips
+// the entire host if multiple distinct failures occur (e.g. 15+ failures),
+// preventing a single 404/0-byte corrupt image from disabling wsrv.nl for the whole domain.
+const wsrvFailedUrls = new Set<string>();
+const wsrvHostFailureCounts = new Map<string, number>();
+const HOST_FAILURE_THRESHOLD = 15;
 
 export function markWsrvFailedForHost(hostOrUrl: string): void {
   try {
-    const host = hostOrUrl.includes("://") ? new URL(hostOrUrl).hostname.toLowerCase() : hostOrUrl.toLowerCase();
-    wsrvFailedHosts.add(host);
-  } catch {
-    wsrvFailedHosts.add(hostOrUrl.toLowerCase());
-  }
+    if (hostOrUrl.includes("://")) {
+      wsrvFailedUrls.add(hostOrUrl);
+      const host = new URL(hostOrUrl).hostname.toLowerCase();
+      const count = (wsrvHostFailureCounts.get(host) ?? 0) + 1;
+      wsrvHostFailureCounts.set(host, count);
+    } else {
+      const host = hostOrUrl.toLowerCase();
+      const count = (wsrvHostFailureCounts.get(host) ?? 0) + 1;
+      wsrvHostFailureCounts.set(host, count);
+    }
+  } catch {}
 }
 
 export function isWsrvFailedForHost(hostOrUrl: string): boolean {
   try {
-    const host = hostOrUrl.includes("://") ? new URL(hostOrUrl).hostname.toLowerCase() : hostOrUrl.toLowerCase();
-    return wsrvFailedHosts.has(host) || Array.from(wsrvFailedHosts).some((h) => host.endsWith(`.${h}`));
+    if (hostOrUrl.includes("://")) {
+      if (wsrvFailedUrls.has(hostOrUrl)) return true;
+      const host = new URL(hostOrUrl).hostname.toLowerCase();
+      return (wsrvHostFailureCounts.get(host) ?? 0) >= HOST_FAILURE_THRESHOLD;
+    }
+    const host = hostOrUrl.toLowerCase();
+    return (wsrvHostFailureCounts.get(host) ?? 0) >= HOST_FAILURE_THRESHOLD;
   } catch {
     return false;
   }

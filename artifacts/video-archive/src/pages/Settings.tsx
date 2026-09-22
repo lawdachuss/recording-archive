@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, type UserProfile } from "@/lib/user-api";
@@ -9,7 +9,7 @@ import { useCacheProfiler, type CacheProfile } from "@/hooks/use-cache-profiler"
 import { clearImageCache, getCacheStats } from "@/lib/image-cache";
 import {
   Settings as SettingsIcon, User, Lock, Save, AlertCircle, CheckCircle2,
-  Bell, BellOff, Volume2, Smartphone, Database, Trash2, RefreshCw,
+  Bell, BellOff, Volume2, Smartphone, Database, Trash2, RefreshCw, Activity,
 } from "lucide-react";
 
 const NOTIF_LABELS: Record<string, { label: string; description: string }> = {
@@ -150,12 +150,23 @@ export default function Settings() {
   return (
     <Layout>
       <div className="container mx-auto px-4 sm:px-6 py-10 max-w-2xl">
-        <div className="mb-8">
-          <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold mb-3">
-            <SettingsIcon className="w-3.5 h-3.5 text-primary" />
-            Settings
+        <div className="mb-8 flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold mb-3">
+              <SettingsIcon className="w-3.5 h-3.5 text-primary" />
+              Settings
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tighter">Account Settings</h1>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black tracking-tighter">Account Settings</h1>
+          <Link href="/profile">
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 h-9 px-3.5 text-xs font-semibold rounded-lg border border-primary/30 text-primary hover:border-primary/60 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer"
+            >
+              <Activity className="w-3.5 h-3.5" />
+              View Profile & Activity →
+            </button>
+          </Link>
         </div>
 
         {/* Profile */}
