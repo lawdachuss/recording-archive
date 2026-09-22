@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   User, Settings, LogOut, Bookmark, Clock, ListVideo, Heart,
-  Bell, Shield, ChevronDown, Send,
+  Bell, Shield, ChevronDown, Send, Crown,
 } from "lucide-react";
 
 export function UserMenu() {
@@ -82,6 +82,7 @@ export function UserMenu() {
 
           <div className="py-1">
             {[
+              { href: "/premium", label: "Go Premium", Icon: Crown },
               { href: "/bookmarks", label: "Bookmarks", Icon: Bookmark },
               { href: "/history", label: "History", Icon: Clock },
               { href: "/watch-later", label: "Watch Later", Icon: ListVideo },

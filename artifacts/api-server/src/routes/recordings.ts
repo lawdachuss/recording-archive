@@ -6,8 +6,14 @@ import {
 } from "@workspace/api-zod";
 import { supabase } from "../lib/supabase.js";
 import { cache } from "../middleware/cache.js";
+import { resolveGenderBucket } from "../lib/genders.js";
 
 const router = Router();
+
+/** Escape % and _ in PostgREST ilike patterns to avoid wildcard injection. */
+function escapeLike(input: string): string {
+  return input.replace(/[\\%_]/g, "\\$&");
+}
 
 const LIST_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at";
 const RELATED_COLS = "id,username,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,preview_url";
@@ -67,14 +73,17 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     let query = supabase.from("recordings_with_links").select(LIST_COLS, { count: "exact" }).not("links", "is", "null");
 
     if (search?.trim()) {
-      const s = search.trim();
+      const s = escapeLike(search.trim());
       query = query.or(`username.ilike.%${s}%,room_title.ilike.%${s}%,filename.ilike.%${s}%`);
     }
     if (tags) {
       const tagList = tags.split(",").map((t: string) => t.trim()).filter(Boolean);
       if (tagList.length > 0) query = query.overlaps("tags", tagList);
     }
-    if (gender) query = query.eq("gender", gender);
+    if (gender) {
+      const genderMatch = resolveGenderBucket(gender);
+      if (genderMatch) query = query.in("gender", genderMatch);
+    }
     if (username) query = query.eq("username", username);
     if (resolution) query = query.eq("resolution", resolution);
 
@@ -133,8 +142,12 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
 
 // ─── RECOMMENDATIONS ────────────────────────────────────────────────────────
 
-router.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds: 120, tags: ["recordings"] }), async (req, res) => {
+router.get("/recordings/recommendations", async (req, res) => {
   try {
+    // Never cache: the output is personalized by the caller's watch history,
+    // follows, saves and watch-later list. Sharing one cache entry across
+    // users (or the CDN) would leak one user's preferences to everyone.
+    res.set("Cache-Control", "private, no-store");
     const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10) || 1);
     const limit = Math.min(Math.max(1, parseInt(String(req.query.limit ?? "12"), 10) || 12), 100);
     const excludeRaw = typeof req.query.exclude === "string" ? req.query.exclude : "";
@@ -296,7 +309,10 @@ router.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds: 
 
 // ─── RANDOM ─────────────────────────────────────────────────────────────────
 
-router.get("/recordings/random", cache({ ttlSeconds: 30, staleSeconds: 60, tags: ["recordings"] }), async (req, res) => {
+router.get("/recordings/random", async (req, res) => {
+  // Never cache: a random pick must be fresh per request. Serving a cached
+  // value would send every caller (and repeated clicks) to the same video.
+  res.set("Cache-Control", "private, no-store");
   try {
     // Parse exclude list — comma-separated recording IDs to skip
     const excludeRaw = typeof req.query.exclude === "string" ? req.query.exclude : "";
@@ -346,8 +362,11 @@ router.get("/recordings/random", cache({ ttlSeconds: 30, staleSeconds: 60, tags:
 
 // ─── RELATED ────────────────────────────────────────────────────────────────
 
-router.get("/recordings/related", cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["recordings"] }), async (req, res) => {
+router.get("/recordings/related", async (req, res) => {
   try {
+    // Personalized ordering (based on the caller's history) — never cache
+    // across users or at the CDN.
+    res.set("Cache-Control", "private, no-store");
     const parsed = ListRelatedRecordingsQueryParams.safeParse(req.query);
     if (!parsed.success) { res.status(400).json({ error: "Invalid query params" }); return; }
     const { id, limit = 8 } = parsed.data;
@@ -440,7 +459,7 @@ router.get("/recordings/related", cache({ ttlSeconds: 120, staleSeconds: 300, ta
 
 // ─── SINGLE RECORDING ──────────────────────────────────────────────────────
 
-router.get("/recordings/:id", cache({ ttlSeconds: 600, staleSeconds: 900, tags: ["recordings"] }), async (req, res) => {
+router.get("/recordings/:id", cache({ ttlSeconds: 120, staleSeconds: 600, tags: ["recordings"] }), async (req, res) => {
   try {
     const parsed = GetRecordingParams.safeParse(req.params);
     if (!parsed.success) { res.status(400).json({ error: "Invalid params" }); return; }

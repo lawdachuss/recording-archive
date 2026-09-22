@@ -5,8 +5,9 @@ const PROXY_PATH = "/api/media";
 
 /**
  * Proxy URL for catbox-hosted animated webp images. Catbox loads directly
- * from the browser now (wsrv.nl DNS broken, server proxy 502, Worker 405),
- * so this returns the original URL unchanged. Kept for API compatibility.
+ * from the browser now — the server proxy 502s it (catbox blocks datacenter
+ * IPs) and wsrv.nl flattens animated webp — so this returns the original URL
+ * unchanged. Kept for API compatibility.
  */
 export function catboxProxyUrl(url: string | null | undefined): string | null {
   return url ?? null;
@@ -20,11 +21,13 @@ export function catboxProxyUrl(url: string | null | undefined): string | null {
  * the only way its previews can load.
  */
 const NO_PROXY_HOSTS: string[] = [
-  // catbox.moe + subdomains: wsrv.nl can't resolve catbox DNS (returns 404),
-  // the server proxy can't reach catbox (returns 502), and the Cloudflare
-  // Worker is broken (returns 405). Loading directly from the browser with
-  // referrerPolicy="no-referrer" works (200). HTTP/2 connection resets occur
-  // under high concurrency — mitigated by the per-host concurrency limiter.
+  // catbox.moe + subdomains: the server proxy can't reach catbox (returns
+  // 502) and the Cloudflare Worker is broken (returns 405). Loading directly
+  // from the browser with referrerPolicy="no-referrer" works (200), but is
+  // throttled to ~16KB/s — so static raster (thumbs, sprites) rides wsrv.nl's
+  // edge CDN instead (see wsrvResizeUrl / wsrvPassthroughUrl below), and only
+  // animated webp previews load direct. HTTP/2 connection resets occur under
+  // high concurrency — mitigated by the per-host concurrency limiter.
   "catbox.moe",
   "litter.catbox.moe",
   // files.catbox.moe (CDN) also hits HTTP/2 reset issues under load.
@@ -51,14 +54,53 @@ function isNoProxyHost(hostname: string): boolean {
  * catbox raster thumbnails through wsrv gives server-side resize + webp plus a
  * global edge cache (~90-110ms repeat hits instead of 8s+ cold direct loads).
  */
-const WSRV_BASE = "https://images.weserv.nl/";
+const WSRV_BASE = "https://wsrv.nl/";
 const WSRV_HOSTS = ["catbox.moe", "litter.catbox.moe", "files.catbox.moe"];
 
 const STATIC_RASTER_RE = /\.(jpe?g|png)$/i;
 
+// In-memory circuit breaker: if wsrv fails (404/DNS/502) for a host during the session,
+// we stop sending further requests for that host to wsrv and load direct instead.
+const wsrvFailedHosts = new Set<string>();
+
+export function markWsrvFailedForHost(hostOrUrl: string): void {
+  try {
+    const host = hostOrUrl.includes("://") ? new URL(hostOrUrl).hostname.toLowerCase() : hostOrUrl.toLowerCase();
+    wsrvFailedHosts.add(host);
+  } catch {
+    wsrvFailedHosts.add(hostOrUrl.toLowerCase());
+  }
+}
+
+export function isWsrvFailedForHost(hostOrUrl: string): boolean {
+  try {
+    const host = hostOrUrl.includes("://") ? new URL(hostOrUrl).hostname.toLowerCase() : hostOrUrl.toLowerCase();
+    return wsrvFailedHosts.has(host) || Array.from(wsrvFailedHosts).some((h) => host.endsWith(`.${h}`));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Extract the original upstream URL from a wsrv.nl / images.weserv.nl proxy URL.
+ * Supports both modern wsrv.nl and legacy images.weserv.nl.
+ */
+export function extractOriginalFromWsrv(proxiedUrl: string | null | undefined): string | null {
+  if (!proxiedUrl) return null;
+  try {
+    const parsed = new URL(proxiedUrl);
+    if (!parsed.hostname.endsWith("wsrv.nl") && !parsed.hostname.endsWith("weserv.nl")) return null;
+    const inner = parsed.searchParams.get("url");
+    return inner || null;
+  } catch {
+    return null;
+  }
+}
+
 /** True when `hostname` belongs to a host we route static raster images
  *  through wsrv.nl (catbox family — unreachable from our server proxy). */
 function isWsrvRasterHost(hostname: string): boolean {
+  if (isWsrvFailedForHost(hostname)) return false;
   return WSRV_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
 }
 
@@ -76,6 +118,27 @@ const HTTP2_RESET_HOSTS = new Set([
 export function isHttp2ResetHost(hostname: string): boolean {
   const normalized = hostname.replace(/^www\./, "").toLowerCase();
   return HTTP2_RESET_HOSTS.has(normalized);
+}
+
+/**
+ * Full-size wsrv.nl passthrough for catbox-family static raster media. wsrv
+ * pulls the upstream from its own edge and re-serves it from a shared
+ * Cloudflare CDN — a few seconds cold, then ~90-110ms globally-warm — instead
+ * of a throttled ~16KB/s direct catbox download. Unlike wsrvResizeUrl this
+ * omits every transform param, so the intrinsic dimensions are preserved —
+ * REQUIRED for sprite sheets, whose frame grid is auto-detected from
+ * naturalWidth/Height. Animated webp is excluded (wsrv would flatten it).
+ */
+function wsrvPassthroughUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    if (!isWsrvRasterHost(parsed.hostname)) return null;
+    if (!STATIC_RASTER_RE.test(parsed.pathname)) return null;
+    return `${WSRV_BASE}?url=${encodeURIComponent(url)}`;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -232,10 +295,17 @@ export function proxyImageUrl(
 
 
 /**
- * Proxy URL for SPRITE SHEETS. Same as proxyUrl — sprites load directly
- * from the browser (catbox in NO_PROXY_HOSTS) or through the server proxy
- * (pixhost). Native dimensions are preserved.
+ * Proxy URL for SPRITE SHEETS. Native dimensions are always preserved:
+ *  - pixhost (and other proxied hosts): same-origin /api/media proxy.
+ *  - catbox family: full-size wsrv.nl passthrough — catbox is unproxiable
+ *    (502) and throttles direct downloads to ~16KB/s, but wsrv can reach it,
+ *    preserves the sheet's intrinsic dimensions (so grid auto-detection from
+ *    naturalWidth/Height keeps working) and sends ACAO:* so preloads can
+ *    persist the sheet to the IDB blob cache.
  */
 export function proxySpriteUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const wsrv = wsrvPassthroughUrl(url);
+  if (wsrv) return wsrv;
   return proxyUrl(url);
 }

@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { userApi, parseCloudItem, cloudItemToRecording } from "@/lib/user-api";
 import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
+import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { getWatchedEntries, clearWatched } from "@/lib/watched-storage";
 import { History as HistoryIcon, Trash2, Clock } from "lucide-react";
 
@@ -109,6 +110,10 @@ export default function History() {
 
   const totalCount = merged.length;
   const groups = useMemo(() => groupByDate(merged), [merged]);
+
+  // Warm thumbnails, sprites, and animated previews for every history entry —
+  // hovering any card later is instant.
+  usePreloadRecordings(merged);
 
   return (
     <Layout>

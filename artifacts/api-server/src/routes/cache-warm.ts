@@ -1,5 +1,8 @@
 import { Router } from "express";
+import { timingSafeEqual } from "node:crypto";
 import { warmupCache } from "../lib/cache-warmup.js";
+import { flushPendingViews } from "../lib/view-buffer.js";
+import { maybeBuildSuggestionSnapshot } from "../lib/suggestions.js";
 
 /**
  * cache-warm.ts — scheduled cache warming for production.
@@ -28,19 +31,40 @@ router.get("/cache/warm", async (req, res) => {
     res.status(503).json({ error: "warm endpoint not configured (CRON_SECRET missing)" });
     return;
   }
-  if (req.headers.authorization !== `Bearer ${secret}`) {
+  const expected = Buffer.from(`Bearer ${secret}`, "utf8");
+  const actual = Buffer.from(String(req.headers.authorization ?? ""), "utf8");
+  const matches =
+    expected.length === actual.length && timingSafeEqual(expected, actual);
+  if (!matches) {
     res.status(401).json({ error: "unauthorized" });
     return;
   }
 
-  const host = String(req.headers["x-forwarded-host"] ?? req.headers.host ?? "");
-  if (!host) {
-    res.status(400).json({ error: "could not determine host" });
-    return;
-  }
+  // Warm through a fixed, trusted origin — never a spoofable x-forwarded-host
+  // (an attacker supplying that header could make the server funnel its
+  // warm-up fetches at an arbitrary host, amplifying their traffic).
+  let origin = (process.env.CRON_PUBLIC_URL ?? "https://chuglii.in").trim();
+  if (!/^https?:\/\//i.test(origin)) origin = "https://chuglii.in";
 
-  const result = await warmupCache(`https://${host}`, { purgeOnFailure: false });
-  res.json(result);
+  const result = await warmupCache(origin, { purgeOnFailure: false });
+
+  // Co-located maintenance on the daily cron: drain buffered view counters into
+  // Postgres and (re)build the search suggestion index if it's stale/missing.
+  const [viewsResult, suggestionsResult] = await Promise.allSettled([
+    flushPendingViews(),
+    maybeBuildSuggestionSnapshot(),
+  ]);
+  const viewsFlushed =
+    viewsResult.status === "fulfilled" ? viewsResult.value : { error: String(viewsResult.reason) };
+  const suggestions =
+    suggestionsResult.status === "fulfilled"
+      ? { okay: true }
+      : { okay: false, error: String(suggestionsResult.reason) };
+
+  res.json({
+    ...result,
+    maintenance: { viewsFlushed, suggestions },
+  });
 });
 
 export default router;

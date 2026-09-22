@@ -33,19 +33,23 @@ const videoKeys: string[] = [];
 const imageKeys: string[] = [];
 
 // ─── Global concurrency cap for speculative preview loads ─────────────────
-// 6 parallel preview downloads: with previews now prefetched at page load
+// 8 parallel preview downloads: with previews now prefetched at page load
 // (use-preload-recordings), a higher cap fills the IDB/HTTP cache much
 // faster while still leaving connection headroom for the visible grid.
-const MAX_CONCURRENT_PRELOADS = 6;
+const MAX_CONCURRENT_PRELOADS = 8;
 let activePreloads = 0;
 const preloadWaiters: Array<() => void> = [];
 
 /** Resolve a download slot once one frees up. Returns a release function. */
-function acquirePreloadSlot(): Promise<() => void> {
+function acquirePreloadSlot(immediate = false): Promise<() => void> {
   return new Promise((resolve) => {
     const tryRun = () => {
       if (activePreloads >= MAX_CONCURRENT_PRELOADS) {
-        preloadWaiters.push(tryRun);
+        if (immediate) {
+          preloadWaiters.unshift(tryRun);
+        } else {
+          preloadWaiters.push(tryRun);
+        }
         return;
       }
       activePreloads++;
@@ -63,6 +67,17 @@ function acquirePreloadSlot(): Promise<() => void> {
 }
 
 /**
+ * Cancel all pending (queued but not yet started) preview preloads.
+ * Call this on route navigation to stop speculative downloads from the
+ * previous page from consuming connection slots that the new page needs.
+ * Already-in-progress downloads are unaffected (they're bounded by
+ * MAX_CONCURRENT_PRELOADS and will complete normally).
+ */
+export function cancelPendingPreviews(): void {
+  preloadWaiters.length = 0;
+}
+
+/**
  * Release a preload slot once the resource has loaded (or failed/stalled).
  * A 15s timeout keeps a stuck host (catbox can hold connections open) from
  * holding a slot forever and blocking the queue behind it.
@@ -75,10 +90,10 @@ function releaseOnSettle(el: HTMLVideoElement | HTMLImageElement, release: () =>
     window.clearTimeout(timer);
     release();
   };
-  // 8s, down from 15s: a throttled host (catbox answers ~16KB/s) must not
+  // 6s, down from 8s: a throttled host (catbox answers ~16KB/s) must not
   // hold a queue slot for a quarter of a minute while fast proxied previews
   // wait behind it.
-  const timer = window.setTimeout(finish, 8_000);
+  const timer = window.setTimeout(finish, 6_000);
   el.addEventListener("loadeddata", finish, { once: true });
   el.addEventListener("load", finish, { once: true });
   el.addEventListener("error", finish, { once: true });
@@ -237,48 +252,55 @@ export function preloadVideo(url: string): void {
 
 
 /**
- * Warm an animated image (.webp) into the browser HTTP cache.
- * Uses new Image() (not <link rel="preload">) because:
- *  1. <link rel="preload" crossorigin> creates a CORS-mode fetch whose
- *     cache entry is NOT reused by a same-origin <img> without crossorigin.
- *  2. Some browsers don't reliably cache preload responses for <img> reuse.
- *  3. new Image() is proven for sprites and thumbnails in preload-sprite.ts.
+ * Warm an animated image (.webp) into IndexedDB and memory cache.
+ * Directly downloads as Blob and persists to IDB so hover gets an instant 0ms blob hit.
+ * Falls back to <img> warming for non-CORS hosts.
  */
-export function preloadAnimatedImage(url: string, cors = false): void {
+export function preloadAnimatedImage(url: string, cors = false, immediate = false): void {
   if (preloadCache.has(url)) return;
-  // On slow connections, skip entirely — bandwidth is needed for the grid
-  if (isConnectionConstrained()) return;
+  // On slow connections, skip speculative background preloading
+  if (!immediate && isConnectionConstrained()) return;
 
   // Already in the IDB blob cache — don't re-download just to warm it.
-  // Checked BEFORE taking a queue slot so cached URLs never hold one of the
-  // 3 concurrent downloads.
   void isCached(url).then((cached) => {
-    if (cached) return;
-    if (preloadCache.has(url)) return; // someone warmed it while we checked
+    if (cached) {
+      preloadCache.set(url, true);
+      return;
+    }
+    if (preloadCache.has(url)) return;
 
-    // Cap concurrent speculative downloads (see global gate above).
-    void acquirePreloadSlot().then((release) => {
+    // Cap concurrent speculative downloads with priority jumping for immediate requests.
+    void acquirePreloadSlot(immediate).then(async (release) => {
       if (preloadCache.has(url)) {
         release();
         return;
       }
-      // Bound detached <img> memory — evict the oldest once at capacity.
+
+      try {
+        // Direct fetch & cache into IDB: single network request, zero duplicate fetches,
+        // instant blob URL on hover.
+        const entry = await cacheImage(url, immediate ? 3 : 1);
+        if (entry) {
+          preloadCache.set(url, true);
+          release();
+          return;
+        }
+      } catch {
+        // Non-CORS or network error — fall through to <img> preload
+      }
+
+      // Fallback for non-CORS hosts: load into an <img> to warm browser HTTP cache
       if (imageKeys.length >= MAX_IMAGE_ELEMENTS) {
         evictOldestImage();
       }
       const img = new Image();
       img.referrerPolicy = "no-referrer";
       img.decoding = "async";
-      // CORS-mode loads (catbox) share their HTTP-cache entry with cacheImage's
-      // fetch(), avoiding a duplicate download when persisting to IDB.
       if (cors) img.crossOrigin = "anonymous";
       img.onload = () => {
-        // Persist to IDB blob cache for repeat-visit speed (fire-and-forget)
-        cacheImage(url, 1).catch(() => {});
+        preloadCache.set(url, img);
       };
       img.onerror = () => {
-        // Preload failed (DNS, CORS, network) — silently remove from cache
-        // so a future attempt can retry.
         preloadCache.delete(url);
         const i = imageKeys.indexOf(url);
         if (i >= 0) imageKeys.splice(i, 1);
@@ -298,19 +320,14 @@ export function preloadAnimatedImage(url: string, cors = false): void {
  * preloaded as <img> only — loading them into <video> wastes a connection
  * slot and blocks the actual <img> from loading.
  */
-export function preloadPreviewMedia(url: string | null | undefined): void {
+export function preloadPreviewMedia(url: string | null | undefined, immediate = false): void {
   if (!url) return;
-  // catbox .webp previews are rendered DIRECTLY from the browser (catbox is in
-  // NO_PROXY_HOSTS and wsrv flattens/404s animated webp), so we must preload
-  // the RAW catbox URL — the exact URL the <img> uses. preloadAnimatedImage
-  // downloads it into the browser cache and persists it to the IDB blob cache
-  // (catbox sends CORS for images), so the first hover is instant and repeat
-  // hovers are zero-network. Gated by the global concurrency cap.
+  if (!immediate && isConnectionConstrained()) return;
   const upstream = unwrapProxyUrl(url);
   if (getExt(upstream) === ".webp" && /catbox\.moe/i.test(upstream)) {
-    preloadAnimatedImage(url, true);
+    preloadAnimatedImage(upstream, true, immediate);
     return;
   }
   if (isVideoUrl(url)) preloadVideo(url);
-  else if (isAnimatedImageUrl(url)) preloadAnimatedImage(url);
+  else if (isAnimatedImageUrl(url)) preloadAnimatedImage(upstream || url, false, immediate);
 }

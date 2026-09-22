@@ -24,6 +24,7 @@ import { preloadPreviewMedia } from "@/lib/preload-preview";
 import { proxyImageUrl, proxyUrl, proxySpriteUrl } from "@/lib/proxy-url";
 import { cacheImage, type CachePriority } from "@/lib/image-cache";
 import { isConnectionConstrained } from "@/lib/connection";
+import { buildPreviewFallbacks } from "@/lib/mirrors";
 
 // Hosts that block server/datacenter IPs entirely (SSL handshake fails,
 // empty bodies, or multi-minute timeouts). Catbox is reachable from
@@ -44,6 +45,38 @@ export function isReachablePreviewUrl(url: string | null | undefined): boolean {
   } catch {
     return true;
   }
+}
+
+/** True when `url` resolves to a host in the catbox family (direct browser
+ *  loads only — catbox blocks our server proxy with 502s). */
+export function isCatboxHost(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const { hostname } = new URL(url, window.location.origin);
+    return hostname === "catbox.moe" || hostname.endsWith(".catbox.moe");
+  } catch {
+    return false;
+  }
+}
+
+/** True for catbox-family ANIMATED image previews (.webp), which load DIRECT
+ *  from the browser (catbox in NO_PROXY_HOSTS; wsrv flattens animated webp). */
+export function isCatboxAnimatedPreviewUrl(url: string | null | undefined): boolean {
+  return !!url && isAnimatedPreviewUrl(url) && isCatboxHost(url);
+}
+
+/** True when a preview URL is worth background-warming:
+ *  - any animated (non-video) preview on a reachable host — proxied /api/media,
+ *    wsrv, pixhost direct; OR
+ *  - a catbox-hosted animated image: catbox sends CORS for images, so warming
+ *    it into the HTTP + IDB caches ahead of hover is exactly what makes the
+ *    hover instant instead of streaming a ~2s progress bar.
+ *  Multi-MB videos always remain stream-on-demand (animated requirement).
+ */
+export function isPreviewPreloadable(url: string | null | undefined): boolean {
+  if (!url) return false;
+  if (!isAnimatedPreviewUrl(url)) return false;
+  return isReachablePreviewUrl(url) || isCatboxHost(url);
 }
 
 // ─── Global paced preload queue ─────────────────────────────────────────
@@ -68,6 +101,10 @@ const queue: Array<{
 }> = [];
 let activeCount = 0;
 let pumpTimer: number | null = null;
+// Dirty flag: set true whenever new items are enqueued or priorities changed.
+// pump() sorts ONLY when dirty — avoids the repeated O(n log n) sort that
+// happened on every request completion during a 240-item warm burst.
+let queueDirty = false;
 
 function getConcurrency(): number {
   if (isConnectionConstrained()) return 2; // Only 2 concurrent loads on slow connections
@@ -104,12 +141,18 @@ function pump() {
     window.clearTimeout(pumpTimer);
     pumpTimer = null;
   }
-  // Prioritize immediate tasks, then higher-priority items, so the first
-  // screen and first-screen thumbnails are pulled before the long tail.
-  queue.sort((a, b) => {
-    if (a.immediate !== b.immediate) return a.immediate ? -1 : 1;
-    return b.priority - a.priority;
-  });
+  // Sort ONLY when new items were enqueued or priorities changed — avoids the
+  // repeated O(n log n) sort that fired on every request completion during a
+  // high-throughput warm burst (up to 240 items, dozens of calls/sec).
+  if (queueDirty) {
+    // Immediate tasks first, then by descending priority — so first-screen
+    // thumbnails are fetched before the long background tail.
+    queue.sort((a, b) => {
+      if (a.immediate !== b.immediate) return a.immediate ? -1 : 1;
+      return b.priority - a.priority;
+    });
+    queueDirty = false;
+  }
   const maxActive = getConcurrency();
   while (queue.length > 0 && activeCount < maxActive) {
     const item = queue.shift()!;
@@ -126,6 +169,8 @@ export interface PreloadOptions {
   priority?: CachePriority;
   /** Jump the queue to the front (first-screen thumbnails). */
   immediate?: boolean;
+  /** Skip animated preview warming (used for far lookahead pages). */
+  skipPreviews?: boolean;
 }
 
 /**
@@ -155,6 +200,7 @@ export function preloadImage(
         const [item] = queue.splice(idx, 1);
         if (immediate) item.immediate = true;
         queue.unshift(item);
+        queueDirty = true;
         pump();
       }
       return;
@@ -162,6 +208,7 @@ export function preloadImage(
   }
   warmed.add(url);
   queue.push({ url, priority, immediate });
+  queueDirty = true;
   pump();
 }
 
@@ -185,7 +232,14 @@ export function preloadImages(
  * cached before the user hovers.
  */
 export function preloadRecordingAssets(
-  recs: Array<{ sprite_url?: string | null; thumbnail_url?: string | null; preview_url?: string | null }>,
+  recs: Array<{
+    sprite_url?: string | null;
+    thumbnail_url?: string | null;
+    preview_url?: string | null;
+    preview_mirrors?: Record<string, string> | null;
+    sprite_mirrors?: Record<string, string> | null;
+    thumbnail_mirrors?: Record<string, string> | null;
+  }>,
   opts: PreloadOptions = {},
 ): void {
   const thumbs: (string | null | undefined)[] = [];
@@ -197,17 +251,72 @@ export function preloadRecordingAssets(
       const proxied = proxySpriteUrl(rec.sprite_url);
       if (isReachablePreviewUrl(proxied)) sprites.push(proxied);
     }
-    if (rec.preview_url && isReachablePreviewUrl(rec.preview_url)) {
-      previews.push(proxyUrl(rec.preview_url));
+    // Check primary and mirrors for the best preloadable preview (preferring animated WebP)
+    const candidates = buildPreviewFallbacks(rec);
+    const best = candidates.find((u) => isPreviewPreloadable(u)) ?? (rec.preview_url && isPreviewPreloadable(rec.preview_url) ? rec.preview_url : null);
+    if (best && previews.length < 4) {
+      const proxied = proxyUrl(best);
+      if (proxied) previews.push(proxied);
     }
   }
   preloadImages(thumbs, { ...opts, priority: 3 });
   preloadImages(sprites, { ...opts, priority: 2 });
-  // Previews are preloaded eagerly (not deferred to idle) because
-  // <link rel="preload"> is lightweight and the browser handles prioritization.
   if (previews.length) {
     previews.forEach((p) => preloadPreviewMedia(p));
   }
+}
+
+/**
+ * Warm ALL grid + hover media for a list of recordings:
+ *   - thumbnails (priority 3): warmed in the BACKGROUND (not immediate) so the
+ *     grid's own <img> requests for the first screen take priority. Below-fold
+ *     thumbnails get their one-and-only fetch here (lazy <img>s haven't fired
+ *     yet), and the <img> that later mounts finds the bytes in the HTTP cache.
+ *   - sprites (priority 2): immediate — hover preview sheets aren't in the DOM.
+ *   - reachable ANIMATED previews (.webp / .mp4_preview): priority 1, via the
+ *     global preview cap. Preloads best candidate from primary or mirrors.
+ *
+ * Video previews (.mp4 / .webm) are deliberately NOT prefetched here: they are
+ * multi-MB files and warming every card on every page would saturate the
+ * connection and multiply origin traffic at scale. They stream on demand at
+ * hover and persist to IDB on first hover.
+ */
+export function preloadRecordingMedia(
+  recs: Array<{
+    thumbnail_url?: string | null;
+    sprite_url?: string | null;
+    preview_url?: string | null;
+    preview_mirrors?: Record<string, string> | null;
+    sprite_mirrors?: Record<string, string> | null;
+    thumbnail_mirrors?: Record<string, string> | null;
+  }>,
+  opts: PreloadOptions = {},
+): void {
+  const thumbs: (string | null | undefined)[] = [];
+  const sprites: (string | null | undefined)[] = [];
+  const previews: (string | null | undefined)[] = [];
+  for (const rec of recs) {
+    if (rec.thumbnail_url) thumbs.push(proxyImageUrl(rec.thumbnail_url));
+    if (rec.sprite_url) {
+      const proxied = proxySpriteUrl(rec.sprite_url);
+      if (isReachablePreviewUrl(proxied)) sprites.push(proxied);
+    }
+    if (!opts.skipPreviews && previews.length < 4) {
+      // Find the best animated preview candidate from primary URL or mirrors
+      const candidates = buildPreviewFallbacks(rec);
+      const best = candidates.find((u) => isPreviewPreloadable(u)) ?? (rec.preview_url && isPreviewPreloadable(rec.preview_url) ? rec.preview_url : null);
+      if (best) {
+        const proxied = proxyUrl(best);
+        if (proxied) previews.push(proxied);
+      }
+    }
+  }
+  // Background: never pop thumbnails to the front of the queue. The visible
+  // <img> tags already fetch first-screen thumbs at paint; forcing them ahead
+  // here would double those requests and compete with grid paint.
+  preloadImages(thumbs, { ...opts, priority: 3, immediate: false });
+  preloadImages(sprites, { ...opts, priority: 2 });
+  for (const p of previews) preloadPreviewMedia(p);
 }
 
 /**
@@ -220,11 +329,12 @@ export function preloadRecordingAssets(
  * grid. Cards near the viewport preload their own preview via useHoverPreview,
  * which preload-preview.ts caps to a few concurrent downloads.
  *
- * Sprites on unreachable hosts (catbox — throttled to ~16KB/s, blocks
- * datacenter IPs) are skipped the same way the catalog warmer skips them: a
- * speculative download there takes ~19s and holds a queue slot the whole time,
- * starving the fast proxied sprites (pixhost: ~250ms). Those cards' sprites
- * load on demand at hover time via useProgressiveImage instead.
+ * Sprites on catbox hosts ride wsrv.nl's edge CDN full-size (proxySpriteUrl),
+ * so they're now reachable AND fast to warm (~2-3s cold, globally-cached after
+ * the first viewer) — the old ~16KB/s direct-download starvation is gone.
+ * Catbox animated .webp previews are warmed directly into the HTTP + IDB
+ * caches (catbox sends CORS for images) so hover is instant, not a progress
+ * bar. Videos stay stream-on-demand at hover time.
  */
 export function preloadRecordingSprites(
   recs: Array<{ sprite_url?: string | null; preview_url?: string | null }>,
@@ -240,9 +350,9 @@ export function preloadRecordingSprites(
     // Prefetch ANIMATED previews (.webp / .mp4_preview) alongside sprites so
     // hover shows the full preview instantly. Videos (.mp4) are excluded —
     // they're multi-MB and still stream on demand at hover time.
-    if (rec.preview_url) {
+    if (rec.preview_url && !opts.skipPreviews) {
       const proxied = proxyUrl(rec.preview_url);
-      if (proxied && isReachablePreviewUrl(proxied) && isAnimatedPreviewUrl(proxied)) {
+      if (proxied && isPreviewPreloadable(proxied)) {
         previews.push(proxied);
       }
     }
@@ -254,7 +364,7 @@ export function preloadRecordingSprites(
 }
 
 /** True when a (proxied) preview URL points at an animated image, not a video. */
-function isAnimatedPreviewUrl(url: string): boolean {
+export function isAnimatedPreviewUrl(url: string): boolean {
   try {
     const parsed = new URL(url, window.location.origin);
     let inner = parsed.pathname;

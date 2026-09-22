@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { supabase, fetchAll } from "../lib/supabase.js";
+import { notifyUser } from "../lib/notify.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { getCacheStats, getCacheMetrics, invalidateTags, invalidatePattern, purgeAllCache } from "../middleware/cache.js";
 import { getRedis, isRedisConnected, getRedisStatus } from "../lib/redis.js";
@@ -198,27 +199,13 @@ router.patch("/admin/requests/:id/status", ...admin, async (req: Request, res: R
     const newLabel = statusLabels[updated.status] ?? updated.status;
     const message = `Your request for @${performerName} on ${updated.platform} has been ${newLabel}.`;
 
-    try {
-      const { data: prefRow } = await supabase
-        .from("user_notification_preferences")
-        .select("enabled")
-        .eq("user_id", updated.user_id)
-        .eq("notification_type", "request_status")
-        .maybeSingle();
-      const enabled = prefRow ? prefRow.enabled : true; // default: enabled
-      if (enabled) {
-        await supabase.from("user_notifications").insert({
-          user_id: updated.user_id,
-          type: "request_status",
-          message,
-          related_id: String(updated.id),
-          is_read: false,
-        });
-      }
-    } catch (notifErr) {
-      // Non-critical — don't fail the whole request if notification insert fails
-      req.log?.error?.({ err: notifErr, requestId: id }, "Failed to create notification for request status change");
-    }
+    // Notify the requester (respects their prefs; failures are non-critical).
+    await notifyUser({
+      userId: updated.user_id,
+      type: "request_status",
+      message,
+      relatedId: String(updated.id),
+    });
 
     res.json(updated);
   } catch (err) {
@@ -244,6 +231,18 @@ router.delete("/admin/requests/:id", ...admin, async (req: Request, res: Respons
     }
 
     logger.info({ requestId: id, adminId: req.user!.id }, "Request deleted by admin");
+
+    // Clean up related notifications (mirrors the user-facing delete).
+    try {
+      await supabase
+        .from("user_notifications")
+        .delete()
+        .eq("related_id", String(id))
+        .in("type", ["request_status", "request_submitted"]);
+    } catch {
+      // Non-critical — don't fail the delete if notification cleanup fails
+    }
+
     res.json({ ok: true });
   } catch (err) {
     req.log?.error?.({ err }, "DELETE /admin/requests/:id error");
@@ -409,6 +408,7 @@ router.post("/admin/cache/purge", ...admin, async (_req: Request, res: Response)
       purged: true,
       deletedKeys: result.deletedKeys,
       invalidatedTags: result.invalidatedTags,
+      cdnPurged: result.cdnPurged,
     });
   } catch (err) {
     logger.error({ err }, "Cache purge failed");
@@ -424,7 +424,7 @@ router.delete("/admin/cache/flush", ...admin, async (_req: Request, res: Respons
 
     if (!redis || !isRedisConnected()) {
       logger.info({ keysDeleted: memoryResult.deletedKeys, adminId: _req.user!.id }, "Cache flushed by admin");
-      res.json({ flushed: true, keysDeleted: memoryResult.deletedKeys });
+      res.json({ flushed: true, keysDeleted: memoryResult.deletedKeys, cdnPurged: memoryResult.cdnPurged });
       return;
     }
 
@@ -452,7 +452,7 @@ router.delete("/admin/cache/flush", ...admin, async (_req: Request, res: Respons
 
     const keysDeleted = deleted + memoryResult.deletedKeys;
     logger.info({ keysDeleted, adminId: _req.user!.id }, "Cache flushed by admin");
-    res.json({ flushed: true, keysDeleted });
+    res.json({ flushed: true, keysDeleted, cdnPurged: memoryResult.cdnPurged });
   } catch (err) {
     logger.error({ err }, "Cache flush failed");
     res.status(500).json({ error: "Cache flush failed" });

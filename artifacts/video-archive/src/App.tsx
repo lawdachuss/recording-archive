@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, useEffect, type ErrorInfo, type ReactNode } from "react";
+import { Component, Suspense, useEffect, type ErrorInfo, type ReactNode } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { AlertCircle, RefreshCw } from "lucide-react";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -6,49 +6,60 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { SyncStatusProvider } from "@/contexts/SyncStatusContext";
+import { PremiumProvider } from "@/contexts/PremiumContext";
+import { AdsterraGlobal } from "@/components/ads/AdsterraGlobal";
+import { JuicyAdsFloat } from "@/components/ads/JuicyAdsFloat";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { lazyWithSkeleton } from "@/components/lazy-route";
+import { prefetchRoute } from "@/lib/route-chunks";
+import {
+  SkeletonGridPage,
+  SkeletonDetailPage,
+  SkeletonPerformersPage,
+  SkeletonProfilePage,
+  SkeletonAuthPage,
+  SkeletonSimplePage,
+  SkeletonAdminPage,
+} from "@/components/skeletons/PageSkeletons";
 import { createQueryClient, restoreQueryCache, persistQueryCache } from "@/lib/query-client";
 import { initCache } from "@/lib/cache";
-import { startCatalogWarmup, onWarmProgress, getWarmProgress } from "@/lib/catalog-warmer";
+import { startCatalogWarmup } from "@/lib/catalog-warmer";
+import { cancelPendingPreviews } from "@/lib/preload-preview";
 import { trackActivity } from "@/lib/rum";
 
 // Home is eagerly imported for instant first paint (landing page)
-// All other pages are lazy-loaded — fetched on-demand when navigated to
+// All other pages are lazy-loaded — fetched on-demand when navigated to.
+// Each route shows a skeleton matching its target layout while its chunk
+// loads (see components/skeletons/PageSkeletons.tsx), so navigation feels
+// instant instead of flashing a generic spinner.
 import Home from "@/pages/Home";
 import RandomRedirect from "@/pages/RandomRedirect";
-const Browse = lazy(() => import("@/pages/Browse"));
-const VideoDetail = lazy(() => import("@/pages/VideoDetail"));
-const PerformersList = lazy(() => import("@/pages/PerformersList"));
-const PerformerProfile = lazy(() => import("@/pages/PerformerProfile"));
-const TagsPage = lazy(() => import("@/pages/TagsPage"));
-const Bookmarks = lazy(() => import("@/pages/Bookmarks"));
-const History = lazy(() => import("@/pages/History"));
-const Analytics = lazy(() => import("@/pages/Analytics"));
-const WatchLater = lazy(() => import("@/pages/WatchLater"));
-const Charts = lazy(() => import("@/pages/Charts"));
-const Collections = lazy(() => import("@/pages/Collections"));
-const CollectionDetail = lazy(() => import("@/pages/CollectionDetail"));
-const AdminPage = lazy(() => import("@/pages/admin"));
-const Login = lazy(() => import("@/pages/Login"));
-const Signup = lazy(() => import("@/pages/Signup"));
-const ForgotPassword = lazy(() => import("@/pages/ForgotPassword"));
-const AuthCallback = lazy(() => import("@/pages/AuthCallback"));
-const Settings = lazy(() => import("@/pages/Settings"));
-const Following = lazy(() => import("@/pages/Following"));
-const Notifications = lazy(() => import("@/pages/Notifications"));
-const RequestPage = lazy(() => import("@/pages/RequestPage"));
-const MyRequests = lazy(() => import("@/pages/MyRequests"));
 
-const NotFound = lazy(() => import("@/pages/not-found"));
+const Browse = lazyWithSkeleton(() => import("@/pages/Browse"), <SkeletonGridPage count={12} />, "Browse");
+const VideoDetail = lazyWithSkeleton(() => import("@/pages/VideoDetail"), <SkeletonDetailPage />, "VideoDetail");
+const PerformersList = lazyWithSkeleton(() => import("@/pages/PerformersList"), <SkeletonPerformersPage />, "PerformersList");
+const PerformerProfile = lazyWithSkeleton(() => import("@/pages/PerformerProfile"), <SkeletonProfilePage />, "PerformerProfile");
+const TagsPage = lazyWithSkeleton(() => import("@/pages/TagsPage"), <SkeletonGridPage count={24} eyebrow={false} />, "TagsPage");
+const Bookmarks = lazyWithSkeleton(() => import("@/pages/Bookmarks"), <SkeletonGridPage count={8} />, "Bookmarks");
+const History = lazyWithSkeleton(() => import("@/pages/History"), <SkeletonGridPage count={8} />, "History");
+const Analytics = lazyWithSkeleton(() => import("@/pages/Analytics"), <SkeletonSimplePage rows={6} />, "Analytics");
+const WatchLater = lazyWithSkeleton(() => import("@/pages/WatchLater"), <SkeletonGridPage count={8} />, "WatchLater");
+const Charts = lazyWithSkeleton(() => import("@/pages/Charts"), <SkeletonGridPage count={12} />, "Charts");
+const Collections = lazyWithSkeleton(() => import("@/pages/Collections"), <SkeletonGridPage count={8} />, "Collections");
+const CollectionDetail = lazyWithSkeleton(() => import("@/pages/CollectionDetail"), <SkeletonGridPage count={12} />, "CollectionDetail");
+const AdminPage = lazyWithSkeleton(() => import("@/pages/admin"), <SkeletonAdminPage />, "Admin");
+const Login = lazyWithSkeleton(() => import("@/pages/Login"), <SkeletonAuthPage />, "Login");
+const Signup = lazyWithSkeleton(() => import("@/pages/Signup"), <SkeletonAuthPage />, "Signup");
+const ForgotPassword = lazyWithSkeleton(() => import("@/pages/ForgotPassword"), <SkeletonAuthPage />, "ForgotPassword");
+const AuthCallback = lazyWithSkeleton(() => import("@/pages/AuthCallback"), <SkeletonAuthPage />, "AuthCallback");
+const Settings = lazyWithSkeleton(() => import("@/pages/Settings"), <SkeletonSimplePage rows={6} />, "Settings");
+const Following = lazyWithSkeleton(() => import("@/pages/Following"), <SkeletonGridPage count={8} />, "Following");
+const Notifications = lazyWithSkeleton(() => import("@/pages/Notifications"), <SkeletonSimplePage rows={6} />, "Notifications");
+const RequestPage = lazyWithSkeleton(() => import("@/pages/RequestPage"), <SkeletonSimplePage rows={6} />, "RequestPage");
+const MyRequests = lazyWithSkeleton(() => import("@/pages/MyRequests"), <SkeletonSimplePage rows={6} />, "MyRequests");
+const Premium = lazyWithSkeleton(() => import("@/pages/Premium"), <SkeletonSimplePage rows={6} />, "Premium");
 
-// Full-page spinner for lazy-loading transitions
-function PageLoading() {
-  return (
-    <div className="min-h-[60vh] flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
-}
+const NotFound = lazyWithSkeleton(() => import("@/pages/not-found"), <SkeletonSimplePage rows={3} />, "NotFound");
 
 const queryClient = createQueryClient();
 
@@ -60,8 +71,6 @@ function scheduleIdleWork(task: () => void, timeout = 1_500) {
   });
   requestIdle(task, { timeout });
 }
-
-// Catalog warmup is handled by catalog-warmer.ts (see App useEffect below).
 
 // Global error boundary — catches chunk load errors (auto-reload) and
 // rendering errors (shows a friendly recovery UI instead of white-screen).
@@ -124,15 +133,47 @@ function TrackPageView() {
   const [location] = useLocation();
   useEffect(() => {
     trackActivity("page_view", { meta: { path: location.slice(0, 256) } });
+    // Flush queued speculative preview downloads from the previous page so
+    // they don't hold the 6 preview slots while the new page loads.
+    cancelPendingPreviews();
   }, [location]);
+  return null;
+}
+
+// Predictive chunk prefetch: warms the most likely NEXT route's JS chunk while
+// the current page is idle. From a video page that's Browse; anywhere else it's
+// VideoDetail (the dominant destination from every card grid). No-op on
+// constrained connections (see lib/route-chunks.ts).
+function PredictivePrefetch() {
+  const [location] = useLocation();
+
+  useEffect(() => {
+    const t = window.setTimeout(
+      () =>
+        scheduleIdleWork(() => {
+          if (location.startsWith("/video/")) {
+            prefetchRoute("/browse");
+          } else {
+            prefetchRoute("/video");
+            if (location === "/") prefetchRoute("/browse");
+          }
+        }, 1_000),
+      800,
+    );
+    return () => window.clearTimeout(t);
+  }, [location]);
+
   return null;
 }
 
 function Router() {
   return (
-    <Suspense fallback={<PageLoading />}>
-      <GlobalErrorBoundary>
+    <GlobalErrorBoundary>
+      <PremiumProvider>
       <TrackPageView />
+      <PredictivePrefetch />
+      <AdsterraGlobal />
+      <JuicyAdsFloat />
       <Switch>
         <Route path="/" component={Home} />
         <Route path="/browse" component={Browse} />
@@ -167,6 +208,7 @@ function Router() {
         <Route path="/admin/*">
           <ProtectedRoute requiredRole="admin"><AdminPage /></ProtectedRoute>
         </Route>
+        <Route path="/premium" component={Premium} />
         <Route path="/login" component={Login} />
         <Route path="/signup" component={Signup} />
         <Route path="/forgot-password" component={ForgotPassword} />
@@ -188,8 +230,8 @@ function Router() {
         </Route>
         <Route component={NotFound} />
       </Switch>
-      </GlobalErrorBoundary>
-    </Suspense>
+      </PremiumProvider>
+    </GlobalErrorBoundary>
   );
 }
 
@@ -199,6 +241,14 @@ function App() {
       initCache();
       restoreQueryCache(queryClient);
     });
+
+    // After the first screen settles, speculatively warm the two most common
+    // destination chunks (Browse grid + VideoDetail) during idle time. Route
+    // hover/focus prefetching covers the rest (DesktopNav/MobileMenu/footer).
+    const chunkTimer = window.setTimeout(
+      () => scheduleIdleWork(() => { prefetchRoute("/browse"); prefetchRoute("/video"); }, 2_000),
+      3_000,
+    );
 
     // Catalog warmup: starts ~20s after first paint (idle-gated) and only
     // warms hover sprites for the catalog's first page. It never runs during
@@ -213,6 +263,7 @@ function App() {
     window.addEventListener("beforeunload", persist);
 
     return () => {
+      window.clearTimeout(chunkTimer);
       window.clearTimeout(warmTimer);
       window.removeEventListener("pagehide", persist);
       window.removeEventListener("beforeunload", persist);
@@ -225,7 +276,9 @@ function App() {
         <SyncStatusProvider>
           <TooltipProvider>
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-              <Router />
+              <Suspense fallback={null}>
+                <Router />
+              </Suspense>
             </WouterRouter>
             <Toaster />
           </TooltipProvider>

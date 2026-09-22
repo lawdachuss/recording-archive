@@ -20,56 +20,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getCachedBlobUrl, releaseBlobUrl, cacheImage } from "@/lib/image-cache";
 
-// First-byte timeout: a host that accepts the connection but never sends
-// anything (catbox-style stalls) must fall back to the native <img> path
-// instead of leaving the bar at 0 forever.
-const FIRST_BYTE_TIMEOUT_MS = 12_000;
-
-// Cross-origin hosts that send `Access-Control-Allow-Origin`, so a fetch()
-// here can actually read the body. Same-origin URLs (the /api/media proxy)
-// always qualify. Hosts NOT in this list (iili.io, freeimage.host, imgchest,
-// ...) reject CORS-mode fetches with a noisy-but-harmless console error and
-// never deliver bytes, so for them we skip streaming entirely and hand the
-// URL straight to the native <img> (which loads fine without CORS).
-const CORS_STREAM_HOSTS = ["catbox.moe", "litter.catbox.moe", "files.catbox.moe"];
-
-function isStreamable(url: string): boolean {
-  try {
-    const parsed = new URL(url, window.location.origin);
-    if (parsed.origin === window.location.origin) return true;
-    const hostname = parsed.hostname.toLowerCase();
-    return CORS_STREAM_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`));
-  } catch {
-    return false;
-  }
-}
-// Stall watchdog: reset on every chunk. If the stream stops delivering bytes
-// mid-download (server hang), abort and fall back so the mirror chain engages.
-const STALL_TIMEOUT_MS = 20_000;
-
-/**
- * Validate the first 12 bytes of a response body against known image format
- * magic numbers. Catches corrupt / HTML-error-body responses that arrive with
- * a 200 + image content-type and would otherwise be displayed as a broken
- * blob URL (the proxy's "Image unavailable" placeholder).
- */
-function isValidImageMagic(head: Uint8Array): boolean {
-  if (head.length < 4) return false;
-  const jpeg = head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
-  const png = head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47;
-  const gif = head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46;
-  const webp =
-    head.length >= 12 &&
-    head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 &&
-    head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50;
-  const avif =
-    head.length >= 12 &&
-    head[0] === 0x00 && head[1] === 0x00 && head[2] === 0x00 && head[3] === 0x18 &&
-    head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70 &&
-    head[8] === 0x61 && head[9] === 0x76 && head[10] === 0x69 && head[11] === 0x66;
-  return jpeg || png || gif || webp || avif;
-}
-
 export interface ProgressiveImageResult {
   /**
    * URL to display: a blob: URL once bytes are available, or the original
@@ -124,121 +74,30 @@ export function useProgressiveImage(
       if (blobUrl) {
         idbUrlRef.current = url;
         setSrc(blobUrl);
-        setProgress(null); // instant — nothing to show progress for
+        setProgress(100);
         return;
       }
 
-      // 2) Not cached — stream the fetch for real progress. Works for
-      //    same-origin /api/media (pixhost) and cross-origin hosts that
-      //    send CORS headers (catbox). Hosts that don't send CORS
-      //    (iili.io etc.) are handed to the native <img> directly — a
-      //    fetch() there only produces CORS console noise and never
-      //    delivers bytes. On any failure we fall back to the original
-      //    URL so the consumer's native loading + fallback chain
-      //    (mirrors, wsrv → direct) engages as before.
-      if (!isStreamable(url)) {
-        setSrc(url);
-        setProgress(null);
-        return;
-      }
-      const controller = new AbortController();
-      abortRef.current = controller;
+      // 2) Cache miss: provide the raw URL immediately so the <img> element
+      // can mount and stream/decode native frames without waiting for a manual JS loop.
+      setSrc(url);
+      setProgress(null);
 
-      // Timeout management: the first arm gives the connection FIRST_BYTE
-      // budget (connect + headers + first data); STALL_TIMEOUT_MS is re-armed
-      // on every chunk so a slow-but-progressing download is never cut short,
-      // while a connection that stops delivering bytes is abandoned so the
-      // fallback chain can engage.
-      let stallTimer: number | null = null;
-      const armStallTimer = (ms: number) => {
-        if (stallTimer !== null) window.clearTimeout(stallTimer);
-        stallTimer = window.setTimeout(() => controller.abort(), ms);
-      };
-      armStallTimer(FIRST_BYTE_TIMEOUT_MS);
-      const clearTimers = () => {
-        if (stallTimer !== null) {
-          window.clearTimeout(stallTimer);
-          stallTimer = null;
-        }
-      };
-
-      (async () => {
-        try {
-          const res = await fetch(url, {
-            cache: "force-cache",
-            credentials: url.startsWith("/") ? "same-origin" : "omit",
-            referrerPolicy: "no-referrer",
-            signal: controller.signal,
+      // Concurrently warm into IDB blob cache (priority 2 = hover) so subsequent
+      // hovers or repeat visits are 0ms instant blob URLs.
+      cacheImage(url, 2)
+        .then((entry) => {
+          if (cancelled || !entry) return;
+          // Optionally upgrade to cached blob URL once saved
+          getCachedBlobUrl(url).then((freshBlobUrl) => {
+            if (cancelled || !freshBlobUrl) return;
+            if (idbUrlRef.current) releaseBlobUrl(idbUrlRef.current);
+            idbUrlRef.current = url;
+            setSrc(freshBlobUrl);
+            setProgress(100);
           });
-          if (!res.ok || cancelled) throw new Error(`progressive fetch ${res.status}`);
-          const contentType = res.headers.get("content-type") || "";
-          // Never surface the proxy/SW "Image unavailable" placeholder —
-          // treat it as a failure so the mirror fallback chain can engage.
-          if (contentType.includes("image/svg+xml")) throw new Error("placeholder body");
-
-          const total = Number(res.headers.get("content-length")) || 0;
-          let blob: Blob;
-          if (res.body && total > 0) {
-            const reader = res.body.getReader();
-            const chunks: Uint8Array[] = [];
-            let loaded = 0;
-            let lastPct = -1;
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              if (value) {
-                chunks.push(value);
-                loaded += value.byteLength;
-                armStallTimer(STALL_TIMEOUT_MS); // bytes flowing — restart the stall watchdog
-              }
-              const pct = Math.min(99, Math.floor((loaded / total) * 100));
-              if (pct !== lastPct) {
-                lastPct = pct;
-                if (!cancelled) setProgress(pct);
-              }
-            }
-            // Concatenate into one buffer so the Blob part is a plain
-            // ArrayBuffer-backed view (TS-safe across lib versions).
-            const full = new Uint8Array(loaded);
-            let offset = 0;
-            for (const c of chunks) {
-              full.set(c, offset);
-              offset += c.byteLength;
-            }
-            blob = new Blob([full], { type: contentType || "image/*" });
-          } else {
-            // No stream / no content-length — still deliver, just no progress.
-            blob = await res.blob();
-          }
-          if (cancelled) return;
-          if (blob.size === 0) throw new Error("empty body");
-
-          // Validate magic bytes so a corrupt / non-image body (HTML error
-          // page, proxy placeholder) is never surfaced as a blob URL.
-          const head = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
-          if (!isValidImageMagic(head)) throw new Error("non-image response body");
-
-          const objectUrl = URL.createObjectURL(blob);
-          if (cancelled) {
-            URL.revokeObjectURL(objectUrl);
-            return;
-          }
-          clearTimers();
-          blobRef.current = objectUrl;
-          setSrc(objectUrl);
-          setProgress(100);
-          // Warm IDB for repeat visits — cheap: response is in the HTTP cache.
-          cacheImage(url, 2).catch(() => {});
-        } catch {
-          clearTimers();
-          if (!cancelled) {
-            // Fall back to the original URL — the consumer's <img>/fallback
-            // chain takes over from here.
-            setSrc(url);
-            setProgress(null);
-          }
-        }
-      })();
+        })
+        .catch(() => {});
     });
 
     return () => {

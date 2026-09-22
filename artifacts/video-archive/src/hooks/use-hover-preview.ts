@@ -5,7 +5,7 @@ import {
   isAnimatedImageUrl,
   preloadPreviewMedia,
 } from "@/lib/preload-preview";
-import { preloadImage, isReachablePreviewUrl } from "@/lib/preload-sprite";
+import { preloadImage, isReachablePreviewUrl, isCatboxAnimatedPreviewUrl } from "@/lib/preload-sprite";
 import { isConnectionConstrained } from "@/lib/connection";
 import { dlog } from "@/lib/debug";
 
@@ -97,24 +97,12 @@ export function useHoverPreview({
           for (const entry of entries) {
             if (entry.isIntersecting && !intersectionPreloadedRef.current) {
               intersectionPreloadedRef.current = true;
-              // Preload the sprite (instant hover effect) and the preview
-              // media — but ONLY for hosts worth preloading from. catbox
-              // throttles third-party hotlinking to ~16KB/s (a 261KB webp
-              // takes 16s): a speculative download there never finishes
-              // before the hover AND holds a queue slot the whole time,
-              // starving the fast proxied hosts (pixhost sprites load in
-              // ~250ms through /api/media). catbox sprites/previews load on
-              // demand at hover time via useProgressiveImage instead (with
-              // its progress bar), and the first hover persists them to the
-              // IDB blob cache so repeat hovers are zero-network.
-              //
-              // In-viewport sprites are marked immediate so they jump ahead
-              // of the idle catalog warmer instead of queuing behind it.
+              // Preload the lightweight sprite sheet (instant hover scrubber effect)
+              // when the card approaches viewport. Heavy video/animated-webp previews
+              // are preheated on hover intent (onMouseEnter) to prevent saturating
+              // connection streams and triggering HTTP/2 resets on Catbox.
               if (spriteUrl && isReachablePreviewUrl(spriteUrl)) {
                 preloadImage(spriteUrl, { immediate: true });
-              }
-              if (previewUrl && isReachablePreviewUrl(previewUrl)) {
-                preloadPreviewMedia(previewUrl);
               }
               observer?.disconnect();
               break;
@@ -134,12 +122,16 @@ export function useHoverPreview({
   const onMouseEnter = useCallback(() => {
     dlog("hoverpreview", "onMouseEnter", { enabled, intentDelay });
     if (!enabled) return;
+    // Eagerly preheat the preview on initial pointer entrance so network handshake starts immediately
+    if (previewUrl && (isReachablePreviewUrl(previewUrl) || isCatboxAnimatedPreviewUrl(previewUrl))) {
+      preloadPreviewMedia(previewUrl, true);
+    }
     if (enterTimer.current) window.clearTimeout(enterTimer.current);
     enterTimer.current = window.setTimeout(() => {
       dlog("hoverpreview", "hover timeout -> setIsHovered(true)");
       setIsHovered(true);
     }, intentDelay);
-  }, [enabled, intentDelay]);
+  }, [enabled, intentDelay, previewUrl]);
 
   const onMouseLeave = useCallback(() => {
     dlog("hoverpreview", "onMouseLeave");

@@ -199,9 +199,21 @@ export default function VideoDetail() {
   const [copied, setCopied] = useState(false);
   const [embedCopied, setEmbedCopied] = useState(false);
   const [collectionOpen, setCollectionOpen] = useState(false);
+  const collectionRef = useRef<HTMLDivElement>(null);
   const [cloudCollections, setCloudCollections] = useState<CloudCollection[]>([]);
   const [newColName, setNewColName] = useState("");
   const [addedToCol, setAddedToCol] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!collectionOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (collectionRef.current && !collectionRef.current.contains(e.target as Node)) {
+        setCollectionOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [collectionOpen]);
   const [recPage, setRecPage] = useState(1);
   const REC_PAGE_SIZE = 12;
   const queryClient = useQueryClient();
@@ -872,7 +884,7 @@ export default function VideoDetail() {
 
                   {/* Add to Collection dropdown */}
                   {user && (
-                  <div className="relative">
+                  <div ref={collectionRef} className="relative">
                     <button
                       onClick={() => setCollectionOpen((v) => !v)}
                       className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border border-border/50 text-muted-foreground hover:border-border hover:text-foreground transition-all"

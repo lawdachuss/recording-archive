@@ -243,8 +243,13 @@ export const userApi = {
       method: "DELETE",
     }),
 
-  getNotifications: () =>
-    apiFetch<UserNotification[]>("/api/user/notifications"),
+  getNotifications: (opts?: { limit?: number; offset?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    if (opts?.offset) params.set("offset", String(opts.offset));
+    const qs = params.toString();
+    return apiFetch<UserNotification[]>(`/api/user/notifications${qs ? `?${qs}` : ""}`);
+  },
   markAllRead: () =>
     apiFetch("/api/user/notifications/read-all", { method: "PUT" }),
   markAsRead: (id: number) =>

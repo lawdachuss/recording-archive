@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase.js";
+import { notifyUser } from "../lib/notify.js";
 import { invalidateOnSuccess } from "../middleware/cache.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/requireRole.js";
@@ -117,24 +118,14 @@ router.post("/requests", requireAuth, async (req, res) => {
 
     if (error) throw error;
 
-    // Create a confirmation notification for the requester (if enabled)
-    try {
-      const pref = await getNotificationPref(created.user_id, "request_submitted");
-      const enabled = pref.enabled; // default: enabled (true)
-      if (enabled) {
-        const performerName = created.performer_username ?? "a performer";
-        const message = `Your request for @${performerName} on ${created.platform} has been submitted and is pending review.`;
-        await supabase.from("user_notifications").insert({
-          user_id: created.user_id,
-          type: "request_submitted",
-          message,
-          related_id: String(created.id),
-          is_read: false,
-        });
-      }
-    } catch {
-      // Non-critical — don't fail the request if notification insert fails
-    }
+    // Confirmation notification for the requester (respects their prefs;
+    // failures are non-critical and can't fail the request flow).
+    await notifyUser({
+      userId: created.user_id,
+      type: "request_submitted",
+      message: `Your request for @${created.performer_username ?? "a performer"} on ${created.platform} has been submitted and is pending review.`,
+      relatedId: String(created.id),
+    });
 
     res.status(201).json(created);
   } catch {
@@ -181,17 +172,6 @@ async function findDuplicate(
 
   const { data } = await query.limit(1).maybeSingle();
   return data;
-}
-
-/** Read a notification preference, defaulting to enabled when unset. */
-async function getNotificationPref(userId: string, type: string): Promise<{ enabled: boolean }> {
-  const { data } = await supabase
-    .from("user_notification_preferences")
-    .select("enabled")
-    .eq("user_id", userId)
-    .eq("notification_type", type)
-    .maybeSingle();
-  return { enabled: data?.enabled ?? true };
 }
 
 router.delete("/requests/:id", requireAuth, async (req, res) => {

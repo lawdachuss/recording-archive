@@ -1,24 +1,33 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useListPerformers } from "@/lib/api";
 import { Layout } from "@/components/Layout";
 import { PerformerCard } from "@/components/PerformerCard";
 import { Search, X, ChevronDown, Users } from "lucide-react";
 import { AppPagination } from "@/components/ui/app-pagination";
+import { GENDER_OPTIONS } from "@/lib/genders";
 
 type SortOption = "name" | "count";
 const ITEMS_PER_PAGE = 49;
 
 export default function PerformersList() {
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sort, setSort] = useState<SortOption>("count");
   const [gender, setGender] = useState("");
   const [page, setPage] = useState(1);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const { data, isLoading, isFetching } = useListPerformers({
     page,
     limit: ITEMS_PER_PAGE,
-    search: search || undefined,
+    search: debouncedSearch || undefined,
     gender: gender || undefined,
     sort,
   });
@@ -26,14 +35,6 @@ export default function PerformersList() {
   const performers = data?.performers ?? [];
   const total = data?.total ?? 0;
   const totalPages = data?.totalPages ?? 1;
-
-  const ALL_GENDERS = [
-    { value: "F", label: "Female" },
-    { value: "M", label: "Male" },
-    { value: "T", label: "Trans" },
-    { value: "NB", label: "Non‑binary" },
-    { value: "O", label: "Other" },
-  ];
 
   const hasFilters = !!(search || gender || sort !== "count");
 
@@ -108,7 +109,7 @@ export default function PerformersList() {
                 aria-label="Filter by gender"
               >
                 <option value="">All genders</option>
-                {ALL_GENDERS.map((g) => (
+                {GENDER_OPTIONS.map((g) => (
                   <option key={g.value} value={g.value}>
                     {g.label}
                   </option>

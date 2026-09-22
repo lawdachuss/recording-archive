@@ -1,7 +1,8 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { getSupabase } from "@/lib/supabase";
 import { resolveApiPath } from "@/lib/api-base";
+import { clearQueryCache } from "@/lib/query-client";
 
 interface AuthContextType {
   user: User | null;
@@ -92,21 +93,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<"user" | "moderator" | "admin" | null>(null);
+  // Generation counter so a slow `fetchRole` from a previous session/login
+  // can never overwrite the role of the current one (e.g. after sign-out).
+  const roleGeneration = useRef(0);
+
+  const applyRole = (token: string) => {
+    const gen = ++roleGeneration.current;
+    setRole(null);
+    fetchRole(token).then((r) => {
+      if (roleGeneration.current === gen) setRole(r);
+    });
+  };
 
   useEffect(() => {
     let unsub: (() => void) | null = null;
+
     getSupabase()
       .then((sb) => {
-        sb.auth.getSession().then(({ data: { session } }) => {
-          setSession(session);
-          setUser(session?.user ?? null);
-          if (session?.access_token) {
-            setRole(null);
-            fetchRole(session.access_token).then(setRole);
-            applyPendingUsername(session.access_token);
-          }
-          setLoading(false);
-        });
+        sb.auth
+          .getSession()
+          .then(({ data: { session } }) => {
+            setSession(session);
+            setUser(session?.user ?? null);
+            if (session?.access_token) {
+              applyRole(session.access_token);
+              applyPendingUsername(session.access_token);
+            }
+          })
+          .catch(() => {
+            // Corrupted/inaccessible session (e.g. IndexedDB hiccup) — treat
+            // as logged out instead of hanging the whole app in the loader.
+            setSession(null);
+            setUser(null);
+          })
+          .finally(() => setLoading(false));
 
         const {
           data: { subscription },
@@ -114,8 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSession(session);
           setUser(session?.user ?? null);
           if (session?.access_token) {
-            setRole(null);
-            fetchRole(session.access_token).then(setRole);
+            applyRole(session.access_token);
             applyPendingUsername(session.access_token);
           } else {
             setRole(null);
@@ -129,7 +148,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       });
 
-    return () => { unsub?.(); };
+    return () => {
+      unsub?.();
+      roleGeneration.current++;
+    };
   }, []);
 
   const signIn = async (
@@ -142,8 +164,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (data.session?.access_token) {
       setSession(data.session);
       setUser(data.session.user);
-      setRole(null);
-      fetchRole(data.session.access_token).then(setRole);
+      applyRole(data.session.access_token);
       applyPendingUsername(data.session.access_token);
     }
     return {};
@@ -186,6 +207,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSession(null);
     setUser(null);
     setRole(null);
+    // Never leave the previous user's query data (in-memory or persisted)
+    // behind for the next visitor on a shared browser.
+    await clearQueryCache();
   };
 
   const resetPassword = async (email: string): Promise<{ error?: string }> => {

@@ -9,7 +9,7 @@ import { useCacheProfiler, type CacheProfile } from "@/hooks/use-cache-profiler"
 import { clearImageCache, getCacheStats } from "@/lib/image-cache";
 import {
   Settings as SettingsIcon, User, Lock, Save, AlertCircle, CheckCircle2,
-  Bell, BellOff, Mail, Volume2, Smartphone, Database, Trash2, RefreshCw,
+  Bell, BellOff, Volume2, Smartphone, Database, Trash2, RefreshCw,
 } from "lucide-react";
 
 const NOTIF_LABELS: Record<string, { label: string; description: string }> = {
@@ -335,10 +335,7 @@ export default function Settings() {
               {/* Column header row */}
               <div className="flex items-center px-3 py-1.5 text-[11px] text-muted-foreground/50 uppercase tracking-wider font-medium">
                 <div className="min-w-0 flex-1" />
-                <div className="flex items-center gap-6 shrink-0">
-                  <span className="w-9 text-center">In-app</span>
-                  <span className="w-9 text-center">Email</span>
-                </div>
+                <span className="w-14 text-center">In-app</span>
               </div>
 
               {notifPrefs.map((pref) => (
@@ -391,45 +388,6 @@ export default function Settings() {
                       <span
                         className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-background shadow-sm ring-0 transition-transform duration-200 ${
                           pref.enabled ? "translate-x-4" : "translate-x-0"
-                        }`}
-                      />
-                    </button>
-
-                    {/* Email toggle */}
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={pref.email_enabled}
-                      aria-label={`${NOTIF_LABELS[pref.type]?.label ?? pref.type} email notifications`}
-                      onClick={() => {
-                        const updated = notifPrefs.map((p) =>
-                          p.type === pref.type ? { ...p, email_enabled: !p.email_enabled } : p
-                        );
-                        setNotifPrefs(updated);
-                        setNotifPrefsSaving(true);
-                        setNotifPrefsMsg(null);
-                        userApi.updateNotificationPreferences(updated).then(() => {
-                          setNotifPrefsSaving(false);
-                          setNotifPrefsMsg({ ok: true, text: "Notification preferences saved." });
-                        }).catch(() => {
-                          setNotifPrefsSaving(false);
-                          setNotifPrefsMsg({ ok: false, text: "Failed to save preferences." });
-                          // Revert on failure
-                          userApi.getNotificationPreferences().then((prefs) =>
-                            setNotifPrefs(prefs.map((p) => ({ type: p.type, enabled: p.enabled, email_enabled: p.email_enabled })))
-                          );
-                        });
-                        setTimeout(() => setNotifPrefsMsg(null), 3000);
-                      }}
-                      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
-                        pref.email_enabled
-                          ? "bg-primary"
-                          : "bg-border hover:bg-border/80"
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-background shadow-sm ring-0 transition-transform duration-200 ${
-                          pref.email_enabled ? "translate-x-4" : "translate-x-0"
                         }`}
                       />
                     </button>
@@ -527,13 +485,6 @@ export default function Settings() {
               </label>
             </div>
           </div>
-
-          {notifPrefsSaving && (
-            <p className="mt-2 text-[11px] text-muted-foreground/50 flex items-center gap-1.5">
-              <Mail className="w-3 h-3" />
-              Email notifications require an email service to be configured before they are sent.
-            </p>
-          )}
 
           {/* Confirmation dialog for disabling all notifications */}
           {showDisableConfirm && (

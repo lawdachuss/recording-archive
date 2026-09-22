@@ -86,7 +86,7 @@ async function fetchStatsLegacy(): Promise<SiteStats> {
   };
 }
 
-router.get("/stats", cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["stats", "recordings"] }), async (req, res) => {
+router.get("/stats", cache({ ttlSeconds: 60, staleSeconds: 300, tags: ["stats", "recordings"] }), async (req, res) => {
   try {
     let stats: SiteStats;
     try {

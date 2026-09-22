@@ -259,7 +259,13 @@ const HTTP2_RESET_HOSTS = new Set([
 // proxy handles upstream rate limiting server-side. 16 slots let a page of
 // sprites + previews prefetch in a couple of seconds instead of trickling.
 const HOST_MAX_CONCURRENT = 16;
-const SLOW_HOST_MAX_CONCURRENT = 3;
+const SLOW_HOST_MAX_CONCURRENT = 2; // Catbox throttles to ~35KB/s if >2 concurrent streams! 2 keeps Catbox in high-speed band (~180KB/s)
+// Third-party free services get a middle tier so we don't abuse them with
+// unbounded fan-out. Every catbox sprite/thumbnail shares the ONE wsrv origin,
+// so a full page of them must not burst the shared CDN — 8 is plenty fast
+// (~90-650ms responses) while staying gentle under catalog-wide warming.
+const MID_HOST_MAX_CONCURRENT = 8;
+const MID_CAP_HOSTS = new Set(["images.weserv.nl", "wsrv.nl"]);
 
 const hostSemaphores = new Map<string, { running: number; waiters: (() => void)[] }>();
 
@@ -268,11 +274,12 @@ function isHttp2ResetHost(host: string): boolean {
 }
 
 function hostConcurrency(host: string): number {
+  if (MID_CAP_HOSTS.has(host)) return MID_HOST_MAX_CONCURRENT;
   if (SLOW_HOST_RE.test(host) || isHttp2ResetHost(host)) return SLOW_HOST_MAX_CONCURRENT;
   return HOST_MAX_CONCURRENT;
 }
 
-function acquireHost(host: string): Promise<void> {
+function acquireHost(host: string, priority: CachePriority = 1): Promise<void> {
   let sem = hostSemaphores.get(host);
   if (!sem) {
     sem = { running: 0, waiters: [] };
@@ -284,7 +291,12 @@ function acquireHost(host: string): Promise<void> {
         sem!.running++;
         resolve();
       } else {
-        sem!.waiters.push(tryRun);
+        // High priority (hover / user interaction) jumps ahead of background warmers
+        if (priority >= 2) {
+          sem!.waiters.unshift(tryRun);
+        } else {
+          sem!.waiters.push(tryRun);
+        }
       }
     };
     tryRun();
@@ -459,7 +471,7 @@ async function flushNow() {
       if (memRec) idbSizeEstimate = Math.max(0, idbSizeEstimate - memRec.size);
     }
 
-    for (const { resolve } of writes) resolve(null);
+    for (const { entry, resolve } of writes) resolve(entry);
     for (const { resolve } of deletes) resolve();
   } catch {
     for (const { resolve } of writes) resolve(null);
@@ -655,16 +667,21 @@ export async function getCachedBlob(url: string): Promise<Blob | null> {
  * Skips re-fetching if the IDB entry is fresh (< 1 hour old).
  */
 // Cross-origin hosts that send `Access-Control-Allow-Origin`, so the browser
-// can fetch() them in CORS mode and we can persist the body to IDB. catbox
-// family is the only one we cache this way: it blocks the server proxy (502),
-// wsrv flattens its animated webp, and its previews are served DIRECT from the
-// browser — persisting them to IDB is what makes hover instant / zero-network.
+// can fetch() them in CORS mode and we can persist the body to IDB.
+//  - catbox family: blocks the server proxy (502), wsrv flattens its animated
+//    webp, and its previews are served DIRECT from the browser — persisting
+//    them to IDB is what makes hover instant / zero-network.
+//  - images.weserv.nl (`ACAO: *`): catbox-family sprites are re-served full-size
+//    through wsrv's edge CDN, so persisting them to IDB makes hover instant.
 // All other cross-origin hosts are skipped client-side (they don't send CORS,
 // so fetch() throws noisy-but-harmless CORS errors; their media goes through
 // the same-origin /api/media proxy or the browser HTTP cache instead).
 const CORS_FETCHABLE_HOSTS = [
   "catbox.moe",
+  "files.catbox.moe",
   "litter.catbox.moe",
+  "images.weserv.nl",
+  "wsrv.nl",
 ];
 
 function isCorsFetchable(url: string): boolean {
@@ -793,7 +810,7 @@ async function _cacheImageInner(
 
     // Cap concurrent in-flight requests to this host (catbox especially throttles).
     const host = hostOf(url);
-    await acquireHost(host);
+    await acquireHost(host, priority);
 
     // Arm the timeout only AFTER the host slot is acquired. Arming it before
     // the semaphore wait would let the 15s clock run while queued behind other
@@ -823,7 +840,8 @@ async function _cacheImageInner(
     // that isn't a small image. Images stay capped small (a multi-MB "image"
     // is almost certainly a mis-detected video being fetched as a thumbnail).
     const isVideoType = /video\//i.test(contentType) || /\/mp4$|\.webm|video\//i.test(url);
-    const sizeCap = isVideoType ? 80 * 1024 * 1024 : 10 * 1024 * 1024;
+    const isAnimatedMedia = /image\/webp/i.test(contentType) || /\.webp|\.mp4_preview/i.test(url);
+    const sizeCap = isVideoType ? 80 * 1024 * 1024 : isAnimatedMedia ? 40 * 1024 * 1024 : 10 * 1024 * 1024;
     if (contentLength > sizeCap) return null;
     // Never cache the proxy's "Image unavailable" placeholder — storing it as a
     // real thumbnail would mask a recovered image and serve a broken placeholder

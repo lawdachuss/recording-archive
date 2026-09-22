@@ -10,9 +10,10 @@ import { useCachedMediaSrc } from "@/hooks/use-cached-media-src";
 import { useConnectionConstrained } from "@/hooks/use-connection-quality";
 import { SpriteSlideshow } from "@/components/SpriteSlideshow";
 import { cn } from "@/lib/utils";
-import { proxyUrl, proxySpriteUrl, catboxProxyUrl } from "@/lib/proxy-url";
+import { proxyUrl, proxySpriteUrl, catboxProxyUrl, markWsrvFailedForHost } from "@/lib/proxy-url";
 import { getSpriteGrid } from "@/lib/sprite-grid";
 import { buildPreviewFallbacks, buildThumbnailFallbacks, buildSpriteFallbacks } from "@/lib/mirrors";
+import { prefetchRoute } from "@/lib/route-chunks";
 import { dlog } from "@/lib/debug";
 
 /**
@@ -142,7 +143,13 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     if (webpFallbacks.length === 0) return null;
     return proxyUrl(webpFallbacks[Math.min(previewIndex, webpFallbacks.length - 1)]);
   }, [webpFallbacks, previewIndex]);
-  const spriteUrl = useMemo(() => spriteFallbacks[spriteIndex] ? proxySpriteUrl(spriteFallbacks[spriteIndex]) : null, [spriteFallbacks, spriteIndex]);
+  const [spriteUseDirect, setSpriteUseDirect] = useState(false);
+  const spriteUrl = useMemo(() => {
+    const raw = spriteFallbacks[spriteIndex];
+    if (!raw) return null;
+    if (spriteUseDirect) return raw;
+    return proxySpriteUrl(raw);
+  }, [spriteFallbacks, spriteIndex, spriteUseDirect]);
   const spriteGrid = useMemo(() => getSpriteGrid(spriteFallbacks[spriteIndex] || null), [spriteFallbacks, spriteIndex]);
 
   // On constrained connections we downgrade the hover preview to the cheap
@@ -152,6 +159,13 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   // thumbnail speed) and re-evaluates LIVE as the connection quality,
   // measured speed, or Data Saver toggle changes.
   const isSlowConnection = useConnectionConstrained();
+
+  // Warm the VideoDetail chunk on hover/focus — the dominant next navigation
+  // from any card. Reuses the live connection-quality check so slow links
+  // don't waste bandwidth on speculative downloads.
+  const prefetchDetailChunk = useCallback(() => {
+    if (!isSlowConnection) prefetchRoute("/video");
+  }, [isSlowConnection]);
 
   const {
     isHovered,
@@ -163,6 +177,18 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     viewportRef,
     preloadVideoUrl,
   } = useHoverPreview({ thumbnailUrl, previewUrl, spriteUrl });
+
+  const linkHandlers = {
+    ...hoverHandlers,
+    onMouseEnter: (e: React.MouseEvent) => {
+      hoverHandlers.onMouseEnter?.(e);
+      prefetchDetailChunk();
+    },
+    onFocus: (e: React.FocusEvent) => {
+      hoverHandlers.onFocus?.(e);
+      prefetchDetailChunk();
+    },
+  };
 
   const staticImage = thumbnailUrl;
   const hasStaticImage = !!staticImage;
@@ -221,14 +247,21 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   // VideoCard render, which would restart its animation via a changing prop.
   const handleSpriteLoaded = useCallback(() => setSpriteReady(true), []);
   const handleSpriteError = useCallback(() => {
+    const current = spriteFallbacks[spriteIndex];
+    if (current && !spriteUseDirect && (current.includes("catbox.moe") || current.includes("wsrv.nl"))) {
+      markWsrvFailedForHost(current);
+      setSpriteUseDirect(true);
+      return;
+    }
     if (spriteIndex + 1 < spriteFallbacks.length) {
       setSpriteFailed(false);
       setSpriteReady(false);
+      setSpriteUseDirect(false);
       setSpriteIndex(i => i + 1);
     } else {
       setSpriteFailed(true);
     }
-  }, [spriteIndex, spriteFallbacks.length]);
+  }, [spriteIndex, spriteFallbacks, spriteUseDirect]);
 
   // NOTE: no mount-time preview warming here. An eager cacheImage() on mount
   // downloaded a full preview per card (unbounded by the preload cap) and
@@ -399,22 +432,17 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     });
   }, [mediaFail, previewReady, spriteReady, recording.id]);
 
-  // Fail-fast timer: unmount the hanging <video> / <img> after the timeout and
-  // mark the preview failed, so the sprite/static fallback engages in seconds
-  // instead of the browser's multi-minute connection timeout.
-  // For streamed webp previews this only applies while NOTHING has arrived yet
-  // (progress null — e.g. waiting on first bytes or a stuck native fallback
-  // <img>). A stream that is actively delivering bytes keeps its slot until the
-  // stall watchdog in useProgressiveImage fires instead.
-  const webpStuck =
-    (showWebpImg || showCatboxWebpImg) && previewProgressive.progress === null;
+  // Fail-fast timer for heavy video preview elements: unmount hanging <video>
+  // after the timeout and mark video failed so fallback engages. WebP image
+  // previews are decoupled from this aggressive 3s cutoff — the sprite already
+  // plays smoothly underneath while WebP loads asynchronously with native onError fallback.
   useEffect(() => {
-    if (!(showVideoEl || showImgFallback || webpStuck) || previewReady) {
+    if (!(showVideoEl || showImgFallback) || previewReady) {
       return;
     }
     const t = setTimeout(() => setMediaFail("all"), PREVIEW_TIMEOUT_MS);
     return () => clearTimeout(t);
-  }, [showVideoEl, showImgFallback, webpStuck, previewReady]);
+  }, [showVideoEl, showImgFallback, previewReady]);
 
   const showDuration = (recording.duration ?? 0) > 0;
   const showFilesize = !!recording.filesize && !showDuration;
@@ -424,7 +452,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     <Link
       href={`/video/${recording.id}`}
       className="group block outline-none focus-visible:ring-1 focus-visible:ring-primary rounded"
-      {...hoverHandlers}
+      {...linkHandlers}
     >
       <div ref={viewportRef} className="flex flex-col gap-2">
         <div className="relative aspect-video overflow-hidden bg-secondary rounded-sm will-change-transform">
@@ -489,48 +517,25 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               available. Static thumbnails (.th.webp) are skipped; animated
               webp (catbox via Worker, pixhost via proxy) and real videos load
               here. */}
-          {showWebpImg && previewProgressive.src && (
+          {showAnyWebpImg && (previewProgressive.src || animatedImageUrl) && (
             <img
-              src={previewProgressive.src}
+              src={previewProgressive.src || animatedImageUrl!}
               alt={recording.username}
               referrerPolicy="no-referrer"
               loading="eager"
-              decoding="sync"
+              decoding="async"
               fetchPriority="high"
-              className="absolute inset-0 w-full h-full object-cover"
-              style={{ opacity: previewReady ? 1 : 0 }}
-              onLoad={() => setPreviewReady(true)}
+              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-150"
+              onLoad={() => {
+                dlog("hoverpreview", "[VideoCard] webp loaded", { id: recording.id, src: previewProgressive.src || animatedImageUrl });
+                setPreviewReady(true);
+              }}
               onError={() => {
+                dlog("hoverpreview", "[VideoCard] webp failed, trying next fallback", { id: recording.id, index: previewIndex });
                 if (previewIndex + 1 < webpFallbacks.length) {
                   setMediaFail("none");
                   setPreviewReady(false);
                   setPreviewIndex((i) => i + 1);
-                } else {
-                  setMediaFail("all");
-                }
-              }}
-            />
-          )}
-          {showCatboxWebpImg && previewProgressive.src && (
-            <img
-              src={previewProgressive.src}
-              alt={recording.username}
-              referrerPolicy="no-referrer"
-              loading="eager"
-              decoding="sync"
-              fetchPriority="high"
-              className="absolute inset-0 w-full h-full object-cover"
-              style={{ opacity: previewReady ? 1 : 0 }}
-              onLoad={() => {
-                dlog("hoverpreview", "[VideoCard] catbox webp loaded", { id: recording.id, src: previewProgressive.src });
-                setPreviewReady(true);
-              }}
-              onError={() => {
-                dlog("hoverpreview", "[VideoCard] catbox webp failed, trying next fallback", { id: recording.id, index: previewIndex });
-                if (previewIndex + 1 < webpFallbacks.length) {
-                  setMediaFail("none");
-                  setPreviewReady(false);
-                  setPreviewIndex(i => i + 1);
                 } else {
                   setMediaFail("all");
                 }

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
-import { getRedis, isRedisConnected } from "../lib/redis.js";
+import { getRedis, isRedisConnected, redisPublish, redisSubscribe, type PubSubSubscription } from "../lib/redis.js";
 import { logger } from "../lib/logger.js";
 
 const CACHE_PREFIX = "api:v2";
@@ -11,21 +11,59 @@ const INFLOW_TIMEOUT_MS = Number.parseInt(process.env.API_CACHE_INFLOW_TIMEOUT ?
 const inflightRedisMap = new Map<string, Promise<unknown>>();
 const inflightReqMap = new Map<string, Promise<void>>();
 
-// ─── Probabilistic Early Revalidation (PER) ───────────────────────
-// When a cache entry is within the last PER_WINDOW_FRACTION of its TTL,
-// each request has a PER_PROBABILITY chance of triggering a background
-// refresh. This spreads revalidation requests over time instead of a
-// thundering herd when the TTL expires.
-const PER_PROBABILITY = Number.parseFloat(process.env.API_CACHE_PER_PROBABILITY ?? "0.1") || 0.1;
-const PER_WINDOW_FRACTION = 0.2; // last 20% of TTL
+// ─── Invalidation epochs ───────────────────────────────────────────
+// Guards against the ghost-refill race: an admin invalidate/purge that runs
+// WHILE a request is already executing from the origin could have its (pre-
+// invalidation) response written back into the cache right after the delete,
+// un-invalidating the delete. Each invalidation stamps a monotonic epoch;
+// writeEntry refuses to persist entries whose createdAt (set when the origin
+// handler called res.json) predates a matching invalidation.
+const MAX_KEY_EPOCHS = 5000;
+let epochCounter = 0;
+let purgeEpoch = 0; // stamped by pattern invalidation and full purges
+const tagInvalidationEpoch = new Map<string, number>();
+const keyInvalidationEpoch = new Map<string, number>();
+
+function stampEpoch(): number {
+  return ++epochCounter;
+}
+
+function wasInvalidatedAfter(cacheKey: string, entry: CacheEntry): boolean {
+  // The response may contain data fetched before the invalidation, so compare
+  // against the epoch captured when the request STARTED (entry.fillEpoch), not
+  // when res.json happened to run. Legacy entries predate the field — without
+  // a start epoch there is nothing safe to compare, so don't block them.
+  const fillEpoch = entry.fillEpoch;
+  if (fillEpoch === undefined) return false;
+  if (purgeEpoch > fillEpoch) return true;
+  const keyEpoch = keyInvalidationEpoch.get(cacheKey);
+  if (keyEpoch !== undefined && fillEpoch < keyEpoch) return true;
+  for (const tag of entry.tags) {
+    const tagEpoch = tagInvalidationEpoch.get(tag);
+    if (tagEpoch !== undefined && fillEpoch < tagEpoch) return true;
+  }
+  return false;
+}
+
+function rememberKeyInvalidation(cacheKey: string): void {
+  keyInvalidationEpoch.set(cacheKey, stampEpoch());
+  if (keyInvalidationEpoch.size > MAX_KEY_EPOCHS) {
+    // Cap growth: evict the OLDEST stamp first (Map iterates in insertion
+    // order). Repeatedly-invalidated keys are re-stamped so they stay; only
+    // long-forgotten keys fall off, and their fills are no longer capable of
+    // racing an invalidation that happened long ago.
+    for (const oldest of keyInvalidationEpoch.keys()) {
+      keyInvalidationEpoch.delete(oldest);
+      break;
+    }
+  }
+}
 
 interface CacheOptions {
   ttlSeconds: number;
   tags?: string[];
   cacheStatuses?: number[];
   staleSeconds?: number;
-  /** Override PER probability for this route (0 to disable). */
-  perProbability?: number;
 }
 
 interface CacheEntry {
@@ -36,6 +74,8 @@ interface CacheEntry {
   expiresAt: number;
   staleUntil: number;
   tags: string[];
+  /** Epoch counter value when the request that produced this entry STARTED. */
+  fillEpoch?: number;
 }
 
 interface MemoryRecord {
@@ -57,7 +97,6 @@ interface CacheMetrics {
   hits: number;
   misses: number;
   staleServes: number;
-  backgroundRefreshes: number;
   inflightCoalesced: number;
   inflightTimeouts: number;
   bytesServed: number;
@@ -68,7 +107,6 @@ const metrics: CacheMetrics = {
   hits: 0,
   misses: 0,
   staleServes: 0,
-  backgroundRefreshes: 0,
   inflightCoalesced: 0,
   inflightTimeouts: 0,
   bytesServed: 0,
@@ -245,17 +283,6 @@ function isFresh(entry: CacheEntry): boolean {
   return Date.now() <= entry.expiresAt;
 }
 
-/**
- * Check if an entry is within the PER window (last fraction of its TTL).
- * Used to probabilistically trigger background refreshes.
- */
-function isInPERWindow(entry: CacheEntry, ttlSeconds: number): boolean {
-  const now = Date.now();
-  const entryAge = now - entry.createdAt;
-  const perWindowStart = ttlSeconds * 1000 * (1 - PER_WINDOW_FRACTION);
-  return entryAge >= perWindowStart && now <= entry.expiresAt;
-}
-
 function clientHasFreshCopy(req: Request, etag: string): boolean {
   const header = req.headers["if-none-match"];
   if (!header) return false;
@@ -265,11 +292,19 @@ function clientHasFreshCopy(req: Request, etag: string): boolean {
 
 // ─── Response Helpers ─────────────────────────────────────────────
 
-function applyCacheHeaders(res: Response, entry: CacheEntry, ttlSeconds: number, staleSeconds: number): void {
+function applyCacheHeaders(res: Response, entry: CacheEntry, staleSeconds: number): void {
+  const remainingSeconds = Math.max(0, Math.ceil((entry.expiresAt - Date.now()) / 1000));
+  // s-maxage must reflect the entry's REMAINING freshness, not the route's
+  // configured TTL. A stale/expired entry is advertised with s-maxage=0 so the
+  // Vercel CDN must revalidate the origin instead of caching a stale 200 as
+  // "fresh" for the whole TTL — that shadow would keep serving stale data at
+  // the edge and bypass the origin's stale-while-revalidate refresh. stale-if-
+  // error is kept so transient origin failures still fall back to stale data.
+  const sMaxage = remainingSeconds > 0 ? remainingSeconds : 0;
   res.set({
-    "Cache-Control": `public, max-age=0, must-revalidate, s-maxage=${ttlSeconds}, stale-while-revalidate=${staleSeconds}, stale-if-error=${staleSeconds}`,
+    "Cache-Control": `public, max-age=0, must-revalidate, s-maxage=${sMaxage}, stale-while-revalidate=${staleSeconds}, stale-if-error=${staleSeconds}`,
     ETag: entry.etag,
-    "X-Cache-TTL": String(Math.max(0, Math.ceil((entry.expiresAt - Date.now()) / 1000))),
+    "X-Cache-TTL": String(remainingSeconds),
   });
 }
 
@@ -277,15 +312,14 @@ function sendEntry(
   req: Request,
   res: Response,
   entry: CacheEntry,
-  source: "HIT" | "STALE" | "REFRESHED" | "PER",
-  ttlSeconds: number,
+  source: "HIT" | "STALE" | "REFRESHED",
   staleSeconds: number,
 ): void {
   // Track metrics for each cache response type
   if (source === "HIT") trackMetric("hits");
   else if (source === "STALE") trackMetric("staleServes");
 
-  applyCacheHeaders(res, entry, ttlSeconds, staleSeconds);
+  applyCacheHeaders(res, entry, staleSeconds);
   res.set("X-Cache", source);
 
   if (!isFresh(entry)) {
@@ -297,7 +331,8 @@ function sendEntry(
     return;
   }
 
-  // Track bytes served for metrics
+  // Track bytes served for metrics (counted once per serialized body — the
+  // same body the client actually receives; a 304 never reaches here).
   const bodyStr = typeof entry.body === "string" ? entry.body : JSON.stringify(entry.body);
   trackMetric("bytesServed", bodyStr.length);
 
@@ -313,7 +348,15 @@ async function readRedis(cacheKey: string): Promise<CacheEntry | null> {
   const raw = await dedupeRedis(`read:${cacheKey}`, () => redis.get(cacheKey));
   if (!raw || typeof raw !== "string") return null;
 
-  const entry = JSON.parse(raw) as CacheEntry;
+  let entry: CacheEntry;
+  try {
+    entry = JSON.parse(raw) as CacheEntry;
+  } catch {
+    // Corrupt/truncated value (e.g. written by a peer that died mid-write).
+    // Remove it so every request stops paying for the failed parse.
+    redis.del(cacheKey).catch(() => {});
+    return null;
+  }
   if (Date.now() > entry.staleUntil) {
     redis.del(cacheKey).catch(() => {});
     return null;
@@ -324,6 +367,10 @@ async function readRedis(cacheKey: string): Promise<CacheEntry | null> {
 }
 
 async function writeEntry(cacheKey: string, entry: CacheEntry, ttlSeconds: number, staleSeconds: number): Promise<void> {
+  // Drop the write if an invalidation landed after this response was produced —
+  // writing it back would resurrect data the admin just deleted (ghost refill).
+  if (wasInvalidatedAfter(cacheKey, entry)) return;
+
   setMemory(cacheKey, entry);
 
   const redis = getRedis();
@@ -364,26 +411,19 @@ async function readAny(cacheKey: string): Promise<CacheEntry | null> {
 function shouldBypass(req: Request): boolean {
   if (req.method !== "GET" && req.method !== "HEAD") return true;
   const cacheControl = String(req.headers["cache-control"] ?? "");
-  return cacheControl.includes("no-store");
-}
+  if (cacheControl.includes("no-store")) return true;
 
-// ─── Probabilistic Early Revalidation ─────────────────────────────
+  // Requests that carry a session identity must never be served from (or
+  // written to) the shared cache: routes like /api/comments and /api/reactions
+  // embed per-session state (liked, user_reaction) in their bodies. A cached
+  // copy would leak one session's reactions to another. session_id is also
+  // deliberately NOT a cacheable query param, so these requests always hit the
+  // origin with no-store while session-less (bot/hotlink) requests still get
+  // the public cached copy with null user state.
+  const sessionId = String((req.query as Record<string, unknown> | undefined)?.session_id ?? "");
+  if (sessionId.length > 0) return true;
 
-/**
- * Decide whether to trigger a background refresh for a stale-but-valid entry.
- * Returns true if this request should trigger PER.
- *
- * Uses a two-layer probability check:
- * 1. Must be within the PER window (last 20% of TTL)
- * 2. Random roll against the configured probability
- *
- * This spreads refresh requests over time, preventing a thundering herd
- * when a popular cache entry expires.
- */
-function shouldTriggerPER(entry: CacheEntry, ttlSeconds: number, probability: number): boolean {
-  if (probability <= 0) return false;
-  if (!isInPERWindow(entry, ttlSeconds)) return false;
-  return Math.random() < probability;
+  return false;
 }
 
 // ─── Request Coalescing with Timeout ──────────────────────────────
@@ -426,7 +466,6 @@ export function cache(options: number | CacheOptions) {
   const staleSeconds = Math.max(0, opts.staleSeconds ?? DEFAULT_STALE_SECONDS);
   const tags = opts.tags ?? [];
   const cacheStatuses = opts.cacheStatuses ?? [200];
-  const perProbability = opts.perProbability ?? PER_PROBABILITY;
 
   return async (req: Request, res: Response, next: NextFunction) => {
     if (shouldBypass(req)) {
@@ -440,19 +479,7 @@ export function cache(options: number | CacheOptions) {
 
     // ── Fresh HIT ───────────────────────────────────────────────
     if (existing && isFresh(existing)) {
-      // Probabilistic Early Revalidation: within the last PER_WINDOW_FRACTION
-      // of the TTL, a random fraction of requests mark the entry for a
-      // background refresh. Express can't re-invoke the route handler from
-      // here, so the refresh happens naturally on the NEXT request that lands
-      // in the stale window (the stale-while-revalidate path below) — the
-      // marker only spreads the perceived refresh load over time by having
-      // this request NOT be the one that pays for it. There is no separate
-      // background worker, so there is nothing to spawn here.
-      if (shouldTriggerPER(existing, ttlSeconds, perProbability)) {
-        trackMetric("backgroundRefreshes");
-      }
-
-      sendEntry(req, res, existing, "HIT", ttlSeconds, staleSeconds);
+      sendEntry(req, res, existing, "HIT", staleSeconds);
       return;
     }
 
@@ -464,7 +491,7 @@ export function cache(options: number | CacheOptions) {
       // Serve stale immediately if available
       // (trackMetric("staleServes") is called inside sendEntry)
       if (existing) {
-        sendEntry(req, res, existing, "STALE", ttlSeconds, staleSeconds);
+        sendEntry(req, res, existing, "STALE", staleSeconds);
         return;
       }
 
@@ -474,7 +501,7 @@ export function cache(options: number | CacheOptions) {
 
       const refreshed = await readAny(cacheKey);
       if (refreshed) {
-        sendEntry(req, res, refreshed, isFresh(refreshed) ? "REFRESHED" : "STALE", ttlSeconds, staleSeconds);
+        sendEntry(req, res, refreshed, isFresh(refreshed) ? "REFRESHED" : "STALE", staleSeconds);
         return;
       }
 
@@ -488,6 +515,10 @@ export function cache(options: number | CacheOptions) {
       resolveInflight = resolve;
     });
     inflightReqMap.set(inflightKey, inflightPromise);
+    // Stamp the epoch at request START: if an invalidation lands while this
+    // handler is running, the response it produces may be built from data that
+    // predates the invalidation — writeEntry uses fillEpoch to refuse it.
+    const requestEpoch = epochCounter;
 
     const originalJson = res.json.bind(res);
     res.json = function (body: unknown) {
@@ -504,9 +535,10 @@ export function cache(options: number | CacheOptions) {
           expiresAt: now + ttlSeconds * 1000,
           staleUntil: now + (ttlSeconds + staleSeconds) * 1000,
           tags,
+          fillEpoch: requestEpoch,
         };
 
-        applyCacheHeaders(res, entryForResponse, ttlSeconds, staleSeconds);
+        applyCacheHeaders(res, entryForResponse, staleSeconds);
         res.set("X-Cache", "MISS");
 
         writeEntry(cacheKey, entryForResponse, ttlSeconds, staleSeconds).catch((err) =>
@@ -559,11 +591,85 @@ export function cache(options: number | CacheOptions) {
 
 // ─── Invalidation ─────────────────────────────────────────────────
 
-export async function invalidateTags(tags: string[]): Promise<void> {
+// Cross-instance invalidation bus. Dedicated response caches live both in this
+// process's memory AND in shared Redis; a write handled by instance A (e.g. a
+// POST that bumps a recording) clears A's memory cache and deletes the Redis
+// keys — but the OTHER still-warm instances keep serving their own stale memory
+// copies until they expire. Publishing the invalidation lets every live
+// instance drop its local copy immediately, so the shared Redis cache (and its
+// epoch-based ghost-refill guard) becomes the single source of truth.
+const INVALIDATION_CHANNEL = "chuglii:cache:invalidate:v1";
+
+type InvalidationMessage =
+  | { type: "tags"; tags: string[] }
+  | { type: "key"; key: string }
+  | { type: "pattern"; pattern: string }
+  | { type: "purge" };
+
+function publishInvalidation(message: InvalidationMessage): void {
+  redisPublish(INVALIDATION_CHANNEL, JSON.stringify(message));
+}
+
+let _invalidationSub: PubSubSubscription | null = null;
+
+/**
+ * Start listening for invalidation broadcasts from other instances. Subscribers
+ * apply the LOCAL half of an invalidation only (memory + the shared Redis
+ * delete); the origin instance already did that synchronously, and the CDN
+ * purge is only ever performed by the originator. Best-effort: when no Redis or
+ * no durable subscription is possible (serverless), it quietly reports false.
+ */
+export function initInvalidationPubSub(): boolean {
+  if (_invalidationSub?.active) return true;
+  const sub = redisSubscribe(INVALIDATION_CHANNEL, (raw: string) => {
+    let msg: InvalidationMessage;
+    try {
+      msg = JSON.parse(raw) as InvalidationMessage;
+    } catch {
+      return;
+    }
+    switch (msg.type) {
+      case "tags":
+        invalidateTagsLocal(msg.tags).catch((err) =>
+          logger.error({ err, tags: msg.tags }, "Pub/Sub tag invalidation failed"));
+        break;
+      case "key":
+        invalidateKeyLocal(msg.key).catch((err) =>
+          logger.error({ err, key: msg.key }, "Pub/Sub key invalidation failed"));
+        break;
+      case "pattern":
+        invalidatePatternLocal(msg.pattern).catch((err) =>
+          logger.error({ err, pattern: msg.pattern }, "Pub/Sub pattern invalidation failed"));
+        break;
+      case "purge":
+        purgeLocalCache().catch((err) =>
+          logger.error({ err }, "Pub/Sub cache purge failed"));
+        break;
+      default:
+        break;
+    }
+  });
+  _invalidationSub = sub;
+  if (sub.active) {
+    logger.info("Cache invalidation pub/sub connected");
+  } else {
+    logger.warn("Cache invalidation pub/sub unavailable (Redis down or serverless)");
+  }
+  return sub.active;
+}
+
+/**
+ * Local-only tag invalidation (memory + shared Redis keys). Exposed separately
+ * from `invalidateTags` so the pub/sub handler can apply the shared half of an
+ * invalidation a PEER initiated without re-broadcasting (which would loop).
+ */
+async function invalidateTagsLocal(tags: string[]): Promise<void> {
   const redis = getRedis();
   const keysToDelete = new Set<string>();
+  const epoch = stampEpoch();
 
   for (const tag of tags) {
+    tagInvalidationEpoch.set(tag, epoch);
     const memoryKeys = memoryTags.get(tag);
     for (const key of memoryKeys ?? []) keysToDelete.add(key);
     memoryTags.delete(tag);
@@ -586,16 +692,28 @@ export async function invalidateTags(tags: string[]): Promise<void> {
   logger.info({ tags, keysDeleted: keysToDelete.size }, "Cache invalidated by tag");
 }
 
-export async function invalidateKey(cacheKey: string): Promise<void> {
+export async function invalidateTags(tags: string[]): Promise<void> {
+  await invalidateTagsLocal(tags);
+  if (tags.length > 0) publishInvalidation({ type: "tags", tags });
+}
+
+/** Local-only key invalidation (memory + shared Redis). */
+async function invalidateKeyLocal(cacheKey: string): Promise<void> {
   const normalizedKey = cacheKey.startsWith(CACHE_PREFIX)
     ? cacheKey
     : `${CACHE_PREFIX}:${normalizeOriginalUrl(cacheKey)}`;
 
+  rememberKeyInvalidation(normalizedKey);
   deleteMemory(normalizedKey);
 
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return;
   await redis.del(normalizedKey);
+}
+
+export async function invalidateKey(cacheKey: string): Promise<void> {
+  await invalidateKeyLocal(cacheKey);
+  publishInvalidation({ type: "key", key: cacheKey });
 }
 
 function patternCandidates(pattern: string): string[] {
@@ -610,10 +728,15 @@ function wildcardToRegExp(pattern: string): RegExp {
   return new RegExp(`^${escaped}$`);
 }
 
-export async function invalidatePattern(pattern: string): Promise<number> {
+/** Local-only pattern invalidation (memory + shared Redis SCAN/DEL). */
+async function invalidatePatternLocal(pattern: string): Promise<number> {
   const candidates = patternCandidates(pattern);
   const regexes = candidates.map(wildcardToRegExp);
   const keysToDelete = new Set<string>();
+  const epoch = stampEpoch();
+
+  // A pattern invalidation is broad by nature: suppress any fill that raced it.
+  if (purgeEpoch < epoch) purgeEpoch = epoch;
 
   for (const key of memoryCache.keys()) {
     if (regexes.some((regex) => regex.test(key))) keysToDelete.add(key);
@@ -640,6 +763,12 @@ export async function invalidatePattern(pattern: string): Promise<number> {
   return keysToDelete.size;
 }
 
+export async function invalidatePattern(pattern: string): Promise<number> {
+  const count = await invalidatePatternLocal(pattern);
+  publishInvalidation({ type: "pattern", pattern });
+  return count;
+}
+
 export function invalidateOnSuccess(tags: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     const originalJson = res.json.bind(res);
@@ -658,16 +787,40 @@ export function invalidateOnSuccess(tags: string[]) {
   };
 }
 
-export async function purgeAllCache(): Promise<{ deletedKeys: number; invalidatedTags: number }> {
+// ─── Full purge (memory + Redis + CDN) ─────────────────────────────
+// The Redis scan covers every keyspace this server owns:
+//   api:v2:* / tag:v2:*   — the response cache and its tag indexes
+//   api:* / tag:*          — legacy keyspaces written by older deploys
+//   media:*                — media-proxy image/transform/DNS/failure blobs
+//   views:*                — buffered view counts (pending/base/change-log)
+//   hot:*                  — trending ZSETs and their meta hashes
+//   sugg:*                 — the search suggestion snapshot index
+
+async function purgeLocalCache(): Promise<{ deletedKeys: number; invalidatedTags: number }> {
   const redis = getRedis();
   const invalidatedTags = new Set(memoryTags.keys());
   let deletedKeys = memoryCache.size;
+
+  // Stamp BEFORE the (async) scan/delete work: any fill that wrote while the
+  // purge was in flight must be refused by the writeEntry guard.
+  purgeEpoch = stampEpoch();
+  tagInvalidationEpoch.clear();
+  keyInvalidationEpoch.clear();
 
   memoryCache.clear();
   memoryTags.clear();
 
   if (redis && isRedisConnected()) {
-    for (const match of [`${CACHE_PREFIX}:*`, `${TAG_PREFIX}:*`, "api:*", "tag:*"]) {
+    for (const match of [
+      `${CACHE_PREFIX}:*`,
+      `${TAG_PREFIX}:*`,
+      "api:*",
+      "tag:*",
+      "media:*",
+      "views:*",
+      "hot:*",
+      "sugg:*",
+    ]) {
       let cursor = "0";
       do {
         const [nextCursor, keys] = await redis.scan(cursor, "MATCH", match, "COUNT", 200);
@@ -683,8 +836,61 @@ export async function purgeAllCache(): Promise<{ deletedKeys: number; invalidate
     }
   }
 
-  logger.info({ deletedKeys, invalidatedTags: invalidatedTags.size }, "Full cache purge completed");
+  logger.info({ deletedKeys, invalidatedTags: invalidatedTags.size }, "Local cache purge completed");
   return { deletedKeys, invalidatedTags: invalidatedTags.size };
+}
+
+export async function purgeAllCache(): Promise<{
+  deletedKeys: number;
+  invalidatedTags: number;
+  cdnPurged: boolean;
+}> {
+  const local = await purgeLocalCache();
+
+  // Memory + Redis are gone, but the Vercel CDN still holds copies keyed by
+  // the s-maxage advertised in cached responses. Best-effort purge it so an
+  // admin purge actually takes effect at the edge; fails open (no token or no
+  // project id configured → simply reports cdnPurged: false). Only the
+  // originating instance pokes the CDN — peers just clear their local caches.
+  const cdnPurged = await purgeVercelCdn();
+
+  publishInvalidation({ type: "purge" });
+
+  logger.info(
+    { deletedKeys: local.deletedKeys, invalidatedTags: local.invalidatedTags, cdnPurged },
+    "Full cache purge completed",
+  );
+  return { ...local, cdnPurged };
+}
+
+/**
+ * Best-effort purge of the Vercel CDN edge cache for the whole project.
+ * Requires VERCEL_TOKEN (with the project's scope) and VERCEL_PROJECT_ID in
+ * the function environment. Returns false (never throws) when not configured
+ * or the API call fails.
+ */
+export async function purgeVercelCdn(): Promise<boolean> {
+  const token = process.env.VERCEL_TOKEN ?? "";
+  const projectId = process.env.VERCEL_PROJECT_ID ?? "";
+  if (!token || !projectId) return false;
+  try {
+    const res = await fetch(
+      `https://api.vercel.com/v1/projects/${encodeURIComponent(projectId)}/cache/purge`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ type: "all" }),
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    return res.ok;
+  } catch (err: unknown) {
+    logger.warn({ err }, "Vercel CDN purge failed (best-effort)");
+    return false;
+  }
 }
 
 // ─── Stats & Metrics ──────────────────────────────────────────────
@@ -707,8 +913,8 @@ export function getCacheStats(): {
 }
 
 /**
- * Get detailed cache performance metrics including hit rates,
- * background refresh counts, and inflight coalescing stats.
+ * Get detailed cache performance metrics including hit rates and
+ * inflight coalescing stats.
  */
 export function getCacheMetrics(): CacheMetrics & {
   hitRate: number;
@@ -733,7 +939,6 @@ export function resetCacheMetrics(): void {
   metrics.hits = 0;
   metrics.misses = 0;
   metrics.staleServes = 0;
-  metrics.backgroundRefreshes = 0;
   metrics.inflightCoalesced = 0;
   metrics.inflightTimeouts = 0;
   metrics.bytesServed = 0;

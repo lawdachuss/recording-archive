@@ -1,17 +1,18 @@
 /**
- * catalog-warmer.ts — bounded, connection-aware catalog sprite preloader.
+ * catalog-warmer.ts — bounded, connection-aware catalog media preloader.
  *
- * After first paint, warms hover sprites for the catalog's hot set (the first
- * couple of pages) so scrolling and repeat visits are instant. Deliberately
- * BOUNDED — the old version warmed ~1000 sprites AND eagerly downloaded
- * ~1000 full preview videos a few seconds after page load, saturating the
- * connection and slowing the grid for minutes.
+ * After first paint, warms the catalog's hot set (the first couple of pages)
+ * so scrolling and repeat visits are instant. Deliberately BOUNDED — the old
+ * version warmed ~1000 sprites AND eagerly downloaded ~1000 full preview
+ * videos a few seconds after page load, saturating the connection and slowing
+ * the grid for minutes.
  *
- * - Only sprites are warmed. Preview clips/videos are multi-MB files; warming
- *   thousands of them starved the visible thumbnails. Previews load on
- *   demand: cards near the viewport preload their own preview via
- *   useHoverPreview, and the global cap in preload-preview.ts bounds those
- *   speculative downloads to a few concurrent at a time.
+ * - Sprites, thumbnails, and ANIMATED previews are warmed — all small files
+ *   that make grid paint + hover instant-on-repeat. Real VIDEO previews
+ *   (.mp4/.webm, multi-MB) are NOT warmed; warming hundreds saturates the
+ *   connection. Previews load on demand: cards near the viewport preload
+ *   their own preview via useHoverPreview, and the global cap in
+ *   preload-preview.ts bounds those speculative downloads.
  * - Only MAX_PAGES × PAGE_SIZE recordings are warmed (100) — the catalog's
  *   first page, i.e. the hot set. Deeper recordings warm on demand when
  *   scrolled to.
@@ -20,22 +21,16 @@
  *   user's first few scrolls.
  * - Everything routes through preload-sprite's single paced queue, so outbound
  *   media requests have exactly one coordination point.
- *
- * Thumbnails are intentionally NOT warmed here: the grid's <img> fetches
- * visible thumbnails itself, and OptimizedImage persists them to the IDB blob
- * cache on load. Preloading them again would just multiply requests.
  */
 
 import { listRecordings } from "@workspace/api-client-react";
-import { proxySpriteUrl } from "@/lib/proxy-url";
-import { preloadImage, isReachablePreviewUrl } from "@/lib/preload-sprite";
+import { preloadRecordingMedia } from "@/lib/preload-sprite";
 import { evictIfNeeded } from "@/lib/image-cache";
 import { isConnectionConstrained } from "@/lib/connection";
 
 // ─── Config ────────────────────────────────────────────────────────────────
 const WARM_MARKER = "catalog.warmUntil";
 const WARM_REINTERVAL_MS = 6 * 60 * 60 * 1000; // re-warm at most every 6h
-const WARM_DELAY_MS = 1_500; // wait for first paint before warming
 const PAGE_SIZE = 100;
 const MAX_PAGES = 1; // 100 recordings — the catalog's first page only
 const PARALLEL_FETCHES = 3; // fetch 3 pages concurrently
@@ -129,9 +124,23 @@ export async function startCatalogWarmup(): Promise<void> {
     startedAt: Date.now(),
   });
 
-  // Wait for first paint / idle before hammering the network
-  await new Promise((r) => setTimeout(r, WARM_DELAY_MS));
+  // The outer scheduleIdleWork in App.tsx already waits ~20 s after first
+  // paint before calling us. No additional delay is needed here — it only
+  // added latency before the warm started. Individual inter-batch pauses
+  // below use requestIdleCallback so they yield to user input naturally.
   if (warmupAbort) return;
+
+  // Small helper: yield to the browser for one idle frame, or fall back to a
+  // 200 ms timeout on browsers without requestIdleCallback (Safari ≤ 16).
+  function yieldToIdle(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      if (typeof window.requestIdleCallback === "function") {
+        window.requestIdleCallback(() => resolve(), { timeout: 500 });
+      } else {
+        window.setTimeout(resolve, 200);
+      }
+    });
+  }
 
   let currentPage = 1;
 
@@ -155,25 +164,19 @@ export async function startCatalogWarmup(): Promise<void> {
       pagesLoaded += 1;
       recordingsProcessed += data.length;
 
+      // Warm all small card media for this batch: thumbnails, sprites, and
+      // animated (.webp / .mp4_preview) previews. Everything routes through
+      // preloadRecordingMedia → the same single paced queue used by the page
+      // warmer and hover preloads, which dedups URLs per session and keeps the
+      // host semaphores + concurrency caps — so warming the hot set can never
+      // burst any upstream. Real video previews are deliberately excluded
+      // (multi-MB) — those stay on-demand at hover time.
       for (const rec of data) {
-        // NOTE: thumbnails are intentionally NOT preloaded here. The grid's
-        // <img> already fetches each visible thumbnail, and OptimizedImage
-        // persists it to the IDB blob cache on load. Preloading thumbnails a
-        // second/third time would just multiply slow catbox requests on the
-        // current page. We only warm hover sprites that aren't on screen yet
-        // — that's pure prefetch with no competition.
-        if (rec.sprite_url && isReachablePreviewUrl(rec.sprite_url)) {
-          // Sprites get priority 2. Skip throttled hosts (catbox) so their
-          // limited connection budget is reserved for the visible thumbnails
-          // the user is actually looking at — hover sprites can load on demand.
-          preloadImage(proxySpriteUrl(rec.sprite_url), { priority: 2 });
-          spritesLoaded += 1;
-        }
-        // Previews are deliberately NOT warmed here — they are multi-MB files
-        // and warming hundreds of them saturated the connection. Near-viewport
-        // cards preload their own preview via useHoverPreview (capped to a few
-        // concurrent downloads by preload-preview.ts).
+        if (rec.sprite_url) spritesLoaded += 1;
+        if (rec.thumbnail_url) thumbnailsLoaded += 1;
+        if (rec.preview_url) previewsLoaded += 1;
       }
+      preloadRecordingMedia(data, {});
     }
 
     updateProgress({
@@ -188,8 +191,10 @@ export async function startCatalogWarmup(): Promise<void> {
 
     currentPage += batchSize;
     if (currentPage <= MAX_PAGES && !warmupAbort) {
-      // Small gap so we don't fetch the whole catalog back-to-back.
-      await new Promise((r) => setTimeout(r, 200));
+      // Yield to the browser between batches so we never block user input
+      // (scrolling, typing, hover events). Falls back to 200ms on browsers
+      // without requestIdleCallback (old Safari).
+      await yieldToIdle();
     }
   }
 
@@ -203,4 +208,14 @@ export async function startCatalogWarmup(): Promise<void> {
   }
 
   if (!warmupAbort) updateProgress({ phase: "done" });
+}
+
+/**
+ * Reset the warm marker so the next call to startCatalogWarmup will re-warm
+ * regardless of the re-warm interval. Useful for testing and admin tooling.
+ */
+export function resetWarmMarker(): void {
+  try {
+    localStorage.removeItem(WARM_MARKER);
+  } catch { /* ignore */ }
 }

@@ -57,6 +57,17 @@ export default defineConfig(async () => ({
       cache: false,
       output: {
         manualChunks(id) {
+          // Monorepo workspace code (API client + zod schemas) — shared by every
+          // page that talks to the API, so it gets its own stable long-cacheable
+          // chunk instead of being duplicated into each lazy route chunk.
+          if (
+            id.includes("/lib/api-client-react/") ||
+            id.includes("/lib/api-client/") ||
+            id.includes("/lib/api-zod/") ||
+            id.includes("/lib/api-spec/")
+          ) {
+            return "workspace";
+          }
           if (
             id.includes("/src/components/Layout") ||
             id.includes("/src/components/VideoCard") ||
@@ -64,10 +75,13 @@ export default defineConfig(async () => ({
           ) {
             return "shared";
           }
+          // React runtime + router essentials go in the vendor chunk so the
+          // entry bundle stays tiny and every lazy route only pays cache hits.
           if (
             id.includes("/node_modules/react/") ||
             id.includes("/node_modules/react-dom/") ||
-            id.includes("/node_modules/wouter/")
+            id.includes("/node_modules/wouter/") ||
+            id.includes("/node_modules/scheduler/")
           ) {
             return "vendor";
           }

@@ -1,54 +1,20 @@
 /**
- * cache.ts — three-tier edge-aware storage cache
+ * cache.ts — multi-tier resilient client cache (Memory LRU -> localStorage -> IndexedDB)
  *
- * Tier 0 (fastest): Edge Cache API (optional) — the Redis-backed
- * /api/cache endpoint on the API server, at the URL in VITE_EDGE_CACHE_URL
- * (e.g. https://chuglii.in/api/cache). DISABLED by default: without a
- * deployed endpoint, calling the URL would 404 on every cacheGet (noisy
- * console + wasted request). Set VITE_EDGE_CACHE_URL at build time (Vercel
- * env var) to enable cross-device shared caching.
- * Tier 1: localStorage — small JSON payloads (< 100KB serialized).
- * Tier 2: IndexedDB — large blobs, images, big response bodies.
+ * Tier 0 (sub-millisecond): In-memory LRU Map (instant synchronous hits, 0 I/O)
+ * Tier 1: localStorage (< 100KB, fast serialized JSON)
+ * Tier 2: IndexedDB (large records, background writes, multi-MB capacity)
  *
- * All entries have a TTL. Expired entries are lazily evicted on read.
- * The edge cache is best-effort: if it fails, local tiers still work.
+ * Designed to handle intense traffic gracefully:
+ *  - High concurrency deduplication (coalescing simultaneous gets to single IDB read)
+ *  - Idle-prioritized background sweeps (never blocks animations or user clicks)
+ *  - Fast in-memory hit path eliminates IDB transaction overhead entirely
  */
 
 const CLEANUP_INTERVAL_MS = 60_000;
-const LS_SIZE_WARN = 100 * 1024; // warn if serialized payload exceeds 100KB
+const LS_SIZE_WARN = 100 * 1024; // 100KB limit for localStorage
 
-const EDGE_CACHE_URL =
-  (import.meta.env.VITE_EDGE_CACHE_URL as string | undefined)?.trim() || null;
-
-// ─── IndexedDB setup ──────────────────────────────────────────────
-
-const DB_NAME = "vault-cache";
-const DB_VERSION = 1;
-const STORE_NAME = "cache-store";
-
-let _idb: IDBDatabase | null = null;
-
-function openDB(): Promise<IDBDatabase> {
-  if (_idb) return Promise.resolve(_idb);
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "key" });
-      }
-    };
-    req.onsuccess = () => {
-      const db = req.result;
-      _idb = db;
-      db.onclose = () => { _idb = null; };
-      resolve(db);
-    };
-    req.onerror = () => reject(req.error);
-  });
-}
-
-// ─── Entry shape ──────────────────────────────────────────────────
+// ─── Tier 0: In-Memory High-Speed LRU Cache ─────────────────────────
 
 interface CacheEntry<T> {
   key: string;
@@ -56,76 +22,88 @@ interface CacheEntry<T> {
   expiresAt: number;
 }
 
-// ─── Edge cache tier ──────────────────────────────────────────────
+const MEMORY_CACHE_MAX = 500;
+const memoryCache = new Map<string, CacheEntry<unknown>>();
 
-interface EdgeCacheResult {
-  found: boolean;
-  data: unknown;
-  ttl: number | null;
-}
-
-// The edge tier is best-effort and must NEVER delay or block the local tiers:
-// a hung edge call (slow CDN, cold function, flaky tunnel) aborts after this
-// window and the read falls through to localStorage/IDB as if the tier missed.
-const EDGE_FETCH_TIMEOUT_MS = 4000;
-
-async function edgeFetch(url: string, init: RequestInit = {}): Promise<Response | null> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), EDGE_FETCH_TIMEOUT_MS);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
+function memGet<T>(key: string): T | undefined {
+  const entry = memoryCache.get(key) as CacheEntry<T> | undefined;
+  if (!entry) return undefined;
+  if (Date.now() > entry.expiresAt) {
+    memoryCache.delete(key);
+    return undefined;
   }
+  // Refresh LRU order
+  memoryCache.delete(key);
+  memoryCache.set(key, entry as CacheEntry<unknown>);
+  return entry.data;
 }
 
-async function edgeGet(key: string): Promise<EdgeCacheResult | null> {
-  if (!EDGE_CACHE_URL) return null;
-  const res = await edgeFetch(`${EDGE_CACHE_URL}?key=${encodeURIComponent(key)}`, {
-    method: "GET",
+function memSet<T>(key: string, data: T, ttlMs: number): void {
+  if (memoryCache.size >= MEMORY_CACHE_MAX) {
+    const oldestKey = memoryCache.keys().next().value;
+    if (oldestKey !== undefined) memoryCache.delete(oldestKey);
+  }
+  memoryCache.set(key, { key, data, expiresAt: Date.now() + ttlMs } as CacheEntry<unknown>);
+}
+
+function memDelete(key: string): void {
+  memoryCache.delete(key);
+}
+
+// In-flight read deduplication: concurrent reads for the same key await one promise
+const inFlightGets = new Map<string, Promise<unknown>>();
+
+// ─── IndexedDB setup ──────────────────────────────────────────────
+
+const DB_NAME = "vault-cache";
+const DB_VERSION = 2;
+const STORE_NAME = "cache-store";
+
+let _idb: IDBDatabase | null = null;
+let _idbOpenPromise: Promise<IDBDatabase> | null = null;
+
+function openDB(): Promise<IDBDatabase> {
+  if (_idb) return Promise.resolve(_idb);
+  if (_idbOpenPromise) return _idbOpenPromise;
+
+  _idbOpenPromise = new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") {
+      return reject(new Error("IndexedDB not supported"));
+    }
+
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (event) => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        const store = db.createObjectStore(STORE_NAME, { keyPath: "key" });
+        store.createIndex("expiresAt", "expiresAt", { unique: false });
+      } else {
+        const tx = req.transaction;
+        if (tx) {
+          const store = tx.objectStore(STORE_NAME);
+          if (!store.indexNames.contains("expiresAt")) {
+            try { store.createIndex("expiresAt", "expiresAt", { unique: false }); } catch {}
+          }
+        }
+      }
+    };
+    req.onsuccess = () => {
+      const db = req.result;
+      _idb = db;
+      _idbOpenPromise = null;
+      db.onclose = () => {
+        _idb = null;
+        _idbOpenPromise = null;
+      };
+      resolve(db);
+    };
+    req.onerror = () => {
+      _idbOpenPromise = null;
+      reject(req.error);
+    };
   });
-  if (!res?.ok) return null;
-  try {
-    const json = (await res.json()) as { exists?: boolean; value?: unknown; ttl?: number | null };
-    if (!json.exists || json.value === undefined || json.value === null) return null;
-    return { found: true, data: json.value, ttl: json.ttl ?? null };
-  } catch {
-    return null;
-  }
-}
 
-async function edgeSet(key: string, value: unknown, ttlMs?: number): Promise<boolean> {
-  if (!EDGE_CACHE_URL) return false;
-  const body: Record<string, unknown> = { key, value };
-  if (ttlMs) body.ttl = Math.max(1, Math.round(ttlMs / 1000));
-  const res = await edgeFetch(EDGE_CACHE_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res?.ok) return false;
-  try {
-    const json = (await res.json()) as { success?: boolean };
-    return !!json.success;
-  } catch {
-    return false;
-  }
-}
-
-async function edgeDelete(key: string): Promise<boolean> {
-  if (!EDGE_CACHE_URL) return false;
-  const res = await edgeFetch(`${EDGE_CACHE_URL}?key=${encodeURIComponent(key)}`, {
-    method: "DELETE",
-  });
-  if (!res?.ok) return false;
-  try {
-    const json = (await res.json()) as { success?: boolean };
-    return !!json.success;
-  } catch {
-    return false;
-  }
+  return _idbOpenPromise;
 }
 
 // ─── localStorage tier ────────────────────────────────────────────
@@ -147,9 +125,9 @@ function lsGet<T>(key: string): T | undefined {
 
 function lsSet<T>(key: string, data: T, ttlMs: number): boolean {
   const entry: CacheEntry<T> = { key, data, expiresAt: Date.now() + ttlMs };
-  const raw = JSON.stringify(entry);
-  if (raw.length > LS_SIZE_WARN) return false; // too big for LS
   try {
+    const raw = JSON.stringify(entry);
+    if (raw.length > LS_SIZE_WARN) return false;
     localStorage.setItem(`vc:${key}`, raw);
     return true;
   } catch {
@@ -157,8 +135,10 @@ function lsSet<T>(key: string, data: T, ttlMs: number): boolean {
   }
 }
 
-function lsDelete(key: string) {
-  try { localStorage.removeItem(`vc:${key}`); } catch {}
+function lsDelete(key: string): void {
+  try {
+    localStorage.removeItem(`vc:${key}`);
+  } catch {}
 }
 
 // ─── IndexedDB tier ───────────────────────────────────────────────
@@ -173,7 +153,7 @@ async function idbGet<T>(key: string): Promise<T | undefined> {
         const entry = req.result as CacheEntry<T> | undefined;
         if (!entry) return resolve(undefined);
         if (Date.now() > entry.expiresAt) {
-          idbDelete(key);
+          idbDelete(key).catch(() => {});
           return resolve(undefined);
         }
         resolve(entry.data);
@@ -222,84 +202,136 @@ async function idbClear(): Promise<void> {
   } catch {}
 }
 
-// ─── Periodic cleanup ─────────────────────────────────────────────
+// ─── Non-Blocking Periodic Cleanup ────────────────────────────────
 
 let cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
-function startCleanup() {
-  if (cleanupTimer) return;
-  cleanupTimer = setInterval(async () => {
-    // localStorage sweep
-    try {
-      const toDelete: string[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k?.startsWith("vc:")) {
-          try {
-            const raw = localStorage.getItem(k);
-            if (raw) {
-              const entry = JSON.parse(raw);
-              if (Date.now() > entry.expiresAt) toDelete.push(k);
-            }
-          } catch { toDelete.push(k); }
+function performIdleCleanup(): void {
+  // localStorage sweep
+  try {
+    const toDelete: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith("vc:")) {
+        try {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            const entry = JSON.parse(raw);
+            if (Date.now() > entry.expiresAt) toDelete.push(k);
+          }
+        } catch {
+          toDelete.push(k);
         }
       }
-      toDelete.forEach(k => localStorage.removeItem(k));
-    } catch {}
+    }
+    toDelete.forEach((k) => localStorage.removeItem(k));
+  } catch {}
 
-    // IndexedDB sweep
-    try {
-      const db = await openDB();
-      await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, "readwrite");
-        const store = tx.objectStore(STORE_NAME);
+  // IndexedDB sweep using index for fast range query
+  try {
+    openDB().then((db) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      const now = Date.now();
+
+      if (store.indexNames.contains("expiresAt")) {
+        const index = store.index("expiresAt");
+        const range = IDBKeyRange.upperBound(now);
+        const req = index.openCursor(range);
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (cursor) {
+            cursor.delete();
+            cursor.continue();
+          }
+        };
+      } else {
         const req = store.openCursor();
         req.onsuccess = () => {
           const cursor = req.result;
-          if (!cursor) return resolve();
+          if (!cursor) return;
           const entry = cursor.value as CacheEntry<unknown>;
-          if (Date.now() > entry.expiresAt) cursor.delete();
+          if (now > entry.expiresAt) cursor.delete();
           cursor.continue();
         };
-        req.onerror = () => reject(req.error);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
-    } catch {}
+      }
+    }).catch(() => {});
+  } catch {}
+}
+
+function startCleanup(): void {
+  if (cleanupTimer) return;
+  cleanupTimer = setInterval(() => {
+    if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(performIdleCleanup, { timeout: 2000 });
+    } else {
+      setTimeout(performIdleCleanup, 0);
+    }
   }, CLEANUP_INTERVAL_MS);
 }
 
-export function initCache() {
+export function initCache(): void {
   startCleanup();
 }
 
 // ─── Public API ───────────────────────────────────────────────────
 
 export async function cacheGet<T>(key: string): Promise<T | undefined> {
-  // Try edge cache first (cross-device shared cache)
-  const edge = await edgeGet(key);
-  if (edge?.found) {
-    // Re-warm local tiers so next read is instant
-    const data = edge.data as T;
-    lsSet(key, data, CACHE_TTL.SHORT);
-    return data;
-  }
-  // Try localStorage (fastest local)
+  // Tier 0: In-memory LRU (ultra-fast, 0 I/O)
+  const mem = memGet<T>(key);
+  if (mem !== undefined) return mem;
+
+  // Tier 1: localStorage (fast synchronous)
   const ls = lsGet<T>(key);
-  if (ls !== undefined) return ls;
-  // Fallback to IndexedDB
-  return idbGet<T>(key);
+  if (ls !== undefined) {
+    memSet(key, ls, 5 * 60_000); // warm memory tier
+    return ls;
+  }
+
+  // Tier 2: IndexedDB with request coalescing to prevent duplicate concurrent queries
+  if (inFlightGets.has(key)) {
+    return inFlightGets.get(key) as Promise<T | undefined>;
+  }
+
+  const fetchPromise = idbGet<T>(key).then((val) => {
+    if (val !== undefined) {
+      memSet(key, val, 5 * 60_000); // warm memory tier
+    }
+    return val;
+  }).finally(() => {
+    inFlightGets.delete(key);
+  });
+
+  inFlightGets.set(key, fetchPromise);
+  return fetchPromise;
 }
 
 export function cacheGetSync<T>(key: string): T | undefined {
-  return lsGet<T>(key);
+  const mem = memGet<T>(key);
+  if (mem !== undefined) return mem;
+  const ls = lsGet<T>(key);
+  if (ls !== undefined) {
+    memSet(key, ls, 5 * 60_000);
+    return ls;
+  }
+  return undefined;
+}
+
+/** Async read from local tiers only. */
+export async function cacheGetLocal<T>(key: string): Promise<T | undefined> {
+  return cacheGet<T>(key);
+}
+
+export async function cacheSetLocal<T>(key: string, data: T, ttlMs: number): Promise<void> {
+  memSet(key, data, ttlMs);
+  if (!lsSet(key, data, ttlMs)) {
+    lsDelete(key);
+    await idbSet(key, data, ttlMs);
+  }
 }
 
 export async function cacheSet<T>(key: string, data: T, ttlMs: number): Promise<void> {
-  // Push to edge cache (best-effort, fire-and-forget-ish)
-  const ttlSec = Math.max(1, Math.round(ttlMs / 1000));
-  edgeSet(key, data, ttlMs).catch(() => {});
-  // Persist locally
+  memSet(key, data, ttlMs);
   if (!lsSet(key, data, ttlMs)) {
     lsDelete(key);
     await idbSet(key, data, ttlMs);
@@ -307,20 +339,20 @@ export async function cacheSet<T>(key: string, data: T, ttlMs: number): Promise<
 }
 
 export async function cacheDelete(key: string): Promise<void> {
+  memDelete(key);
   lsDelete(key);
   await idbDelete(key);
-  edgeDelete(key).catch(() => {});
 }
 
 export async function cacheClear(): Promise<void> {
-  // Clear localStorage prefix
+  memoryCache.clear();
   try {
     const toDelete: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (k?.startsWith("vc:")) toDelete.push(k);
     }
-    toDelete.forEach(k => localStorage.removeItem(k));
+    toDelete.forEach((k) => localStorage.removeItem(k));
   } catch {}
   await idbClear();
 }

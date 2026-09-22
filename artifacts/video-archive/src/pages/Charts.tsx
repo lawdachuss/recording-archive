@@ -44,7 +44,7 @@ export default function Charts() {
   const { data: stats } = useGetStats({ query: { queryKey: getGetStatsQueryKey(), staleTime: 60_000 } });
 
   const tabs: { id: ChartTab; label: string; Icon: typeof TrendingUp }[] = [
-    { id: "popular", label: "Most Popular", Icon: Flame },
+    { id: "popular", label: "Most Viewed", Icon: Flame },
     { id: "largest", label: "Biggest Files", Icon: HardDrive },
     { id: "performers", label: "Top Performers", Icon: Trophy },
   ];
@@ -227,11 +227,11 @@ export default function Charts() {
                   <Clapperboard className="w-6 h-6 text-muted-foreground/20" />
                 </div>
                 <p className="text-sm text-muted-foreground mb-1">
-                  {tab === "popular" ? "No popular recordings yet." : "No large recordings yet."}
+                  {tab === "popular" ? "No most-viewed recordings yet." : "No large recordings yet."}
                 </p>
                 <p className="text-xs text-muted-foreground/40">
                   {tab === "popular"
-                    ? "Popular recordings will appear here as they gain views."
+                    ? "Most-viewed recordings will appear here as they gain views."
                     : "Large files will appear here once they're archived."}
                 </p>
               </div>

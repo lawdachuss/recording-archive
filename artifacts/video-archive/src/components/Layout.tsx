@@ -1,10 +1,12 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { Link, useLocation } from "wouter";
-import { Menu, X, Film, Sun, Moon } from "lucide-react";
+import { Menu, X, Film, Sun, Moon, Crown, Check } from "lucide-react";
 import { UserMenu } from "@/components/UserMenu";
+import { usePremium } from "@/contexts/PremiumContext";
 import { DesktopNav } from "@/components/nav/DesktopNav";
 import { SearchDropdown } from "@/components/nav/SearchDropdown";
-import { isConnectionConstrained } from "@/lib/connection";
+import { markAgeGatePassed } from "@/lib/gating";
+import { PremiumUpsellPopup } from "@/components/ads/PremiumUpsellPopup";
 
 // Lazy-load components that are heavy or only needed on interaction:
 // - NotificationBell: pulls in notification hooks, only visible for auth users
@@ -15,26 +17,12 @@ const MobileMenu = lazy(() => import("@/components/nav/MobileMenu").then(m => ({
 const RequestDialog = lazy(() => import("@/components/RequestDialog"));
 
 import { enqueuePrefetch, flushPrefetch } from "@/lib/query-client";
+import { prefetchRoute } from "@/lib/route-chunks";
 
-const FOOTER_PAGE_IMPORTS: Record<string, () => Promise<unknown>> = {
-  "/browse": () => import("@/pages/Browse"),
-  "/performers": () => import("@/pages/PerformersList"),
-  "/tags": () => import("@/pages/TagsPage"),
-  "/charts": () => import("@/pages/Charts"),
-  "/collections": () => import("@/pages/Collections"),
-  "/bookmarks": () => import("@/pages/Bookmarks"),
-  "/watch-later": () => import("@/pages/WatchLater"),
-  "/history": () => import("@/pages/History"),
-  "/analytics": () => import("@/pages/Analytics"),
-  "/request": () => import("@/pages/RequestPage"),
-};
-
+// Route chunk + data prefetching is centralized in lib/route-chunks.ts; the
+// footer just points at it (connection-constrained guard lives there).
 function prefetchFooter(href: string) {
-  // Skip prefetching on slow/constrained connections — the bandwidth is
-  // needed for the current page, not speculative preloading.
-  if (isConnectionConstrained()) return;
-  const imp = FOOTER_PAGE_IMPORTS[href];
-  if (imp) imp().catch(() => {});
+  prefetchRoute(href);
 }
 
 function useDarkMode() {
@@ -77,10 +65,13 @@ function Logo() {
 
 function RandomButton() {
   const [, setLocation] = useLocation();
+  const { showAds } = usePremium();
   return (
     <button
       onClick={() => setLocation("/random")}
-      className="random-fab fixed bottom-8 right-8 z-50 cursor-pointer hover:scale-110 active:scale-95 transition-transform duration-200 pointer-events-auto"
+      className={`random-fab fixed right-6 sm:right-8 z-40 cursor-pointer hover:scale-110 active:scale-95 transition-all duration-200 pointer-events-auto ${
+        showAds ? "bottom-24 sm:bottom-8" : "bottom-8"
+      }`}
       aria-label="Random video"
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7 opacity-60 hover:opacity-100 transition-opacity" style={{ color: 'hsl(var(--primary))' }}>
@@ -106,7 +97,7 @@ export function AgeGate() {
   useEffect(() => {
     setMounted(true);
     const hasAgreed = localStorage.getItem("age-gate-passed");
-    if (!hasAgreed) setIsOpen(true);
+    if (hasAgreed !== "true") setIsOpen(true);
   }, []);
 
   if (!mounted || !isOpen) return null;
@@ -190,7 +181,7 @@ export function AgeGate() {
           <button
             className="w-full h-12 border border-primary/30 text-primary text-sm font-semibold tracking-wide hover:border-primary/60 transition-colors"
             onClick={() => {
-              localStorage.setItem("age-gate-passed", "true");
+              markAgeGatePassed();
               setIsOpen(false);
             }}
           >
@@ -215,6 +206,7 @@ export function Navbar() {
   const [dark, setDark] = useDarkMode();
   const [scrolled, setScrolled] = useState(false);
   const [requestOpen, setRequestOpen] = useState(false);
+  const { isPremium, loading } = usePremium();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -256,7 +248,31 @@ export function Navbar() {
             </button>
           )}
 
-          <Suspense fallback={null}><NotificationBell /></Suspense>
+          <Link
+            href="/premium"
+            className={`nav-btn ${searchOpen ? "hidden sm:flex" : ""}`}
+            aria-label={isPremium ? "Premium member — see benefits" : "Go Premium — see details & upgrade"}
+            title={isPremium ? "You're Premium — see benefits" : "Go Premium — see details & upgrade"}
+          >
+            <Crown
+              className={`w-4 h-4 transition-colors ${isPremium ? "text-primary" : ""}`}
+              fill={isPremium ? "currentColor" : "none"}
+              strokeWidth={isPremium ? 1.5 : 2}
+            />
+            {isPremium ? (
+              <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-primary text-background flex items-center justify-center border border-background">
+                <Check className="w-2 h-2" strokeWidth={3.5} />
+              </span>
+            ) : (
+              !loading && (
+                <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-amber-400" />
+              )
+            )}
+          </Link>
+
+          <div className={searchOpen ? "hidden sm:block" : ""}>
+            <Suspense fallback={null}><NotificationBell /></Suspense>
+          </div>
           <UserMenu />
 
           <button
@@ -299,6 +315,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </main>
 
       <RandomButton />
+      <PremiumUpsellPopup />
 
       <footer className="py-10 border-t border-border/40 mt-16 bg-background dark:bg-background backdrop-blur-sm relative overflow-hidden">
         {/* Diamond texture — fades in from bottom edge */}
@@ -328,17 +345,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
               className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground/50"
               aria-label="Footer navigation"
             >
-              <Link href="/browse" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/browse")}>Browse</Link>
-              <Link href="/performers" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/performers")}>Performers</Link>
-              <Link href="/tags" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/tags")}>Tags</Link>
-              <Link href="/charts" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/charts")}>Charts</Link>
-              <Link href="/collections" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/collections")}>Collections</Link>
-              <Link href="/request" className="hover:text-muted-foreground transition-colors">Request</Link>
-              <Link href="/my-requests" className="hover:text-muted-foreground transition-colors">My Requests</Link>
-              <Link href="/bookmarks" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/bookmarks")}>Bookmarks</Link>
-              <Link href="/watch-later" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/watch-later")}>Watch Later</Link>
-              <Link href="/history" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/history")}>History</Link>
-              <Link href="/analytics" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/analytics")}>Analytics</Link>
+              <Link href="/premium" className="text-primary/60 hover:text-primary transition-colors" onMouseEnter={() => prefetchFooter("/premium")} onFocus={() => prefetchFooter("/premium")}>Premium</Link>
+              <Link href="/browse" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/browse")} onFocus={() => prefetchFooter("/browse")}>Browse</Link>
+              <Link href="/performers" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/performers")} onFocus={() => prefetchFooter("/performers")}>Performers</Link>
+              <Link href="/tags" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/tags")} onFocus={() => prefetchFooter("/tags")}>Tags</Link>
+              <Link href="/charts" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/charts")} onFocus={() => prefetchFooter("/charts")}>Charts</Link>
+              <Link href="/collections" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/collections")} onFocus={() => prefetchFooter("/collections")}>Collections</Link>
+              <Link href="/request" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/request")} onFocus={() => prefetchFooter("/request")}>Request</Link>
+              <Link href="/my-requests" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/my-requests")} onFocus={() => prefetchFooter("/my-requests")}>My Requests</Link>
+              <Link href="/bookmarks" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/bookmarks")} onFocus={() => prefetchFooter("/bookmarks")}>Bookmarks</Link>
+              <Link href="/watch-later" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/watch-later")} onFocus={() => prefetchFooter("/watch-later")}>Watch Later</Link>
+              <Link href="/history" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/history")} onFocus={() => prefetchFooter("/history")}>History</Link>
+              <Link href="/analytics" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/analytics")} onFocus={() => prefetchFooter("/analytics")}>Analytics</Link>
               <span className="hidden sm:block w-px h-3 bg-border/40 self-center" />
               <span className="cursor-default">Terms</span>
               <span className="cursor-default">Privacy</span>

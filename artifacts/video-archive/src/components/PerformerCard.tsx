@@ -5,6 +5,7 @@ import { SpriteSlideshow } from "@/components/SpriteSlideshow";
 import { useHoverPreview } from "@/hooks/use-hover-preview";
 import { getSpriteGrid } from "@/lib/sprite-grid";
 import { proxyUrl, proxySpriteUrl } from "@/lib/proxy-url";
+import { prefetchRoute } from "@/lib/route-chunks";
 interface Performer {
   username: string;
   recording_count?: number;
@@ -77,7 +78,13 @@ function GroupCards({ performers }: { performers: Performer[] }) {
       hover:[&_figure]:size-16 
       [&:hover_figure:not(:hover)]:size-[38px]">
       {performers.map((p) => (
-        <Link key={p.username} href={`/performers/${p.username}`} className="relative group w-full h-full">
+        <Link
+          key={p.username}
+          href={`/performers/${p.username}`}
+          className="relative group w-full h-full"
+          onMouseEnter={() => prefetchRoute("/performers")}
+          onFocus={() => prefetchRoute("/performers")}
+        >
           <figure className="flex items-center justify-center text-2xl font-extrabold leading-none text-zinc-400 p-4 bg-white relative rounded-full object-cover border border-solid border-zinc-300 
             [&:where(:nth-child(4),_:nth-child(5))]:size-8 
             [&:where(:nth-child(4),_:nth-child(5))]:z-[3] 
@@ -131,7 +138,10 @@ function CircleCard({ performer, fetchPriority }: { performer: Performer; fetchP
   const initial = performer.username.charAt(0).toUpperCase();
   const { imageUrl, onImageError } = usePerformerImageCandidates(performer);
   return (
-    <Link href={`/performers/${performer.username}`} className="group block outline-none w-full circle-bloom-hover">
+    <Link href={`/performers/${performer.username}`} className="group block outline-none w-full circle-bloom-hover"
+      onMouseEnter={() => prefetchRoute("/performers")}
+      onFocus={() => prefetchRoute("/performers")}
+    >
       <div className="flex flex-col items-center gap-2.5">
         {/* Circle container — fixed size, centered via grid justify-items-center */}
         <div className="relative w-[72px] h-[72px] sm:w-[82px] sm:h-[82px] shrink-0">
@@ -189,7 +199,10 @@ const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { perf
   const recCount = performer.recording_count ?? 0;
 
   return (
-    <Link href={`/performers/${performer.username}`} className="group block outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg">
+    <Link href={`/performers/${performer.username}`} className="group block outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg"
+      onMouseEnter={() => prefetchRoute("/performers")}
+      onFocus={() => prefetchRoute("/performers")}
+    >
       <div className="relative overflow-hidden rounded-lg bg-card will-change-transform
         transition-all duration-400 ease-out
         group-hover:-translate-y-[2px]

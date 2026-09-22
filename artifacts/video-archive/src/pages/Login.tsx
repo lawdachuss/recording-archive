@@ -29,10 +29,17 @@ export default function Login() {
     ? location.slice(location.indexOf("?"))
     : window.location.search;
   const requestedRedirect = new URLSearchParams(locationSearch).get("redirect");
-  const redirectAfterLogin =
-    requestedRedirect?.startsWith("/") && !requestedRedirect.startsWith("//")
-      ? requestedRedirect
-      : "/";
+  // Validate: must be same-origin path-only (no protocol, host, or backslash tricks).
+  const redirectAfterLogin = (() => {
+    if (!requestedRedirect) return "/";
+    try {
+      const url = new URL(requestedRedirect, window.location.origin);
+      if (url.origin === window.location.origin && url.pathname.startsWith("/")) {
+        return url.pathname + url.search;
+      }
+    } catch {}
+    return "/";
+  })();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

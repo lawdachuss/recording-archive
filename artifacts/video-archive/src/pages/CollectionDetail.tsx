@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { userApi, parseCloudItem, type CloudItem, type CloudCollection } from "@/lib/user-api";
 import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
+import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { ArrowLeft, Film, Pencil, Check, X, Trash2, ListVideo } from "lucide-react";
 import { formatRelativeTime } from "@/lib/formatters";
 import { proxyUrl } from "@/lib/proxy-url";
@@ -51,7 +52,7 @@ export default function CollectionDetail() {
     if (!loading && !user) setLocation("/login");
   }, [user, loading, setLocation]);
 
-  const { data: cloudCollections = [] } = useQuery({
+  const { data: cloudCollections = [], isLoading: collectionsLoading } = useQuery({
     queryKey: ["user", "collections"],
     queryFn: () => userApi.getCollections(),
     enabled: !!user,
@@ -102,9 +103,13 @@ export default function CollectionDetail() {
     setEditing(false);
   };
 
+  // Warm thumbnails, sprites, and animated previews for every recording in the
+  // collection the moment the page has them — hovering any card later is instant.
+  usePreloadRecordings(cloudItems.map(parseCloudItem));
+
   if (!user) return null;
 
-  const notFound = !cloudLoading && !cloudMeta;
+  const notFound = !collectionsLoading && !cloudLoading && !cloudMeta;
   const items = cloudItems;
   const collectionName = cloudMeta?.name ?? "Collection";
   const collectionDesc = cloudMeta?.description ?? undefined;

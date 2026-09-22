@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { Sun, Moon, Bookmark, FolderOpen, Clock, History, Heart, Bell, Settings, Send } from "lucide-react";
 import { NAV_LINKS } from "./DesktopNav";
+import { prefetchRoute } from "@/lib/route-chunks";
 
 const LIBRARY_LINKS = [
   { href: "/bookmarks", label: "Bookmarks", icon: Bookmark },
@@ -57,6 +58,8 @@ export function MobileMenu({
                       : "text-muted-foreground hover:text-foreground hover:bg-secondary/30 dark:hover:bg-white/5"
                   }`}
                   onClick={onClose}
+                  onMouseEnter={() => prefetchRoute(href)}
+                  onFocus={() => prefetchRoute(href)}
                 >
                   <Icon className={`w-4 h-4 ${isActive(href, location) ? "text-primary" : "text-muted-foreground/40"}`} />
                   {label}
@@ -65,6 +68,8 @@ export function MobileMenu({
             ))}
             <button
               onClick={() => { onClose?.(); onRequestOpen?.(); }}
+              onMouseEnter={() => prefetchRoute("/request")}
+              onFocus={() => prefetchRoute("/request")}
               className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm rounded-lg transition-all duration-150 text-muted-foreground hover:text-foreground hover:bg-secondary/30 dark:hover:bg-white/5"
             >
               <Send className="w-4 h-4 text-muted-foreground/40" />
@@ -88,6 +93,8 @@ export function MobileMenu({
                       : "text-muted-foreground hover:text-foreground hover:bg-secondary/30 dark:hover:bg-white/5"
                   }`}
                   onClick={onClose}
+                  onMouseEnter={() => prefetchRoute(href)}
+                  onFocus={() => prefetchRoute(href)}
                 >
                   <Icon className={`w-3.5 h-3.5 ${isActive(href, location) ? "text-primary" : "text-muted-foreground/40"}`} />
                   {label}
@@ -109,6 +116,8 @@ export function MobileMenu({
                       : "text-muted-foreground hover:text-foreground hover:bg-secondary/30 dark:hover:bg-white/5"
                   }`}
                   onClick={onClose}
+                  onMouseEnter={() => prefetchRoute(href)}
+                  onFocus={() => prefetchRoute(href)}
                 >
                   <Icon className={`w-3.5 h-3.5 ${isActive(href, location) ? "text-primary" : "text-muted-foreground/40"}`} />
                   {label}

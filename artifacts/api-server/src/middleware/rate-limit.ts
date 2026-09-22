@@ -25,11 +25,27 @@ import { logger } from "../lib/logger.js";
 const ENABLED = (process.env.RATE_LIMIT_ENABLED ?? "true") !== "false";
 const WINDOW_SECONDS = Number.parseInt(process.env.RATE_LIMIT_WINDOW ?? "", 10) || 60;
 
+// Short burst window layered on top of the per-minute budget. A fixed 60s
+// window alone lets a scraper fire its entire minute quota in one second and
+// pass. The burst window catches that pattern with a much smaller per-window
+// allowance, while a human browsing (even with prefetch) stays well under it.
+// Sent it off separately so transient search/read bursts on legit pages never
+// trip it; the defaults are deliberately generous.
+const BURST_WINDOW_SECONDS =
+  Number.parseInt(process.env.RATE_LIMIT_BURST_WINDOW ?? "", 10) || 5;
+
 const LIMITS = {
   read: Number.parseInt(process.env.RATE_LIMIT_READ ?? "", 10) || 300, // per IP/min
   write: Number.parseInt(process.env.RATE_LIMIT_WRITE ?? "", 10) || 60, // per IP/min
   search: Number.parseInt(process.env.RATE_LIMIT_SEARCH ?? "", 10) || 45, // per IP/min
   user: Number.parseInt(process.env.RATE_LIMIT_USER ?? "", 10) || 600, // per auth token/min
+};
+
+const BURST_LIMITS = {
+  read: Number.parseInt(process.env.RATE_LIMIT_BURST_READ ?? "", 10) || 60, // per IP/5s
+  write: Number.parseInt(process.env.RATE_LIMIT_BURST_WRITE ?? "", 10) || 25, // per IP/5s
+  search: Number.parseInt(process.env.RATE_LIMIT_BURST_SEARCH ?? "", 10) || 25, // per IP/5s
+  user: Number.parseInt(process.env.RATE_LIMIT_BURST_USER ?? "", 10) || 250, // per token/5s
 };
 
 const KEY_PREFIX = "rl:v1";
@@ -44,7 +60,7 @@ interface MemoryWindow {
 const memoryWindows = new Map<string, MemoryWindow>();
 let lastCleanup = Date.now();
 
-function memoryIncrement(key: string): { count: number; resetAt: number } {
+function memoryIncrement(key: string, windowSeconds: number = WINDOW_SECONDS): { count: number; resetAt: number } {
   const now = Date.now();
 
   // Occasional sweep so the map doesn't grow unbounded under abuse.
@@ -60,25 +76,28 @@ function memoryIncrement(key: string): { count: number; resetAt: number } {
     existing.count += 1;
     return existing;
   }
-  const fresh = { count: 1, resetAt: now + WINDOW_SECONDS * 1000 };
+  const fresh = { count: 1, resetAt: now + windowSeconds * 1000 };
   memoryWindows.set(key, fresh);
   return fresh;
 }
 
 // ─── Redis fixed window ───────────────────────────────────────────
 
-async function redisIncrement(key: string): Promise<{ count: number; resetAt: number } | null> {
+async function redisIncrement(
+  key: string,
+  windowSeconds: number = WINDOW_SECONDS,
+): Promise<{ count: number; resetAt: number } | null> {
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return null;
 
   try {
-    const window = Math.floor(Date.now() / (WINDOW_SECONDS * 1000));
+    const window = Math.floor(Date.now() / (windowSeconds * 1000));
     const redisKey = `${KEY_PREFIX}:${key}:${window}`;
-    const resetAt = (window + 1) * WINDOW_SECONDS * 1000;
+    const resetAt = (window + 1) * windowSeconds * 1000;
 
     const count = await redis.incr(redisKey);
     if (count === 1) {
-      redis.expire(redisKey, WINDOW_SECONDS + 5).catch(() => {});
+      redis.expire(redisKey, windowSeconds + 5).catch(() => {});
     }
     return { count, resetAt };
   } catch (err) {
@@ -91,14 +110,26 @@ async function redisIncrement(key: string): Promise<{ count: number; resetAt: nu
 
 export function clientIp(req: Request): string {
   try {
-    const realIp = req.headers?.["x-real-ip"];
-    if (typeof realIp === "string" && realIp.length > 0) return realIp.trim();
+    // Prefer platform-authored headers: Vercel overwrites x-forwarded-for with
+    // the real client IP (it can't be forged by the client) and reflects it in
+    // x-vercel-forwarded-for. Behind a self-hosted reverse proxy (which
+    // appends), the rightmost token is the hop closest to us — the only one a
+    // client cannot author. Order matters: x-real-ip is set by some proxies but
+    // not stripped by others, so it must never be consulted ahead of a trusted
+    // x-forwarded-for, or a client-supplied value becomes the rate-limit key.
+    const vercelIp = req.headers?.["x-vercel-forwarded-for"];
+    if (typeof vercelIp === "string" && vercelIp.length > 0) return vercelIp.trim();
 
     const xff = req.headers?.["x-forwarded-for"];
     if (typeof xff === "string" && xff.length > 0) {
-      // Vercel appends the real client edge IP; the leftmost entry is the client.
-      return xff.split(",")[0]!.trim();
+      const tokens = xff.split(",").map((t) => t.trim()).filter(Boolean);
+      const rightmost = tokens[tokens.length - 1];
+      if (rightmost) return rightmost;
     }
+
+    const realIp = req.headers?.["x-real-ip"];
+    if (typeof realIp === "string" && realIp.length > 0) return realIp.trim();
+
     if (req.socket?.remoteAddress) return req.socket.remoteAddress;
     if ((req as any).connection?.remoteAddress) return (req as any).connection.remoteAddress;
     if (req.ip) return req.ip;
@@ -137,6 +168,8 @@ interface RateLimitOptions {
   bucket: "read" | "write" | "search" | "user";
   /** Override the bucket's default limit (mainly for tests / special routes). */
   limit?: number;
+  /** Override the bucket's default burst-window limit. */
+  burstLimit?: number;
   /** Key the limit by this instead of client IP (e.g. auth token hash). */
   keyFn?: (req: Request) => string | null;
   /** Skip certain paths (e.g. health checks). Matched on req.path. */
@@ -145,6 +178,7 @@ interface RateLimitOptions {
 
 export function rateLimit(options: RateLimitOptions) {
   const limit = options.limit ?? LIMITS[options.bucket];
+  const burstLimit = options.burstLimit ?? BURST_LIMITS[options.bucket];
 
   return async (req: Request, res: Response, next: NextFunction) => {
     if (!ENABLED) {
@@ -157,16 +191,37 @@ export function rateLimit(options: RateLimitOptions) {
     }
 
     const keyPart = options.keyFn?.(req) ?? clientIp(req);
-    const result =
-      (await redisIncrement(`${options.bucket}:${keyPart}`)) ?? memoryIncrement(`${options.bucket}:${keyPart}`);
 
-    if (result.count > limit) {
-      sendLimited(res, limit, result.resetAt, options.bucket);
+    // Long (per-minute) window: bounds sustained traffic.
+    const key = `${options.bucket}:${keyPart}`;
+    const result =
+      (await redisIncrement(key)) ?? memoryIncrement(key);
+
+    // Short (5s) burst window: catches a scraper dumping a huge burst through
+    // in under a minute while a human browsing — even with prefetch firing — 
+    // stays far below it.
+    const burstKey = `burst:${key}`;
+    const burstResult =
+      (await redisIncrement(burstKey, BURST_WINDOW_SECONDS)) ??
+      memoryIncrement(burstKey, BURST_WINDOW_SECONDS);
+
+    // Whichever window trips first wins the 429. Send the tighter reset so
+    // clients back off the shortest amount that actually clears the trip.
+    const trip = result.count > limit
+      ? { limit, resetAt: result.resetAt, bucket: options.bucket, count: result.count }
+      : burstResult.count > burstLimit
+        ? { limit: burstLimit, resetAt: burstResult.resetAt, bucket: `${options.bucket}:burst`, count: burstResult.count }
+        : null;
+
+    if (trip) {
+      sendLimited(res, trip.limit, trip.resetAt, trip.bucket);
       return;
     }
 
     res.set("RateLimit-Limit", String(limit));
     res.set("RateLimit-Remaining", String(Math.max(0, limit - result.count)));
+    res.set("RateLimit-Burst-Limit", String(burstLimit));
+    res.set("RateLimit-Burst-Remaining", String(Math.max(0, burstLimit - burstResult.count)));
     next();
   };
 }
@@ -200,4 +255,9 @@ export function _resetMemoryWindowsForTests(): void {
 /** Visible for tests. */
 export function _limitsForTests(): typeof LIMITS {
   return LIMITS;
+}
+
+/** Visible for tests. */
+export function _burstLimitsForTests(): typeof BURST_LIMITS {
+  return BURST_LIMITS;
 }

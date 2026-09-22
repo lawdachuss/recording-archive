@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, memo } from "react";
 import { cn } from "@/lib/utils";
 import { isConnectionConstrained } from "@/lib/connection";
-import { proxyImageUrl, isHttp2ResetHost } from "@/lib/proxy-url";
+import { proxyImageUrl, isHttp2ResetHost, extractOriginalFromWsrv, markWsrvFailedForHost } from "@/lib/proxy-url";
 import { cacheImage } from "@/lib/image-cache";
 
 interface OptimizedImageProps {
@@ -56,22 +56,6 @@ export function ImageUnavailable({ initials, className }: { initials?: string; c
 /** Default placeholder rendered when the image fails to load and no custom fallback is provided. */
 function DefaultFallback() {
   return <ImageUnavailable />;
-}
-
-/**
- * Extract the original upstream URL from a wsrv.nl (images.weserv.nl) proxy URL.
- * wsrv.nl format: https://images.weserv.nl/?url=<encoded>&w=400&output=webp
- * Returns null if the URL is not a wsrv.nl proxy URL.
- */
-function extractOriginalFromWsrv(proxiedUrl: string): string | null {
-  try {
-    const parsed = new URL(proxiedUrl);
-    if (!parsed.hostname.endsWith("weserv.nl")) return null;
-    const inner = parsed.searchParams.get("url");
-    return inner || null;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -131,15 +115,7 @@ export const OptimizedImage = memo(function OptimizedImage({
   const [inView, setInView] = useState(true);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Reset state when the src changes. Note: we deliberately do NOT warm the
-  // IDB cache here on mount — the <img> below is already fetching this exact
-  // URL, so a parallel cacheImage() would issue a SECOND network request for
-  // every cold grid render and double first-paint bandwidth. The <img> itself
-  // uses the real proxy URL (not a blob URL — blob URLs handed to a
-  // lazy-deferred <img> can be revoked by memory-cache cleanup before the
-  // deferred load paints, yielding blob:ERR_FILE_NOT_FOUND floods). Browser
-  // HTTP cache + SW make repeat visits near-instant; IDB is warmed in onLoad
-  // once the bytes are already in the HTTP cache (free, force-cache hit).
+  // Reset state when the src changes.
   useEffect(() => {
     setLoaded(false);
     setError(false);
@@ -147,9 +123,6 @@ export const OptimizedImage = memo(function OptimizedImage({
   }, [resolvedSrc]);
 
   // Below-fold lazy images wait for near-viewport intersection before fetching.
-  // The window is taller than the first couple of grid rows, so a generous
-  // rootMargin (~1.5 viewport heights) starts the fetch while still spacing out
-  // the burst of requests a full grid would otherwise fire simultaneously.
   useEffect(() => {
     if (isConnectionConstrained()) {
       const el = containerRef.current;
@@ -176,34 +149,32 @@ export const OptimizedImage = memo(function OptimizedImage({
   const onLoad = useCallback(() => {
     setLoaded(true);
     // Persist to IDB (thumbnail = hot, evict last) so repeat visits skip the
-    // network entirely. Cheap: cacheImage's force-cache fetch resolves from
-    // the HTTP cache this <img> just populated — no extra bytes downloaded.
+    // network entirely.
     cacheImage(resolvedSrc, 3).catch(() => {});
   }, [resolvedSrc]);
 
   const onError = useCallback(() => {
-    if (attempt === 0) {
-      // One soft retry (e.g. a transient proxy failure) by re-keying the <img>
-      // (fresh fetch) — but only when src hasn't changed under us. The
-      // retried <img>'s onLoad warms IDB if it succeeds.
-      setAttempt((a) => a + 1);
-    } else if (directSrc && attempt === 1) {
-      // If this was a wsrv.nl proxy URL and we haven't tried the direct URL yet,
-      // fall back to loading the original URL directly from the browser.
-      // This handles wsrv.nl outages — catbox etc. can often be reached directly.
-      setAttempt((a) => a + 1);
+    if (directSrc && attempt === 0) {
+      // wsrv proxy failed (e.g. 404/DNS). Mark the host in circuit-breaker so
+      // subsequent cards immediately use directSrc instead of failing wsrv.
+      markWsrvFailedForHost(directSrc);
+      // Immediately switch to direct URL on attempt 1! Do NOT retry the failed wsrv URL!
+      setAttempt(1);
+    } else if (attempt === 0) {
+      // One soft retry for non-wsrv URLs
+      setAttempt(1);
     } else {
       setError(true);
       setLoaded(true);
       onErrorProp?.();
     }
-  }, [attempt, resolvedSrc, directSrc, onErrorProp]);
+  }, [attempt, directSrc, onErrorProp]);
 
   if (error) {
     return fallback ?? <DefaultFallback />;
   }
 
-  const actualSrc = inView ? (attempt >= 2 && directSrc ? directSrc : resolvedSrc) : undefined;
+  const actualSrc = inView ? (attempt >= 1 && directSrc ? directSrc : resolvedSrc) : undefined;
   const corsMode = actualSrc ? canLoadInCorsMode(actualSrc) : false;
 
   return (

@@ -157,3 +157,8 @@ overrides:
   # drizzle-kit uses esbuild internally on an older version that's vulnerable, this overrides it
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   esbuild: "0.27.3"
+  # Force patched parser versions pulled transitively by Express 5: qs DoS
+  # advisories GHSA-q8mj-m7cp-5q26 / GHSA-x5fp-wj9c-mxmx / GHSA-4mjr-xmp4-gh2g
+  # and body-parser DoS GHSA-v422-hmwv-36x6.
+  body-parser: ">=2.3.0"
+  qs: ">=6.16.0"

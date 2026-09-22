@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "serverless-http": "^4.0.0",
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
     "@esbuild/win32-x64": "^0.27.3",

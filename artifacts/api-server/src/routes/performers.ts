@@ -3,6 +3,7 @@ import { GetPerformerParams } from "@workspace/api-zod";
 import { supabase, fetchAll } from "../lib/supabase.js";
 import { cache } from "../middleware/cache.js";
 import { logger } from "../lib/logger.js";
+import { resolveGenderBucket } from "../lib/genders.js";
 
 const COOKIES = process.env.COOKIES ?? "";
 const CB_AFFILIATE = process.env.CHATURBATE_AFFILIATE_CODE ?? "";
@@ -572,7 +573,12 @@ router.get(
       let performers = await fetchPerformers();
 
       if (gender) {
-        performers = performers.filter((p) => p.gender === gender);
+        const genderMatch = resolveGenderBucket(gender);
+        if (genderMatch) {
+          performers = performers.filter(
+            (p) => p.gender && genderMatch.includes(p.gender),
+          );
+        }
       }
       if (search) {
         const lower = search.toLowerCase();

@@ -1,17 +1,16 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, type UserNotification } from "@/lib/user-api";
 import { useRealtimeNotifications } from "@/hooks/use-realtime-notifications";
+import { getNotificationAction } from "@/lib/notification-actions";
 import { formatRelativeTime } from "@/lib/formatters";
 import { Bell, BellOff, CheckCheck, X, Trash2, ExternalLink } from "lucide-react";
 
-function isRequestNotification(type: string): boolean {
-  return type === "request_status" || type === "request_submitted";
-}
+const NOTIF_PAGE_SIZE = 50;
 
 export default function Notifications() {
   const { user, loading } = useAuth();
@@ -25,12 +24,24 @@ export default function Notifications() {
     if (!loading && !user) setLocation("/login");
   }, [user, loading, setLocation]);
 
-  const { data: notifications = [], isLoading } = useQuery({
+  const {
+    data: pages,
+    isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
     queryKey: ["user", "notifications"],
-    queryFn: () => userApi.getNotifications(),
+    queryFn: ({ pageParam = 0 }) =>
+      userApi.getNotifications({ limit: NOTIF_PAGE_SIZE, offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length === NOTIF_PAGE_SIZE ? allPages.length * NOTIF_PAGE_SIZE : undefined,
     enabled: !!user,
     staleTime: 30_000,
   });
+
+  const notifications = useMemo(() => (pages?.pages ?? []).flat(), [pages]);
 
   const markAll = useTrackedMutation({
     mutationFn: () => userApi.markAllRead(),
@@ -106,49 +117,64 @@ export default function Notifications() {
           </div>
         ) : (
           <div className="space-y-1.5">
-            {notifications.map((n: UserNotification) => (
-              <div
-                key={n.id}
-                className={`flex items-start gap-3 px-4 py-3 border rounded-sm transition-all ${
-                  !n.is_read
-                    ? "border-primary/20 bg-primary/5"
-                    : "border-border/40 hover:border-border/60"
-                }`}
-              >
-                {!n.is_read && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 shrink-0" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-foreground leading-relaxed">{n.message}</p>
-                  <div className="flex items-center gap-3 mt-1">
-                    <p className="text-[11px] text-muted-foreground/60">
-                      {formatRelativeTime(n.created_at)}
-                    </p>
-                    {isRequestNotification(n.type) && n.related_id && (
-                      <a
-                        href={`/request?id=${n.related_id}`}
-                        className="inline-flex items-center gap-0.5 text-[11px] text-primary hover:text-primary/80 hover:underline transition-colors"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          setLocation(`/request?id=${n.related_id}`);
-                        }}
-                      >
-                        View request
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    )}
-                  </div>
-                </div>
-                <button
-                  onClick={() => deleteOne.mutate(n.id)}
-                  disabled={deleteOne.isPending}
-                  className="shrink-0 flex items-center justify-center w-7 h-7 text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors rounded mt-0.5"
-                  title="Delete"
+            {notifications.map((n: UserNotification) => {
+              const action = getNotificationAction(n);
+              return (
+                <div
+                  key={n.id}
+                  className={`flex items-start gap-3 px-4 py-3 border rounded-sm transition-all ${
+                    !n.is_read
+                      ? "border-primary/20 bg-primary/5"
+                      : "border-border/40 hover:border-border/60"
+                  }`}
                 >
-                  <X className="w-3.5 h-3.5" />
+                  {!n.is_read && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-foreground leading-relaxed">{n.message}</p>
+                    <div className="flex items-center gap-3 mt-1">
+                      <p className="text-[11px] text-muted-foreground/60">
+                        {formatRelativeTime(n.created_at)}
+                      </p>
+                      {action && (
+                        <a
+                          href={action.href}
+                          className="inline-flex items-center gap-0.5 text-[11px] text-primary hover:text-primary/80 hover:underline transition-colors"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setLocation(action.href);
+                          }}
+                        >
+                          {action.label}
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => deleteOne.mutate(n.id)}
+                    disabled={deleteOne.isPending}
+                    className="shrink-0 flex items-center justify-center w-7 h-7 text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors rounded mt-0.5"
+                    title="Delete"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              );
+            })}
+
+            {hasNextPage && (
+              <div className="pt-3 flex justify-center">
+                <button
+                  onClick={() => fetchNextPage()}
+                  disabled={isFetchingNextPage}
+                  className="text-xs text-primary hover:text-primary/80 hover:underline transition-colors disabled:opacity-50"
+                >
+                  {isFetchingNextPage ? "Loading…" : "Load older notifications"}
                 </button>
               </div>
-            ))}
+            )}
 
             {notifications.length > 0 && (
               <div className="pt-4 border-t border-border/30 flex justify-end">

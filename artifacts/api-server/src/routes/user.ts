@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { supabase } from "../lib/supabase.js";
+import { NOTIFICATION_TYPES } from "../lib/notify.js";
 
 const router = Router();
 
@@ -817,12 +818,14 @@ router.delete("/user/follows/:username", async (req, res) => {
 router.get("/user/notifications", async (req, res) => {
   try {
     const userId = req.user!.id;
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? ""), 10) || 50, 1), 100);
+    const offset = Math.max(parseInt(String(req.query.offset ?? ""), 10) || 0, 0);
     const { data, error } = await req.supabase!
       .from("user_notifications")
       .select("id, type, message, related_id, is_read, created_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
-      .limit(50);
+      .range(offset, offset + limit - 1);
 
     if (error) {
       req.log.error({ err: error }, "Supabase error fetching notifications");
@@ -964,8 +967,6 @@ router.put("/user/sound-preferences", async (req, res) => {
 
 // ─── Notification Preferences ────────────────────────────────────────────
 
-const NOTIFICATION_TYPES = ["request_submitted", "request_status", "recording_available"];
-
 router.get("/user/notification-preferences", async (req, res) => {
   try {
     const userId = req.user!.id;
@@ -1019,7 +1020,7 @@ router.put("/user/notification-preferences", async (req, res) => {
 
     // Validate types
     for (const p of preferences) {
-      if (!NOTIFICATION_TYPES.includes(p.type)) {
+      if (!(NOTIFICATION_TYPES as readonly string[]).includes(p.type)) {
         res.status(400).json({ error: `Invalid notification type: ${p.type}` });
         return;
       }

@@ -7,6 +7,9 @@ import { toast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Film, Sparkles, CheckCircle, Check } from "lucide-react";
 
+import { Link } from "wouter";
+import { Button } from "@/components/ui/button";
+
 type Platform = "chaturbate" | "stripchat" | null;
 
 interface RequestDialogProps {
@@ -21,10 +24,20 @@ export default function RequestDialog({ open, onOpenChange }: RequestDialogProps
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-sm">
-          <DialogTitle className="sr-only">Sign in required</DialogTitle>
+          <DialogTitle className="text-base text-center">Sign in to request</DialogTitle>
           <DialogDescription asChild>
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">Please sign in to submit a request.</p>
+            <div className="text-center py-4 space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Please sign in or create an account to submit performer recording requests.
+              </p>
+              <div className="flex gap-2 justify-center pt-2">
+                <Link href="/login" onClick={() => onOpenChange(false)}>
+                  <Button size="sm" className="px-4">Sign in</Button>
+                </Link>
+                <Link href="/signup" onClick={() => onOpenChange(false)}>
+                  <Button size="sm" variant="outline" className="px-4">Create account</Button>
+                </Link>
+              </div>
             </div>
           </DialogDescription>
         </DialogContent>

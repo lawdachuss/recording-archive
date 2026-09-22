@@ -6,12 +6,14 @@
  *   2. Inflight dedup behavior
  *   3. purgeAllCache counting accuracy
  *   4. Cache metrics tracking
- *   5. PER (probabilistic early revalidation) window detection
+ *   5. Cache bypass (non-GET/HEAD, no-store, per-session requests)
  *   6. Tag invalidation
  *   7. Pattern invalidation
  *   8. Cache bypass for non-GET/HEAD and no-store
  *   9. Memory cache LRU eviction
  *  10. ETag generation and clientHasFreshCopy
+ *  11. Remaining-TTL s-maxage (stale entries advertise s-maxage=0)
+ *  12. Invalidation-epoch ghost-refill guard
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -83,6 +85,8 @@ vi.mock("../../lib/redis.js", () => ({
   getRedis: vi.fn(() => mockRedisConnected ? mockRedis : null),
   isRedisConnected: vi.fn(() => mockRedisConnected),
   getRedisStatus: vi.fn(() => mockRedisConnected ? "ready" : "none"),
+  redisPublish: vi.fn(async () => 0),
+  redisSubscribe: vi.fn(async () => () => {}),
 }));
 
 vi.mock("../../lib/logger.js", () => ({
@@ -113,10 +117,20 @@ afterEach(() => {
 // ─── Test Helpers ─────────────────────────────────────────────────
 
 function makeReq(overrides: Partial<Request> = {}): Request {
+  const url = overrides.originalUrl ?? "/api/test";
+  const [pathname, rawQuery = ""] = url.split("?", 2);
+  const query: Record<string, string> = {};
+  for (const pair of rawQuery.split("&")) {
+    if (!pair) continue;
+    const [key, value = ""] = pair.split("=", 2);
+    query[decodeURIComponent(key)] = decodeURIComponent(value);
+  }
   return {
     method: "GET",
-    originalUrl: "/api/test",
+    originalUrl: url,
+    path: pathname,
     headers: {},
+    query,
     ...overrides,
   } as unknown as Request;
 }
@@ -462,7 +476,6 @@ describe("cache middleware", () => {
       expect(metrics.hits).toBe(0);
       expect(metrics.misses).toBe(0);
       expect(metrics.staleServes).toBe(0);
-      expect(metrics.backgroundRefreshes).toBe(0);
       expect(metrics.bytesServed).toBe(0);
     });
 
@@ -556,6 +569,147 @@ describe("cache middleware", () => {
       expect(mockRedisStore.has("api:v2:/api/x")).toBe(false);
       expect(mockRedisStore.has("api:v2:/api/y")).toBe(false);
       expect(mockRedisSets.has("tag:v2:to-invalidate")).toBe(false);
+    });
+  });
+
+  describe("per-session request bypass", () => {
+    it("bypasses the shared cache for requests carrying a session_id", async () => {
+      const res = makeRes();
+      const next = makeNext();
+      const req = makeReq({
+        originalUrl: "/api/comments?recording_id=x&session_id=abc",
+      });
+
+      const middleware = cacheModule.cache({ ttlSeconds: 60 });
+      await middleware(req, res, next);
+
+      expect(next).toHaveBeenCalledOnce();
+      expect(res._headers["Cache-Control"]).toBe("no-store");
+    });
+
+    it("never serves cached data to a different session", async () => {
+      const m = cacheModule.cache({ ttlSeconds: 60 });
+
+      const res1 = makeRes();
+      const next1 = makeNext();
+      const req1 = makeReq({
+        originalUrl: "/api/reactions?recording_id=r&session_id=a",
+      });
+      await m(req1, res1, next1);
+      res1.json({ like_count: 1, user_reaction: "like" });
+
+      const res2 = makeRes();
+      const next2 = makeNext();
+      const req2 = makeReq({
+        originalUrl: "/api/reactions?recording_id=r&session_id=b",
+      });
+      await m(req2, res2, next2);
+
+      // Both requests went to the origin handler — no cross-session cache hit.
+      expect(next1).toHaveBeenCalledOnce();
+      expect(next2).toHaveBeenCalledOnce();
+      expect(res2._headers["X-Cache"]).toBeUndefined();
+    });
+  });
+
+  describe("s-maxage reflects remaining freshness", () => {
+    it("advertises the remaining TTL to the CDN on fresh hits", async () => {
+      const m = cacheModule.cache({ ttlSeconds: 60, staleSeconds: 120 });
+
+      const res1 = makeRes();
+      const next1 = makeNext();
+      await m(makeReq({ originalUrl: "/api/smax-fresh" }), res1, next1);
+      res1.json({ ok: true });
+
+      const res2 = makeRes();
+      const next2 = makeNext();
+      await m(makeReq({ originalUrl: "/api/smax-fresh" }), res2, next2);
+
+      expect(next2).not.toHaveBeenCalled(); // served from cache
+      const cc = res2._headers["Cache-Control"] as string;
+      const sMaxage = Number(cc.match(/s-maxage=(\d+)/)?.[1]);
+      expect(sMaxage).toBeGreaterThan(0);
+      expect(sMaxage).toBeLessThanOrEqual(60);
+      expect(res2._headers["X-Cache"]).toBe("HIT");
+    });
+
+    it("serves stale entries with s-maxage=0 so the CDN must revalidate origin", async () => {
+      const m = cacheModule.cache({ ttlSeconds: 1, staleSeconds: 120 });
+
+      // First, populate an entry (fresh).
+      const resC = makeRes();
+      const nextC = makeNext();
+      await m(makeReq({ originalUrl: "/api/smax-stale" }), resC, nextC);
+      resC.json({ ok: true });
+
+      await new Promise((r) => setTimeout(r, 1100)); // let it go stale
+
+      // Request A starts a refresh: its handler is slow, so it registers an
+      // inflight entry but has not produced a response yet.
+      const resA = makeRes();
+      const nextA = makeNext();
+      await m(makeReq({ originalUrl: "/api/smax-stale" }), resA, nextA);
+
+      // Request B sees the STALE entry AND request A's inflight, so it must be
+      // served stale — with s-maxage=0 so the CDN revalidates the origin.
+      const resB = makeRes();
+      const nextB = makeNext();
+      await m(makeReq({ originalUrl: "/api/smax-stale" }), resB, nextB);
+
+      expect(nextB).not.toHaveBeenCalled();
+      expect(resB._headers["X-Cache"]).toBe("STALE");
+      expect(resB._headers["Cache-Control"]).toContain("s-maxage=0,");
+      expect(resB._headers["Warning"]).toContain("Response is stale");
+
+      // Complete request A so the inflight map cleans up.
+      resA.json({ ok: true });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  });
+
+  describe("invalidation-epoch ghost-refill guard", () => {
+    it("refuses to write an entry whose request began before a tag invalidation", async () => {
+      const m = cacheModule.cache({ ttlSeconds: 60, tags: ["ghost"] });
+
+      const res = makeRes();
+      const next = makeNext();
+      const req = makeReq({ originalUrl: "/api/ghost-test" });
+      await m(req, res, next); // request starts, handler "fetching"…
+
+      await cacheModule.invalidateTags(["ghost"]); // …admin invalidates mid-fill
+
+      res.json({ ghost: true }); // handler completes after the invalidation
+
+      // The write must have been refused — no ghost entry in memory.
+      expect(cacheModule.getCacheStats().memoryEntries).toBe(0);
+      expect(mockRedisStore.size).toBe(0);
+    });
+
+    it("still caches entries whose request began after an invalidation", async () => {
+      const m = cacheModule.cache({ ttlSeconds: 60, tags: ["fresh-ok"] });
+
+      await cacheModule.invalidateTags(["fresh-ok"]);
+
+      const res = makeRes();
+      const next = makeNext();
+      await m(makeReq({ originalUrl: "/api/fresh-ok" }), res, next);
+      res.json({ ok: true });
+
+      expect(cacheModule.getCacheStats().memoryEntries).toBe(1);
+    });
+
+    it("reports cdnPurged false when Vercel env is unset", async () => {
+      const originalToken = process.env.VERCEL_TOKEN;
+      const originalProjectId = process.env.VERCEL_PROJECT_ID;
+      delete process.env.VERCEL_TOKEN;
+      delete process.env.VERCEL_PROJECT_ID;
+      try {
+        const result = await cacheModule.purgeAllCache();
+        expect(result.cdnPurged).toBe(false);
+      } finally {
+        if (originalToken !== undefined) process.env.VERCEL_TOKEN = originalToken;
+        if (originalProjectId !== undefined) process.env.VERCEL_PROJECT_ID = originalProjectId;
+      }
     });
   });
 

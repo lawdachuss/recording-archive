@@ -8,6 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { userApi, parseCloudItem, cloudItemToRecording } from "@/lib/user-api";
 import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
+import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { Clock, Trash2, ListX } from "lucide-react";
 
 
@@ -47,8 +48,11 @@ export default function WatchLater() {
     clearCloud.mutate();
   };
 
-  if (!user) return null;
+  // Warm thumbnails, sprites, and animated previews for every queued recording
+  // the moment the page has them — hovering any card later is instant.
+  usePreloadRecordings(cloudItems.map(parseCloudItem));
 
+  if (!user) return null;
   const queue = cloudItems.map(parseCloudItem);
 
   return (

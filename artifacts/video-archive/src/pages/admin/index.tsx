@@ -4,6 +4,7 @@ import AdminDashboard from "./Dashboard";
 import AdminRequests from "./Requests";
 import AdminUsers from "./Users";
 import AdminCache from "./Cache";
+import AdminPremium from "./Premium";
 
 export default function AdminPage() {
   const [, params] = useRoute("/admin/:rest*");
@@ -19,6 +20,8 @@ export default function AdminPage() {
         <AdminUsers />
       ) : section === "cache" ? (
         <AdminCache />
+      ) : section === "premium" ? (
+        <AdminPremium />
       ) : (
         <AdminDashboard />
       )}

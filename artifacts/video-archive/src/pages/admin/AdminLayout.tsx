@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, ListOrdered, Users, Database, ChevronLeft,
-  Shield, LogOut, Settings,
+  Shield, LogOut, Settings, Crown,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { href: "/admin/requests", label: "Requests", icon: ListOrdered },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/cache", label: "Cache", icon: Database },
+  { href: "/admin/premium", label: "Premium", icon: Crown },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

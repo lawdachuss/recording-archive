@@ -8,6 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { userApi, parseCloudItem, cloudItemToRecording, type CloudItem } from "@/lib/user-api";
 import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
+import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { Bookmark, Trash2, BookmarkX } from "lucide-react";
 
 
@@ -48,8 +49,11 @@ export default function Bookmarks() {
     }
   };
 
-  if (!user) return null;
+  // Warm thumbnails, sprites, and animated previews for every saved recording
+  // the moment the page has them — hovering any card later is instant.
+  usePreloadRecordings(cloudItems.map(parseCloudItem));
 
+  if (!user) return null;
   const bookmarks = cloudItems.map(parseCloudItem);
 
   return (

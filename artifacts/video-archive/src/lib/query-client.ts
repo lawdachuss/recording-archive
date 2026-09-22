@@ -11,10 +11,32 @@
  */
 
 import { QueryClient, onlineManager, keepPreviousData } from "@tanstack/react-query";
-import { cacheGetSync, cacheSet, CACHE_TTL } from "./cache";
+import { cacheGetSync, cacheSetLocal, cacheGetLocal, cacheDelete } from "./cache";
 
 const PERSIST_KEY = "vault-rq-cache";
 const PERSIST_TTL = 2 * 60 * 60_000; // persist cache snapshot for 2h — instant restore on reloads
+
+/**
+ * Query keys that must NEVER be persisted across reloads/sessions: they carry
+ * authenticated or per-session data (bookmarks, history, notifications, watch
+ * later, reactions/comments with the current viewer's state, premium status).
+ * Persisting them would let the next visitor on a shared browser see the
+ * previous user's private data.
+ */
+const SENSITIVE_QUERY_PREFIXES = new Set([
+  "user",
+  "premium",
+  "my-requests",
+  "recommendations",
+  "reactions",
+  "comments",
+]);
+
+function isSensitiveKey(queryKey: readonly unknown[]): boolean {
+  if (queryKey.length === 0) return false;
+  const first = queryKey[0];
+  return typeof first === "string" && SENSITIVE_QUERY_PREFIXES.has(first);
+}
 
 // ─── Network detection ────────────────────────────────────────────
 
@@ -54,6 +76,7 @@ export function persistQueryCache(queryClient: QueryClient) {
   for (const q of queries) {
     const state = q.state;
     if (state && state.data !== undefined && state.status === "success") {
+      if (isSensitiveKey(q.queryKey)) continue;
       data[JSON.stringify(q.queryKey)] = {
         data: state.data,
         dataUpdatedAt: state.dataUpdatedAt,
@@ -66,8 +89,10 @@ export function persistQueryCache(queryClient: QueryClient) {
       timestamp: Date.now(),
       data,
     };
-    // Use the TTL cache (switches to IndexedDB if payload > ~100KB)
-    cacheSet(PERSIST_KEY, payload, PERSIST_TTL);
+    // Use the TTL cache (switches to IndexedDB if payload > ~100KB).
+    // Local-only: the snapshot contains authenticated, user-specific query
+    // data and must never be written to the shared, CDN-cached edge tier.
+    cacheSetLocal(PERSIST_KEY, payload, PERSIST_TTL);
   }
 }
 
@@ -79,11 +104,10 @@ export function restoreQueryCache(queryClient: QueryClient) {
   // cacheGetSync handles TTL expiry internally via lsGet.
   let persisted = cacheGetSync<PersistedCache>(PERSIST_KEY);
   if (!persisted) {
-    // Cache miss from sync — schedule an async restore later
-    setTimeout(async () => {
+// Cache miss from sync — schedule an async restore later
+  setTimeout(async () => {
       try {
-        const { cacheGet } = await import("./cache");
-        const p = await cacheGet<PersistedCache>(PERSIST_KEY);
+        const p = await cacheGetLocal<PersistedCache>(PERSIST_KEY);
         if (p) applyCache(queryClient, p);
       } catch {}
     }, 0);
@@ -142,6 +166,18 @@ export function flushPrefetch(group: string) {
 
 // ─── Factory ──────────────────────────────────────────────────────
 
+let globalClient: QueryClient | null = null;
+
+/**
+ * Wipe BOTH the in-memory query cache (so the next user on a shared browser
+ * can't read the previous user's data before a refetch) AND the persisted
+ * snapshot. Called from AuthContext.signOut.
+ */
+export async function clearQueryCache() {
+  globalClient?.clear();
+  await cacheDelete(PERSIST_KEY);
+}
+
 export function createQueryClient() {
   const gcTime = getConnectionSpeed() === "slow" ? 60 * 60_000 : 10 * 60_000;
 
@@ -158,6 +194,7 @@ export function createQueryClient() {
     },
   });
 
+  globalClient = client;
   return client;
 }
 
@@ -204,7 +241,6 @@ interface ViewportPrefetchEntry {
 }
 
 const viewportPrefetchQueue: ViewportPrefetchEntry[] = [];
-let viewportPrefetchActive = false;
 const MAX_CONCURRENT_VIEWPORT_PREFETCHES = 4;
 let activeViewportPrefetches = 0;
 
@@ -256,31 +292,31 @@ export function enqueueViewportPrefetch(
 /**
  * Process the viewport prefetch queue, prioritizing items closest
  * to the viewport and deprioritizing items that have been waiting too long.
+ * Uses activeViewportPrefetches as the sole concurrency gate — the old boolean
+ * viewportPrefetchActive was reset too early within the loop, allowing
+ * concurrent runs and duplicate prefetches.
  */
 function processViewportPrefetchQueue(): void {
-  if (viewportPrefetchActive) return;
   if (activeViewportPrefetches >= MAX_CONCURRENT_VIEWPORT_PREFETCHES) return;
   if (viewportPrefetchQueue.length === 0) return;
-
-  viewportPrefetchActive = true;
 
   // Sort by dynamic priority: base priority + proximity boost - age penalty
   const now = Date.now();
   viewportPrefetchQueue.sort((a, b) => {
     const distA = getDistanceToViewport(a.element);
     const distB = getDistanceToViewport(b.element);
-    
+
     // Proximity boost: items in/near viewport get +5 priority
     const boostA = distA < window.innerHeight ? 5 : distA < window.innerHeight * 2 ? 2 : 0;
     const boostB = distB < window.innerHeight ? 5 : distB < window.innerHeight * 2 ? 2 : 0;
-    
+
     // Age penalty: items waiting >5s lose 1 priority per second
     const ageA = Math.min(5, (now - a.enqueuedAt) / 1000);
     const ageB = Math.min(5, (now - b.enqueuedAt) / 1000);
-    
+
     const scoreA = a.priority + boostA - ageA;
     const scoreB = b.priority + boostB - ageB;
-    
+
     return scoreB - scoreA; // higher score = higher priority
   });
 
@@ -297,12 +333,10 @@ function processViewportPrefetchQueue(): void {
     img.src = entry.url;
     img.onload = img.onerror = () => {
       activeViewportPrefetches--;
-      viewportPrefetchActive = false;
+      // Continue draining the queue once a slot opens up.
       processViewportPrefetchQueue();
     };
   }
-
-  viewportPrefetchActive = false;
 }
 
 /**
@@ -311,7 +345,6 @@ function processViewportPrefetchQueue(): void {
 export function clearViewportPrefetchQueue(): void {
   viewportPrefetchQueue.length = 0;
   activeViewportPrefetches = 0;
-  viewportPrefetchActive = false;
 }
 
 // ─── Stale-While-Revalidate Helper ───────────────────────────────

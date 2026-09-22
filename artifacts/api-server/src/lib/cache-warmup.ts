@@ -16,6 +16,10 @@ const WARMUP_ROUTES: { path: string; priority: number }[] = [
   // Tier 2 — browse/discovery
   { path: "/api/performers?sort=count&limit=24", priority: 2 },
   { path: "/api/performers?sort=name&limit=24", priority: 2 },
+
+  // Tier 3 — Redis-backed quick lists (served from ZSETs once warm)
+  { path: "/api/hot/recordings?limit=24", priority: 2 },
+  { path: "/api/hot/performers?limit=50", priority: 2 },
 ];
 
 /**

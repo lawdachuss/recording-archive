@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase.js";
 import { logger } from "../lib/logger.js";
+import { cache } from "../middleware/cache.js";
+import { getSuggestionSnapshot, matchSuggestions, maybeBuildSuggestionSnapshot } from "../lib/suggestions.js";
 
 const router = Router();
 
@@ -23,7 +25,12 @@ interface SearchSuggestion {
  * Results are cached by the downstream cache middleware for 30s.
  */
 
-import { cache } from "../middleware/cache.js";
+/** Escape % and _ in PostgREST ilike patterns to avoid wildcard injection. */
+function escapeLike(input: string): string {
+  return input.replace(/[\\%_]/g, "\\$&");
+}
+
+const MAX_TAG_SCAN_PAGES = 20; // cap full-table tag scan (20 pages × 1 000 rows)
 
 router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search", "recordings", "performers", "tags"] }), async (req, res) => {
   const q = String(req.query.q ?? "").trim();
@@ -33,6 +40,26 @@ router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search"
     return;
   }
 
+  // ── Fast path: precomputed suggestion index in Redis ──────────────────
+  // A typed (unique) prefix never hits the DB when the snapshot exists; we
+  // only filter in-memory arrays built from the last snapshot sync.
+  const snapshot = await getSuggestionSnapshot().catch((err) => {
+    logger.warn({ err, query: q }, "Suggestion snapshot read failed");
+    return null;
+  });
+  if (snapshot) {
+    res.json({ suggestions: matchSuggestions(q, snapshot), query: q, source: "index" });
+    return;
+  }
+
+  // Snapshot missing (fresh Redis / not yet synced): kick off a background
+  // rebuild so the NEXT typed search benefits, then fall back to the live DB
+  // path below.
+  maybeBuildSuggestionSnapshot().catch((err) =>
+    logger.error({ err, query: q }, "Background suggestion build kicked off with error"),
+  );
+
+  const safeQ = escapeLike(q);
   const suggestions: SearchSuggestion[] = [];
 
   try {
@@ -42,7 +69,7 @@ router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search"
       .from("recordings_with_links")
       .select("username, thumbnail_url, sprite_url, preview_url, links")
       .not("links", "is", "null")
-      .ilike("username", `%${q}%`)
+      .ilike("username", `%${safeQ}%`)
       .order("timestamp", { ascending: false })
       .limit(4);
 
@@ -68,7 +95,7 @@ router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search"
       .select("id, username, room_title, filename, thumbnail_url, links")
       .not("links", "is", "null")
       .or(
-        `username.ilike.%${q}%,room_title.ilike.%${q}%,filename.ilike.%${q}%`,
+        `username.ilike.%${safeQ}%,room_title.ilike.%${safeQ}%,filename.ilike.%${safeQ}%`,
       )
       .order("timestamp", { ascending: false })
       .limit(4);
@@ -96,6 +123,10 @@ router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search"
         const PAGE_SIZE = 1000;
 
         for (let start = 0; ; start += PAGE_SIZE) {
+          // Boundary: don't scan the whole table for a query that matches
+          // nothing (resource-exhaustion guard on low-selectivity terms).
+          const pageIndex = start / PAGE_SIZE;
+          if (pageIndex >= MAX_TAG_SCAN_PAGES) break;
           const { data, error } = await supabase
             .from("recordings_with_links")
             .select("tags")

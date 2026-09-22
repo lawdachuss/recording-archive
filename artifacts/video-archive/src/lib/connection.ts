@@ -1,30 +1,54 @@
 /**
  * connection.ts — Shared connection quality helpers.
  *
- * Automatic "slow connection" detection (Network Information API + measured
- * thumbnail load times) and the manual Data Saver toggle were both removed:
- * the detection misfired on fast connections because thumbnail latency
- * reflects server/proxy round-trips, not user bandwidth.
+ * Constrained-connection detection uses the Network Information API
+ * (saveData / effectiveType / downlink) — raw signals reported by the browser,
+ * NOT measured thumbnail latency (the latency approach misfired because
+ * thumbnail round-trips reflect server/proxy latency, not user bandwidth).
  *
- * The app now always behaves as if on a fast, unconstrained connection:
- * full-size thumbnails, preloads and hover previews enabled, full page sizes.
+ * On normal broadband all helpers report "fast": full-size thumbnails, whole
+ * page + 5-page lookahead preloading, hover previews enabled. On metered or
+ * genuinely slow links (saveData, 2g, or <1 Mbps) the app backs off: it still
+ * preloads the current page's sprites (the cheap hover win) but skips the
+ * multi-page lookahead, the idle catalog warmer, and background preview
+ * downloads.
  */
 
 export type ConnectionQuality = "fast" | "medium" | "slow";
 
+interface NetworkInfoLike {
+  saveData?: boolean;
+  effectiveType?: string;
+  downlink?: number;
+}
+
+function readNetworkInfo(): NetworkInfoLike | null {
+  if (typeof navigator === "undefined") return null;
+  const ni = (navigator as unknown as { connection?: NetworkInfoLike }).connection;
+  return ni ?? null;
+}
+
 /**
- * Always false — constrained-connection behavior was removed. Kept as a
- * constant so existing call sites stay valid and read clearly.
+ * True on metered or genuinely slow links (explicit saveData, 2g-class
+ * effectiveType, or measured downlink < 1 Mbps). Conservative on purpose —
+ * 3g-class connections (>1 Mbps) and normal Wi-Fi/broadband are NOT flagged.
  */
 export function isConnectionConstrained(): boolean {
+  const ni = readNetworkInfo();
+  if (!ni) return false;
+  if (ni.saveData) return true;
+  const et = typeof ni.effectiveType === "string" ? ni.effectiveType.toLowerCase() : "";
+  if (et === "slow-2g" || et === "2g") return true;
+  if (typeof ni.downlink === "number" && ni.downlink > 0 && ni.downlink < 1) return true;
   return false;
 }
 
 /**
- * Rough connection classification. Always "fast".
+ * Rough connection classification. "fast" on normal links, "slow" when the
+ * constrained checks above fire.
  */
 export function getConnectionQuality(): ConnectionQuality {
-  return "fast";
+  return isConnectionConstrained() ? "slow" : "fast";
 }
 
 /**
@@ -36,7 +60,8 @@ export function getAdaptiveImageWidth(): number {
 
 /**
  * Whether to skip ALL speculative preloading (sprites, previews, catalog warmer).
- * Always false — bandwidth is the user's call.
+ * Always false — speculative preloading is the point of the app's fast hover UX;
+ * constrained links narrow it via concurrency/clamps instead of disabling it.
  */
 export function shouldSkipPreloading(): boolean {
   return false;

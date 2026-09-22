@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
@@ -21,6 +21,7 @@ export default function PerformerProfile() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const gridRef = useRef<HTMLDivElement>(null);
 
   const recentlyWatched = useRecentlyWatched();
   // Fetch watch stats for this performer
@@ -30,7 +31,7 @@ export default function PerformerProfile() {
     enabled: !!user,
     staleTime: 60_000,
   });
-  const performerStats = watchStats?.topPerformers.find(p => p.username.toLowerCase() === (username || "").toLowerCase());
+  const performerStats = watchStats?.topPerformers?.find(p => p.username.toLowerCase() === (username || "").toLowerCase());
 
   const { data: profile, isLoading, isError } = useGetPerformer(username || "", {
     query: {
@@ -54,10 +55,23 @@ export default function PerformerProfile() {
   const PAGE_SIZE = 40;
   const allRecordings = profile?.recordings ?? [];
   const totalPages = Math.ceil(allRecordings.length / PAGE_SIZE);
+  // Clamp so navigating between performers (or the list shrinking) never
+  // leaves us on a page beyond the last valid one (blank grid / "Page 3 of 2").
+  const safePage = Math.min(page, Math.max(totalPages, 1));
   const pagedRecordings = useMemo(
-    () => allRecordings.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-    [allRecordings, page],
+    () => allRecordings.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [allRecordings, safePage],
   );
+
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+    gridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  // Reset pagination whenever we browse a different performer.
+  useEffect(() => {
+    setPage(1);
+  }, [username]);
 
   usePreloadRecordings(pagedRecordings);
 
@@ -176,7 +190,7 @@ export default function PerformerProfile() {
                   <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1.5">
                       <Film className="w-3 h-3 text-muted-foreground/50" />
-                      <span className="font-medium tabular-nums">{profile.recording_count || profile.recordings.length}</span> recordings
+                      <span className="font-medium tabular-nums">{profile.recording_count != null ? profile.recording_count : profile.recordings?.length ?? 0}</span> recordings
                     </span>
                     {profile.gender && (
                       <>
@@ -239,9 +253,9 @@ export default function PerformerProfile() {
               </div>
             ))}
           </div>
-        ) : profile?.recordings && profile.recordings.length > 0 ? (
+        ) : pagedRecordings.length > 0 ? (
           <>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8">
+            <div ref={gridRef} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8">
               {pagedRecordings.map((rec, i) => (
                 <div key={rec.id} className="animate-fade-in-up" style={{ animationDelay: `${i * 30}ms` }}>
                   <VideoCard recording={rec} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
@@ -252,18 +266,18 @@ export default function PerformerProfile() {
             {totalPages > 1 && (
               <div className="flex items-center justify-center gap-2 mt-10">
                 <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page <= 1}
+                  onClick={() => handlePageChange(Math.max(1, safePage - 1))}
+                  disabled={safePage <= 1}
                   className="h-8 px-3 text-xs font-medium border border-border/50 text-muted-foreground hover:border-primary/40 hover:text-foreground rounded-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   ← Prev
                 </button>
                 <span className="text-xs text-muted-foreground/60 tabular-nums">
-                  Page {page} of {totalPages}
+                  Page {safePage} of {totalPages}
                 </span>
                 <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page >= totalPages}
+                  onClick={() => handlePageChange(Math.min(totalPages, safePage + 1))}
+                  disabled={safePage >= totalPages}
                   className="h-8 px-3 text-xs font-medium border border-border/50 text-muted-foreground hover:border-primary/40 hover:text-foreground rounded-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Next →

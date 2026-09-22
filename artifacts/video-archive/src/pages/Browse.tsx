@@ -42,27 +42,14 @@ import {
   deleteFilterPreset,
   type FilterPreset,
 } from "@/lib/filter-presets";
+import { GENDER_OPTIONS, genderLabel } from "@/lib/genders";
 
 const SORT_LABELS: Record<ListRecordingsSort, string> = {
   newest: "Newest",
   oldest: "Oldest",
   largest: "Largest",
-  popular: "Most popular",
+  popular: "Most viewed",
 };
-
-const GENDER_OPTIONS = [
-  { value: "female", label: "Female" },
-  { value: "male", label: "Male" },
-  { value: "couple", label: "Couple" },
-  { value: "trans", label: "Trans" },
-];
-
-const RESOLUTION_OPTIONS = [
-  { value: "1080p", label: "1080p" },
-  { value: "720p", label: "720p" },
-  { value: "540p", label: "540p" },
-  { value: "360p", label: "360p" },
-];
 
 // Slow/constrained links get a lighter browsing grid (12 items vs 40) so the
 // first page of thumbnails doesn't saturate the connection. Evaluated once at
@@ -78,6 +65,18 @@ function parseTagList(raw: string): string[] {
     : [];
 }
 
+function parsePage(raw: string | null): number {
+  const n = parseInt(raw || "1", 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+function parseSort(raw: string | null): ListRecordingsSort {
+  const v = raw || "newest";
+  return Object.prototype.hasOwnProperty.call(SORT_LABELS, v)
+    ? (v as ListRecordingsSort)
+    : "newest";
+}
+
 export default function Browse() {
   const searchString = useSearch();
   const [, setLocation] = useLocation();
@@ -91,13 +90,8 @@ export default function Browse() {
   const [gender, setGender] = useState(
     () => new URLSearchParams(searchString).get("gender") || "",
   );
-  const [resolution, setResolution] = useState(
-    () => new URLSearchParams(searchString).get("resolution") || "",
-  );
-  const [sort, setSort] = useState<ListRecordingsSort>(
-    () =>
-      (new URLSearchParams(searchString).get("sort") as ListRecordingsSort) ||
-      "newest",
+  const [sort, setSort] = useState<ListRecordingsSort>(() =>
+    parseSort(new URLSearchParams(searchString).get("sort")),
   );
   const [showFilters, setShowFilters] = useState(false);
   const [tagSearch, setTagSearch] = useState("");
@@ -107,6 +101,7 @@ export default function Browse() {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const [presetMenuOpen, setPresetMenuOpen] = useState(false);
+  const presetRef = useRef<HTMLDivElement>(null);
   const [savePresetOpen, setSavePresetOpen] = useState(false);
   const [presetName, setPresetName] = useState("");
   const [presets, setPresets] = useState<FilterPreset[]>(() =>
@@ -114,8 +109,17 @@ export default function Browse() {
   );
   const [savedPresetId, setSavedPresetId] = useState<string | null>(null);
   const saveInputRef = useRef<HTMLInputElement>(null);
-  // Prevents recursive sync when pushFilters updates the URL
-  const isInternalRef = useRef(false);
+
+  useEffect(() => {
+    if (!presetMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (presetRef.current && !presetRef.current.contains(e.target as Node)) {
+        setPresetMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [presetMenuOpen]);
 
   const { data: tagsData } = useListTags({
     query: { queryKey: getListTagsQueryKey(), staleTime: 60_000 },
@@ -133,13 +137,12 @@ export default function Browse() {
   const recordingsParams = useMemo(() => {
     const p = new URLSearchParams(searchString);
     return {
-      page: parseInt(p.get("page") || "1", 10),
+      page: parsePage(p.get("page")),
       limit: ITEMS_PER_PAGE,
       search: p.get("search") || undefined,
       tags: parseTagList(p.get("tags") || "").join(",") || undefined,
       gender: p.get("gender") || undefined,
-      resolution: p.get("resolution") || undefined,
-      sort: (p.get("sort") as ListRecordingsSort) || "newest",
+      sort: parseSort(p.get("sort")),
     };
   }, [searchString]);
 
@@ -181,8 +184,16 @@ export default function Browse() {
   const { sentinelRef: continuousSentinelRef } = useContinuousPrefetch({
     fetchPage: fetchNextPrefetchPage,
     currentPage: recordingsParams.page,
-    prefetchAhead: 2,
-    eagerThumbs: 10,
+    // Warm 5 pages ahead so scrolling/hovering is instant everywhere in the
+    // next several screens. The very next page's thumbnails are warmed eager
+    // in full; near pages (within previewDepth) get full media (thumbs +
+    // sprites + animated previews); far ones get thumbs + sprites only.
+    prefetchAhead: 5,
+    previewDepth: 2,
+    eagerThumbs: ITEMS_PER_PAGE,
+    // Prime the next page's thumbnails as soon as this page's data arrives,
+    // instead of only when the user scrolls near the bottom.
+    startSignal: data,
   });
 
   // ─── Next-page prefetch (data + previews) ─────────────────────────
@@ -222,6 +233,13 @@ export default function Browse() {
     prefetchNextPageRef.current = prefetchNextPage;
   }, [prefetchNextPage]);
 
+  // Warm the next page's DATA right when the current page loads (the media
+  // hooks warm its thumbnails). Previously this only ran on scroll, so users
+  // who paginated without scrolling to the bottom hit a cold grid.
+  useEffect(() => {
+    prefetchNextPage();
+  }, [prefetchNextPage]);
+
   // Observe a sentinel near the bottom of the grid; fire the prefetch when it
   // approaches the viewport (1200px early) so the next page is ready before
   // the user reaches the pagination.
@@ -252,6 +270,17 @@ export default function Browse() {
     window.scrollTo({ top: 0, behavior: "auto" });
   };
 
+  // Clamp out-of-range pages (e.g. deep-linked `?page=99` on a small result
+  // set): rewrite the URL to the last valid page so we never render a bogus
+  // empty state / "Page 99 of 3" while valid filters are applied.
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / ITEMS_PER_PAGE));
+  useEffect(() => {
+    const current = recordingsParams.page;
+    if (!data || current <= totalPages) return;
+    handlePageChange(totalPages);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, totalPages]);
+
   // Use isFetching (true while refetching) to clear the loading overlay
   // rather than checking data — keepPreviousData keeps stale data alive.
   useEffect(() => {
@@ -264,17 +293,11 @@ export default function Browse() {
   }, [isFetching, pageLoading]);
 
   useEffect(() => {
-    // Skip sync when we pushed the URL ourselves — prevents recursive loop
-    if (isInternalRef.current) {
-      isInternalRef.current = false;
-      return;
-    }
     const p = new URLSearchParams(searchString);
     setSearch(p.get("search") || "");
     setSelectedTags(parseTagList(p.get("tags") || ""));
     setGender(p.get("gender") || "");
-    setResolution(p.get("resolution") || "");
-    setSort((p.get("sort") as ListRecordingsSort) || "newest");
+    setSort(parseSort(p.get("sort")));
   }, [searchString]);
 
   const pushFilters = useCallback(
@@ -282,27 +305,35 @@ export default function Browse() {
       search?: string;
       tags?: string[];
       gender?: string;
-      resolution?: string;
       sort?: string;
     }) => {
+      // Use the *committed* search (from the URL), not the local input state —
+      // text that's been typed but not submitted shouldn't leak into filters
+      // when the user changes sort/tags/gender.
+      const committedSearch = new URLSearchParams(searchString).get("search") || "";
       const next = {
-        search,
+        search: committedSearch,
         tags: selectedTags,
         gender,
-        resolution,
         sort: sort as string,
         ...overrides,
       };
+      // Keep local state in sync with the merged values so the UI (chips,
+      // sort select, filter pills) reflects what we push to the URL. Without
+      // this, toggling a gender chip never updates the UI and the filter
+      // becomes impossible to deselect.
+      setSearch(next.search);
+      setSelectedTags(next.tags);
+      setGender(next.gender);
+      setSort((next.sort as ListRecordingsSort) || "newest");
       const params = new URLSearchParams();
       if (next.search) params.set("search", next.search);
       if (next.tags.length) params.set("tags", next.tags.join(","));
       if (next.gender) params.set("gender", next.gender);
-      if (next.resolution) params.set("resolution", next.resolution);
       if (next.sort && next.sort !== "newest") params.set("sort", next.sort);
-      isInternalRef.current = true;
       setLocation(`/browse${params.toString() ? "?" + params.toString() : ""}`);
     },
-    [search, selectedTags, gender, resolution, sort, setLocation],
+    [search, selectedTags, gender, sort, searchString, setLocation],
   );
 
   const handleSearch = (e: React.FormEvent) => {
@@ -319,8 +350,6 @@ export default function Browse() {
 
   const toggleGender = (val: string) =>
     pushFilters({ gender: gender === val ? "" : val });
-  const toggleResolution = (val: string) =>
-    pushFilters({ resolution: resolution === val ? "" : val });
 
   const clearAll = () => setLocation("/browse");
 
@@ -328,11 +357,10 @@ export default function Browse() {
     search ||
     selectedTags.length ||
     gender ||
-    resolution ||
     sort !== "newest"
   );
   const activeFilterCount =
-    (selectedTags.length > 0 ? 1 : 0) + (gender ? 1 : 0) + (resolution ? 1 : 0);
+    (selectedTags.length > 0 ? 1 : 0) + (gender ? 1 : 0);
 
   // ─── Filter presets handlers ────────────────────────────
   const refreshPresets = () => setPresets(getFilterPresets());
@@ -344,7 +372,7 @@ export default function Browse() {
       search,
       tags: selectedTags,
       gender,
-      resolution,
+      resolution: "",
       sort: sort as string,
     });
     setSavedPresetId(saved.id);
@@ -359,7 +387,6 @@ export default function Browse() {
     if (preset.search) params.set("search", preset.search);
     if (preset.tags.length) params.set("tags", preset.tags.join(","));
     if (preset.gender) params.set("gender", preset.gender);
-    if (preset.resolution) params.set("resolution", preset.resolution);
     if (preset.sort && preset.sort !== "newest")
       params.set("sort", preset.sort);
     setPresetMenuOpen(false);
@@ -401,12 +428,6 @@ export default function Browse() {
                     placeholder="Search recordings…"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter")
-                        pushFilters({
-                          search: (e.target as HTMLInputElement).value,
-                        });
-                    }}
                     className="h-8 w-44 sm:w-56 bg-secondary border border-border/60 hover:border-border focus:border-primary/60 rounded-lg pl-8 pr-3 text-xs outline-none transition-all duration-200 placeholder:text-muted-foreground/40 focus:ring-2 focus:ring-primary/5"
                     aria-label="Search recordings"
                   />
@@ -430,7 +451,7 @@ export default function Browse() {
                 </div>
 
                 {/* Filter presets — save / load */}
-                <div className="relative">
+                <div ref={presetRef} className="relative">
                   <button
                     onClick={() => {
                       setPresetMenuOpen((p) => !p);
@@ -499,13 +520,10 @@ export default function Browse() {
                                   <Bookmark className="w-3 h-3 text-muted-foreground/40 shrink-0" />
                                 )}
                                 <span className="truncate">{preset.name}</span>
-                                {(preset.tags.length > 0 ||
-                                  preset.gender ||
-                                  preset.resolution) && (
+                                {(preset.tags.length > 0 || preset.gender) && (
                                   <span className="text-[9px] text-muted-foreground/40 shrink-0 ml-auto">
                                     {[
                                       preset.gender,
-                                      preset.resolution,
                                       ...preset.tags.slice(0, 2),
                                     ]
                                       .filter(Boolean)
@@ -576,28 +594,6 @@ export default function Browse() {
                         onClick={() => toggleGender(value)}
                         className={`h-7 px-3 text-[11px] font-medium rounded-lg border transition-all duration-150 ${
                           gender === value
-                            ? "border-primary/60 text-primary"
-                            : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground hover:bg-background/50"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Resolution chips */}
-                <div>
-                  <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold mb-2.5">
-                    Resolution
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {RESOLUTION_OPTIONS.map(({ value, label }) => (
-                      <button
-                        key={value}
-                        onClick={() => toggleResolution(value)}
-                        className={`h-7 px-3 text-[11px] font-medium rounded-lg border transition-all duration-150 ${
-                          resolution === value
                             ? "border-primary/60 text-primary"
                             : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground hover:bg-background/50"
                         }`}
@@ -683,30 +679,18 @@ export default function Browse() {
             )}
 
             {/* Active filter pills */}
-            {(selectedTags.length > 0 || gender || resolution) && (
+            {(selectedTags.length > 0 || gender) && (
               <div className="flex flex-wrap items-center gap-1.5 animate-fade-in-up">
                 <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wide shrink-0">
                   Filtering by:
                 </span>
                 {gender && (
                   <span className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-medium text-primary border border-primary/30 rounded-lg">
-                    {gender}
+                    {genderLabel(gender)}
                     <button
                       onClick={() => toggleGender(gender)}
                       className="hover:text-primary/80 transition-colors"
                       aria-label="Remove gender filter"
-                    >
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  </span>
-                )}
-                {resolution && (
-                  <span className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-medium text-primary border border-primary/30 rounded-lg">
-                    {resolution}
-                    <button
-                      onClick={() => toggleResolution(resolution)}
-                      className="hover:text-primary/80 transition-colors"
-                      aria-label="Remove resolution filter"
                     >
                       <X className="w-2.5 h-2.5" />
                     </button>
@@ -753,15 +737,18 @@ export default function Browse() {
                 <div
                   className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8 animate-fade-in-up ${pageLoading ? "opacity-30 saturate-50" : "transition-all duration-300"}`}
                 >
-                  {recordings.map((rec, i) => (
-                    <div key={rec.id}>
-                      <VideoCard
-                        recording={rec}
-                        fetchPriority={i < 10 ? "high" : undefined}
-                        isWatched={recentlyWatched.has(rec.id)}
-                      />
-                    </div>
-                  ))}
+                  {recordings.flatMap((rec, i) => {
+                    const cells = [
+                      <div key={rec.id}>
+                        <VideoCard
+                          recording={rec}
+                          fetchPriority={i < 10 ? "high" : undefined}
+                          isWatched={recentlyWatched.has(rec.id)}
+                        />
+                      </div>,
+                    ];
+                    return cells;
+                  })}
                 </div>
 
                 {pageLoading && (

@@ -56,8 +56,7 @@ export default function AdminRequests() {
     setLoading(true);
     setError(null);
     try {
-      const params = statusFilter !== "all" ? `?status=${statusFilter}` : "";
-      const res = await fetch(resolveApiPath(`/api/admin/requests${params}`), {
+      const res = await fetch(resolveApiPath(`/api/admin/requests`), {
         headers: headers(),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -68,7 +67,7 @@ export default function AdminRequests() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, headers]);
+  }, [headers]);
 
   useEffect(() => {
     if (session?.access_token) loadRequests();

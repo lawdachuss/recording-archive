@@ -1,11 +1,12 @@
 import { Router } from "express";
+import { timingSafeEqual } from "node:crypto";
 import { pushActivityBatch, flushActivity, type ActivityMetric } from "../lib/activity.js";
 
 /**
  * rum.ts — fire-and-forget ingest for Real User Monitoring + activity events.
  *
  * POST /api/rum   { metrics: [{ name, value, path, ts }] }
- * GET  /api/rum/flush   (cron / admin): drain the stream into Postgres now.
+ * GET  /api/rum/flush   (cron only): drain the stream into Postgres now.
  *
  * Design:
  *  - The ingest endpoint is on the critical path of the browser beacon, so it
@@ -16,6 +17,10 @@ import { pushActivityBatch, flushActivity, type ActivityMetric } from "../lib/ac
  *    flush endpoint backs that up (wire it to a Vercel cron on Pro; on Hobby
  *    cron is daily, so lazy flush is the primary mechanism).
  *  - The global rate limiter already applies to both endpoints.
+ *  - /rum/flush triggers a Postgres upsert of up to 200 stream entries per hit
+ *    (10k rows), so it is gated behind CRON_SECRET (the same bearer Vercel
+ *    sends on cron invocations). Leaving it public would let a script call it
+ *    hundreds of times a minute and amplify writes ~50x into the database.
  */
 const router = Router();
 
@@ -82,7 +87,16 @@ router.post("/rum", async (req, res) => {
   res.status(204).end();
 });
 
-router.get("/rum/flush", async (_req, res) => {
+router.get("/rum/flush", async (req, res) => {
+  const secret = process.env.CRON_SECRET;
+  const expected = secret ? Buffer.from(`Bearer ${secret}`, "utf8") : Buffer.alloc(0);
+  const actual = Buffer.from(String(req.headers.authorization ?? ""), "utf8");
+  const authorized =
+    expected.length > 0 && expected.length === actual.length && timingSafeEqual(expected, actual);
+  if (!authorized) {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
   const processed = await flushActivity();
   res.json({ ok: true, processed });
 });

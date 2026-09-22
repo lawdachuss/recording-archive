@@ -4,6 +4,16 @@ import http from "node:http";
 import { Resolver, lookup as systemLookup } from "node:dns/promises";
 import net from "node:net";
 import { Readable } from "node:stream";
+import {
+  getImageFromRedis,
+  setImageInRedis,
+  getTransformFromRedis,
+  setTransformInRedis,
+  getDnsFromRedis,
+  setDnsInRedis,
+  isFailureInRedis,
+  markFailureInRedis,
+} from "../lib/media-cache.js";
 
 // Connection pooling: reuse TLS/TCP connections to upstream hosts instead of
 // opening a fresh handshake for every thumbnail. Without this, a burst of
@@ -28,10 +38,21 @@ const CONNECTION_TIMEOUT_MS = 20_000;
 // Images must not hang for the full connection timeout — a thumbnail that slow
 // is effectively broken for UX. Fail (and fall back to the placeholder) faster
 // so the per-host gate slot frees up for the next thumbnail.
-const IMAGE_TIMEOUT_MS = 12_000;
+const IMAGE_TIMEOUT_MS = 8_000;
 const MAX_RETRIES = 3;
 const BASE_RETRY_DELAY_MS = 500;
 const MAX_REDIRECTS = 5;
+
+// ─── Per-request wall-clock budget ───────────────────────────────────
+// The whole request — host-gate wait, DNS, and every retry — must finish before
+// the origin/CDN tears a slow function down. Cloudflare in front of the Vercel
+// origin reports 520/524 when the connection resets mid-flight, and Vercel caps
+// invocation duration anyway: with 12–20s socket timeouts x 4 attempts + backoff
+// a slow pixhost fetch could hold the connection open ~90s. These budgets keep
+// every invocation short enough to complete normally, while still leaving room
+// for a couple of healthy retries on a server that responds in a second or two.
+const IMAGE_BUDGET_MS = 25_000;
+const VIDEO_BUDGET_MS = 50_000;
 
 // ─── Per-host upstream worker pool ────────────────────────────────────
 // The browser may ask for a whole page of thumbnails at once; if each request
@@ -87,11 +108,35 @@ function scheduleHostGate(gate: HostGate): void {
   gate.timer = setTimeout(tryStart, 0);
 }
 
-/** Resolve once this host has a free upstream slot. Returns a release fn. */
-function acquireHostGate(host: string): Promise<() => void> {
+/**
+ * Resolve once this host has a free upstream slot. Returns a release fn, or
+ * null if no slot freed up within `timeoutMs` — a request queued behind hung
+ * fetches must fail fast (and fall back) instead of burning the whole request
+ * budget waiting in line.
+ */
+function acquireHostGate(
+  host: string,
+  timeoutMs: number = Number.POSITIVE_INFINITY,
+): Promise<(() => void) | null> {
   const gate = getHostGate(host);
+  let settled = false;
+  let timer: NodeJS.Timeout | null = null;
   return new Promise((resolve) => {
-    gate.waiters.push(() => resolve(() => releaseHostGate(gate)));
+    const finish = (value: (() => void) | null) => {
+      if (settled) {
+        // A waiter that fires after the deadline already resolved still hands
+        // us a slot — release it immediately so the gate counter stays correct.
+        if (value) value();
+        return;
+      }
+      settled = true;
+      if (timer !== null) clearTimeout(timer);
+      resolve(value);
+    };
+    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+      timer = setTimeout(() => finish(null), timeoutMs);
+    }
+    gate.waiters.push(() => finish(() => releaseHostGate(gate)));
     scheduleHostGate(gate);
   });
 }
@@ -112,7 +157,7 @@ interface CachedImage {
 const IMAGE_MEM_CACHE_TTL_MS = 5 * 60_000;
 const IMAGE_MEM_CACHE_MAX = 500;
 const imageMemCache = new Map<string, CachedImage & { expires: number }>();
-const imageInflight = new Map<string, Promise<CachedImage>>();
+const imageInflight = new Map<string, Promise<CachedImage | null>>();
 
 function cacheImageInMemory(url: string, img: CachedImage): void {
   imageMemCache.set(url, { ...img, expires: Date.now() + IMAGE_MEM_CACHE_TTL_MS });
@@ -127,17 +172,35 @@ async function fetchImageOnce(
   urlStr: string,
   upstreamHeaders: Record<string, string>,
   log: any,
-): Promise<CachedImage> {
-  const release = await acquireHostGate(new URL(urlStr).hostname);
+): Promise<CachedImage | null> {
+  const deadline = Date.now() + IMAGE_BUDGET_MS;
+  const release = await acquireHostGate(new URL(urlStr).hostname, deadline - Date.now());
+  if (!release) {
+    log?.warn?.({ url: urlStr }, "Media proxy image host gate timeout");
+    return null;
+  }
   try {
-    const response = await fetchWithRetry(urlStr, upstreamHeaders, log, IMAGE_TIMEOUT_MS);
+    const response = await fetchWithRetry(urlStr, upstreamHeaders, log, IMAGE_TIMEOUT_MS, deadline);
     if (!response || !response.ok) {
+      // Transient upstream statuses (429 / 5xx that survived retries) are NOT
+      // durable failures — don't mark them so the same URL can succeed shortly
+      // after. Return null → the caller 404s and the frontend's mirror chain
+      // tries another host. Genuine permanent 4xx still throw (durable cache).
+      if (response && isTransientStatus(response.status)) return null;
       throw new Error(response ? `upstream ${response.status}` : "upstream fetch failed");
     }
     const contentType = response.headers.get("content-type") || "image/jpeg";
-    const buffer = Buffer.from(await response.arrayBuffer());
+    // Refuse anything that could render as a document at our origin, and bound
+    // the buffered size so an attacker-chosen URL can't exhaust function memory.
+    if (!isSafeMediaType(contentType, new URL(urlStr))) {
+      throw new Error(`unsafe upstream content type: ${contentType}`);
+    }
+    const buffer = await readBodyBounded(response, MAX_IMAGE_BYTES);
     const img: CachedImage = { buffer, contentType, status: response.status };
     cacheImageInMemory(urlStr, img);
+    // Shared tier: another instance (or this one, after a CDN miss) can now
+    // serve the same thumbnail from Redis instead of re-fetching upstream.
+    setImageInRedis(urlStr, img);
     return img;
   } finally {
     release();
@@ -145,19 +208,31 @@ async function fetchImageOnce(
 }
 
 /**
- * Returns the buffered image (`CachedImage`) for `urlStr`. Concurrent requests
- * for the same URL share one upstream fetch (single-flight); recent successes
- * are served from memory. Throws on upstream failure so the caller can return
- * the placeholder SVG.
+ * Returns the buffered image (`CachedImage`) for `urlStr`, or null when the
+ * upstream fetch failed or ran out of budget. Concurrent requests for the same
+ * URL share one upstream fetch (single-flight); recent successes are served
+ * from memory.
  */
 async function getImage(
   urlStr: string,
   upstreamHeaders: Record<string, string>,
   log: any,
-): Promise<CachedImage> {
+): Promise<CachedImage | null> {
   const cached = imageMemCache.get(urlStr);
   if (cached && cached.expires > Date.now()) {
     return cached;
+  }
+
+  // Shared tier (another instance already fetched / transformed this URL).
+  // Fail-open: any Redis hiccup just falls through to a fresh upstream fetch.
+  try {
+    const shared = await getImageFromRedis(urlStr);
+    if (shared) {
+      cacheImageInMemory(urlStr, shared);
+      return shared;
+    }
+  } catch (err) {
+    log?.warn?.({ err, url: urlStr }, "Media proxy Redis image read failed");
   }
 
   let inflight = imageInflight.get(urlStr);
@@ -201,6 +276,7 @@ function cacheTransform(key: string, img: TransformedImage): void {
     const oldest = transformMemCache.keys().next().value;
     if (oldest !== undefined) transformMemCache.delete(oldest);
   }
+  setTransformInRedis(key, img);
 }
 
 /**
@@ -252,6 +328,18 @@ async function getTransformedImage(
   const key = transformCacheKey(urlStr, width, fmt);
   const cached = transformMemCache.get(key);
   if (cached && cached.expires > Date.now()) return cached;
+
+  // Shared tier: a resized/webp variant fetched by another instance.
+  try {
+    const shared = await getTransformFromRedis(key);
+    if (shared) {
+      transformMemCache.set(key, { ...shared, expires: Date.now() + TRANSFORM_CACHE_TTL_MS });
+      return shared;
+    }
+  } catch (err) {
+    log?.warn?.({ err, key }, "Media proxy Redis transform read failed");
+  }
+
   let inflight = transformInflight.get(key);
   if (!inflight) {
     inflight = transformImage(img.buffer, img.contentType, width, fmt, log)
@@ -275,19 +363,31 @@ async function getTransformedImage(
  */
 // ─── Failure cache ────────────────────────────────────────────────
 // Cache upstream failures per URL so we don't hammer unreachable hosts
-// on every page load. TTL is 10 minutes.
+// on every page load. TTL is 10 minutes. Backed by memory + shared Redis so a
+// cold serverless instance doesn't immediately re-attack a host everyone else
+// already learned is down.
 const FAILURE_CACHE_TTL_MS = 10 * 60 * 1000;
 const FAILURE_CACHE_MAX_SIZE = 500;
 const failureCache = new Map<string, number>();
 
-function isCachedFailure(url: string): boolean {
+async function isCachedFailure(url: string): Promise<boolean> {
   const cached = failureCache.get(url);
-  if (!cached) return false;
-  if (Date.now() - cached > FAILURE_CACHE_TTL_MS) {
-    failureCache.delete(url);
-    return false;
+  if (cached) {
+    if (Date.now() - cached > FAILURE_CACHE_TTL_MS) {
+      failureCache.delete(url);
+    } else {
+      return true;
+    }
   }
-  return true;
+  try {
+    if (await isFailureInRedis(url)) {
+      failureCache.set(url, Date.now());
+      return true;
+    }
+  } catch {
+    // Redis hiccup — fall through, a real fetch attempt is harmless.
+  }
+  return false;
 }
 
 function markCachedFailure(url: string): void {
@@ -297,6 +397,48 @@ function markCachedFailure(url: string): void {
     if (oldestKey !== undefined) failureCache.delete(oldestKey);
   }
   failureCache.set(url, Date.now());
+  markFailureInRedis(url);
+}
+
+// ─── Media type allowlist ───────────────────────────────────────────────
+// The proxy only ever feeds <img>/<video> elements, so its responses must
+// never be renderable documents (HTML / SVG / JS — all script-capable) at the
+// trusted chuglii.in origin. Without this, a crafted URL like
+//   https://chuglii.in/api/media?url=https://attacker/x.html
+// makes the deployed app serve attacker HTML same-origin, which can read the
+// Supabase/API credentials out of localStorage. Whitelist media types only,
+// with an extension fallback for hosts that omit Content-Type.
+const SAFE_MEDIA_RE =
+  /^(image\/(?!svg)[a-z0-9.+-]+|video\/[a-z0-9.+-]+|audio\/[a-z0-9.+-]+|application\/x-mpegurl|application\/vnd\.apple\.mpegurl|application\/mpegurl|application\/octet-stream|binary\/octet-stream)$/i;
+const MEDIA_EXT_RE = /\.(jpe?g|jxl|png|webp|gif|avif|apng|mp4|webm|mov|m4v|m3u8|ogg|ogv|oga|mp3|aac|wav|opus)$/i;
+
+function isSafeMediaType(contentType: string | null | undefined, url: URL): boolean {
+  if (contentType && typeof contentType === "string") {
+    const ct = contentType.split(";")[0]!.trim();
+    if (ct && ct !== "*/*" && ct !== "application/stream") return SAFE_MEDIA_RE.test(ct);
+  }
+  return MEDIA_EXT_RE.test(url.pathname);
+}
+
+/** Whole-body (image) buffering cap — thumbnails are small; refuse huge bodies. */
+const MAX_IMAGE_BYTES = 40 * 1024 * 1024;
+
+async function readBodyBounded(response: Response, maxBytes: number): Promise<Buffer> {
+  if (!response.body) return Buffer.alloc(0);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      reader.cancel().catch(() => {});
+      throw new Error(`upstream body exceeds ${maxBytes} bytes`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks, total);
 }
 
 const router = Router();
@@ -322,6 +464,14 @@ async function resolveHostname(hostname: string): Promise<string | null> {
   const cached = dnsCache.get(hostname);
   if (cached && cached.expires > Date.now()) return cached.ip;
 
+  // Shared tier: another instance already resolved this host through its (more
+  // reliable) resolver set.
+  const shared = await getDnsFromRedis(hostname).catch(() => null);
+  if (shared) {
+    dnsCache.set(hostname, { ip: shared, expires: Date.now() + DNS_CACHE_TTL_MS });
+    return shared;
+  }
+
   let ip: string | null = null;
   // Try IPv4 first
   try {
@@ -340,7 +490,10 @@ async function resolveHostname(hostname: string): Promise<string | null> {
     }
   }
 
-  if (ip) dnsCache.set(hostname, { ip, expires: Date.now() + DNS_CACHE_TTL_MS });
+  if (ip) {
+    dnsCache.set(hostname, { ip, expires: Date.now() + DNS_CACHE_TTL_MS });
+    setDnsInRedis(hostname, ip);
+  }
   return ip;
 }
 
@@ -412,7 +565,7 @@ function isPrivateIpv6(ip: string): boolean {
   return (
     inRange(0n, 1n) || // ::/128 unspecified
     inRange(1n, 1n) || // ::1/128 loopback
-    inRange(0xffffffffn, 0x100000000n) || // ::ffff:0:0/96 IPv4-mapped (block all)
+    inRange(BigInt(0xffff) << 32n, BigInt(0x100000000)) || // ::ffff:0:0/96 IPv4-mapped (block all)
     inRange(BigInt(0xfc00) << 96n, BigInt(0x0200) << 96n) || // fc00::/7 ULA
     inRange(BigInt(0xfe80) << 96n, BigInt(0x0400) << 96n) || // fe80::/10 link-local
     inRange(BigInt(0xff00) << 96n, BigInt(0x0100) << 96n) || // ff00::/8 multicast
@@ -467,6 +620,12 @@ async function fetchWithTimeout(
   timeoutMs: number,
 ): Promise<Response> {
   const parsedUrl = new URL(urlStr);
+  // Re-vetted on every hop (initial fetch AND each redirect target): only
+  // http(s) is ever proxied. Redirects to other schemes (file://, gopher://,
+  // …) would otherwise be handed to `http.request` with a bogus host/port.
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+    throw new Error(`Protocol not allowed: ${parsedUrl.protocol}`);
+  }
   const protocol = parsedUrl.protocol === "https:" ? https : http;
 
   // ---- Attempt 1: Custom DNS resolver + direct IP connect ----
@@ -557,25 +716,53 @@ function directConnect(
   });
 }
 
+/** True for statuses the upstream will likely recover from in seconds. These
+ * must never be persisted to the durable failure cache — a 10-minute block
+ * would serve 404s long after the host clears a rate-limit window. */
+function isTransientStatus(status: number): boolean {
+  return status === 429 || status === 408 || status === 425 || (status >= 500 && status < 600);
+}
+
+/**
+ * Parse a Retry-After header (delta-seconds or HTTP-date) into milliseconds.
+ * Returns null when absent or unparseable so callers fall back to their own
+ * backoff schedule.
+ */
+function parseRetryAfter(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1000;
+  const date = Date.parse(trimmed);
+  if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
+  return null;
+}
+
 /**
  * Fetch the upstream URL with retries and exponential backoff with jitter.
- * Returns the Response on success, or null if all retries were exhausted.
+ * `deadlineMs` (absolute ms) caps the TOTAL time spent across all attempts,
+ * including backoff sleeps — so an invocation can never hold the origin
+ * connection open past the platform/CDN response window (which resets the
+ * connection and surfaces as a 520). Returns the Response on success, or null
+ * if all retries were exhausted or the deadline elapsed.
  */
 async function fetchWithRetry(
   url: string,
   headers: Record<string, string>,
   log: any,
   timeoutMs: number = CONNECTION_TIMEOUT_MS,
+  deadlineMs?: number,
 ): Promise<Response | null> {
   // Check failure cache before attempting
-  if (isCachedFailure(url)) {
+  if (await isCachedFailure(url)) {
     log.warn({ url }, "Media proxy skipping cached failure");
     return null;
   }
 
   for (let attempt = 1; attempt <= 1 + MAX_RETRIES; attempt++) {
     const isFirst = attempt === 1;
-    const attemptTimeout = timeoutMs * (isFirst ? 1 : 1.5);
+    const remaining = deadlineMs === undefined ? Number.POSITIVE_INFINITY : deadlineMs - Date.now();
+    if (remaining <= 0) break;
+    const attemptTimeout = Math.min(timeoutMs * (isFirst ? 1 : 1.5), remaining);
 
     try {
       let response = await fetchWithTimeout(url, headers, attemptTimeout);
@@ -600,9 +787,27 @@ async function fetchWithRetry(
 
       // Retry on 5xx — they may be transient
       if (response.status >= 500 && response.status < 600 && attempt <= MAX_RETRIES) {
-        const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200;
+        const delay = Math.min(
+          BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200,
+          remaining,
+        );
         log.warn({ url, status: response.status, attempt }, "Media proxy upstream 5xx, retrying");
         await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+
+      // Honor upstream rate limits (429) — pixhost in particular throttles
+      // hotlinking clients. Respect Retry-After (delta-seconds or HTTP-date)
+      // when present, bounded by our own deadline so a slow-cooldown host
+      // never holds the invocation past the CDN response window.
+      if (response.status === 429 && attempt <= MAX_RETRIES) {
+        const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
+        const delay = Math.min(
+          retryAfterMs ?? BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200,
+          remaining,
+        );
+        log.warn({ url, attempt, retryAfterMs }, "Media proxy upstream 429, honoring Retry-After");
+        await new Promise((resolve) => setTimeout(resolve, Math.max(0, delay)));
         continue;
       }
 
@@ -612,7 +817,10 @@ async function fetchWithRetry(
       if (response.status === 200 && response.headers.get("content-length") === "0") {
         if (attempt <= MAX_RETRIES) {
           log.warn({ url, attempt }, "Media proxy upstream empty 200, retrying");
-          const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200;
+          const delay = Math.min(
+            BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200,
+            remaining,
+          );
           await new Promise((resolve) => setTimeout(resolve, delay));
           continue;
         }
@@ -626,7 +834,10 @@ async function fetchWithRetry(
       const errorMessage = err instanceof Error ? err.message : String(err);
 
       if (attempt <= MAX_RETRIES) {
-        const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200;
+        const delay = Math.min(
+          BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200,
+          remaining,
+        );
         log.warn({ url, attempt, err: errorMessage }, "Media proxy fetch failed, retrying");
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
@@ -647,6 +858,10 @@ function streamResponse(upstreamRes: Response, res: any, log: any): void {
   // Forward content-type from upstream
   const contentType = upstreamRes.headers.get("content-type");
   if (contentType) res.setHeader("Content-Type", contentType);
+  // Our origin serves HTML — a proxied text/html or image/svg+xml response is
+  // scriptable in the same origin, so a browser must not sniff the document
+  // type. nosniff enforces Content-Type over any possible sniffing heuristic.
+  res.setHeader("X-Content-Type-Options", "nosniff");
 
   // Forward range-related headers for partial content support
   const contentLength = upstreamRes.headers.get("content-length");
@@ -780,9 +995,20 @@ router.get("/media", async (req, res) => {
   try {
     let response: Response | null;
     if (isVideoRequest) {
-      response = await fetchWithRetry(urlStr, upstreamHeaders, req.log);
+      response = await fetchWithRetry(
+        urlStr,
+        upstreamHeaders,
+        req.log,
+        CONNECTION_TIMEOUT_MS,
+        Date.now() + VIDEO_BUDGET_MS,
+      );
     } else {
       const img = await getImage(urlStr, upstreamHeaders, req.log);
+      if (!img) {
+        req.log.warn({ url: urlStr }, "Media proxy image unavailable");
+        res.status(404).end();
+        return;
+      }
       if (width !== null || fmt !== null) {
         // Resized / converted variant — cached separately so every width and
         // format is single-flight and the edge caches each one independently.
@@ -820,22 +1046,35 @@ router.get("/media", async (req, res) => {
       return;
     }
 
+    // Central media-type gate: whatever we got back (final redirect hop
+    // included), it must be a renderable-but-not-scriptable media type. HTML,
+    // SVG, JSON, JS etc. are refused — never streamed from our origin.
+    if (!isSafeMediaType(response.headers.get("content-type"), parsedUrl)) {
+      req.log.warn(
+        { url: urlStr, contentType: response.headers.get("content-type") },
+        "Media proxy refused non-media upstream content",
+      );
+      markCachedFailure(urlStr);
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.status(415).end();
+      return;
+    }
+
     if (!response.ok && response.status !== 206) {
       if (isVideoRequest) {
-        // For video, forward the actual error status + body.
-        // Browsers need proper error codes for <video> to show fallback.
-        const body = await response.arrayBuffer();
-        res.status(response.status);
-        for (const [k, v] of response.headers.entries()) {
-          if (k.toLowerCase() === "content-type") res.setHeader("Content-Type", v);
-        }
-        res.send(Buffer.from(body));
+        // Forward the upstream status (browsers use it to drive the <video>
+        // fallback) but never the body or content-type — upstream error pages
+        // (often text/html) must not be served from our origin either.
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        res.status(response.status).end();
         return;
       }
       // Images: return 404 so the frontend can try the next mirror fallback.
       const body = await response.text().catch(() => "");
       req.log.warn({ url: urlStr, status: response.status, body: body.slice(0, 200) }, "Media proxy upstream error");
-      markCachedFailure(urlStr);
+      // Transient statuses (rate limits / server hiccups) must not poison the
+      // durable failure cache — the upstream may recover within seconds.
+      if (!isTransientStatus(response.status)) markCachedFailure(urlStr);
       res.status(404).end();
       return;
     }

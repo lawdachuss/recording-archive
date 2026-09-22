@@ -5644,106 +5644,141 @@ var require_on_finished = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/content-type@1.0.5/node_modules/content-type/index.js
-var require_content_type = __commonJS({
-  "../../node_modules/.pnpm/content-type@1.0.5/node_modules/content-type/index.js"(exports) {
+// ../../node_modules/.pnpm/content-type@2.1.0/node_modules/content-type/dist/index.js
+var require_dist = __commonJS({
+  "../../node_modules/.pnpm/content-type@2.1.0/node_modules/content-type/dist/index.js"(exports) {
     "use strict";
-    var PARAM_REGEXP = /; *([!#$%&'*+.^_`|~0-9A-Za-z-]+) *= *("(?:[\u000b\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\u00ff]|\\[\u000b\u0020-\u00ff])*"|[!#$%&'*+.^_`|~0-9A-Za-z-]+) */g;
-    var TEXT_REGEXP = /^[\u000b\u0020-\u007e\u0080-\u00ff]+$/;
-    var TOKEN_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
-    var QESC_REGEXP = /\\([\u000b\u0020-\u00ff])/g;
-    var QUOTE_REGEXP = /([\\"])/g;
-    var TYPE_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+    Object.defineProperty(exports, "__esModule", { value: true });
     exports.format = format;
     exports.parse = parse;
+    var TEXT_REGEXP = /^[\u0009\u0020-\u007e\u0080-\u00ff]*$/;
+    var TOKEN_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+    var QUOTE_REGEXP = /[\\"]/g;
+    var TYPE_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+    var NullObject = /* @__PURE__ */ (() => {
+      const C = function() {
+      };
+      C.prototype = /* @__PURE__ */ Object.create(null);
+      return C;
+    })();
     function format(obj) {
-      if (!obj || typeof obj !== "object") {
-        throw new TypeError("argument obj is required");
-      }
-      var parameters = obj.parameters;
-      var type = obj.type;
+      const { type, parameters } = obj;
       if (!type || !TYPE_REGEXP.test(type)) {
-        throw new TypeError("invalid type");
+        throw new TypeError(`Invalid type: ${type}`);
       }
-      var string = type;
-      if (parameters && typeof parameters === "object") {
-        var param;
-        var params = Object.keys(parameters).sort();
-        for (var i = 0; i < params.length; i++) {
-          param = params[i];
+      let result = type;
+      if (parameters) {
+        for (const param of Object.keys(parameters)) {
           if (!TOKEN_REGEXP.test(param)) {
-            throw new TypeError("invalid parameter name");
+            throw new TypeError(`Invalid parameter name: ${param}`);
           }
-          string += "; " + param + "=" + qstring(parameters[param]);
+          result += `; ${param}=${qstring(parameters[param])}`;
         }
       }
-      return string;
+      return result;
     }
-    function parse(string) {
-      if (!string) {
-        throw new TypeError("argument string is required");
+    function parse(header, options) {
+      const stopChar = options?.comma === true ? COMMA : 65536;
+      const len = header.length;
+      let index = skipOWS(header, options?.start ?? 0, len);
+      const valueStart = index;
+      index = skipValue(header, index, len, stopChar);
+      const valueEnd = trailingOWS(header, valueStart, index);
+      const type = header.slice(valueStart, valueEnd).toLowerCase();
+      if (options?.parameters === false) {
+        return { type, index, parameters: new NullObject() };
       }
-      var header = typeof string === "object" ? getcontenttype(string) : string;
-      if (typeof header !== "string") {
-        throw new TypeError("argument string is required to be a string");
-      }
-      var index = header.indexOf(";");
-      var type = index !== -1 ? header.slice(0, index).trim() : header.trim();
-      if (!TYPE_REGEXP.test(type)) {
-        throw new TypeError("invalid media type");
-      }
-      var obj = new ContentType(type.toLowerCase());
-      if (index !== -1) {
-        var key;
-        var match;
-        var value;
-        PARAM_REGEXP.lastIndex = index;
-        while (match = PARAM_REGEXP.exec(header)) {
-          if (match.index !== index) {
-            throw new TypeError("invalid parameter format");
-          }
-          index += match[0].length;
-          key = match[1].toLowerCase();
-          value = match[2];
-          if (value.charCodeAt(0) === 34) {
-            value = value.slice(1, -1);
-            if (value.indexOf("\\") !== -1) {
-              value = value.replace(QESC_REGEXP, "$1");
+      return parseParameters(header, type, index, len, stopChar);
+    }
+    var SP = 32;
+    var HTAB = 9;
+    var SEMI = 59;
+    var EQ = 61;
+    var DQUOTE = 34;
+    var BSLASH = 92;
+    var COMMA = 44;
+    function parseParameters(header, type, index, len, stopChar) {
+      const parameters = new NullObject();
+      parameter: while (index < len) {
+        if (header.charCodeAt(index) === stopChar)
+          break;
+        index = skipOWS(header, index + 1, len);
+        const keyStart = index;
+        while (index < len) {
+          const code = header.charCodeAt(index);
+          if (code === stopChar)
+            break parameter;
+          if (code === SEMI)
+            continue parameter;
+          if (code === EQ) {
+            const keyEnd = trailingOWS(header, keyStart, index);
+            const key = header.slice(keyStart, keyEnd).toLowerCase();
+            index = skipOWS(header, index + 1, len);
+            if (index < len && header.charCodeAt(index) === DQUOTE) {
+              index++;
+              let value = "";
+              while (index < len) {
+                const code2 = header.charCodeAt(index++);
+                if (code2 === DQUOTE) {
+                  index = skipValue(header, index, len, stopChar);
+                  if (parameters[key] === void 0)
+                    parameters[key] = value;
+                  break;
+                }
+                if (code2 === BSLASH && index < len) {
+                  value += header[index++];
+                  continue;
+                }
+                value += String.fromCharCode(code2);
+              }
+              continue parameter;
             }
+            const valueStart = index;
+            index = skipValue(header, index, len, stopChar);
+            if (parameters[key] === void 0) {
+              const valueEnd = trailingOWS(header, valueStart, index);
+              parameters[key] = header.slice(valueStart, valueEnd);
+            }
+            continue parameter;
           }
-          obj.parameters[key] = value;
-        }
-        if (index !== header.length) {
-          throw new TypeError("invalid parameter format");
+          index++;
         }
       }
-      return obj;
+      return { type, index, parameters };
     }
-    function getcontenttype(obj) {
-      var header;
-      if (typeof obj.getHeader === "function") {
-        header = obj.getHeader("content-type");
-      } else if (typeof obj.headers === "object") {
-        header = obj.headers && obj.headers["content-type"];
+    function skipValue(str, index, len, stopChar) {
+      while (index < len) {
+        const code = str.charCodeAt(index);
+        if (code === SEMI || code === stopChar)
+          break;
+        index++;
       }
-      if (typeof header !== "string") {
-        throw new TypeError("content-type header is missing from object");
-      }
-      return header;
+      return index;
     }
-    function qstring(val) {
-      var str = String(val);
-      if (TOKEN_REGEXP.test(str)) {
+    function skipOWS(header, index, len) {
+      while (index < len) {
+        const char = header.charCodeAt(index);
+        if (char !== SP && char !== HTAB)
+          break;
+        index++;
+      }
+      return index;
+    }
+    function trailingOWS(header, start, end) {
+      while (end > start) {
+        const char = header.charCodeAt(end - 1);
+        if (char !== SP && char !== HTAB)
+          break;
+        end--;
+      }
+      return end;
+    }
+    function qstring(str) {
+      if (TOKEN_REGEXP.test(str))
         return str;
-      }
-      if (str.length > 0 && !TEXT_REGEXP.test(str)) {
-        throw new TypeError("invalid parameter value");
-      }
-      return '"' + str.replace(QUOTE_REGEXP, "\\$1") + '"';
-    }
-    function ContentType(type) {
-      this.parameters = /* @__PURE__ */ Object.create(null);
-      this.type = type;
+      if (TEXT_REGEXP.test(str))
+        return `"${str.replace(QUOTE_REGEXP, "\\$&")}"`;
+      throw new TypeError(`Invalid parameter value: ${str}`);
     }
   }
 });
@@ -15323,11 +15358,11 @@ var require_media_typer = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/type-is@2.0.1/node_modules/type-is/index.js
+// ../../node_modules/.pnpm/type-is@2.1.0/node_modules/type-is/index.js
 var require_type_is = __commonJS({
-  "../../node_modules/.pnpm/type-is@2.0.1/node_modules/type-is/index.js"(exports, module) {
+  "../../node_modules/.pnpm/type-is@2.1.0/node_modules/type-is/index.js"(exports, module) {
     "use strict";
-    var contentType = require_content_type();
+    var contentType = require_dist();
     var mime = require_mime_types();
     var typer = require_media_typer();
     module.exports = typeofrequest;
@@ -15336,9 +15371,12 @@ var require_type_is = __commonJS({
     module.exports.normalize = normalize;
     module.exports.match = mimeMatch;
     function typeis(value, types_) {
+      if (value && typeof value === "object") {
+        value = value.headers["content-type"];
+      }
       var i;
       var types = types_;
-      var val = tryNormalizeType(value);
+      var val = normalizeType(value);
       if (!val) {
         return false;
       }
@@ -15404,25 +15442,19 @@ var require_type_is = __commonJS({
       return true;
     }
     function normalizeType(value) {
-      var type = contentType.parse(value).type;
+      if (!value) return null;
+      var type = contentType.parse(value, { parameters: false }).type;
       return typer.test(type) ? type : null;
-    }
-    function tryNormalizeType(value) {
-      try {
-        return value ? normalizeType(value) : null;
-      } catch (err) {
-        return null;
-      }
     }
   }
 });
 
-// ../../node_modules/.pnpm/body-parser@2.2.2/node_modules/body-parser/lib/utils.js
+// ../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/utils.js
 var require_utils = __commonJS({
-  "../../node_modules/.pnpm/body-parser@2.2.2/node_modules/body-parser/lib/utils.js"(exports, module) {
+  "../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/utils.js"(exports, module) {
     "use strict";
     var bytes = require_bytes();
-    var contentType = require_content_type();
+    var contentType = require_dist();
     var typeis = require_type_is();
     module.exports = {
       getCharset,
@@ -15430,11 +15462,9 @@ var require_utils = __commonJS({
       passthrough
     };
     function getCharset(req) {
-      try {
-        return (contentType.parse(req).parameters.charset || "").toLowerCase();
-      } catch {
-        return void 0;
-      }
+      const header = req.headers["content-type"];
+      if (!header) return void 0;
+      return contentType.parse(header).parameters.charset?.toLowerCase();
     }
     function typeChecker(type) {
       return function checkType(req) {
@@ -15445,15 +15475,18 @@ var require_utils = __commonJS({
       if (!defaultType) {
         throw new TypeError("defaultType must be provided");
       }
-      var inflate = options?.inflate !== false;
-      var limit = typeof options?.limit !== "number" ? bytes.parse(options?.limit || "100kb") : options?.limit;
-      var type = options?.type || defaultType;
-      var verify = options?.verify || false;
-      var defaultCharset = options?.defaultCharset || "utf-8";
+      const inflate = options?.inflate !== false;
+      const limit = typeof options?.limit === "undefined" || options?.limit === null ? 102400 : bytes.parse(options.limit);
+      const type = options?.type || defaultType;
+      const verify = options?.verify || false;
+      const defaultCharset = options?.defaultCharset || "utf-8";
+      if (limit === null) {
+        throw new TypeError(`option limit "${String(options.limit)}" is invalid`);
+      }
       if (verify !== false && typeof verify !== "function") {
         throw new TypeError("option verify must be function");
       }
-      var shouldParse = typeof type !== "function" ? typeChecker(type) : type;
+      const shouldParse = typeof type !== "function" ? typeChecker(type) : type;
       return {
         inflate,
         limit,
@@ -15468,9 +15501,9 @@ var require_utils = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/body-parser@2.2.2/node_modules/body-parser/lib/read.js
+// ../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/read.js
 var require_read = __commonJS({
-  "../../node_modules/.pnpm/body-parser@2.2.2/node_modules/body-parser/lib/read.js"(exports, module) {
+  "../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/read.js"(exports, module) {
     "use strict";
     var createError = require_http_errors();
     var getBody = require_raw_body();
@@ -15500,7 +15533,7 @@ var require_read = __commonJS({
         next();
         return;
       }
-      var encoding = null;
+      let encoding = null;
       if (options?.skipCharset !== true) {
         encoding = getCharset(req) || options.defaultCharset;
         if (!!options?.isValidCharset && !options.isValidCharset(encoding)) {
@@ -15512,10 +15545,10 @@ var require_read = __commonJS({
           return;
         }
       }
-      var length;
-      var opts = options;
-      var stream;
-      var verify = opts.verify;
+      let length;
+      const opts = options;
+      let stream;
+      const verify = opts.verify;
       try {
         stream = contentstream(req, debug, opts.inflate);
         length = stream.length;
@@ -15534,7 +15567,7 @@ var require_read = __commonJS({
       debug("read body");
       getBody(stream, opts, function(error, body) {
         if (error) {
-          var _error;
+          let _error;
           if (error.type === "encoding.unsupported") {
             _error = createError(415, 'unsupported charset "' + encoding.toUpperCase() + '"', {
               charset: encoding.toLowerCase(),
@@ -15564,7 +15597,7 @@ var require_read = __commonJS({
             return;
           }
         }
-        var str = body;
+        let str = body;
         try {
           debug("parse body");
           str = typeof body !== "string" && encoding !== null ? iconv.decode(body, encoding) : body;
@@ -15580,8 +15613,8 @@ var require_read = __commonJS({
       });
     }
     function contentstream(req, debug, inflate) {
-      var encoding = (req.headers["content-encoding"] || "identity").toLowerCase();
-      var length = req.headers["content-length"];
+      const encoding = (req.headers["content-encoding"] || "identity").toLowerCase();
+      const length = req.headers["content-length"];
       debug('content-encoding "%s"', encoding);
       if (inflate === false && encoding !== "identity") {
         throw createError(415, "content encoding unsupported", {
@@ -15593,7 +15626,7 @@ var require_read = __commonJS({
         req.length = length;
         return req;
       }
-      var stream = createDecompressionStream(encoding, debug);
+      const stream = createDecompressionStream(encoding, debug);
       req.pipe(stream);
       return stream;
     }
@@ -15626,9 +15659,9 @@ var require_read = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/body-parser@2.2.2/node_modules/body-parser/lib/types/json.js
+// ../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/types/json.js
 var require_json = __commonJS({
-  "../../node_modules/.pnpm/body-parser@2.2.2/node_modules/body-parser/lib/types/json.js"(exports, module) {
+  "../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/types/json.js"(exports, module) {
     "use strict";
     var debug = require_src()("body-parser:json");
     var read = require_read();
@@ -15639,18 +15672,43 @@ var require_json = __commonJS({
     var JSON_SYNTAX_REGEXP = /#+/g;
     function json(options) {
       const normalizedOptions = normalizeOptions(options, "application/json");
-      var reviver = options?.reviver;
-      var strict = options?.strict !== false;
-      function parse(body) {
-        if (body.length === 0) {
-          return {};
-        }
-        if (strict) {
-          var first = firstchar(body);
+      const parse = createJsonParser(options);
+      const readOptions = {
+        ...normalizedOptions,
+        // assert charset per RFC 7159 sec 8.1
+        isValidCharset: (charset) => charset.slice(0, 4) === "utf-"
+      };
+      return function jsonParser(req, res, next) {
+        read(req, res, next, parse, debug, readOptions);
+      };
+    }
+    function createJsonParser(options) {
+      const reviver = options?.reviver;
+      const strict = options?.strict !== false;
+      if (strict) {
+        return function parse(body) {
+          if (body.length === 0) {
+            return {};
+          }
+          const first = firstchar(body);
           if (first !== "{" && first !== "[") {
             debug("strict violation");
             throw createStrictSyntaxError(body, first);
           }
+          try {
+            debug("parse json");
+            return JSON.parse(body, reviver);
+          } catch (e) {
+            throw normalizeJsonSyntaxError(e, {
+              message: e.message,
+              stack: e.stack
+            });
+          }
+        };
+      }
+      return function parse(body) {
+        if (body.length === 0) {
+          return {};
         }
         try {
           debug("parse json");
@@ -15661,19 +15719,11 @@ var require_json = __commonJS({
             stack: e.stack
           });
         }
-      }
-      const readOptions = {
-        ...normalizedOptions,
-        // assert charset per RFC 7159 sec 8.1
-        isValidCharset: (charset) => charset.slice(0, 4) === "utf-"
-      };
-      return function jsonParser(req, res, next) {
-        read(req, res, next, parse, debug, readOptions);
       };
     }
     function createStrictSyntaxError(str, char) {
-      var index = str.indexOf(char);
-      var partial = "";
+      const index = str.indexOf(char);
+      let partial = "";
       if (index !== -1) {
         partial = str.substring(0, index) + JSON_SYNTAX_CHAR.repeat(str.length - index);
       }
@@ -15690,13 +15740,13 @@ var require_json = __commonJS({
       }
     }
     function firstchar(str) {
-      var match = FIRST_CHAR_REGEXP.exec(str);
+      const match = FIRST_CHAR_REGEXP.exec(str);
       return match ? match[1] : void 0;
     }
     function normalizeJsonSyntaxError(error, obj) {
-      var keys = Object.getOwnPropertyNames(error);
-      for (var i = 0; i < keys.length; i++) {
-        var key = keys[i];
+      const keys = Object.getOwnPropertyNames(error);
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
         if (key !== "stack" && key !== "message") {
           delete error[key];
         }
@@ -15708,9 +15758,9 @@ var require_json = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/body-parser@2.2.2/node_modules/body-parser/lib/types/raw.js
+// ../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/types/raw.js
 var require_raw = __commonJS({
-  "../../node_modules/.pnpm/body-parser@2.2.2/node_modules/body-parser/lib/types/raw.js"(exports, module) {
+  "../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/types/raw.js"(exports, module) {
     "use strict";
     var debug = require_src()("body-parser:raw");
     var read = require_read();
@@ -15730,9 +15780,9 @@ var require_raw = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/body-parser@2.2.2/node_modules/body-parser/lib/types/text.js
+// ../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/types/text.js
 var require_text = __commonJS({
-  "../../node_modules/.pnpm/body-parser@2.2.2/node_modules/body-parser/lib/types/text.js"(exports, module) {
+  "../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/types/text.js"(exports, module) {
     "use strict";
     var debug = require_src()("body-parser:text");
     var read = require_read();
@@ -17333,9 +17383,9 @@ var require_side_channel_weakmap = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/side-channel@1.1.0/node_modules/side-channel/index.js
+// ../../node_modules/.pnpm/side-channel@1.1.1/node_modules/side-channel/index.js
 var require_side_channel = __commonJS({
-  "../../node_modules/.pnpm/side-channel@1.1.0/node_modules/side-channel/index.js"(exports, module) {
+  "../../node_modules/.pnpm/side-channel@1.1.1/node_modules/side-channel/index.js"(exports, module) {
     "use strict";
     var $TypeError = require_type();
     var inspect = require_object_inspect();
@@ -17348,7 +17398,8 @@ var require_side_channel = __commonJS({
       var channel = {
         assert: function(key) {
           if (!channel.has(key)) {
-            throw new $TypeError("Side channel does not contain " + inspect(key));
+            var keyDesc = key && Object(key) === key ? "the given object key" : inspect(key);
+            throw new $TypeError("Side channel does not contain " + keyDesc);
           }
         },
         "delete": function(key) {
@@ -17372,9 +17423,9 @@ var require_side_channel = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/qs@6.15.1/node_modules/qs/lib/formats.js
+// ../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/formats.js
 var require_formats = __commonJS({
-  "../../node_modules/.pnpm/qs@6.15.1/node_modules/qs/lib/formats.js"(exports, module) {
+  "../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/formats.js"(exports, module) {
     "use strict";
     var replace = String.prototype.replace;
     var percentTwenties = /%20/g;
@@ -17398,12 +17449,13 @@ var require_formats = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/qs@6.15.1/node_modules/qs/lib/utils.js
+// ../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/utils.js
 var require_utils2 = __commonJS({
-  "../../node_modules/.pnpm/qs@6.15.1/node_modules/qs/lib/utils.js"(exports, module) {
+  "../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/utils.js"(exports, module) {
     "use strict";
     var formats = require_formats();
     var getSideChannel = require_side_channel();
+    var defineProperty = require_es_define_property();
     var has = Object.prototype.hasOwnProperty;
     var isArray = Array.isArray;
     var overflowChannel = getSideChannel();
@@ -17451,6 +17503,18 @@ var require_utils2 = __commonJS({
       }
       return obj;
     };
+    var setProperty = function setProperty2(obj, key, value) {
+      if (key === "__proto__" && defineProperty) {
+        defineProperty(obj, key, {
+          configurable: true,
+          enumerable: true,
+          value,
+          writable: true
+        });
+      } else {
+        obj[key] = value;
+      }
+    };
     var merge = function merge2(target, source, options) {
       if (!source) {
         return target;
@@ -17458,7 +17522,10 @@ var require_utils2 = __commonJS({
       if (typeof source !== "object" && typeof source !== "function") {
         if (isArray(target)) {
           var nextIndex = target.length;
-          if (options && typeof options.arrayLimit === "number" && nextIndex > options.arrayLimit) {
+          if (options && typeof options.arrayLimit === "number" && nextIndex >= options.arrayLimit) {
+            if (options.throwOnLimitExceeded) {
+              throw new RangeError("Array limit exceeded. Only " + options.arrayLimit + " element" + (options.arrayLimit === 1 ? "" : "s") + " allowed in an array.");
+            }
             return markOverflow(arrayToObject(target.concat(source), options), nextIndex);
           }
           target[nextIndex] = source;
@@ -17489,6 +17556,9 @@ var require_utils2 = __commonJS({
         }
         var combined = [target].concat(source);
         if (options && typeof options.arrayLimit === "number" && combined.length > options.arrayLimit) {
+          if (options.throwOnLimitExceeded) {
+            throw new RangeError("Array limit exceeded. Only " + options.arrayLimit + " element" + (options.arrayLimit === 1 ? "" : "s") + " allowed in an array.");
+          }
           return markOverflow(arrayToObject(combined, options), combined.length - 1);
         }
         return combined;
@@ -17510,14 +17580,20 @@ var require_utils2 = __commonJS({
             target[i] = item;
           }
         });
+        if (options && typeof options.arrayLimit === "number" && target.length > options.arrayLimit) {
+          if (options.throwOnLimitExceeded) {
+            throw new RangeError("Array limit exceeded. Only " + options.arrayLimit + " element" + (options.arrayLimit === 1 ? "" : "s") + " allowed in an array.");
+          }
+          return markOverflow(arrayToObject(target, options), target.length - 1);
+        }
         return target;
       }
       return Object.keys(source).reduce(function(acc, key) {
         var value = source[key];
         if (has.call(acc, key)) {
-          acc[key] = merge2(acc[key], value, options);
+          setProperty(acc, key, merge2(acc[key], value, options));
         } else {
-          acc[key] = value;
+          setProperty(acc, key, value);
         }
         if (isOverflow(source) && !isOverflow(acc)) {
           markOverflow(acc, getMaxIndex(source));
@@ -17533,7 +17609,7 @@ var require_utils2 = __commonJS({
     };
     var assign = function assignSingleSource(target, source) {
       return Object.keys(source).reduce(function(acc, key) {
-        acc[key] = source[key];
+        setProperty(acc, key, source[key]);
         return acc;
       }, target);
     };
@@ -17567,6 +17643,13 @@ var require_utils2 = __commonJS({
       var out = "";
       for (var j = 0; j < string.length; j += limit) {
         var segment = string.length >= limit ? string.slice(j, j + limit) : string;
+        if (j + limit < string.length) {
+          var last = segment.charCodeAt(segment.length - 1);
+          if (last >= 55296 && last <= 56319) {
+            segment = segment.slice(0, -1);
+            j -= 1;
+          }
+        }
         var arr = [];
         for (var i = 0; i < segment.length; ++i) {
           var c = segment.charCodeAt(i);
@@ -17596,7 +17679,7 @@ var require_utils2 = __commonJS({
     };
     var compact = function compact2(value) {
       var queue = [{ obj: { o: value }, prop: "o" }];
-      var refs = [];
+      var refs = getSideChannel();
       for (var i = 0; i < queue.length; ++i) {
         var item = queue[i];
         var obj = item.obj[item.prop];
@@ -17604,9 +17687,9 @@ var require_utils2 = __commonJS({
         for (var j = 0; j < keys.length; ++j) {
           var key = keys[j];
           var val = obj[key];
-          if (typeof val === "object" && val !== null && refs.indexOf(val) === -1) {
+          if (typeof val === "object" && val !== null && !refs.has(val)) {
             queue[queue.length] = { obj, prop: key };
-            refs[refs.length] = val;
+            refs.set(val, true);
           }
         }
       }
@@ -17620,17 +17703,27 @@ var require_utils2 = __commonJS({
       if (!obj || typeof obj !== "object") {
         return false;
       }
-      return !!(obj.constructor && obj.constructor.isBuffer && obj.constructor.isBuffer(obj));
+      return !!(obj.constructor && typeof obj.constructor.isBuffer === "function" && obj.constructor.isBuffer(obj));
     };
-    var combine = function combine2(a, b, arrayLimit, plainObjects) {
+    var combine = function combine2(a, b, arrayLimit, plainObjects, throwOnLimitExceeded) {
       if (isOverflow(a)) {
-        var newIndex = getMaxIndex(a) + 1;
-        a[newIndex] = b;
+        if (throwOnLimitExceeded) {
+          throw new RangeError("Array limit exceeded. Only " + arrayLimit + " element" + (arrayLimit === 1 ? "" : "s") + " allowed in an array.");
+        }
+        var bValues = isArray(b) ? b : [b];
+        var newIndex = getMaxIndex(a);
+        for (var i = 0; i < bValues.length; ++i) {
+          newIndex += 1;
+          a[newIndex] = bValues[i];
+        }
         setMaxIndex(a, newIndex);
         return a;
       }
       var result = [].concat(a, b);
       if (result.length > arrayLimit) {
+        if (throwOnLimitExceeded) {
+          throw new RangeError("Array limit exceeded. Only " + arrayLimit + " element" + (arrayLimit === 1 ? "" : "s") + " allowed in an array.");
+        }
         return markOverflow(arrayToObject(result, { plainObjects }), result.length - 1);
       }
       return result;
@@ -17662,9 +17755,9 @@ var require_utils2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/qs@6.15.1/node_modules/qs/lib/stringify.js
+// ../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/stringify.js
 var require_stringify = __commonJS({
-  "../../node_modules/.pnpm/qs@6.15.1/node_modules/qs/lib/stringify.js"(exports, module) {
+  "../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/stringify.js"(exports, module) {
     "use strict";
     var getSideChannel = require_side_channel();
     var utils = require_utils2();
@@ -17698,6 +17791,7 @@ var require_stringify = __commonJS({
       charsetSentinel: false,
       commaRoundTrip: false,
       delimiter: "&",
+      depth: Infinity,
       encode: true,
       encodeDotInKeys: false,
       encoder: utils.encode,
@@ -17717,8 +17811,11 @@ var require_stringify = __commonJS({
       return typeof v === "string" || typeof v === "number" || typeof v === "boolean" || typeof v === "symbol" || typeof v === "bigint";
     };
     var sentinel = {};
-    var stringify = function stringify2(object, prefix, generateArrayPrefix, commaRoundTrip, allowEmptyArrays, strictNullHandling, skipNulls, encodeDotInKeys, encoder, filter, sort, allowDots, serializeDate, format, formatter, encodeValuesOnly, charset, sideChannel) {
+    var stringify = function stringify2(object, prefix, generateArrayPrefix, commaRoundTrip, allowEmptyArrays, strictNullHandling, skipNulls, encodeDotInKeys, encoder, filter, sort, allowDots, serializeDate, format, formatter, encodeValuesOnly, charset, sideChannel, depth, currentDepth) {
       var obj = object;
+      if (currentDepth > depth) {
+        throw new RangeError("Input depth exceeded depth option of " + depth);
+      }
       var tmpSc = sideChannel;
       var step = 0;
       var findFlag = false;
@@ -17736,9 +17833,8 @@ var require_stringify = __commonJS({
           step = 0;
         }
       }
-      if (typeof filter === "function") {
-        obj = filter(prefix, obj);
-      } else if (obj instanceof Date) {
+      obj = typeof filter === "function" ? filter(prefix, obj) : obj;
+      if (obj instanceof Date) {
         obj = serializeDate(obj);
       } else if (generateArrayPrefix === "comma" && isArray(obj)) {
         obj = utils.maybeMap(obj, function(value2) {
@@ -17750,7 +17846,7 @@ var require_stringify = __commonJS({
       }
       if (obj === null) {
         if (strictNullHandling) {
-          return encoder && !encodeValuesOnly ? encoder(prefix, defaults.encoder, charset, "key", format) : prefix;
+          return formatter(encoder && !encodeValuesOnly ? encoder(prefix, defaults.encoder, charset, "key", format) : prefix);
         }
         obj = "";
       }
@@ -17768,7 +17864,9 @@ var require_stringify = __commonJS({
       var objKeys;
       if (generateArrayPrefix === "comma" && isArray(obj)) {
         if (encodeValuesOnly && encoder) {
-          obj = utils.maybeMap(obj, encoder);
+          obj = utils.maybeMap(obj, function(v) {
+            return v == null ? v : encoder(v);
+          });
         }
         objKeys = [{ value: obj.length > 0 ? obj.join(",") || null : void 0 }];
       } else if (isArray(filter)) {
@@ -17779,7 +17877,7 @@ var require_stringify = __commonJS({
       }
       var encodedPrefix = encodeDotInKeys ? String(prefix).replace(/\./g, "%2E") : String(prefix);
       var adjustedPrefix = commaRoundTrip && isArray(obj) && obj.length === 1 ? encodedPrefix + "[]" : encodedPrefix;
-      if (allowEmptyArrays && isArray(obj) && obj.length === 0) {
+      if (allowEmptyArrays && isArray(obj) && obj.length === 0 && Object.keys(obj).length === 0) {
         return adjustedPrefix + "[]";
       }
       for (var j = 0; j < objKeys.length; ++j) {
@@ -17811,7 +17909,9 @@ var require_stringify = __commonJS({
           formatter,
           encodeValuesOnly,
           charset,
-          valueSideChannel
+          valueSideChannel,
+          depth,
+          currentDepth + 1
         ));
       }
       return values;
@@ -17866,6 +17966,7 @@ var require_stringify = __commonJS({
         charsetSentinel: typeof opts.charsetSentinel === "boolean" ? opts.charsetSentinel : defaults.charsetSentinel,
         commaRoundTrip: !!opts.commaRoundTrip,
         delimiter: typeof opts.delimiter === "undefined" ? defaults.delimiter : opts.delimiter,
+        depth: typeof opts.depth === "number" ? opts.depth : defaults.depth,
         encode: typeof opts.encode === "boolean" ? opts.encode : defaults.encode,
         encodeDotInKeys: typeof opts.encodeDotInKeys === "boolean" ? opts.encodeDotInKeys : defaults.encodeDotInKeys,
         encoder: typeof opts.encoder === "function" ? opts.encoder : defaults.encoder,
@@ -17906,13 +18007,17 @@ var require_stringify = __commonJS({
       var sideChannel = getSideChannel();
       for (var i = 0; i < objKeys.length; ++i) {
         var key = objKeys[i];
+        if (typeof key === "undefined" || key === null) {
+          continue;
+        }
         var value = obj[key];
         if (options.skipNulls && value === null) {
           continue;
         }
+        var encodedKey = options.encodeDotInKeys ? String(key).replace(/\./g, "%2E") : String(key);
         pushToArray(keys, stringify(
           value,
-          key,
+          encodedKey,
           generateArrayPrefix,
           commaRoundTrip,
           options.allowEmptyArrays,
@@ -17928,16 +18033,18 @@ var require_stringify = __commonJS({
           options.formatter,
           options.encodeValuesOnly,
           options.charset,
-          sideChannel
+          sideChannel,
+          options.depth,
+          0
         ));
       }
       var joined = keys.join(options.delimiter);
       var prefix = options.addQueryPrefix === true ? "?" : "";
       if (options.charsetSentinel) {
         if (options.charset === "iso-8859-1") {
-          prefix += "utf8=%26%2310003%3B&";
+          prefix += "utf8=%26%2310003%3B" + options.delimiter;
         } else {
-          prefix += "utf8=%E2%9C%93&";
+          prefix += "utf8=%E2%9C%93" + options.delimiter;
         }
       }
       return joined.length > 0 ? prefix + joined : "";
@@ -17945,9 +18052,9 @@ var require_stringify = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/qs@6.15.1/node_modules/qs/lib/parse.js
+// ../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/parse.js
 var require_parse = __commonJS({
-  "../../node_modules/.pnpm/qs@6.15.1/node_modules/qs/lib/parse.js"(exports, module) {
+  "../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/parse.js"(exports, module) {
     "use strict";
     var utils = require_utils2();
     var has = Object.prototype.hasOwnProperty;
@@ -17983,6 +18090,17 @@ var require_parse = __commonJS({
     };
     var parseArrayValue = function(val, options, currentArrayLength) {
       if (val && typeof val === "string" && options.comma && val.indexOf(",") > -1) {
+        if (options.throwOnLimitExceeded) {
+          var commaCount = 0;
+          var commaIndex = val.indexOf(",");
+          while (commaIndex > -1) {
+            commaCount += 1;
+            if (commaCount >= options.arrayLimit) {
+              throw new RangeError("Array limit exceeded. Only " + options.arrayLimit + " element" + (options.arrayLimit === 1 ? "" : "s") + " allowed in an array.");
+            }
+            commaIndex = val.indexOf(",", commaIndex + 1);
+          }
+        }
         return val.split(",");
       }
       if (options.throwOnLimitExceeded && currentArrayLength >= options.arrayLimit) {
@@ -18054,10 +18172,7 @@ var require_parse = __commonJS({
           val = isArray(val) ? [val] : val;
         }
         if (options.comma && isArray(val) && val.length > options.arrayLimit) {
-          if (options.throwOnLimitExceeded) {
-            throw new RangeError("Array limit exceeded. Only " + options.arrayLimit + " element" + (options.arrayLimit === 1 ? "" : "s") + " allowed in an array.");
-          }
-          val = utils.combine([], val, options.arrayLimit, options.plainObjects);
+          val = utils.combine([], val, options.arrayLimit, options.plainObjects, options.throwOnLimitExceeded);
         }
         if (key !== null) {
           var existing = has.call(obj, key);
@@ -18066,7 +18181,8 @@ var require_parse = __commonJS({
               obj[key],
               val,
               options.arrayLimit,
-              options.plainObjects
+              options.plainObjects,
+              options.throwOnLimitExceeded
             );
           } else if (!existing || options.duplicates === "last") {
             obj[key] = val;
@@ -18093,7 +18209,8 @@ var require_parse = __commonJS({
               [],
               leaf,
               options.arrayLimit,
-              options.plainObjects
+              options.plainObjects,
+              options.throwOnLimitExceeded
             );
           }
         } else {
@@ -18120,8 +18237,8 @@ var require_parse = __commonJS({
       }
       return leaf;
     };
-    var splitKeyIntoSegments = function splitKeyIntoSegments2(givenKey, options) {
-      var key = options.allowDots ? givenKey.replace(/\.([^.[]+)/g, "[$1]") : givenKey;
+    var splitKeyIntoSegments = function splitKeyIntoSegments2(originalKey, options) {
+      var key = options.allowDots ? originalKey.replace(/\.([^.[]+)/g, "[$1]") : originalKey;
       if (options.depth <= 0) {
         if (!options.plainObjects && has.call(Object.prototype, key)) {
           if (!options.allowPrototypes) {
@@ -18130,37 +18247,56 @@ var require_parse = __commonJS({
         }
         return [key];
       }
-      var brackets = /(\[[^[\]]*])/;
-      var child = /(\[[^[\]]*])/g;
-      var segment = brackets.exec(key);
-      var parent = segment ? key.slice(0, segment.index) : key;
-      var keys = [];
+      var segments = [];
+      var first = key.indexOf("[");
+      var parent = first >= 0 ? key.slice(0, first) : key;
       if (parent) {
         if (!options.plainObjects && has.call(Object.prototype, parent)) {
           if (!options.allowPrototypes) {
             return;
           }
         }
-        keys[keys.length] = parent;
+        segments[segments.length] = parent;
       }
-      var i = 0;
-      while ((segment = child.exec(key)) !== null && i < options.depth) {
-        i += 1;
-        var segmentContent = segment[1].slice(1, -1);
-        if (!options.plainObjects && has.call(Object.prototype, segmentContent)) {
-          if (!options.allowPrototypes) {
-            return;
+      var n = key.length;
+      var open = first;
+      var collected = 0;
+      while (open >= 0 && collected < options.depth) {
+        var level = 1;
+        var i = open + 1;
+        var close = -1;
+        while (i < n && close < 0) {
+          var cu = key.charCodeAt(i);
+          if (cu === 91) {
+            level += 1;
+          } else if (cu === 93) {
+            level -= 1;
+            if (level === 0) {
+              close = i;
+            }
           }
+          i += 1;
         }
-        keys[keys.length] = segment[1];
+        if (close < 0) {
+          segments[segments.length] = "[" + key.slice(open) + "]";
+          return segments;
+        }
+        var seg = key.slice(open, close + 1);
+        var content = seg.slice(1, -1);
+        if (!options.plainObjects && has.call(Object.prototype, content) && !options.allowPrototypes) {
+          return;
+        }
+        segments[segments.length] = seg;
+        collected += 1;
+        open = key.indexOf("[", close + 1);
       }
-      if (segment) {
+      if (open >= 0) {
         if (options.strictDepth === true) {
           throw new RangeError("Input depth exceeded depth option of " + options.depth + " and strictDepth is true");
         }
-        keys[keys.length] = "[" + key.slice(segment.index) + "]";
+        segments[segments.length] = "[" + key.slice(open) + "]";
       }
-      return keys;
+      return segments;
     };
     var parseKeys = function parseQueryStringKeys(givenKey, val, options, valuesParsed) {
       if (!givenKey) {
@@ -18244,9 +18380,9 @@ var require_parse = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/qs@6.15.1/node_modules/qs/lib/index.js
+// ../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/index.js
 var require_lib2 = __commonJS({
-  "../../node_modules/.pnpm/qs@6.15.1/node_modules/qs/lib/index.js"(exports, module) {
+  "../../node_modules/.pnpm/qs@6.16.0/node_modules/qs/lib/index.js"(exports, module) {
     "use strict";
     var stringify = require_stringify();
     var parse = require_parse();
@@ -18259,9 +18395,9 @@ var require_lib2 = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/body-parser@2.2.2/node_modules/body-parser/lib/types/urlencoded.js
+// ../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/types/urlencoded.js
 var require_urlencoded = __commonJS({
-  "../../node_modules/.pnpm/body-parser@2.2.2/node_modules/body-parser/lib/types/urlencoded.js"(exports, module) {
+  "../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/lib/types/urlencoded.js"(exports, module) {
     "use strict";
     var createError = require_http_errors();
     var debug = require_src()("body-parser:urlencoded");
@@ -18274,10 +18410,7 @@ var require_urlencoded = __commonJS({
       if (normalizedOptions.defaultCharset !== "utf-8" && normalizedOptions.defaultCharset !== "iso-8859-1") {
         throw new TypeError("option defaultCharset must be either utf-8 or iso-8859-1");
       }
-      var queryparse = createQueryParser(options);
-      function parse(body, encoding) {
-        return body.length ? queryparse(body, encoding) : {};
-      }
+      const parse = createQueryParser(options);
       const readOptions = {
         ...normalizedOptions,
         // assert charset
@@ -18288,11 +18421,11 @@ var require_urlencoded = __commonJS({
       };
     }
     function createQueryParser(options) {
-      var extended = Boolean(options?.extended);
-      var parameterLimit = options?.parameterLimit !== void 0 ? options?.parameterLimit : 1e3;
-      var charsetSentinel = options?.charsetSentinel;
-      var interpretNumericEntities = options?.interpretNumericEntities;
-      var depth = extended ? options?.depth !== void 0 ? options?.depth : 32 : 0;
+      const extended = Boolean(options?.extended);
+      let parameterLimit = options?.parameterLimit !== void 0 ? options?.parameterLimit : 1e3;
+      const charsetSentinel = options?.charsetSentinel;
+      const interpretNumericEntities = options?.interpretNumericEntities;
+      const depth = extended ? options?.depth !== void 0 ? options?.depth : 32 : 0;
       if (isNaN(parameterLimit) || parameterLimit < 1) {
         throw new TypeError("option parameterLimit must be a positive number");
       }
@@ -18302,15 +18435,16 @@ var require_urlencoded = __commonJS({
       if (isFinite(parameterLimit)) {
         parameterLimit = parameterLimit | 0;
       }
-      return function queryparse(body, encoding) {
-        var paramCount = parameterCount(body, parameterLimit);
+      return function parse(body, encoding) {
+        if (!body.length) return {};
+        const paramCount = parameterCount(body, parameterLimit);
         if (paramCount === void 0) {
           debug("too many parameters");
           throw createError(413, "too many parameters", {
             type: "parameters.too.many"
           });
         }
-        var arrayLimit = extended ? Math.max(100, paramCount) : paramCount;
+        const arrayLimit = extended ? Math.max(100, paramCount) : paramCount;
         debug("parse " + (extended ? "extended " : "") + "urlencoding");
         try {
           return qs.parse(body, {
@@ -18347,31 +18481,15 @@ var require_urlencoded = __commonJS({
   }
 });
 
-// ../../node_modules/.pnpm/body-parser@2.2.2/node_modules/body-parser/index.js
+// ../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/index.js
 var require_body_parser = __commonJS({
-  "../../node_modules/.pnpm/body-parser@2.2.2/node_modules/body-parser/index.js"(exports, module) {
+  "../../node_modules/.pnpm/body-parser@2.3.0/node_modules/body-parser/index.js"(exports, module) {
     "use strict";
     exports = module.exports = bodyParser;
-    Object.defineProperty(exports, "json", {
-      configurable: true,
-      enumerable: true,
-      get: () => require_json()
-    });
-    Object.defineProperty(exports, "raw", {
-      configurable: true,
-      enumerable: true,
-      get: () => require_raw()
-    });
-    Object.defineProperty(exports, "text", {
-      configurable: true,
-      enumerable: true,
-      get: () => require_text()
-    });
-    Object.defineProperty(exports, "urlencoded", {
-      configurable: true,
-      enumerable: true,
-      get: () => require_urlencoded()
-    });
+    exports.json = require_json();
+    exports.raw = require_raw();
+    exports.text = require_text();
+    exports.urlencoded = require_urlencoded();
     function bodyParser() {
       throw new Error("The bodyParser() generic has been split into individual middleware to use instead.");
     }
@@ -18764,6 +18882,110 @@ var require_view = __commonJS({
       } catch (e) {
         return void 0;
       }
+    }
+  }
+});
+
+// ../../node_modules/.pnpm/content-type@1.0.5/node_modules/content-type/index.js
+var require_content_type = __commonJS({
+  "../../node_modules/.pnpm/content-type@1.0.5/node_modules/content-type/index.js"(exports) {
+    "use strict";
+    var PARAM_REGEXP = /; *([!#$%&'*+.^_`|~0-9A-Za-z-]+) *= *("(?:[\u000b\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\u00ff]|\\[\u000b\u0020-\u00ff])*"|[!#$%&'*+.^_`|~0-9A-Za-z-]+) */g;
+    var TEXT_REGEXP = /^[\u000b\u0020-\u007e\u0080-\u00ff]+$/;
+    var TOKEN_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+    var QESC_REGEXP = /\\([\u000b\u0020-\u00ff])/g;
+    var QUOTE_REGEXP = /([\\"])/g;
+    var TYPE_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+    exports.format = format;
+    exports.parse = parse;
+    function format(obj) {
+      if (!obj || typeof obj !== "object") {
+        throw new TypeError("argument obj is required");
+      }
+      var parameters = obj.parameters;
+      var type = obj.type;
+      if (!type || !TYPE_REGEXP.test(type)) {
+        throw new TypeError("invalid type");
+      }
+      var string = type;
+      if (parameters && typeof parameters === "object") {
+        var param;
+        var params = Object.keys(parameters).sort();
+        for (var i = 0; i < params.length; i++) {
+          param = params[i];
+          if (!TOKEN_REGEXP.test(param)) {
+            throw new TypeError("invalid parameter name");
+          }
+          string += "; " + param + "=" + qstring(parameters[param]);
+        }
+      }
+      return string;
+    }
+    function parse(string) {
+      if (!string) {
+        throw new TypeError("argument string is required");
+      }
+      var header = typeof string === "object" ? getcontenttype(string) : string;
+      if (typeof header !== "string") {
+        throw new TypeError("argument string is required to be a string");
+      }
+      var index = header.indexOf(";");
+      var type = index !== -1 ? header.slice(0, index).trim() : header.trim();
+      if (!TYPE_REGEXP.test(type)) {
+        throw new TypeError("invalid media type");
+      }
+      var obj = new ContentType(type.toLowerCase());
+      if (index !== -1) {
+        var key;
+        var match;
+        var value;
+        PARAM_REGEXP.lastIndex = index;
+        while (match = PARAM_REGEXP.exec(header)) {
+          if (match.index !== index) {
+            throw new TypeError("invalid parameter format");
+          }
+          index += match[0].length;
+          key = match[1].toLowerCase();
+          value = match[2];
+          if (value.charCodeAt(0) === 34) {
+            value = value.slice(1, -1);
+            if (value.indexOf("\\") !== -1) {
+              value = value.replace(QESC_REGEXP, "$1");
+            }
+          }
+          obj.parameters[key] = value;
+        }
+        if (index !== header.length) {
+          throw new TypeError("invalid parameter format");
+        }
+      }
+      return obj;
+    }
+    function getcontenttype(obj) {
+      var header;
+      if (typeof obj.getHeader === "function") {
+        header = obj.getHeader("content-type");
+      } else if (typeof obj.headers === "object") {
+        header = obj.headers && obj.headers["content-type"];
+      }
+      if (typeof header !== "string") {
+        throw new TypeError("content-type header is missing from object");
+      }
+      return header;
+    }
+    function qstring(val) {
+      var str = String(val);
+      if (TOKEN_REGEXP.test(str)) {
+        return str;
+      }
+      if (str.length > 0 && !TEXT_REGEXP.test(str)) {
+        throw new TypeError("invalid parameter value");
+      }
+      return '"' + str.replace(QUOTE_REGEXP, "\\$1") + '"';
+    }
+    function ContentType(type) {
+      this.parameters = /* @__PURE__ */ Object.create(null);
+      this.type = type;
     }
   }
 });
@@ -19851,7 +20073,7 @@ var require_is_promise = __commonJS({
 });
 
 // ../../node_modules/.pnpm/path-to-regexp@8.4.2/node_modules/path-to-regexp/dist/index.js
-var require_dist = __commonJS({
+var require_dist2 = __commonJS({
   "../../node_modules/.pnpm/path-to-regexp@8.4.2/node_modules/path-to-regexp/dist/index.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -20224,7 +20446,7 @@ var require_layer = __commonJS({
   "../../node_modules/.pnpm/router@2.2.0/node_modules/router/lib/layer.js"(exports, module) {
     "use strict";
     var isPromise = require_is_promise();
-    var pathRegexp = require_dist();
+    var pathRegexp = require_dist2();
     var debug = require_src()("router:layer");
     var deprecate = require_depd()("router");
     var TRAILING_SLASH_REGEXP = /\/+$/;
@@ -20503,27 +20725,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router19;
+    module.exports = Router21;
     module.exports.Route = Route;
-    function Router19(options) {
-      if (!(this instanceof Router19)) {
-        return new Router19(options);
+    function Router21(options) {
+      if (!(this instanceof Router21)) {
+        return new Router21(options);
       }
       const opts = options || {};
-      function router19(req, res, next) {
-        router19.handle(req, res, next);
+      function router21(req, res, next) {
+        router21.handle(req, res, next);
       }
-      Object.setPrototypeOf(router19, this);
-      router19.caseSensitive = opts.caseSensitive;
-      router19.mergeParams = opts.mergeParams;
-      router19.params = {};
-      router19.strict = opts.strict;
-      router19.stack = [];
-      return router19;
+      Object.setPrototypeOf(router21, this);
+      router21.caseSensitive = opts.caseSensitive;
+      router21.mergeParams = opts.mergeParams;
+      router21.params = {};
+      router21.strict = opts.strict;
+      router21.stack = [];
+      return router21;
     }
-    Router19.prototype = function() {
+    Router21.prototype = function() {
     };
-    Router19.prototype.param = function param(name, fn) {
+    Router21.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20543,7 +20765,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router19.prototype.handle = function handle(req, res, callback) {
+    Router21.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20670,7 +20892,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router19.prototype.use = function use(handler) {
+    Router21.prototype.use = function use(handler) {
       let offset = 0;
       let path = "/";
       if (typeof handler !== "function") {
@@ -20703,7 +20925,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router19.prototype.route = function route(path) {
+    Router21.prototype.route = function route(path) {
       const route2 = new Route(path);
       const layer = new Layer(path, {
         sensitive: this.caseSensitive,
@@ -20718,7 +20940,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router19.prototype[method] = function(path) {
+      Router21.prototype[method] = function(path) {
         const route = this.route(path);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -20901,13 +21123,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router19 = require_router();
+    var Router21 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init() {
-      var router19 = null;
+      var router21 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -20916,13 +21138,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router19 === null) {
-            router19 = new Router19({
+          if (router21 === null) {
+            router21 = new Router21({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router19;
+          return router21;
         }
       });
     };
@@ -20993,15 +21215,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router19 = this.router;
+      var router21 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router19.use(path, fn2);
+          return router21.use(path, fn2);
         }
         debug(".use app under %s", path);
         fn2.mountpath = path;
         fn2.parent = this;
-        router19.use(path, function mounted_app(req, res, next) {
+        router21.use(path, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -21742,6 +21964,100 @@ var require_accepts = __commonJS({
   }
 });
 
+// ../../node_modules/.pnpm/type-is@2.0.1/node_modules/type-is/index.js
+var require_type_is2 = __commonJS({
+  "../../node_modules/.pnpm/type-is@2.0.1/node_modules/type-is/index.js"(exports, module) {
+    "use strict";
+    var contentType = require_content_type();
+    var mime = require_mime_types();
+    var typer = require_media_typer();
+    module.exports = typeofrequest;
+    module.exports.is = typeis;
+    module.exports.hasBody = hasbody;
+    module.exports.normalize = normalize;
+    module.exports.match = mimeMatch;
+    function typeis(value, types_) {
+      var i;
+      var types = types_;
+      var val = tryNormalizeType(value);
+      if (!val) {
+        return false;
+      }
+      if (types && !Array.isArray(types)) {
+        types = new Array(arguments.length - 1);
+        for (i = 0; i < types.length; i++) {
+          types[i] = arguments[i + 1];
+        }
+      }
+      if (!types || !types.length) {
+        return val;
+      }
+      var type;
+      for (i = 0; i < types.length; i++) {
+        if (mimeMatch(normalize(type = types[i]), val)) {
+          return type[0] === "+" || type.indexOf("*") !== -1 ? val : type;
+        }
+      }
+      return false;
+    }
+    function hasbody(req) {
+      return req.headers["transfer-encoding"] !== void 0 || !isNaN(req.headers["content-length"]);
+    }
+    function typeofrequest(req, types_) {
+      if (!hasbody(req)) return null;
+      var types = arguments.length > 2 ? Array.prototype.slice.call(arguments, 1) : types_;
+      var value = req.headers["content-type"];
+      return typeis(value, types);
+    }
+    function normalize(type) {
+      if (typeof type !== "string") {
+        return false;
+      }
+      switch (type) {
+        case "urlencoded":
+          return "application/x-www-form-urlencoded";
+        case "multipart":
+          return "multipart/*";
+      }
+      if (type[0] === "+") {
+        return "*/*" + type;
+      }
+      return type.indexOf("/") === -1 ? mime.lookup(type) : type;
+    }
+    function mimeMatch(expected, actual) {
+      if (expected === false) {
+        return false;
+      }
+      var actualParts = actual.split("/");
+      var expectedParts = expected.split("/");
+      if (actualParts.length !== 2 || expectedParts.length !== 2) {
+        return false;
+      }
+      if (expectedParts[0] !== "*" && expectedParts[0] !== actualParts[0]) {
+        return false;
+      }
+      if (expectedParts[1].slice(0, 2) === "*+") {
+        return expectedParts[1].length <= actualParts[1].length + 1 && expectedParts[1].slice(1) === actualParts[1].slice(1 - expectedParts[1].length);
+      }
+      if (expectedParts[1] !== "*" && expectedParts[1] !== actualParts[1]) {
+        return false;
+      }
+      return true;
+    }
+    function normalizeType(value) {
+      var type = contentType.parse(value).type;
+      return typer.test(type) ? type : null;
+    }
+    function tryNormalizeType(value) {
+      try {
+        return value ? normalizeType(value) : null;
+      } catch (err) {
+        return null;
+      }
+    }
+  }
+});
+
 // ../../node_modules/.pnpm/fresh@2.0.0/node_modules/fresh/index.js
 var require_fresh = __commonJS({
   "../../node_modules/.pnpm/fresh@2.0.0/node_modules/fresh/index.js"(exports, module) {
@@ -21901,7 +22217,7 @@ var require_request = __commonJS({
     "use strict";
     var accepts = require_accepts();
     var isIP = __require("node:net").isIP;
-    var typeis = require_type_is();
+    var typeis = require_type_is2();
     var http2 = __require("node:http");
     var fresh = require_fresh();
     var parseRange = require_range_parser();
@@ -23574,7 +23890,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router19 = require_router();
+    var Router21 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23596,8 +23912,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router19.Route;
-    exports.Router = Router19;
+    exports.Route = Router21.Route;
+    exports.Router = Router21;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -38597,8 +38913,8 @@ var init_dist2 = __esm({
       }
     };
     NamespaceOperations = class {
-      constructor(client2, prefix = "") {
-        this.client = client2;
+      constructor(client5, prefix = "") {
+        this.client = client5;
         this.prefix = prefix;
       }
       async listNamespaces(parent) {
@@ -38663,8 +38979,8 @@ var init_dist2 = __esm({
       }
     };
     TableOperations = class {
-      constructor(client2, prefix = "", accessDelegation) {
-        this.client = client2;
+      constructor(client5, prefix = "", accessDelegation) {
+        this.client = client5;
         this.prefix = prefix;
         this.accessDelegation = accessDelegation;
       }
@@ -43444,8 +43760,8 @@ var require_GoTrueAdminApi = __commonJS({
           return await (0, fetch_1._request)(this.fetch, "POST", `${this.url}/admin/oauth/clients`, {
             body: params,
             headers: this.headers,
-            xform: (client2) => {
-              return { data: client2, error: null };
+            xform: (client5) => {
+              return { data: client5, error: null };
             }
           });
         } catch (error) {
@@ -43465,8 +43781,8 @@ var require_GoTrueAdminApi = __commonJS({
         try {
           return await (0, fetch_1._request)(this.fetch, "GET", `${this.url}/admin/oauth/clients/${clientId}`, {
             headers: this.headers,
-            xform: (client2) => {
-              return { data: client2, error: null };
+            xform: (client5) => {
+              return { data: client5, error: null };
             }
           });
         } catch (error) {
@@ -43487,8 +43803,8 @@ var require_GoTrueAdminApi = __commonJS({
           return await (0, fetch_1._request)(this.fetch, "PUT", `${this.url}/admin/oauth/clients/${clientId}`, {
             body: params,
             headers: this.headers,
-            xform: (client2) => {
-              return { data: client2, error: null };
+            xform: (client5) => {
+              return { data: client5, error: null };
             }
           });
         } catch (error) {
@@ -43528,8 +43844,8 @@ var require_GoTrueAdminApi = __commonJS({
         try {
           return await (0, fetch_1._request)(this.fetch, "POST", `${this.url}/admin/oauth/clients/${clientId}/regenerate_secret`, {
             headers: this.headers,
-            xform: (client2) => {
-              return { data: client2, error: null };
+            xform: (client5) => {
+              return { data: client5, error: null };
             }
           });
         } catch (error) {
@@ -44491,8 +44807,8 @@ var require_webauthn = __commonJS({
       return deepMerge(exports.DEFAULT_REQUEST_OPTIONS, baseOptions, overrides || {});
     }
     var WebAuthnApi = class {
-      constructor(client2) {
-        this.client = client2;
+      constructor(client5) {
+        this.client = client5;
         this.enroll = this._enroll.bind(this);
         this.challenge = this._challenge.bind(this);
         this.verify = this._verify.bind(this);
@@ -50695,8 +51011,8 @@ var init_supabase = __esm({
     _supabase = null;
     supabaseProxy = new Proxy({}, {
       get(_target, prop) {
-        const client2 = getSupabaseSync();
-        return client2[prop];
+        const client5 = getSupabaseSync();
+        return client5[prop];
       }
     });
   }
@@ -57511,20 +57827,20 @@ var require_autoPipelining = __commonJS({
       "readonly",
       "himport"
     ];
-    function executeAutoPipeline(client2, slotKey) {
-      if (client2._runningAutoPipelines.has(slotKey)) {
+    function executeAutoPipeline(client5, slotKey) {
+      if (client5._runningAutoPipelines.has(slotKey)) {
         return;
       }
-      if (!client2._autoPipelines.has(slotKey)) {
+      if (!client5._autoPipelines.has(slotKey)) {
         return;
       }
-      client2._runningAutoPipelines.add(slotKey);
-      const pipeline = client2._autoPipelines.get(slotKey);
-      client2._autoPipelines.delete(slotKey);
+      client5._runningAutoPipelines.add(slotKey);
+      const pipeline = client5._autoPipelines.get(slotKey);
+      client5._autoPipelines.delete(slotKey);
       const callbacks = pipeline[exports.kCallbacks];
       pipeline[exports.kCallbacks] = null;
       pipeline.exec(function(err, results) {
-        client2._runningAutoPipelines.delete(slotKey);
+        client5._runningAutoPipelines.delete(slotKey);
         if (err) {
           for (let i = 0; i < callbacks.length; i++) {
             process.nextTick(callbacks[i], err);
@@ -57534,13 +57850,13 @@ var require_autoPipelining = __commonJS({
             process.nextTick(callbacks[i], ...results[i]);
           }
         }
-        if (client2._autoPipelines.has(slotKey)) {
-          executeAutoPipeline(client2, slotKey);
+        if (client5._autoPipelines.has(slotKey)) {
+          executeAutoPipeline(client5, slotKey);
         }
       });
     }
-    function shouldUseAutoPipelining(client2, functionName, commandName) {
-      return functionName && client2.options.enableAutoPipelining && !client2.isPipeline && !exports.notAllowedAutoPipelineCommands.includes(commandName) && !client2.options.autoPipeliningIgnoredCommands.includes(commandName);
+    function shouldUseAutoPipelining(client5, functionName, commandName) {
+      return functionName && client5.options.enableAutoPipelining && !client5.isPipeline && !exports.notAllowedAutoPipelineCommands.includes(commandName) && !client5.options.autoPipeliningIgnoredCommands.includes(commandName);
     }
     exports.shouldUseAutoPipelining = shouldUseAutoPipelining;
     function getFirstValueInFlattenedArray(args) {
@@ -57574,36 +57890,36 @@ var require_autoPipelining = __commonJS({
       }
       return getFirstValueInFlattenedArray(args);
     }
-    function executeWithAutoPipelining(client2, functionName, commandName, args, callback) {
-      if (client2.isCluster && !client2.slots.length) {
-        if (client2.status === "wait")
-          client2.connect().catch(lodash_1.noop);
+    function executeWithAutoPipelining(client5, functionName, commandName, args, callback) {
+      if (client5.isCluster && !client5.slots.length) {
+        if (client5.status === "wait")
+          client5.connect().catch(lodash_1.noop);
         return (0, standard_as_callback_1.default)(new Promise(function(resolve, reject) {
-          client2.delayUntilReady((err) => {
+          client5.delayUntilReady((err) => {
             if (err) {
               reject(err);
               return;
             }
-            executeWithAutoPipelining(client2, functionName, commandName, args, null).then(resolve, reject);
+            executeWithAutoPipelining(client5, functionName, commandName, args, null).then(resolve, reject);
           });
         }), callback);
       }
-      const prefix = client2.options.keyPrefix || "";
-      let slotKey = client2.isCluster ? client2.slots[calculateSlot(`${prefix}${getFirstKeyForCommand(commandName, args)}`)].join(",") : "main";
-      if (client2.isCluster && client2.options.scaleReads !== "master") {
+      const prefix = client5.options.keyPrefix || "";
+      let slotKey = client5.isCluster ? client5.slots[calculateSlot(`${prefix}${getFirstKeyForCommand(commandName, args)}`)].join(",") : "main";
+      if (client5.isCluster && client5.options.scaleReads !== "master") {
         const isReadOnly = (0, commands_1.exists)(commandName) && (0, commands_1.hasFlag)(commandName, "readonly");
         slotKey += isReadOnly ? ":read" : ":write";
       }
-      if (!client2._autoPipelines.has(slotKey)) {
-        const pipeline2 = client2.pipeline();
+      if (!client5._autoPipelines.has(slotKey)) {
+        const pipeline2 = client5.pipeline();
         pipeline2[exports.kExec] = false;
         pipeline2[exports.kCallbacks] = [];
-        client2._autoPipelines.set(slotKey, pipeline2);
+        client5._autoPipelines.set(slotKey, pipeline2);
       }
-      const pipeline = client2._autoPipelines.get(slotKey);
+      const pipeline = client5._autoPipelines.get(slotKey);
       if (!pipeline[exports.kExec]) {
         pipeline[exports.kExec] = true;
-        setImmediate(executeAutoPipeline, client2, slotKey);
+        setImmediate(executeAutoPipeline, client5, slotKey);
       }
       const autoPipelinePromise = new Promise(function(resolve, reject) {
         pipeline[exports.kCallbacks].push(function(err, value) {
@@ -57678,8 +57994,8 @@ var require_Script = __commonJS({
             throw err;
           }
           const resend = new this.Command("evalsha", [this.sha, ...args], options);
-          const client2 = container.isPipeline ? container.redis : container;
-          return client2.sendCommand(resend);
+          const client5 = container.isPipeline ? container.redis : container;
+          return client5.sendCommand(resend);
         });
         (0, standard_as_callback_1.default)(evalsha.promise, callback);
         return container.sendCommand(evalsha);
@@ -61320,11 +61636,11 @@ var require_SentinelConnector = __commonJS({
         };
         return connectToNext();
       }
-      async updateSentinels(client2) {
+      async updateSentinels(client5) {
         if (!this.options.updateSentinels) {
           return;
         }
-        const result = await client2.sentinel("sentinels", this.options.name);
+        const result = await client5.sentinel("sentinels", this.options.name);
         if (!Array.isArray(result)) {
           return;
         }
@@ -61339,13 +61655,13 @@ var require_SentinelConnector = __commonJS({
         });
         debug("Updated internal sentinels: %s", this.sentinelIterator);
       }
-      async resolveMaster(client2) {
-        const result = await client2.sentinel("get-master-addr-by-name", this.options.name);
-        await this.updateSentinels(client2);
+      async resolveMaster(client5) {
+        const result = await client5.sentinel("get-master-addr-by-name", this.options.name);
+        await this.updateSentinels(client5);
         return this.sentinelNatResolve(Array.isArray(result) ? { host: result[0], port: Number(result[1]) } : null);
       }
-      async resolveSlave(client2) {
-        const result = await client2.sentinel("slaves", this.options.name);
+      async resolveSlave(client5) {
+        const result = await client5.sentinel("slaves", this.options.name);
         if (!Array.isArray(result)) {
           return null;
         }
@@ -61383,16 +61699,16 @@ var require_SentinelConnector = __commonJS({
         return redis;
       }
       async resolve(endpoint) {
-        const client2 = this.connectToSentinel(endpoint);
-        client2.on("error", noop);
+        const client5 = this.connectToSentinel(endpoint);
+        client5.on("error", noop);
         try {
           if (this.options.role === "slave") {
-            return await this.resolveSlave(client2);
+            return await this.resolveSlave(client5);
           } else {
-            return await this.resolveMaster(client2);
+            return await this.resolveMaster(client5);
           }
         } finally {
-          client2.disconnect();
+          client5.disconnect();
         }
       }
       async initFailoverDetector() {
@@ -61406,16 +61722,16 @@ var require_SentinelConnector = __commonJS({
           if (done) {
             break;
           }
-          const client2 = this.connectToSentinel(value, {
+          const client5 = this.connectToSentinel(value, {
             lazyConnect: true,
             retryStrategy: this.options.sentinelReconnectStrategy,
             protocol: this.options.protocol,
             replyMapping: "legacy"
           });
-          client2.on("reconnecting", () => {
+          client5.on("reconnecting", () => {
             this.emitter?.emit("sentinelReconnecting");
           });
-          sentinels.push({ address: value, client: client2 });
+          sentinels.push({ address: value, client: client5 });
         }
         this.sentinelIterator.reset(false);
         if (this.failoverDetector) {
@@ -63924,12 +64240,12 @@ var require_built3 = __commonJS({
 });
 
 // src/app.ts
-var import_express19 = __toESM(require_express2(), 1);
+var import_express21 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 
 // src/routes/index.ts
-var import_express18 = __toESM(require_express2(), 1);
+var import_express20 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
@@ -68080,9 +68396,123 @@ function tryImportRedis() {
   }
 }
 var redisUrl = process.env.REDIS_URL;
+var httpUrl = process.env.REDIS_HTTP_URL;
 var client = null;
 var isConnected = false;
-if (redisUrl) {
+var httpMode = false;
+var HTTP_TIMEOUT_MS = Number.parseInt(process.env.REDIS_HTTP_TIMEOUT_MS ?? "", 10) || 15e3;
+function createHttpRedis(url, key) {
+  const post2 = async (body) => {
+    let res;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+      try {
+        res = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json", apikey: key },
+          body: JSON.stringify(body),
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch (err) {
+      isConnected = false;
+      logger.error({ err: { message: err?.message } }, "Redis HTTP bridge unreachable");
+      throw err;
+    }
+    let payload = null;
+    try {
+      payload = await res.json();
+    } catch {
+      isConnected = false;
+      throw new Error(`Redis HTTP bridge returned ${res.status}`);
+    }
+    if (res.status === 503) {
+      isConnected = false;
+      throw new Error("Redis unavailable (HTTP bridge 503)");
+    }
+    if (!res.ok || !payload?.ok) {
+      throw new Error(payload?.error ?? `Redis HTTP bridge error ${res.status}`);
+    }
+    isConnected = true;
+    return payload;
+  };
+  const command = async (cmd, args = []) => {
+    const payload = await post2({ cmd, args });
+    return payload.result;
+  };
+  const normalizeKeys = (args) => args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
+  const pipeline = () => {
+    const ops = [];
+    const push = (cmd, args) => {
+      ops.push({ cmd, args: normalizeKeys(args) });
+      return outer;
+    };
+    const outer = {
+      sadd: (k, v) => push("sadd", [k, v]),
+      zincrby: (k, inc, m) => push("zincrby", [k, inc, m]),
+      hset: (k, f, v) => push("hset", [k, f, v]),
+      expire: (k, s) => push("expire", [k, s]),
+      zadd: (k, score, m) => push("zadd", [k, score, m]),
+      setex: (k, ttl, v) => push("setex", [k, ttl, v]),
+      set: (k, v) => push("set", [k, v]),
+      del: (keys) => push("del", [keys]),
+      exec: async () => {
+        const payload = await post2({ pipeline: ops });
+        const results = [];
+        for (const [err, result] of payload.results ?? []) {
+          results.push([err ? new Error(String(err)) : null, err ? void 0 : result]);
+        }
+        return results;
+      }
+    };
+    return outer;
+  };
+  return {
+    status: "ready",
+    get: (k) => command("get", [k]),
+    set: (k, v, ...rest) => command("set", [k, v, ...rest]),
+    setex: (k, ttl, v) => command("setex", [k, ttl, v]),
+    setnx: (k, v) => command("setnx", [k, v]),
+    del: (...keys) => command("del", normalizeKeys(keys)),
+    expire: (k, s) => command("expire", [k, s]),
+    ttl: (k) => command("ttl", [k]),
+    incr: (k) => command("incr", [k]),
+    decrby: (k, by) => command("decrby", [k, by]),
+    scan: (cursor, ...rest) => command("scan", [cursor, ...rest]),
+    dbsize: () => command("dbsize"),
+    smembers: (k) => command("smembers", [k]),
+    sadd: (k, v) => command("sadd", [k, v]),
+    hexists: (k, f) => command("hexists", [k, f]),
+    hget: (k, f) => command("hget", [k, f]),
+    hmget: (k, fields) => command("hmget", [k, ...Array.isArray(fields) ? fields : [fields]]),
+    hset: (k, f, v) => command("hset", [k, f, v]),
+    zadd: (k, s, m) => command("zadd", [k, s, m]),
+    zincrby: (k, inc, m) => command("zincrby", [k, inc, m]),
+    zrange: (k, start, stop) => command("zrange", [k, start, stop]),
+    zrevrange: (k, start, stop, ...rest) => command("zrevrange", [k, start, stop, ...rest]),
+    zcard: (k) => command("zcard", [k]),
+    zrem: (k, members) => command("zrem", [k, ...Array.isArray(members) ? members : [members]]),
+    xadd: (k, id, ...rest) => command("xadd", [k, id, ...rest]),
+    xtrim: (k, ...rest) => command("xtrim", [k, ...rest]),
+    xgroup: (...args) => command("xgroup", args),
+    xreadgroup: (...args) => command("xreadgroup", args),
+    xack: (k, g, ...ids) => command("xack", [k, g, ...ids]),
+    ping: () => command("ping"),
+    pipeline
+  };
+}
+if (httpUrl) {
+  httpMode = true;
+  client = createHttpRedis(
+    httpUrl,
+    process.env.REDIS_HTTP_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || ""
+  );
+  isConnected = true;
+  logger.info(`Redis over HTTPS bridge enabled (${httpUrl})`);
+} else if (redisUrl) {
   const mod = tryImportRedis();
   if (!mod) {
     logger.warn("ioredis not available, Redis caching disabled");
@@ -68139,7 +68569,23 @@ function isRedisConnected() {
   return isConnected && client?.status === "ready";
 }
 function getRedisStatus() {
+  if (httpMode) return "http";
   return client?.status ?? "none";
+}
+var _pubSubClient = null;
+function redisPublish(channel, message) {
+  if (httpMode) return false;
+  const pub = _pubSubClient ?? (client ? client : null);
+  if (!pub || !isRedisConnected()) return false;
+  try {
+    pub.publish(channel, message).catch(
+      (err) => logger.error({ err, channel }, "Redis publish failed")
+    );
+    return true;
+  } catch (err) {
+    logger.error({ err, channel }, "Redis publish error");
+    return false;
+  }
 }
 
 // src/middleware/cache.ts
@@ -68150,8 +68596,35 @@ var DEFAULT_MEMORY_ENTRIES = 500;
 var INFLOW_TIMEOUT_MS = Number.parseInt(process.env.API_CACHE_INFLOW_TIMEOUT ?? "", 10) || 1e4;
 var inflightRedisMap = /* @__PURE__ */ new Map();
 var inflightReqMap = /* @__PURE__ */ new Map();
-var PER_PROBABILITY = Number.parseFloat(process.env.API_CACHE_PER_PROBABILITY ?? "0.1") || 0.1;
-var PER_WINDOW_FRACTION = 0.2;
+var MAX_KEY_EPOCHS = 5e3;
+var epochCounter = 0;
+var purgeEpoch = 0;
+var tagInvalidationEpoch = /* @__PURE__ */ new Map();
+var keyInvalidationEpoch = /* @__PURE__ */ new Map();
+function stampEpoch() {
+  return ++epochCounter;
+}
+function wasInvalidatedAfter(cacheKey, entry) {
+  const fillEpoch = entry.fillEpoch;
+  if (fillEpoch === void 0) return false;
+  if (purgeEpoch > fillEpoch) return true;
+  const keyEpoch = keyInvalidationEpoch.get(cacheKey);
+  if (keyEpoch !== void 0 && fillEpoch < keyEpoch) return true;
+  for (const tag of entry.tags) {
+    const tagEpoch = tagInvalidationEpoch.get(tag);
+    if (tagEpoch !== void 0 && fillEpoch < tagEpoch) return true;
+  }
+  return false;
+}
+function rememberKeyInvalidation(cacheKey) {
+  keyInvalidationEpoch.set(cacheKey, stampEpoch());
+  if (keyInvalidationEpoch.size > MAX_KEY_EPOCHS) {
+    for (const oldest of keyInvalidationEpoch.keys()) {
+      keyInvalidationEpoch.delete(oldest);
+      break;
+    }
+  }
+}
 var maxMemoryEntries = Math.max(
   50,
   Number.parseInt(process.env.API_CACHE_MEMORY_ENTRIES ?? "", 10) || DEFAULT_MEMORY_ENTRIES
@@ -68162,7 +68635,6 @@ var metrics = {
   hits: 0,
   misses: 0,
   staleServes: 0,
-  backgroundRefreshes: 0,
   inflightCoalesced: 0,
   inflightTimeouts: 0,
   bytesServed: 0,
@@ -68294,29 +68766,25 @@ function getMemory(key) {
 function isFresh(entry) {
   return Date.now() <= entry.expiresAt;
 }
-function isInPERWindow(entry, ttlSeconds) {
-  const now = Date.now();
-  const entryAge = now - entry.createdAt;
-  const perWindowStart = ttlSeconds * 1e3 * (1 - PER_WINDOW_FRACTION);
-  return entryAge >= perWindowStart && now <= entry.expiresAt;
-}
 function clientHasFreshCopy(req, etag) {
   const header = req.headers["if-none-match"];
   if (!header) return false;
   const values = Array.isArray(header) ? header : header.split(",");
   return values.map((value) => value.trim()).includes(etag);
 }
-function applyCacheHeaders(res, entry, ttlSeconds, staleSeconds) {
+function applyCacheHeaders(res, entry, staleSeconds) {
+  const remainingSeconds = Math.max(0, Math.ceil((entry.expiresAt - Date.now()) / 1e3));
+  const sMaxage = remainingSeconds > 0 ? remainingSeconds : 0;
   res.set({
-    "Cache-Control": `public, max-age=0, must-revalidate, s-maxage=${ttlSeconds}, stale-while-revalidate=${staleSeconds}, stale-if-error=${staleSeconds}`,
+    "Cache-Control": `public, max-age=0, must-revalidate, s-maxage=${sMaxage}, stale-while-revalidate=${staleSeconds}, stale-if-error=${staleSeconds}`,
     ETag: entry.etag,
-    "X-Cache-TTL": String(Math.max(0, Math.ceil((entry.expiresAt - Date.now()) / 1e3)))
+    "X-Cache-TTL": String(remainingSeconds)
   });
 }
-function sendEntry(req, res, entry, source, ttlSeconds, staleSeconds) {
+function sendEntry(req, res, entry, source, staleSeconds) {
   if (source === "HIT") trackMetric("hits");
   else if (source === "STALE") trackMetric("staleServes");
-  applyCacheHeaders(res, entry, ttlSeconds, staleSeconds);
+  applyCacheHeaders(res, entry, staleSeconds);
   res.set("X-Cache", source);
   if (!isFresh(entry)) {
     res.set("Warning", '110 - "Response is stale"');
@@ -68334,7 +68802,14 @@ async function readRedis(cacheKey) {
   if (!redis || !isRedisConnected()) return null;
   const raw = await dedupeRedis(`read:${cacheKey}`, () => redis.get(cacheKey));
   if (!raw || typeof raw !== "string") return null;
-  const entry = JSON.parse(raw);
+  let entry;
+  try {
+    entry = JSON.parse(raw);
+  } catch {
+    redis.del(cacheKey).catch(() => {
+    });
+    return null;
+  }
   if (Date.now() > entry.staleUntil) {
     redis.del(cacheKey).catch(() => {
     });
@@ -68344,6 +68819,7 @@ async function readRedis(cacheKey) {
   return entry;
 }
 async function writeEntry(cacheKey, entry, ttlSeconds, staleSeconds) {
+  if (wasInvalidatedAfter(cacheKey, entry)) return;
   setMemory(cacheKey, entry);
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return;
@@ -68375,12 +68851,10 @@ async function readAny(cacheKey) {
 function shouldBypass(req) {
   if (req.method !== "GET" && req.method !== "HEAD") return true;
   const cacheControl = String(req.headers["cache-control"] ?? "");
-  return cacheControl.includes("no-store");
-}
-function shouldTriggerPER(entry, ttlSeconds, probability) {
-  if (probability <= 0) return false;
-  if (!isInPERWindow(entry, ttlSeconds)) return false;
-  return Math.random() < probability;
+  if (cacheControl.includes("no-store")) return true;
+  const sessionId = String(req.query?.session_id ?? "");
+  if (sessionId.length > 0) return true;
+  return false;
 }
 async function awaitInflightWithTimeout(inflightPromise, cacheKey) {
   let timeoutId;
@@ -68406,7 +68880,6 @@ function cache(options) {
   const staleSeconds = Math.max(0, opts.staleSeconds ?? DEFAULT_STALE_SECONDS);
   const tags = opts.tags ?? [];
   const cacheStatuses = opts.cacheStatuses ?? [200];
-  const perProbability = opts.perProbability ?? PER_PROBABILITY;
   return async (req, res, next) => {
     if (shouldBypass(req)) {
       res.set("Cache-Control", "no-store");
@@ -68416,24 +68889,21 @@ function cache(options) {
     const cacheKey = makeCacheKey(req);
     const existing = await readAny(cacheKey);
     if (existing && isFresh(existing)) {
-      if (shouldTriggerPER(existing, ttlSeconds, perProbability)) {
-        trackMetric("backgroundRefreshes");
-      }
-      sendEntry(req, res, existing, "HIT", ttlSeconds, staleSeconds);
+      sendEntry(req, res, existing, "HIT", staleSeconds);
       return;
     }
     const inflightKey = makeInflightKey(req);
     const existingInflight = inflightReqMap.get(inflightKey);
     if (existingInflight) {
       if (existing) {
-        sendEntry(req, res, existing, "STALE", ttlSeconds, staleSeconds);
+        sendEntry(req, res, existing, "STALE", staleSeconds);
         return;
       }
       trackMetric("inflightCoalesced");
       await awaitInflightWithTimeout(existingInflight, cacheKey);
       const refreshed = await readAny(cacheKey);
       if (refreshed) {
-        sendEntry(req, res, refreshed, isFresh(refreshed) ? "REFRESHED" : "STALE", ttlSeconds, staleSeconds);
+        sendEntry(req, res, refreshed, isFresh(refreshed) ? "REFRESHED" : "STALE", staleSeconds);
         return;
       }
       next();
@@ -68444,6 +68914,7 @@ function cache(options) {
       resolveInflight = resolve;
     });
     inflightReqMap.set(inflightKey, inflightPromise);
+    const requestEpoch = epochCounter;
     const originalJson = res.json.bind(res);
     res.json = function(body) {
       const statusCode = res.statusCode;
@@ -68457,9 +68928,10 @@ function cache(options) {
           createdAt: now,
           expiresAt: now + ttlSeconds * 1e3,
           staleUntil: now + (ttlSeconds + staleSeconds) * 1e3,
-          tags
+          tags,
+          fillEpoch: requestEpoch
         };
-        applyCacheHeaders(res, entryForResponse, ttlSeconds, staleSeconds);
+        applyCacheHeaders(res, entryForResponse, staleSeconds);
         res.set("X-Cache", "MISS");
         writeEntry(cacheKey, entryForResponse, ttlSeconds, staleSeconds).catch(
           (err) => logger.error({ err, cacheKey }, "Cache write error")
@@ -68497,10 +68969,16 @@ function cache(options) {
     next();
   };
 }
-async function invalidateTags(tags) {
+var INVALIDATION_CHANNEL = "chuglii:cache:invalidate:v1";
+function publishInvalidation(message) {
+  redisPublish(INVALIDATION_CHANNEL, JSON.stringify(message));
+}
+async function invalidateTagsLocal(tags) {
   const redis = getRedis();
   const keysToDelete = /* @__PURE__ */ new Set();
+  const epoch = stampEpoch();
   for (const tag of tags) {
+    tagInvalidationEpoch.set(tag, epoch);
     const memoryKeys = memoryTags.get(tag);
     for (const key of memoryKeys ?? []) keysToDelete.add(key);
     memoryTags.delete(tag);
@@ -68518,12 +68996,21 @@ async function invalidateTags(tags) {
   }
   logger.info({ tags, keysDeleted: keysToDelete.size }, "Cache invalidated by tag");
 }
-async function invalidateKey(cacheKey) {
+async function invalidateTags(tags) {
+  await invalidateTagsLocal(tags);
+  if (tags.length > 0) publishInvalidation({ type: "tags", tags });
+}
+async function invalidateKeyLocal(cacheKey) {
   const normalizedKey = cacheKey.startsWith(CACHE_PREFIX) ? cacheKey : `${CACHE_PREFIX}:${normalizeOriginalUrl(cacheKey)}`;
+  rememberKeyInvalidation(normalizedKey);
   deleteMemory(normalizedKey);
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return;
   await redis.del(normalizedKey);
+}
+async function invalidateKey(cacheKey) {
+  await invalidateKeyLocal(cacheKey);
+  publishInvalidation({ type: "key", key: cacheKey });
 }
 function patternCandidates(pattern) {
   const normalized = pattern.startsWith("/") ? pattern : `/${pattern}`;
@@ -68535,10 +69022,12 @@ function wildcardToRegExp(pattern) {
   const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
   return new RegExp(`^${escaped}$`);
 }
-async function invalidatePattern(pattern) {
+async function invalidatePatternLocal(pattern) {
   const candidates = patternCandidates(pattern);
   const regexes = candidates.map(wildcardToRegExp);
   const keysToDelete = /* @__PURE__ */ new Set();
+  const epoch = stampEpoch();
+  if (purgeEpoch < epoch) purgeEpoch = epoch;
   for (const key of memoryCache.keys()) {
     if (regexes.some((regex) => regex.test(key))) keysToDelete.add(key);
   }
@@ -68559,6 +69048,11 @@ async function invalidatePattern(pattern) {
   }
   return keysToDelete.size;
 }
+async function invalidatePattern(pattern) {
+  const count = await invalidatePatternLocal(pattern);
+  publishInvalidation({ type: "pattern", pattern });
+  return count;
+}
 function invalidateOnSuccess(tags) {
   return (req, res, next) => {
     const originalJson = res.json.bind(res);
@@ -68574,14 +69068,26 @@ function invalidateOnSuccess(tags) {
     next();
   };
 }
-async function purgeAllCache() {
+async function purgeLocalCache() {
   const redis = getRedis();
   const invalidatedTags = new Set(memoryTags.keys());
   let deletedKeys = memoryCache.size;
+  purgeEpoch = stampEpoch();
+  tagInvalidationEpoch.clear();
+  keyInvalidationEpoch.clear();
   memoryCache.clear();
   memoryTags.clear();
   if (redis && isRedisConnected()) {
-    for (const match of [`${CACHE_PREFIX}:*`, `${TAG_PREFIX}:*`, "api:*", "tag:*"]) {
+    for (const match of [
+      `${CACHE_PREFIX}:*`,
+      `${TAG_PREFIX}:*`,
+      "api:*",
+      "tag:*",
+      "media:*",
+      "views:*",
+      "hot:*",
+      "sugg:*"
+    ]) {
       let cursor = "0";
       do {
         const [nextCursor, keys] = await redis.scan(cursor, "MATCH", match, "COUNT", 200);
@@ -68596,8 +69102,41 @@ async function purgeAllCache() {
       } while (cursor !== "0");
     }
   }
-  logger.info({ deletedKeys, invalidatedTags: invalidatedTags.size }, "Full cache purge completed");
+  logger.info({ deletedKeys, invalidatedTags: invalidatedTags.size }, "Local cache purge completed");
   return { deletedKeys, invalidatedTags: invalidatedTags.size };
+}
+async function purgeAllCache() {
+  const local = await purgeLocalCache();
+  const cdnPurged = await purgeVercelCdn();
+  publishInvalidation({ type: "purge" });
+  logger.info(
+    { deletedKeys: local.deletedKeys, invalidatedTags: local.invalidatedTags, cdnPurged },
+    "Full cache purge completed"
+  );
+  return { ...local, cdnPurged };
+}
+async function purgeVercelCdn() {
+  const token = process.env.VERCEL_TOKEN ?? "";
+  const projectId = process.env.VERCEL_PROJECT_ID ?? "";
+  if (!token || !projectId) return false;
+  try {
+    const res = await fetch(
+      `https://api.vercel.com/v1/projects/${encodeURIComponent(projectId)}/cache/purge`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ type: "all" }),
+        signal: AbortSignal.timeout(1e4)
+      }
+    );
+    return res.ok;
+  } catch (err) {
+    logger.warn({ err }, "Vercel CDN purge failed (best-effort)");
+    return false;
+  }
 }
 function getCacheStats() {
   let memoryBytes = 0;
@@ -68623,15 +69162,38 @@ function resetCacheMetrics() {
   metrics.hits = 0;
   metrics.misses = 0;
   metrics.staleServes = 0;
-  metrics.backgroundRefreshes = 0;
   metrics.inflightCoalesced = 0;
   metrics.inflightTimeouts = 0;
   metrics.bytesServed = 0;
   metrics.startTime = Date.now();
 }
 
+// src/lib/genders.ts
+var GENDER_BUCKETS = [
+  { value: "female", matches: ["female", "f", "females"] },
+  { value: "male", matches: ["male", "m"] },
+  { value: "couple", matches: ["couple", "maleFemale"] },
+  { value: "group", matches: ["group"] },
+  // No trans recordings exist in the catalog today, but keep the bucket so
+  // raw trans values are still matched instead of silently dropped.
+  { value: "trans", matches: ["trans", "transgender", "t"] }
+];
+function resolveGenderBucket(value) {
+  const key = value.trim();
+  const lower = key.toLowerCase();
+  if (!lower) return null;
+  for (const bucket of GENDER_BUCKETS) {
+    if (bucket.value.toLowerCase() === lower) return bucket.matches;
+    if (bucket.matches.some((m) => m.toLowerCase() === lower)) return bucket.matches;
+  }
+  return [key];
+}
+
 // src/routes/recordings.ts
 var router2 = (0, import_express2.Router)();
+function escapeLike(input) {
+  return input.replace(/[\\%_]/g, "\\$&");
+}
 var LIST_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at";
 var RELATED_COLS = "id,username,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,preview_url";
 var POOL_COLS = "id,username,tags,gender,timestamp,viewers,thumbnail_url,sprite_url,preview_url";
@@ -68674,14 +69236,17 @@ router2.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["re
     const normalizedLimit = Math.min(Math.max(1, limit), 100);
     let query = supabaseProxy.from("recordings_with_links").select(LIST_COLS, { count: "exact" }).not("links", "is", "null");
     if (search?.trim()) {
-      const s = search.trim();
+      const s = escapeLike(search.trim());
       query = query.or(`username.ilike.%${s}%,room_title.ilike.%${s}%,filename.ilike.%${s}%`);
     }
     if (tags) {
       const tagList = tags.split(",").map((t) => t.trim()).filter(Boolean);
       if (tagList.length > 0) query = query.overlaps("tags", tagList);
     }
-    if (gender) query = query.eq("gender", gender);
+    if (gender) {
+      const genderMatch = resolveGenderBucket(gender);
+      if (genderMatch) query = query.in("gender", genderMatch);
+    }
     if (username) query = query.eq("username", username);
     if (resolution) query = query.eq("resolution", resolution);
     const ascending = sort === "oldest";
@@ -68729,8 +69294,9 @@ router2.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["re
     res.status(500).json({ error: "Failed to fetch recordings" });
   }
 });
-router2.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds: 120, tags: ["recordings"] }), async (req, res) => {
+router2.get("/recordings/recommendations", async (req, res) => {
   try {
+    res.set("Cache-Control", "private, no-store");
     const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10) || 1);
     const limit = Math.min(Math.max(1, parseInt(String(req.query.limit ?? "12"), 10) || 12), 100);
     const excludeRaw = typeof req.query.exclude === "string" ? req.query.exclude : "";
@@ -68890,7 +69456,8 @@ router2.get("/recordings/recommendations", cache({ ttlSeconds: 60, staleSeconds:
     res.status(500).json({ error: "Failed to get recommendations" });
   }
 });
-router2.get("/recordings/random", cache({ ttlSeconds: 30, staleSeconds: 60, tags: ["recordings"] }), async (req, res) => {
+router2.get("/recordings/random", async (req, res) => {
+  res.set("Cache-Control", "private, no-store");
   try {
     const excludeRaw = typeof req.query.exclude === "string" ? req.query.exclude : "";
     const excludeIds = new Set(
@@ -68920,8 +69487,9 @@ router2.get("/recordings/random", cache({ ttlSeconds: 30, staleSeconds: 60, tags
     res.status(500).json({ error: "Failed to get random recording" });
   }
 });
-router2.get("/recordings/related", cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["recordings"] }), async (req, res) => {
+router2.get("/recordings/related", async (req, res) => {
   try {
+    res.set("Cache-Control", "private, no-store");
     const parsed = ListRelatedRecordingsQueryParams.safeParse(req.query);
     if (!parsed.success) {
       res.status(400).json({ error: "Invalid query params" });
@@ -69027,7 +69595,7 @@ router2.get("/recordings/related", cache({ ttlSeconds: 120, staleSeconds: 300, t
     res.status(500).json({ error: "Failed to get related recordings" });
   }
 });
-router2.get("/recordings/:id", cache({ ttlSeconds: 600, staleSeconds: 900, tags: ["recordings"] }), async (req, res) => {
+router2.get("/recordings/:id", cache({ ttlSeconds: 120, staleSeconds: 600, tags: ["recordings"] }), async (req, res) => {
   try {
     const parsed = GetRecordingParams.safeParse(req.params);
     if (!parsed.success) {
@@ -69443,7 +70011,12 @@ router3.get(
       const sort = req.query.sort || "count";
       let performers = await fetchPerformers();
       if (gender) {
-        performers = performers.filter((p) => p.gender === gender);
+        const genderMatch = resolveGenderBucket(gender);
+        if (genderMatch) {
+          performers = performers.filter(
+            (p) => p.gender && genderMatch.includes(p.gender)
+          );
+        }
       }
       if (search) {
         const lower = search.toLowerCase();
@@ -69647,7 +70220,7 @@ async function fetchStatsLegacy() {
     newest_recording: newestRecording
   };
 }
-router5.get("/stats", cache({ ttlSeconds: 120, staleSeconds: 300, tags: ["stats", "recordings"] }), async (req, res) => {
+router5.get("/stats", cache({ ttlSeconds: 60, staleSeconds: 300, tags: ["stats", "recordings"] }), async (req, res) => {
   try {
     let stats;
     try {
@@ -69995,6 +70568,26 @@ var comments_default = router7;
 var import_express8 = __toESM(require_express2(), 1);
 init_supabase();
 
+// src/lib/notify.ts
+init_supabase();
+var NOTIFICATION_TYPES = ["request_submitted", "request_status", "recording_available"];
+async function notifyUser(params) {
+  try {
+    const { userId, type, message, relatedId } = params;
+    const { data: pref } = await supabaseProxy.from("user_notification_preferences").select("enabled").eq("user_id", userId).eq("notification_type", type).maybeSingle();
+    if (pref && pref.enabled === false) return;
+    await supabaseProxy.from("user_notifications").insert({
+      user_id: userId,
+      type,
+      message,
+      related_id: relatedId ?? null,
+      is_read: false
+    });
+  } catch (err) {
+    console.warn(`[notify] failed to deliver ${params.type} notification:`, err);
+  }
+}
+
 // src/middleware/auth.ts
 init_supabase();
 async function requireAuth(req, res, next) {
@@ -70113,22 +70706,12 @@ router8.post("/requests", requireAuth, async (req, res) => {
       status: "pending"
     }).select(REQUEST_COLS).single();
     if (error) throw error;
-    try {
-      const pref = await getNotificationPref(created.user_id, "request_submitted");
-      const enabled = pref.enabled;
-      if (enabled) {
-        const performerName = created.performer_username ?? "a performer";
-        const message = `Your request for @${performerName} on ${created.platform} has been submitted and is pending review.`;
-        await supabaseProxy.from("user_notifications").insert({
-          user_id: created.user_id,
-          type: "request_submitted",
-          message,
-          related_id: String(created.id),
-          is_read: false
-        });
-      }
-    } catch {
-    }
+    await notifyUser({
+      userId: created.user_id,
+      type: "request_submitted",
+      message: `Your request for @${created.performer_username ?? "a performer"} on ${created.platform} has been submitted and is pending review.`,
+      relatedId: String(created.id)
+    });
     res.status(201).json(created);
   } catch {
     try {
@@ -70156,10 +70739,6 @@ async function findDuplicate(userId, platform, performerUsername, streamLink) {
   }
   const { data } = await query.limit(1).maybeSingle();
   return data;
-}
-async function getNotificationPref(userId, type) {
-  const { data } = await supabaseProxy.from("user_notification_preferences").select("enabled").eq("user_id", userId).eq("notification_type", type).maybeSingle();
-  return { enabled: data?.enabled ?? true };
 }
 router8.delete("/requests/:id", requireAuth, async (req, res) => {
   try {
@@ -70790,7 +71369,9 @@ router9.delete("/user/follows/:username", async (req, res) => {
 router9.get("/user/notifications", async (req, res) => {
   try {
     const userId = req.user.id;
-    const { data, error } = await req.supabase.from("user_notifications").select("id, type, message, related_id, is_read, created_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(50);
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? ""), 10) || 50, 1), 100);
+    const offset = Math.max(parseInt(String(req.query.offset ?? ""), 10) || 0, 0);
+    const { data, error } = await req.supabase.from("user_notifications").select("id, type, message, related_id, is_read, created_at").eq("user_id", userId).order("created_at", { ascending: false }).range(offset, offset + limit - 1);
     if (error) {
       req.log.error({ err: error }, "Supabase error fetching notifications");
       res.status(500).json({ error: "Internal server error" });
@@ -70889,7 +71470,6 @@ router9.put("/user/sound-preferences", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
-var NOTIFICATION_TYPES = ["request_submitted", "request_status", "recording_available"];
 router9.get("/user/notification-preferences", async (req, res) => {
   try {
     const userId = req.user.id;
@@ -70992,13 +71572,785 @@ var user_default = router9;
 
 // src/routes/cache-admin.ts
 var import_express10 = __toESM(require_express2(), 1);
+
+// src/lib/media-cache.ts
+import { createHash as createHash2 } from "node:crypto";
+var MEDIA_REDIS_PREFIX = "media:";
+var IMG_TTL_SECONDS = 5 * 60;
+var TX_TTL_SECONDS = 30 * 60;
+var DNS_TTL_SECONDS = 5 * 60;
+var FAIL_TTL_SECONDS = 10 * 60;
+var MAX_REDIS_BLOB_BYTES = 1500 * 1024;
+var IMG_KEY = `${MEDIA_REDIS_PREFIX}img:v1:`;
+var TX_KEY = `${MEDIA_REDIS_PREFIX}tx:v1:`;
+var DNS_KEY = `${MEDIA_REDIS_PREFIX}dns:v1:`;
+var FAIL_KEY = `${MEDIA_REDIS_PREFIX}fail:v1:`;
+function hashKey(prefix, value) {
+  return `${prefix}${createHash2("sha1").update(value).digest("hex")}`;
+}
+async function getString(key) {
+  const redis = getRedis();
+  if (!redis || !isRedisConnected()) return null;
+  try {
+    const raw = await redis.get(key);
+    return typeof raw === "string" && raw.length > 0 ? raw : null;
+  } catch (err) {
+    logger.warn({ err, key }, "Media Redis read error");
+    return null;
+  }
+}
+async function setString(key, value, ttlSeconds) {
+  const redis = getRedis();
+  if (!redis || !isRedisConnected()) return;
+  try {
+    await redis.setex(key, Math.max(1, Math.floor(ttlSeconds)), value);
+  } catch (err) {
+    logger.warn({ err, key }, "Media Redis write error");
+  }
+}
+async function deletePattern(pattern) {
+  const redis = getRedis();
+  if (!redis || !isRedisConnected()) return 0;
+  let deleted = 0;
+  try {
+    let cursor = "0";
+    do {
+      const [nextCursor, keys] = await redis.scan(cursor, "MATCH", pattern, "COUNT", 200);
+      cursor = nextCursor;
+      if (keys.length > 0) {
+        const count = await redis.del(keys);
+        deleted += count;
+      }
+    } while (cursor !== "0");
+  } catch (err) {
+    logger.warn({ err, pattern }, "Media Redis clear error");
+  }
+  return deleted;
+}
+async function getImageFromRedis(url) {
+  const raw = await getString(hashKey(IMG_KEY, url));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed.b64 !== "string" || parsed.b64.length === 0) return null;
+    return {
+      buffer: Buffer.from(parsed.b64, "base64"),
+      contentType: parsed.contentType ?? "image/jpeg",
+      status: parsed.status ?? 200
+    };
+  } catch {
+    return null;
+  }
+}
+function setImageInRedis(url, img) {
+  if (img.buffer.length > MAX_REDIS_BLOB_BYTES) return;
+  const payload = JSON.stringify({
+    b64: img.buffer.toString("base64"),
+    contentType: img.contentType,
+    status: img.status
+  });
+  setString(hashKey(IMG_KEY, url), payload, IMG_TTL_SECONDS).catch(() => {
+  });
+}
+async function getTransformFromRedis(key) {
+  const raw = await getString(hashKey(TX_KEY, key));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed.b64 !== "string" || parsed.b64.length === 0) return null;
+    return {
+      buffer: Buffer.from(parsed.b64, "base64"),
+      contentType: parsed.contentType ?? "image/jpeg"
+    };
+  } catch {
+    return null;
+  }
+}
+function setTransformInRedis(key, img) {
+  if (img.buffer.length > MAX_REDIS_BLOB_BYTES) return;
+  const payload = JSON.stringify({
+    b64: img.buffer.toString("base64"),
+    contentType: img.contentType
+  });
+  setString(hashKey(TX_KEY, key), payload, TX_TTL_SECONDS).catch(() => {
+  });
+}
+async function getDnsFromRedis(hostname) {
+  return getString(hashKey(DNS_KEY, hostname));
+}
+function setDnsInRedis(hostname, ip) {
+  setString(hashKey(DNS_KEY, hostname), ip, DNS_TTL_SECONDS).catch(() => {
+  });
+}
+async function isFailureInRedis(url) {
+  return await getString(hashKey(FAIL_KEY, url)) !== null;
+}
+function markFailureInRedis(url) {
+  setString(hashKey(FAIL_KEY, url), String(Date.now()), FAIL_TTL_SECONDS).catch(() => {
+  });
+}
+async function clearMediaRedisCache() {
+  const patterns = ["media:img:v1:*", "media:tx:v1:*", "media:dns:v1:*", "media:fail:v1:*"];
+  let deleted = 0;
+  for (const pattern of patterns) {
+    deleted += await deletePattern(pattern);
+  }
+  if (deleted > 0) logger.info({ deleted }, "Media Redis cache cleared");
+  return deleted;
+}
+async function getMediaRedisStats() {
+  const redis = getRedis();
+  const stats = {};
+  if (!redis || !isRedisConnected()) return stats;
+  try {
+    for (const [name, pattern] of [
+      ["images", "media:img:v1:*"],
+      ["transforms", "media:tx:v1:*"],
+      ["dns", "media:dns:v1:*"],
+      ["failures", "media:fail:v1:*"]
+    ]) {
+      let count = 0;
+      let cursor = "0";
+      do {
+        const [nextCursor, keys] = await redis.scan(cursor, "MATCH", pattern, "COUNT", 500);
+        cursor = nextCursor;
+        count += keys.length;
+      } while (cursor !== "0");
+      stats[name] = count;
+    }
+  } catch (err) {
+    logger.warn({ err }, "Media Redis stats error");
+  }
+  return stats;
+}
+
+// src/lib/hot-cache.ts
+var HOT_PREFIX = "hot:";
+var RECS_SET = `${HOT_PREFIX}rec:v1`;
+var RECS_META = `${HOT_PREFIX}rec:v1:meta`;
+var PERFS_SET = `${HOT_PREFIX}perf:v1`;
+var PERFS_META = `${HOT_PREFIX}perf:v1:meta`;
+var HOT_TTL_SECONDS = 60 * 60 * 24 * 30;
+var RECORDING_TITLE_CAP = 120;
+function client2() {
+  const redis = getRedis();
+  return redis && isRedisConnected() ? redis : null;
+}
+async function bumpRecordingHot(recordingId, loadMeta) {
+  const redis = client2();
+  if (!redis) return;
+  try {
+    const hasMeta = await redis.hexists(RECS_META, recordingId);
+    const existing = hasMeta ? await redis.hget(RECS_META, recordingId) : null;
+    let meta = null;
+    if (existing) {
+      try {
+        meta = JSON.parse(existing);
+      } catch {
+        meta = null;
+      }
+    }
+    const pipe = redis.pipeline();
+    pipe.zincrby(RECS_SET, 1, recordingId);
+    pipe.expire(RECS_SET, HOT_TTL_SECONDS);
+    pipe.expire(RECS_META, HOT_TTL_SECONDS);
+    if (!existing) {
+      meta = await loadMeta().catch(() => null) ?? {};
+      const image = meta?.image_url ?? null;
+      pipe.hset(RECS_META, recordingId, JSON.stringify(meta));
+      pipe.zincrby(PERFS_SET, 1, meta.username ?? "unknown");
+      pipe.hset(PERFS_META, meta.username ?? "unknown", JSON.stringify({ image_url: image }));
+      pipe.expire(PERFS_SET, HOT_TTL_SECONDS);
+      pipe.expire(PERFS_META, HOT_TTL_SECONDS);
+    } else if (meta?.username) {
+      pipe.zincrby(PERFS_SET, 1, meta.username);
+      pipe.expire(PERFS_SET, HOT_TTL_SECONDS);
+      pipe.expire(PERFS_META, HOT_TTL_SECONDS);
+    }
+    await pipe.exec();
+  } catch (err) {
+    logger.warn({ err, recordingId }, "Hot cache bump failed");
+  }
+}
+async function getHotRecordings(limit) {
+  const redis = client2();
+  if (!redis) return [];
+  try {
+    const n = Math.max(1, Math.min(100, Math.floor(limit)));
+    const ranked = await redis.zrevrange(RECS_SET, 0, n - 1, "WITHSCORES");
+    if (!ranked || ranked.length === 0) return [];
+    const ids = [];
+    const scores = /* @__PURE__ */ new Map();
+    for (let i = 0; i + 1 < ranked.length; i += 2) {
+      const id = ranked[i];
+      ids.push(id);
+      scores.set(id, Number(ranked[i + 1]) || 0);
+    }
+    const metas = await redis.hmget(RECS_META, ids);
+    return metas.map((raw, i) => {
+      const id = ids[i];
+      let meta = {};
+      if (raw) {
+        try {
+          meta = JSON.parse(raw);
+        } catch {
+          meta = {};
+        }
+      }
+      return {
+        id,
+        username: meta.username,
+        title: meta.title ? truncate(meta.title, RECORDING_TITLE_CAP) : void 0,
+        image_url: meta.image_url,
+        score: scores.get(id) ?? 0
+      };
+    });
+  } catch (err) {
+    logger.warn({ err }, "Hot recordings read failed");
+    return [];
+  }
+}
+async function getHotPerformers(limit) {
+  const redis = client2();
+  if (!redis) return [];
+  try {
+    const n = Math.max(1, Math.min(100, Math.floor(limit)));
+    const ranked = await redis.zrevrange(PERFS_SET, 0, n - 1, "WITHSCORES");
+    if (!ranked || ranked.length === 0) return [];
+    const usernames = [];
+    const scores = /* @__PURE__ */ new Map();
+    for (let i = 0; i + 1 < ranked.length; i += 2) {
+      const username = ranked[i];
+      usernames.push(username);
+      scores.set(username, Number(ranked[i + 1]) || 0);
+    }
+    const metas = await redis.hmget(PERFS_META, usernames);
+    return metas.map((raw, i) => {
+      const username = usernames[i];
+      let image_url;
+      if (raw) {
+        try {
+          image_url = JSON.parse(raw).image_url;
+        } catch {
+          image_url = void 0;
+        }
+      }
+      return { username, image_url, score: scores.get(username) ?? 0 };
+    });
+  } catch (err) {
+    logger.warn({ err }, "Hot performers read failed");
+    return [];
+  }
+}
+function truncate(value, max) {
+  if (value.length <= max) return value;
+  return `${value.slice(0, Math.max(1, max - 1))}\u2026`;
+}
+async function seedHotCache(recordings, performers) {
+  const redis = client2();
+  if (!redis) return;
+  try {
+    const pipe = redis.pipeline();
+    if (recordings.length > 0) {
+      for (const rec of recordings) {
+        const score = Math.max(1, Math.floor(rec.viewers ?? 1));
+        pipe.zadd(RECS_SET, score, rec.id);
+        pipe.hset(RECS_META, rec.id, JSON.stringify({
+          username: rec.username,
+          title: rec.title ?? null,
+          image_url: rec.image_url ?? null
+        }));
+        if (rec.username) {
+          pipe.zadd(PERFS_SET, score, rec.username);
+          pipe.hset(PERFS_META, rec.username, JSON.stringify({ image_url: rec.image_url ?? null }));
+        }
+      }
+    }
+    if (performers.length > 0) {
+      for (const perf of performers) {
+        pipe.zadd(PERFS_SET, Math.max(1, Math.floor(perf.score ?? 1)), perf.username);
+        pipe.hset(PERFS_META, perf.username, JSON.stringify({ image_url: perf.image_url ?? null }));
+      }
+    }
+    if (recordings.length > 0 || performers.length > 0) {
+      pipe.expire(RECS_SET, HOT_TTL_SECONDS);
+      pipe.expire(RECS_META, HOT_TTL_SECONDS);
+      pipe.expire(PERFS_SET, HOT_TTL_SECONDS);
+      pipe.expire(PERFS_META, HOT_TTL_SECONDS);
+    }
+    await pipe.exec();
+  } catch (err) {
+    logger.warn({ err }, "Hot cache seed failed");
+  }
+}
+async function getHotStats() {
+  const redis = client2();
+  if (!redis) return { recordings: 0, performers: 0 };
+  try {
+    const [recordings, performers] = await Promise.all([
+      redis.zcard(RECS_SET),
+      redis.zcard(PERFS_SET)
+    ]);
+    return { recordings: Number(recordings) || 0, performers: Number(performers) || 0 };
+  } catch (err) {
+    logger.warn({ err }, "Hot cache stats failed");
+    return { recordings: 0, performers: 0 };
+  }
+}
+async function clearHotCache() {
+  const redis = client2();
+  if (!redis) return 0;
+  try {
+    const keys = [RECS_SET, RECS_META, PERFS_SET, PERFS_META];
+    return await redis.del(keys);
+  } catch (err) {
+    logger.warn({ err }, "Hot cache clear failed");
+    return 0;
+  }
+}
+
+// src/lib/view-buffer.ts
+init_supabase();
+var VIEWS_PREFIX = "views:";
+var PEND_KEY = `${VIEWS_PREFIX}pend:v1:`;
+var BASE_KEY = `${VIEWS_PREFIX}base:v1:`;
+var CHANGED_SET = `${VIEWS_PREFIX}changed:v1`;
+var AUTO_FLUSH_THRESHOLD = 10;
+var FLUSH_CAP_PER_RUN = 500;
+function client3() {
+  const redis = getRedis();
+  return redis && isRedisConnected() ? redis : null;
+}
+async function readPgViewers(id) {
+  try {
+    const { data, error } = await supabaseProxy.from("recordings").select("viewers").eq("id", id).maybeSingle();
+    if (error || !data) return null;
+    return Number(data.viewers ?? 0);
+  } catch {
+    return null;
+  }
+}
+async function casUpdateViewers(id, expected, target) {
+  try {
+    const { data, error } = await supabaseProxy.from("recordings").update({ viewers: target }).eq("id", id).eq("viewers", expected).select("id");
+    if (error) {
+      logger.error({ err: error, id }, "View buffer CAS update error");
+      return 0;
+    }
+    return data?.length ?? 0;
+  } catch (err) {
+    logger.error({ err, id }, "View buffer CAS update threw");
+    return 0;
+  }
+}
+var metaLoaders = /* @__PURE__ */ new Map();
+function loadRecordingMeta(id) {
+  const existing = metaLoaders.get(id);
+  if (existing) return existing;
+  const task = (async () => {
+    try {
+      const { data } = await supabaseProxy.from("recordings_with_links").select("username, room_title, thumbnail_url, sprite_url").eq("id", id).maybeSingle();
+      if (!data) return null;
+      return {
+        username: data.username ?? void 0,
+        title: data.room_title ?? null,
+        image_url: data.thumbnail_url || data.sprite_url || null
+      };
+    } catch {
+      return null;
+    }
+  })();
+  task.finally(() => metaLoaders.delete(id));
+  metaLoaders.set(id, task);
+  return task;
+}
+async function recordView(recordingId) {
+  const redis = client3();
+  if (!redis) return null;
+  const pendKey = `${PEND_KEY}${recordingId}`;
+  const baseKey = `${BASE_KEY}${recordingId}`;
+  try {
+    await redis.setnx(baseKey, String(await readPgViewers(recordingId) ?? 0));
+    const pending = await redis.incr(pendKey);
+    await redis.zadd(CHANGED_SET, Date.now(), recordingId);
+    bumpRecordingHot(recordingId, () => loadRecordingMeta(recordingId)).catch(() => {
+    });
+    if (pending >= AUTO_FLUSH_THRESHOLD) {
+      queueFlushId(recordingId);
+    }
+    const baseRaw = await redis.get(baseKey);
+    const base = baseRaw === null ? 0 : Number.parseInt(baseRaw, 10) || 0;
+    return base + pending;
+  } catch (err) {
+    logger.error({ err, recordingId }, "View buffer record error");
+    return null;
+  }
+}
+async function deleteBufferKeys(redis, recordingId) {
+  await redis.del([`${PEND_KEY}${recordingId}`, `${BASE_KEY}${recordingId}`]);
+  await redis.zrem(CHANGED_SET, recordingId);
+}
+async function flushId(redis, recordingId) {
+  const pendKey = `${PEND_KEY}${recordingId}`;
+  const baseKey = `${BASE_KEY}${recordingId}`;
+  const pendingRaw = await redis.get(pendKey);
+  const pending = pendingRaw === null ? 0 : Number.parseInt(pendingRaw, 10) || 0;
+  if (pending <= 0) {
+    await deleteBufferKeys(redis, recordingId);
+    return { id: recordingId, applied: 0, casMiss: false, deleted: false };
+  }
+  const pg = await readPgViewers(recordingId);
+  if (pg === null) {
+    await deleteBufferKeys(redis, recordingId);
+    return { id: recordingId, applied: 0, casMiss: false, deleted: true };
+  }
+  const baseRaw = await redis.get(baseKey);
+  let base = baseRaw === null ? pg : Number.parseInt(baseRaw, 10) || 0;
+  if (base < pg) {
+    base = pg;
+    await redis.set(baseKey, String(pg));
+  }
+  const target = base + pending;
+  const applied = Math.min(pending, Math.max(0, target - pg));
+  if (applied <= 0) {
+    await deleteBufferKeys(redis, recordingId);
+    return { id: recordingId, applied: 0, casMiss: false, deleted: false };
+  }
+  const matched = await casUpdateViewers(recordingId, pg, pg + applied);
+  if (matched <= 0) {
+    const fresh = await readPgViewers(recordingId);
+    if (fresh !== null) await redis.set(baseKey, String(fresh));
+    return { id: recordingId, applied: 0, casMiss: true, deleted: false };
+  }
+  const newPend = await redis.decrby(pendKey, applied);
+  await redis.set(baseKey, String(pg + applied));
+  if (Number(newPend) <= 0) {
+    await redis.del(pendKey);
+    await redis.zrem(CHANGED_SET, recordingId);
+  }
+  return { id: recordingId, applied, casMiss: false, deleted: false };
+}
+var inflightAutoFlush = /* @__PURE__ */ new Set();
+function queueFlushId(recordingId) {
+  if (inflightAutoFlush.has(recordingId)) return;
+  inflightAutoFlush.add(recordingId);
+  const redis = client3();
+  if (!redis) {
+    inflightAutoFlush.delete(recordingId);
+    return;
+  }
+  flushId(redis, recordingId).then((result) => {
+    if (result.applied > 0) {
+      invalidateTags(["recordings", "stats"]).catch(() => {
+      });
+    }
+  }).catch((err) => logger.error({ err, recordingId }, "Auto view-buffer flush failed")).finally(() => inflightAutoFlush.delete(recordingId));
+}
+async function flushPendingViews() {
+  const redis = client3();
+  if (!redis) {
+    return { scanned: 0, applied: 0, casMisses: 0, deleted: 0 };
+  }
+  try {
+    const ids = await redis.zrange(CHANGED_SET, 0, FLUSH_CAP_PER_RUN - 1);
+    let applied = 0;
+    let casMisses = 0;
+    let deleted = 0;
+    const harvested = [];
+    for (const id of ids) {
+      const result = await flushId(redis, id);
+      applied += result.applied;
+      if (result.casMiss) casMisses++;
+      if (result.deleted) deleted++;
+      harvested.push(id);
+    }
+    if (applied > 0) {
+      invalidateTags(["recordings", "stats"]).catch(() => {
+      });
+    }
+    return { scanned: ids.length, applied, casMisses, deleted };
+  } catch (err) {
+    logger.error({ err }, "View buffer batch flush error");
+    return { scanned: 0, applied: 0, casMisses: 0, deleted: 0 };
+  }
+}
+async function getViewBufferStats() {
+  const redis = client3();
+  if (!redis) return { pendingRecordings: 0, enabled: false };
+  try {
+    const count = await redis.zcard(CHANGED_SET);
+    return { pendingRecordings: Number(count) || 0, enabled: true };
+  } catch (err) {
+    logger.warn({ err }, "View buffer stats failed");
+    return { pendingRecordings: 0, enabled: false };
+  }
+}
+async function clearViewBuffer() {
+  const redis = client3();
+  if (!redis) return 0;
+  try {
+    let deleted = 0;
+    deleted += await redis.del(CHANGED_SET);
+    let cursor = "0";
+    do {
+      const [nextCursor, keys] = await redis.scan(cursor, "MATCH", "views:pend:v1:*", "COUNT", 500);
+      cursor = nextCursor;
+      if (keys.length > 0) {
+        deleted += await redis.del(keys);
+      }
+    } while (cursor !== "0");
+    cursor = "0";
+    do {
+      const [nextCursor, keys] = await redis.scan(cursor, "MATCH", `${BASE_KEY}*`, "COUNT", 500);
+      cursor = nextCursor;
+      if (keys.length > 0) {
+        deleted += await redis.del(keys);
+      }
+    } while (cursor !== "0");
+    return deleted;
+  } catch (err) {
+    logger.warn({ err }, "View buffer clear failed");
+    return 0;
+  }
+}
+
+// src/lib/suggestions.ts
+init_supabase();
+var SUGGESTIONS_PREFIX = "sugg:v1:";
+var SNAPSHOT_KEY = `${SUGGESTIONS_PREFIX}snapshot`;
+var META_KEY = `${SUGGESTIONS_PREFIX}meta`;
+var BUILD_LOCK = `${SUGGESTIONS_PREFIX}build-lock`;
+var SNAPSHOT_TTL_SECONDS = 48 * 60 * 60;
+var BUILD_LOCK_TTL_SECONDS = 120;
+var MAX_PERFORMERS = 1500;
+var MAX_TAGS = 1500;
+var MAX_RECORDINGS = 2e3;
+function client4() {
+  const redis = getRedis();
+  return redis && isRedisConnected() ? redis : null;
+}
+async function buildSuggestionSnapshot() {
+  const redis = client4();
+  try {
+    const byPerformer = /* @__PURE__ */ new Map();
+    const tagCounts = /* @__PURE__ */ new Map();
+    const { data: perfRows, error: perfError } = await fetchAll(
+      (start, end) => supabaseProxy.from("recordings_with_links").select("username,tags,thumbnail_url,sprite_url").not("links", "is", "null").range(start, end)
+    );
+    if (perfError) throw perfError;
+    for (const row of perfRows ?? []) {
+      if (row.username) {
+        const agg = byPerformer.get(row.username);
+        if (agg) {
+          agg.count++;
+          if (!agg.image) agg.image = row.thumbnail_url || row.sprite_url || null;
+        } else {
+          byPerformer.set(row.username, {
+            count: 1,
+            image: row.thumbnail_url || row.sprite_url || null
+          });
+        }
+      }
+      for (const tag of row.tags ?? []) {
+        if (tag && tag !== "") {
+          tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+        }
+      }
+    }
+    const performers = [...byPerformer.entries()].sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0])).slice(0, MAX_PERFORMERS).map(([label, agg]) => ({ label, image_url: agg.image ?? null }));
+    const tags = [...tagCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([tag]) => tag).slice(0, MAX_TAGS);
+    let recordings = [];
+    const { data: recData, error: recError } = await supabaseProxy.from("recordings_with_links").select("id,username,room_title,filename,thumbnail_url").not("links", "is", "null").order("timestamp", { ascending: false }).limit(MAX_RECORDINGS);
+    if (recError) throw recError;
+    recordings = (recData ?? []).map((r) => {
+      const row = r ?? {};
+      const rawTitle = row.room_title || row.filename;
+      const title = rawTitle && rawTitle.length > 80 ? rawTitle.slice(0, 77) + "\u2026" : rawTitle || "Untitled";
+      return {
+        id: row.id ?? "",
+        username: row.username ?? "unknown",
+        haystack: `${row.username ?? ""} ${row.room_title ?? ""} ${row.filename ?? ""}`.toLowerCase(),
+        label: title,
+        image_url: row.thumbnail_url ?? null
+      };
+    });
+    const snapshot = {
+      builtAt: Date.now(),
+      performers,
+      tags,
+      recordings
+    };
+    const counts = { performers: performers.length, tags: tags.length, recordings: recordings.length };
+    if (redis) {
+      await redis.setex(SNAPSHOT_KEY, SNAPSHOT_TTL_SECONDS, JSON.stringify(snapshot));
+      await redis.setex(META_KEY, SNAPSHOT_TTL_SECONDS, JSON.stringify({ builtAt: snapshot.builtAt, counts }));
+      await seedHotCache(
+        (recData ?? []).slice(0, 200).map((r, i) => ({
+          id: r.id,
+          username: r.username,
+          title: r.room_title ?? null,
+          image_url: r.thumbnail_url ?? null,
+          viewers: Math.max(1, 200 - i)
+        })),
+        performers.slice(0, 100).map((p, i) => ({
+          username: p.label,
+          image_url: p.image_url,
+          score: 100 - i
+        }))
+      );
+    }
+    logger.info({ counts }, "Search suggestion snapshot built");
+    return { ok: true, ...counts };
+  } catch (err) {
+    logger.error({ err }, "Search suggestion snapshot build failed");
+    return { ok: false, performers: 0, tags: 0, recordings: 0 };
+  }
+}
+var snapshotMemo = {
+  at: 0,
+  value: null
+};
+var MEMO_TTL_MS = 3e4;
+async function getSuggestionSnapshot() {
+  if (snapshotMemo.value && Date.now() - snapshotMemo.at < MEMO_TTL_MS) {
+    return snapshotMemo.value;
+  }
+  const redis = client4();
+  let snapshot = null;
+  if (redis) {
+    try {
+      const raw = await redis.get(SNAPSHOT_KEY);
+      if (typeof raw === "string" && raw.length > 0) {
+        snapshot = JSON.parse(raw);
+      }
+    } catch (err) {
+      logger.warn({ err }, "Suggestion snapshot read failed");
+    }
+  }
+  snapshotMemo = { at: Date.now(), value: snapshot };
+  return snapshot;
+}
+var buildingNow = false;
+async function maybeBuildSuggestionSnapshot() {
+  if (buildingNow) return;
+  const redis = client4();
+  if (redis) {
+    try {
+      const lock = await redis.set(BUILD_LOCK, "1", "EX", BUILD_LOCK_TTL_SECONDS, "NX");
+      if (lock !== "OK") return;
+    } catch {
+      const existing = await getSuggestionSnapshot();
+      if (existing) return;
+    }
+  }
+  buildingNow = true;
+  try {
+    await buildSuggestionSnapshot();
+  } finally {
+    buildingNow = false;
+  }
+}
+var PERF_CAP = 4;
+var REC_CAP = 4;
+var TAG_CAP = 4;
+function matchSuggestions(rawQuery, snapshot) {
+  const q = rawQuery.trim().toLowerCase();
+  if (q.length < 2) return [];
+  const out = [];
+  let perfCount = 0;
+  let recCount = 0;
+  let tagCount = 0;
+  for (const p of snapshot.performers) {
+    if (p.label.toLowerCase().includes(q)) {
+      out.push({
+        type: "performer",
+        label: p.label,
+        subtitle: "Performer",
+        image_url: p.image_url,
+        href: `/performers/${encodeURIComponent(p.label)}`
+      });
+      if (++perfCount >= PERF_CAP) break;
+    }
+  }
+  for (const r of snapshot.recordings) {
+    if (r.haystack.includes(q)) {
+      out.push({
+        type: "recording",
+        label: r.label,
+        subtitle: r.username,
+        image_url: r.image_url,
+        href: `/video/${r.id}`
+      });
+      if (++recCount >= REC_CAP) break;
+    }
+  }
+  for (const tag of snapshot.tags) {
+    if (tag.toLowerCase().includes(q)) {
+      out.push({
+        type: "tag",
+        label: tag,
+        subtitle: "Tag",
+        href: `/browse?tags=${encodeURIComponent(tag)}`
+      });
+      if (++tagCount >= TAG_CAP) break;
+    }
+  }
+  return out;
+}
+async function getSuggestionStats() {
+  const empty = { counts: { performers: 0, tags: 0, recordings: 0 }, builtAt: null };
+  const redis = client4();
+  if (!redis) return empty;
+  try {
+    const [snapshotRaw, metaRaw] = await Promise.all([redis.get(SNAPSHOT_KEY), redis.get(META_KEY)]);
+    const snapshot = snapshotRaw ? JSON.parse(snapshotRaw) : null;
+    let builtAt = null;
+    if (metaRaw) {
+      try {
+        builtAt = JSON.parse(metaRaw).builtAt ?? null;
+      } catch {
+        builtAt = null;
+      }
+    }
+    return {
+      counts: {
+        performers: snapshot?.performers.length ?? 0,
+        tags: snapshot?.tags.length ?? 0,
+        recordings: snapshot?.recordings.length ?? 0
+      },
+      builtAt
+    };
+  } catch (err) {
+    logger.warn({ err }, "Suggestion stats failed");
+    return empty;
+  }
+}
+
+// src/routes/cache-admin.ts
 var router10 = (0, import_express10.Router)();
 var admin2 = requireRole("admin");
 router10.get("/cache/status", ...admin2, async (_req, res) => {
   const redis = getRedis();
   const status = getRedisStatus();
   const connected = isRedisConnected();
-  let info = { connected, status, memory: getCacheStats(), metrics: getCacheMetrics() };
+  const [media, hot, views, suggestions] = await Promise.all([
+    getMediaRedisStats(),
+    getHotStats(),
+    getViewBufferStats(),
+    getSuggestionStats()
+  ]);
+  let info = {
+    connected,
+    status,
+    memory: getCacheStats(),
+    metrics: getCacheMetrics(),
+    redisSystems: {
+      media,
+      hot,
+      views,
+      suggestions
+    }
+  };
   if (redis && connected) {
     try {
       const dbsize = await redis.dbsize();
@@ -71039,7 +72391,8 @@ router10.post("/cache/purge", ...admin2, async (_req, res) => {
     res.json({
       purged: true,
       deletedKeys: result.deletedKeys,
-      invalidatedTags: result.invalidatedTags
+      invalidatedTags: result.invalidatedTags,
+      cdnPurged: result.cdnPurged
     });
   } catch (err) {
     logger.error({ err }, "Cache purge failed");
@@ -71050,7 +72403,7 @@ router10.delete("/cache/flush", ...admin2, async (_req, res) => {
   try {
     const result = await purgeAllCache();
     logger.info({ keysDeleted: result.deletedKeys }, "Cache flushed");
-    res.json({ flushed: true, keysDeleted: result.deletedKeys });
+    res.json({ flushed: true, keysDeleted: result.deletedKeys, cdnPurged: result.cdnPurged });
   } catch (err) {
     logger.error({ err }, "Cache flush failed");
     res.status(500).json({ error: "Cache flush failed" });
@@ -71063,6 +72416,55 @@ router10.post("/cache/metrics/reset", ...admin2, async (_req, res) => {
   resetCacheMetrics();
   logger.info("Cache metrics reset");
   res.json({ reset: true });
+});
+router10.post("/cache/suggestions/rebuild", ...admin2, async (_req, res) => {
+  try {
+    const result = await buildSuggestionSnapshot();
+    res.json(result);
+  } catch (err) {
+    logger.error({ err }, "Suggestion index rebuild failed");
+    res.status(500).json({ error: "Suggestion index rebuild failed" });
+  }
+});
+router10.post("/cache/views/flush", ...admin2, async (_req, res) => {
+  try {
+    const result = await flushPendingViews();
+    logger.info({ result }, "View buffer flushed via admin endpoint");
+    res.json(result);
+  } catch (err) {
+    logger.error({ err }, "View buffer flush failed");
+    res.status(500).json({ error: "View buffer flush failed" });
+  }
+});
+router10.post("/cache/views/drop", ...admin2, async (_req, res) => {
+  try {
+    const deleted = await clearViewBuffer();
+    logger.warn({ deleted }, "View buffer dropped via admin endpoint");
+    res.json({ dropped: true, deletedKeys: deleted });
+  } catch (err) {
+    logger.error({ err }, "View buffer drop failed");
+    res.status(500).json({ error: "View buffer drop failed" });
+  }
+});
+router10.post("/cache/media/clear", ...admin2, async (_req, res) => {
+  try {
+    const deleted = await clearMediaRedisCache();
+    logger.info({ deleted }, "Media Redis cache cleared via admin endpoint");
+    res.json({ cleared: true, deletedKeys: deleted });
+  } catch (err) {
+    logger.error({ err }, "Media Redis cache clear failed");
+    res.status(500).json({ error: "Media Redis cache clear failed" });
+  }
+});
+router10.post("/cache/hot/clear", ...admin2, async (_req, res) => {
+  try {
+    const deleted = await clearHotCache();
+    logger.info({ deleted }, "Hot cache cleared via admin endpoint");
+    res.json({ cleared: true, deletedKeys: deleted });
+  } catch (err) {
+    logger.error({ err }, "Hot cache clear failed");
+    res.status(500).json({ error: "Hot cache clear failed" });
+  }
 });
 var cache_admin_default = router10;
 
@@ -71211,21 +72613,12 @@ router11.patch("/admin/requests/:id/status", ...admin3, async (req, res) => {
     const performerName = updated.performer_username ?? "a performer";
     const newLabel = statusLabels[updated.status] ?? updated.status;
     const message = `Your request for @${performerName} on ${updated.platform} has been ${newLabel}.`;
-    try {
-      const { data: prefRow } = await supabaseProxy.from("user_notification_preferences").select("enabled").eq("user_id", updated.user_id).eq("notification_type", "request_status").maybeSingle();
-      const enabled = prefRow ? prefRow.enabled : true;
-      if (enabled) {
-        await supabaseProxy.from("user_notifications").insert({
-          user_id: updated.user_id,
-          type: "request_status",
-          message,
-          related_id: String(updated.id),
-          is_read: false
-        });
-      }
-    } catch (notifErr) {
-      req.log?.error?.({ err: notifErr, requestId: id }, "Failed to create notification for request status change");
-    }
+    await notifyUser({
+      userId: updated.user_id,
+      type: "request_status",
+      message,
+      relatedId: String(updated.id)
+    });
     res.json(updated);
   } catch (err) {
     req.log?.error?.({ err }, "PATCH /admin/requests/:id/status error");
@@ -71242,6 +72635,10 @@ router11.delete("/admin/requests/:id", ...admin3, async (req, res) => {
       return;
     }
     logger.info({ requestId: id, adminId: req.user.id }, "Request deleted by admin");
+    try {
+      await supabaseProxy.from("user_notifications").delete().eq("related_id", String(id)).in("type", ["request_status", "request_submitted"]);
+    } catch {
+    }
     res.json({ ok: true });
   } catch (err) {
     req.log?.error?.({ err }, "DELETE /admin/requests/:id error");
@@ -71367,7 +72764,8 @@ router11.post("/admin/cache/purge", ...admin3, async (_req, res) => {
     res.json({
       purged: true,
       deletedKeys: result.deletedKeys,
-      invalidatedTags: result.invalidatedTags
+      invalidatedTags: result.invalidatedTags,
+      cdnPurged: result.cdnPurged
     });
   } catch (err) {
     logger.error({ err }, "Cache purge failed");
@@ -71380,7 +72778,7 @@ router11.delete("/admin/cache/flush", ...admin3, async (_req, res) => {
     const memoryResult = await purgeAllCache();
     if (!redis || !isRedisConnected()) {
       logger.info({ keysDeleted: memoryResult.deletedKeys, adminId: _req.user.id }, "Cache flushed by admin");
-      res.json({ flushed: true, keysDeleted: memoryResult.deletedKeys });
+      res.json({ flushed: true, keysDeleted: memoryResult.deletedKeys, cdnPurged: memoryResult.cdnPurged });
       return;
     }
     let cursor = "0";
@@ -71404,7 +72802,7 @@ router11.delete("/admin/cache/flush", ...admin3, async (_req, res) => {
     } while (cursor !== "0");
     const keysDeleted = deleted + memoryResult.deletedKeys;
     logger.info({ keysDeleted, adminId: _req.user.id }, "Cache flushed by admin");
-    res.json({ flushed: true, keysDeleted });
+    res.json({ flushed: true, keysDeleted, cdnPurged: memoryResult.cdnPurged });
   } catch (err) {
     logger.error({ err }, "Cache flush failed");
     res.status(500).json({ error: "Cache flush failed" });
@@ -71416,15 +72814,31 @@ var admin_default = router11;
 var import_express12 = __toESM(require_express2(), 1);
 init_supabase();
 var router12 = (0, import_express12.Router)();
+function escapeLike2(input) {
+  return input.replace(/[\\%_]/g, "\\$&");
+}
+var MAX_TAG_SCAN_PAGES = 20;
 router12.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search", "recordings", "performers", "tags"] }), async (req, res) => {
   const q = String(req.query.q ?? "").trim();
   if (!q || q.length < 2) {
     res.json({ suggestions: [], query: q ?? "" });
     return;
   }
+  const snapshot = await getSuggestionSnapshot().catch((err) => {
+    logger.warn({ err, query: q }, "Suggestion snapshot read failed");
+    return null;
+  });
+  if (snapshot) {
+    res.json({ suggestions: matchSuggestions(q, snapshot), query: q, source: "index" });
+    return;
+  }
+  maybeBuildSuggestionSnapshot().catch(
+    (err) => logger.error({ err, query: q }, "Background suggestion build kicked off with error")
+  );
+  const safeQ = escapeLike2(q);
   const suggestions = [];
   try {
-    const { data: performers } = await supabaseProxy.from("recordings_with_links").select("username, thumbnail_url, sprite_url, preview_url, links").not("links", "is", "null").ilike("username", `%${q}%`).order("timestamp", { ascending: false }).limit(4);
+    const { data: performers } = await supabaseProxy.from("recordings_with_links").select("username, thumbnail_url, sprite_url, preview_url, links").not("links", "is", "null").ilike("username", `%${safeQ}%`).order("timestamp", { ascending: false }).limit(4);
     if (performers) {
       const seen = /* @__PURE__ */ new Set();
       for (const p of performers) {
@@ -71441,7 +72855,7 @@ router12.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["searc
       }
     }
     const { data: recordings } = await supabaseProxy.from("recordings_with_links").select("id, username, room_title, filename, thumbnail_url, links").not("links", "is", "null").or(
-      `username.ilike.%${q}%,room_title.ilike.%${q}%,filename.ilike.%${q}%`
+      `username.ilike.%${safeQ}%,room_title.ilike.%${safeQ}%,filename.ilike.%${safeQ}%`
     ).order("timestamp", { ascending: false }).limit(4);
     if (recordings) {
       for (const r of recordings) {
@@ -71462,6 +72876,8 @@ router12.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["searc
         const matchedTags = [];
         const PAGE_SIZE = 1e3;
         for (let start = 0; ; start += PAGE_SIZE) {
+          const pageIndex = start / PAGE_SIZE;
+          if (pageIndex >= MAX_TAG_SCAN_PAGES) break;
           const { data, error } = await supabaseProxy.from("recordings_with_links").select("tags").not("links", "is", "null").not("tags", "is", "null").range(start, start + PAGE_SIZE - 1);
           if (error) break;
           if (!data || data.length === 0) break;
@@ -71517,10 +72933,12 @@ var UPSTREAM_AGENT_HTTP = new http.Agent({
   keepAliveMsecs: 1e3
 });
 var CONNECTION_TIMEOUT_MS = 2e4;
-var IMAGE_TIMEOUT_MS = 12e3;
+var IMAGE_TIMEOUT_MS = 8e3;
 var MAX_RETRIES = 3;
 var BASE_RETRY_DELAY_MS = 500;
 var MAX_REDIRECTS = 5;
+var IMAGE_BUDGET_MS = 25e3;
+var VIDEO_BUDGET_MS = 5e4;
 var HOST_MAX_CONCURRENT = 10;
 var HOST_START_INTERVAL_MS = 20;
 var hostGates = /* @__PURE__ */ new Map();
@@ -71555,10 +72973,24 @@ function scheduleHostGate(gate) {
   };
   gate.timer = setTimeout(tryStart, 0);
 }
-function acquireHostGate(host) {
+function acquireHostGate(host, timeoutMs = Number.POSITIVE_INFINITY) {
   const gate = getHostGate(host);
+  let settled = false;
+  let timer = null;
   return new Promise((resolve) => {
-    gate.waiters.push(() => resolve(() => releaseHostGate(gate)));
+    const finish = (value) => {
+      if (settled) {
+        if (value) value();
+        return;
+      }
+      settled = true;
+      if (timer !== null) clearTimeout(timer);
+      resolve(value);
+    };
+    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+      timer = setTimeout(() => finish(null), timeoutMs);
+    }
+    gate.waiters.push(() => finish(() => releaseHostGate(gate)));
     scheduleHostGate(gate);
   });
 }
@@ -71574,16 +73006,26 @@ function cacheImageInMemory(url, img) {
   }
 }
 async function fetchImageOnce(urlStr, upstreamHeaders, log) {
-  const release = await acquireHostGate(new URL(urlStr).hostname);
+  const deadline = Date.now() + IMAGE_BUDGET_MS;
+  const release = await acquireHostGate(new URL(urlStr).hostname, deadline - Date.now());
+  if (!release) {
+    log?.warn?.({ url: urlStr }, "Media proxy image host gate timeout");
+    return null;
+  }
   try {
-    const response = await fetchWithRetry(urlStr, upstreamHeaders, log, IMAGE_TIMEOUT_MS);
+    const response = await fetchWithRetry(urlStr, upstreamHeaders, log, IMAGE_TIMEOUT_MS, deadline);
     if (!response || !response.ok) {
+      if (response && isTransientStatus(response.status)) return null;
       throw new Error(response ? `upstream ${response.status}` : "upstream fetch failed");
     }
     const contentType = response.headers.get("content-type") || "image/jpeg";
-    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!isSafeMediaType(contentType, new URL(urlStr))) {
+      throw new Error(`unsafe upstream content type: ${contentType}`);
+    }
+    const buffer = await readBodyBounded(response, MAX_IMAGE_BYTES);
     const img = { buffer, contentType, status: response.status };
     cacheImageInMemory(urlStr, img);
+    setImageInRedis(urlStr, img);
     return img;
   } finally {
     release();
@@ -71593,6 +73035,15 @@ async function getImage(urlStr, upstreamHeaders, log) {
   const cached = imageMemCache.get(urlStr);
   if (cached && cached.expires > Date.now()) {
     return cached;
+  }
+  try {
+    const shared = await getImageFromRedis(urlStr);
+    if (shared) {
+      cacheImageInMemory(urlStr, shared);
+      return shared;
+    }
+  } catch (err) {
+    log?.warn?.({ err, url: urlStr }, "Media proxy Redis image read failed");
   }
   let inflight = imageInflight.get(urlStr);
   if (!inflight) {
@@ -71616,6 +73067,7 @@ function cacheTransform(key, img) {
     const oldest = transformMemCache.keys().next().value;
     if (oldest !== void 0) transformMemCache.delete(oldest);
   }
+  setTransformInRedis(key, img);
 }
 async function transformImage(buffer, contentType, width, fmt, log) {
   const isRaster = contentType.startsWith("image/") && !contentType.includes("gif");
@@ -71641,6 +73093,15 @@ async function getTransformedImage(urlStr, img, width, fmt, log) {
   const key = transformCacheKey(urlStr, width, fmt);
   const cached = transformMemCache.get(key);
   if (cached && cached.expires > Date.now()) return cached;
+  try {
+    const shared = await getTransformFromRedis(key);
+    if (shared) {
+      transformMemCache.set(key, { ...shared, expires: Date.now() + TRANSFORM_CACHE_TTL_MS });
+      return shared;
+    }
+  } catch (err) {
+    log?.warn?.({ err, key }, "Media proxy Redis transform read failed");
+  }
   let inflight = transformInflight.get(key);
   if (!inflight) {
     inflight = transformImage(img.buffer, img.contentType, width, fmt, log).then((result) => {
@@ -71654,14 +73115,23 @@ async function getTransformedImage(urlStr, img, width, fmt, log) {
 var FAILURE_CACHE_TTL_MS = 10 * 60 * 1e3;
 var FAILURE_CACHE_MAX_SIZE = 500;
 var failureCache = /* @__PURE__ */ new Map();
-function isCachedFailure(url) {
+async function isCachedFailure(url) {
   const cached = failureCache.get(url);
-  if (!cached) return false;
-  if (Date.now() - cached > FAILURE_CACHE_TTL_MS) {
-    failureCache.delete(url);
-    return false;
+  if (cached) {
+    if (Date.now() - cached > FAILURE_CACHE_TTL_MS) {
+      failureCache.delete(url);
+    } else {
+      return true;
+    }
   }
-  return true;
+  try {
+    if (await isFailureInRedis(url)) {
+      failureCache.set(url, Date.now());
+      return true;
+    }
+  } catch {
+  }
+  return false;
 }
 function markCachedFailure(url) {
   if (failureCache.size >= FAILURE_CACHE_MAX_SIZE) {
@@ -71669,6 +73139,35 @@ function markCachedFailure(url) {
     if (oldestKey !== void 0) failureCache.delete(oldestKey);
   }
   failureCache.set(url, Date.now());
+  markFailureInRedis(url);
+}
+var SAFE_MEDIA_RE = /^(image\/(?!svg)[a-z0-9.+-]+|video\/[a-z0-9.+-]+|audio\/[a-z0-9.+-]+|application\/x-mpegurl|application\/vnd\.apple\.mpegurl|application\/mpegurl|application\/octet-stream|binary\/octet-stream)$/i;
+var MEDIA_EXT_RE = /\.(jpe?g|jxl|png|webp|gif|avif|apng|mp4|webm|mov|m4v|m3u8|ogg|ogv|oga|mp3|aac|wav|opus)$/i;
+function isSafeMediaType(contentType, url) {
+  if (contentType && typeof contentType === "string") {
+    const ct = contentType.split(";")[0].trim();
+    if (ct && ct !== "*/*" && ct !== "application/stream") return SAFE_MEDIA_RE.test(ct);
+  }
+  return MEDIA_EXT_RE.test(url.pathname);
+}
+var MAX_IMAGE_BYTES = 40 * 1024 * 1024;
+async function readBodyBounded(response, maxBytes) {
+  if (!response.body) return Buffer.alloc(0);
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      reader.cancel().catch(() => {
+      });
+      throw new Error(`upstream body exceeds ${maxBytes} bytes`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks, total);
 }
 var router13 = (0, import_express13.Router)();
 var DNS_SERVERS = ["8.8.8.8", "1.1.1.1", "9.9.9.9", "208.67.222.222"];
@@ -71679,6 +73178,11 @@ var DNS_CACHE_TTL_MS = 5 * 6e4;
 async function resolveHostname(hostname) {
   const cached = dnsCache.get(hostname);
   if (cached && cached.expires > Date.now()) return cached.ip;
+  const shared = await getDnsFromRedis(hostname).catch(() => null);
+  if (shared) {
+    dnsCache.set(hostname, { ip: shared, expires: Date.now() + DNS_CACHE_TTL_MS });
+    return shared;
+  }
   let ip = null;
   try {
     const addresses = await customResolver.resolve4(hostname);
@@ -71693,7 +73197,10 @@ async function resolveHostname(hostname) {
       ip = null;
     }
   }
-  if (ip) dnsCache.set(hostname, { ip, expires: Date.now() + DNS_CACHE_TTL_MS });
+  if (ip) {
+    dnsCache.set(hostname, { ip, expires: Date.now() + DNS_CACHE_TTL_MS });
+    setDnsInRedis(hostname, ip);
+  }
   return ip;
 }
 function ipv4ToInt(ip) {
@@ -71749,7 +73256,7 @@ function isPrivateIpv6(ip) {
   const inRange = (start, count) => value >= start && value < start + count;
   return inRange(0n, 1n) || // ::/128 unspecified
   inRange(1n, 1n) || // ::1/128 loopback
-  inRange(0xffffffffn, 0x100000000n) || // ::ffff:0:0/96 IPv4-mapped (block all)
+  inRange(BigInt(65535) << 32n, BigInt(4294967296)) || // ::ffff:0:0/96 IPv4-mapped (block all)
   inRange(BigInt(64512) << 96n, BigInt(512) << 96n) || // fc00::/7 ULA
   inRange(BigInt(65152) << 96n, BigInt(1024) << 96n) || // fe80::/10 link-local
   inRange(BigInt(65280) << 96n, BigInt(256) << 96n) || // ff00::/8 multicast
@@ -71781,6 +73288,9 @@ function incomingToResponse(msg) {
 }
 async function fetchWithTimeout(urlStr, headers, timeoutMs) {
   const parsedUrl = new URL(urlStr);
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+    throw new Error(`Protocol not allowed: ${parsedUrl.protocol}`);
+  }
   const protocol = parsedUrl.protocol === "https:" ? https : http;
   let resolvedIp = await resolveHostname(parsedUrl.hostname);
   let family = 4;
@@ -71840,14 +73350,27 @@ function directConnect(protocol, parsedUrl, headers, resolvedIp, family, timeout
     req.end();
   });
 }
-async function fetchWithRetry(url, headers, log, timeoutMs = CONNECTION_TIMEOUT_MS) {
-  if (isCachedFailure(url)) {
+function isTransientStatus(status) {
+  return status === 429 || status === 408 || status === 425 || status >= 500 && status < 600;
+}
+function parseRetryAfter(value) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1e3;
+  const date = Date.parse(trimmed);
+  if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
+  return null;
+}
+async function fetchWithRetry(url, headers, log, timeoutMs = CONNECTION_TIMEOUT_MS, deadlineMs) {
+  if (await isCachedFailure(url)) {
     log.warn({ url }, "Media proxy skipping cached failure");
     return null;
   }
   for (let attempt = 1; attempt <= 1 + MAX_RETRIES; attempt++) {
     const isFirst = attempt === 1;
-    const attemptTimeout = timeoutMs * (isFirst ? 1 : 1.5);
+    const remaining = deadlineMs === void 0 ? Number.POSITIVE_INFINITY : deadlineMs - Date.now();
+    if (remaining <= 0) break;
+    const attemptTimeout = Math.min(timeoutMs * (isFirst ? 1 : 1.5), remaining);
     try {
       let response = await fetchWithTimeout(url, headers, attemptTimeout);
       let redirectCount = 0;
@@ -71866,15 +73389,31 @@ async function fetchWithRetry(url, headers, log, timeoutMs = CONNECTION_TIMEOUT_
         redirectCount++;
       }
       if (response.status >= 500 && response.status < 600 && attempt <= MAX_RETRIES) {
-        const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200;
+        const delay = Math.min(
+          BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200,
+          remaining
+        );
         log.warn({ url, status: response.status, attempt }, "Media proxy upstream 5xx, retrying");
         await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+      if (response.status === 429 && attempt <= MAX_RETRIES) {
+        const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
+        const delay = Math.min(
+          retryAfterMs ?? BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200,
+          remaining
+        );
+        log.warn({ url, attempt, retryAfterMs }, "Media proxy upstream 429, honoring Retry-After");
+        await new Promise((resolve) => setTimeout(resolve, Math.max(0, delay)));
         continue;
       }
       if (response.status === 200 && response.headers.get("content-length") === "0") {
         if (attempt <= MAX_RETRIES) {
           log.warn({ url, attempt }, "Media proxy upstream empty 200, retrying");
-          const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200;
+          const delay = Math.min(
+            BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200,
+            remaining
+          );
           await new Promise((resolve) => setTimeout(resolve, delay));
           continue;
         }
@@ -71885,7 +73424,10 @@ async function fetchWithRetry(url, headers, log, timeoutMs = CONNECTION_TIMEOUT_
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       if (attempt <= MAX_RETRIES) {
-        const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200;
+        const delay = Math.min(
+          BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200,
+          remaining
+        );
         log.warn({ url, attempt, err: errorMessage }, "Media proxy fetch failed, retrying");
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
@@ -71898,6 +73440,7 @@ async function fetchWithRetry(url, headers, log, timeoutMs = CONNECTION_TIMEOUT_
 function streamResponse(upstreamRes, res, log) {
   const contentType = upstreamRes.headers.get("content-type");
   if (contentType) res.setHeader("Content-Type", contentType);
+  res.setHeader("X-Content-Type-Options", "nosniff");
   const contentLength = upstreamRes.headers.get("content-length");
   if (contentLength) res.setHeader("Content-Length", contentLength);
   const contentRange = upstreamRes.headers.get("content-range");
@@ -71982,9 +73525,20 @@ router13.get("/media", async (req, res) => {
   try {
     let response;
     if (isVideoRequest) {
-      response = await fetchWithRetry(urlStr, upstreamHeaders, req.log);
+      response = await fetchWithRetry(
+        urlStr,
+        upstreamHeaders,
+        req.log,
+        CONNECTION_TIMEOUT_MS,
+        Date.now() + VIDEO_BUDGET_MS
+      );
     } else {
       const img = await getImage(urlStr, upstreamHeaders, req.log);
+      if (!img) {
+        req.log.warn({ url: urlStr }, "Media proxy image unavailable");
+        res.status(404).end();
+        return;
+      }
       if (width !== null || fmt !== null) {
         const variant = await getTransformedImage(urlStr, img, width ?? 2e3, fmt, req.log);
         response = new Response(variant.buffer, {
@@ -72013,19 +73567,25 @@ router13.get("/media", async (req, res) => {
       res.status(404).end();
       return;
     }
+    if (!isSafeMediaType(response.headers.get("content-type"), parsedUrl)) {
+      req.log.warn(
+        { url: urlStr, contentType: response.headers.get("content-type") },
+        "Media proxy refused non-media upstream content"
+      );
+      markCachedFailure(urlStr);
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.status(415).end();
+      return;
+    }
     if (!response.ok && response.status !== 206) {
       if (isVideoRequest) {
-        const body2 = await response.arrayBuffer();
-        res.status(response.status);
-        for (const [k, v] of response.headers.entries()) {
-          if (k.toLowerCase() === "content-type") res.setHeader("Content-Type", v);
-        }
-        res.send(Buffer.from(body2));
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        res.status(response.status).end();
         return;
       }
       const body = await response.text().catch(() => "");
       req.log.warn({ url: urlStr, status: response.status, body: body.slice(0, 200) }, "Media proxy upstream error");
-      markCachedFailure(urlStr);
+      if (!isTransientStatus(response.status)) markCachedFailure(urlStr);
       res.status(404).end();
       return;
     }
@@ -72042,114 +73602,9 @@ router13.get("/media", async (req, res) => {
 });
 var media_proxy_default = router13;
 
-// src/routes/edge-cache.ts
-var import_express14 = __toESM(require_express2(), 1);
-var PREFIX = "edge:";
-var MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
-var MAX_VALUE_BYTES = 25e4;
-var MAX_CDN_TTL_SECONDS = 300;
-var router14 = (0, import_express14.Router)();
-router14.get("/cache", async (req, res) => {
-  const key = String(req.query.key ?? "");
-  if (!key) {
-    res.status(400).json({ error: "key query parameter required" });
-    return;
-  }
-  const redis = getRedis();
-  if (!redis || !isRedisConnected()) {
-    res.setHeader("Cache-Control", "no-store");
-    res.json({ exists: false, value: null, ttl: null });
-    return;
-  }
-  try {
-    const raw = await redis.get(PREFIX + key);
-    if (!raw) {
-      res.setHeader("Cache-Control", "no-store");
-      res.json({ exists: false, value: null, ttl: null });
-      return;
-    }
-    const entry = JSON.parse(raw);
-    if (entry.expiresAt !== null && entry.expiresAt <= Date.now()) {
-      redis.del(PREFIX + key).catch(() => {
-      });
-      res.setHeader("Cache-Control", "no-store");
-      res.json({ exists: false, value: null, ttl: null });
-      return;
-    }
-    const ttl = entry.expiresAt === null ? null : Math.max(0, Math.round((entry.expiresAt - Date.now()) / 1e3));
-    const cdnTtl = ttl === null ? MAX_CDN_TTL_SECONDS : Math.min(ttl, MAX_CDN_TTL_SECONDS);
-    res.setHeader(
-      "Cache-Control",
-      `public, max-age=0, must-revalidate, s-maxage=${cdnTtl}`
-    );
-    res.json({ exists: true, value: entry.value, ttl });
-  } catch (err) {
-    req.log.error({ err, key }, "Edge cache GET error");
-    res.status(500).json({ error: "cache read failed" });
-  }
-});
-router14.post("/cache", async (req, res) => {
-  const body = req.body ?? {};
-  if (typeof body.key !== "string" || body.key.length === 0) {
-    res.status(400).json({ error: "body must be { key, value, ttl? }" });
-    return;
-  }
-  if (body.value === void 0 || body.value === null) {
-    res.status(400).json({ error: "value is required" });
-    return;
-  }
-  const rawTtl = Number(body.ttl);
-  const ttlSec = Number.isFinite(rawTtl) && rawTtl > 0 ? Math.max(1, Math.min(MAX_TTL_SECONDS, Math.round(rawTtl))) : null;
-  const serialized = JSON.stringify(body.value);
-  if (serialized.length > MAX_VALUE_BYTES) {
-    res.status(413).json({ error: "value too large" });
-    return;
-  }
-  const redis = getRedis();
-  if (!redis || !isRedisConnected()) {
-    res.json({ success: false });
-    return;
-  }
-  try {
-    const entry = {
-      value: body.value,
-      expiresAt: ttlSec === null ? null : Date.now() + ttlSec * 1e3
-    };
-    const payload = JSON.stringify(entry);
-    if (ttlSec === null) {
-      await redis.set(PREFIX + body.key, payload);
-    } else {
-      await redis.setex(PREFIX + body.key, ttlSec, payload);
-    }
-    res.json({ success: true });
-  } catch (err) {
-    req.log.error({ err, key: body.key }, "Edge cache POST error");
-    res.status(500).json({ error: "cache write failed" });
-  }
-});
-router14.delete("/cache", async (req, res) => {
-  const key = String(req.query.key ?? "");
-  if (!key) {
-    res.status(400).json({ error: "key query parameter required" });
-    return;
-  }
-  const redis = getRedis();
-  if (!redis || !isRedisConnected()) {
-    res.json({ success: false });
-    return;
-  }
-  try {
-    await redis.del(PREFIX + key);
-    res.json({ success: true });
-  } catch (err) {
-    req.log.error({ err, key }, "Edge cache DELETE error");
-    res.status(500).json({ error: "cache delete failed" });
-  }
-});
-var edge_cache_default = router14;
-
 // src/routes/cache-warm.ts
-var import_express15 = __toESM(require_express2(), 1);
+var import_express14 = __toESM(require_express2(), 1);
+import { timingSafeEqual } from "node:crypto";
 
 // src/lib/cache-warmup.ts
 var WARMUP_ROUTES = [
@@ -72161,7 +73616,10 @@ var WARMUP_ROUTES = [
   { path: "/api/recordings?limit=12&sort=popular", priority: 1 },
   // Tier 2 — browse/discovery
   { path: "/api/performers?sort=count&limit=24", priority: 2 },
-  { path: "/api/performers?sort=name&limit=24", priority: 2 }
+  { path: "/api/performers?sort=name&limit=24", priority: 2 },
+  // Tier 3 — Redis-backed quick lists (served from ZSETs once warm)
+  { path: "/api/hot/recordings?limit=24", priority: 2 },
+  { path: "/api/hot/performers?limit=50", priority: 2 }
 ];
 async function waitForRedis(timeoutMs) {
   if (isRedisConnected()) return true;
@@ -72262,49 +73720,77 @@ async function warmupCache(baseUrl, options) {
 }
 
 // src/routes/cache-warm.ts
-var router15 = (0, import_express15.Router)();
-router15.get("/cache/warm", async (req, res) => {
+var router14 = (0, import_express14.Router)();
+router14.get("/cache/warm", async (req, res) => {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
     res.status(503).json({ error: "warm endpoint not configured (CRON_SECRET missing)" });
     return;
   }
-  if (req.headers.authorization !== `Bearer ${secret}`) {
+  const expected = Buffer.from(`Bearer ${secret}`, "utf8");
+  const actual = Buffer.from(String(req.headers.authorization ?? ""), "utf8");
+  const matches = expected.length === actual.length && timingSafeEqual(expected, actual);
+  if (!matches) {
     res.status(401).json({ error: "unauthorized" });
     return;
   }
-  const host = String(req.headers["x-forwarded-host"] ?? req.headers.host ?? "");
-  if (!host) {
-    res.status(400).json({ error: "could not determine host" });
-    return;
-  }
-  const result = await warmupCache(`https://${host}`, { purgeOnFailure: false });
-  res.json(result);
+  let origin = (process.env.CRON_PUBLIC_URL ?? "https://chuglii.in").trim();
+  if (!/^https?:\/\//i.test(origin)) origin = "https://chuglii.in";
+  const result = await warmupCache(origin, { purgeOnFailure: false });
+  const [viewsResult, suggestionsResult] = await Promise.allSettled([
+    flushPendingViews(),
+    maybeBuildSuggestionSnapshot()
+  ]);
+  const viewsFlushed = viewsResult.status === "fulfilled" ? viewsResult.value : { error: String(viewsResult.reason) };
+  const suggestions = suggestionsResult.status === "fulfilled" ? { okay: true } : { okay: false, error: String(suggestionsResult.reason) };
+  res.json({
+    ...result,
+    maintenance: { viewsFlushed, suggestions }
+  });
 });
-var cache_warm_default = router15;
+var cache_warm_default = router14;
 
 // src/routes/views.ts
-var import_express16 = __toESM(require_express2(), 1);
+var import_express15 = __toESM(require_express2(), 1);
 init_supabase();
-var router16 = (0, import_express16.Router)();
-router16.post("/recordings/:id/view", async (req, res) => {
+var router15 = (0, import_express15.Router)();
+router15.post("/recordings/:id/view", async (req, res) => {
   const { id } = req.params;
   if (!id) {
     res.status(400).json({ error: "Missing recording id" });
     return;
   }
+  const bufferedViewers = await recordView(id);
+  if (bufferedViewers !== null) {
+    res.json({ viewers: bufferedViewers, buffered: true });
+    return;
+  }
   try {
-    const { data: current, error: fetchError } = await supabaseProxy.from("recordings").select("viewers").eq("id", id).single();
-    if (fetchError || !current) {
-      res.status(404).json({ error: "Recording not found" });
-      return;
-    }
-    const newCount = (current.viewers ?? 0) + 1;
-    const { error: updateError } = await supabaseProxy.from("recordings").update({ viewers: newCount }).eq("id", id);
-    if (updateError) {
-      req.log.error({ err: updateError, id }, "Failed to update view count");
-      res.status(500).json({ error: "Failed to record view" });
-      return;
+    const { data, error } = await supabaseProxy.rpc("increment_viewer_count", {
+      p_recording_id: id
+    });
+    let newCount = null;
+    if (!error && typeof data === "number") {
+      newCount = data;
+    } else {
+      const code = error?.code;
+      const message = error?.message ?? "";
+      if (error && code !== "PGRST202" && !/function.*not.*found|Could not find the function/i.test(message)) {
+        res.status(500).json({ error: "Failed to record view" });
+        return;
+      }
+      const { data: current, error: fetchError } = await supabaseProxy.from("recordings").select("viewers").eq("id", id).single();
+      if (fetchError || !current) {
+        res.status(404).json({ error: "Recording not found" });
+        return;
+      }
+      newCount = (Number(current.viewers) || 0) + 1;
+      const { error: updateError } = await supabaseProxy.from("recordings").update({ viewers: newCount }).eq("id", id);
+      if (updateError) {
+        req.log.error({ err: updateError, id }, "Failed to update view count");
+        res.status(500).json({ error: "Failed to record view" });
+        return;
+      }
     }
     invalidateKey(`/api/recordings/${id}`).catch(
       (err) => req.log.error({ err, id }, "Failed to invalidate recording cache after view")
@@ -72315,10 +73801,11 @@ router16.post("/recordings/:id/view", async (req, res) => {
     res.status(500).json({ error: "Failed to record view" });
   }
 });
-var views_default = router16;
+var views_default = router15;
 
 // src/routes/rum.ts
-var import_express17 = __toESM(require_express2(), 1);
+var import_express16 = __toESM(require_express2(), 1);
+import { timingSafeEqual as timingSafeEqual2 } from "node:crypto";
 
 // src/lib/activity.ts
 init_supabase();
@@ -72424,7 +73911,7 @@ async function flushActivity() {
 }
 
 // src/routes/rum.ts
-var router17 = (0, import_express17.Router)();
+var router16 = (0, import_express16.Router)();
 var FLUSH_PROBABILITY = Number.parseFloat(process.env.ACTIVITY_FLUSH_PROBABILITY ?? "0.05") || 0.05;
 var MAX_METRICS_PER_BATCH = 50;
 function normalizeMeta(raw) {
@@ -72459,7 +73946,7 @@ function normalizeMetrics(body) {
   }
   return out;
 }
-router17.post("/rum", async (req, res) => {
+router16.post("/rum", async (req, res) => {
   try {
     const metrics2 = normalizeMetrics(req.body);
     if (metrics2.length > 0) {
@@ -72473,36 +73960,30 @@ router17.post("/rum", async (req, res) => {
   }
   res.status(204).end();
 });
-router17.get("/rum/flush", async (_req, res) => {
+router16.get("/rum/flush", async (req, res) => {
+  const secret = process.env.CRON_SECRET;
+  const expected = secret ? Buffer.from(`Bearer ${secret}`, "utf8") : Buffer.alloc(0);
+  const actual = Buffer.from(String(req.headers.authorization ?? ""), "utf8");
+  const authorized = expected.length > 0 && expected.length === actual.length && timingSafeEqual2(expected, actual);
+  if (!authorized) {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
   const processed = await flushActivity();
   res.json({ ok: true, processed });
 });
-var rum_default = router17;
+var rum_default = router16;
 
-// src/routes/index.ts
-var router18 = (0, import_express18.Router)();
-router18.use(health_default);
-router18.use(recordings_default);
-router18.use(performers_default);
-router18.use(tags_default);
-router18.use(stats_default);
-router18.use(reactions_default);
-router18.use(comments_default);
-router18.use(requests_default);
-router18.use(user_default);
-router18.use(cache_admin_default);
-router18.use(admin_default);
-router18.use(search_default);
-router18.use(media_proxy_default);
-router18.use(edge_cache_default);
-router18.use(cache_warm_default);
-router18.use(views_default);
-router18.use(rum_default);
-var routes_default = router18;
+// src/routes/premium.ts
+var import_express17 = __toESM(require_express2(), 1);
+init_supabase();
+import { createHmac, timingSafeEqual as timingSafeEqual3 } from "node:crypto";
 
 // src/middleware/rate-limit.ts
+import { createHash as createHash3 } from "node:crypto";
 var ENABLED = (process.env.RATE_LIMIT_ENABLED ?? "true") !== "false";
 var WINDOW_SECONDS = Number.parseInt(process.env.RATE_LIMIT_WINDOW ?? "", 10) || 60;
+var BURST_WINDOW_SECONDS = Number.parseInt(process.env.RATE_LIMIT_BURST_WINDOW ?? "", 10) || 5;
 var LIMITS = {
   read: Number.parseInt(process.env.RATE_LIMIT_READ ?? "", 10) || 300,
   // per IP/min
@@ -72513,10 +73994,20 @@ var LIMITS = {
   user: Number.parseInt(process.env.RATE_LIMIT_USER ?? "", 10) || 600
   // per auth token/min
 };
+var BURST_LIMITS = {
+  read: Number.parseInt(process.env.RATE_LIMIT_BURST_READ ?? "", 10) || 60,
+  // per IP/5s
+  write: Number.parseInt(process.env.RATE_LIMIT_BURST_WRITE ?? "", 10) || 25,
+  // per IP/5s
+  search: Number.parseInt(process.env.RATE_LIMIT_BURST_SEARCH ?? "", 10) || 25,
+  // per IP/5s
+  user: Number.parseInt(process.env.RATE_LIMIT_BURST_USER ?? "", 10) || 250
+  // per token/5s
+};
 var KEY_PREFIX = "rl:v1";
 var memoryWindows = /* @__PURE__ */ new Map();
 var lastCleanup = Date.now();
-function memoryIncrement(key) {
+function memoryIncrement(key, windowSeconds = WINDOW_SECONDS) {
   const now = Date.now();
   if (now - lastCleanup > 3e4) {
     lastCleanup = now;
@@ -72529,20 +74020,20 @@ function memoryIncrement(key) {
     existing.count += 1;
     return existing;
   }
-  const fresh = { count: 1, resetAt: now + WINDOW_SECONDS * 1e3 };
+  const fresh = { count: 1, resetAt: now + windowSeconds * 1e3 };
   memoryWindows.set(key, fresh);
   return fresh;
 }
-async function redisIncrement(key) {
+async function redisIncrement(key, windowSeconds = WINDOW_SECONDS) {
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return null;
   try {
-    const window2 = Math.floor(Date.now() / (WINDOW_SECONDS * 1e3));
+    const window2 = Math.floor(Date.now() / (windowSeconds * 1e3));
     const redisKey = `${KEY_PREFIX}:${key}:${window2}`;
-    const resetAt = (window2 + 1) * WINDOW_SECONDS * 1e3;
+    const resetAt = (window2 + 1) * windowSeconds * 1e3;
     const count = await redis.incr(redisKey);
     if (count === 1) {
-      redis.expire(redisKey, WINDOW_SECONDS + 5).catch(() => {
+      redis.expire(redisKey, windowSeconds + 5).catch(() => {
       });
     }
     return { count, resetAt };
@@ -72553,18 +74044,30 @@ async function redisIncrement(key) {
 }
 function clientIp(req) {
   try {
-    const realIp = req.headers?.["x-real-ip"];
-    if (typeof realIp === "string" && realIp.length > 0) return realIp.trim();
+    const vercelIp = req.headers?.["x-vercel-forwarded-for"];
+    if (typeof vercelIp === "string" && vercelIp.length > 0) return vercelIp.trim();
     const xff = req.headers?.["x-forwarded-for"];
     if (typeof xff === "string" && xff.length > 0) {
-      return xff.split(",")[0].trim();
+      const tokens = xff.split(",").map((t) => t.trim()).filter(Boolean);
+      const rightmost = tokens[tokens.length - 1];
+      if (rightmost) return rightmost;
     }
+    const realIp = req.headers?.["x-real-ip"];
+    if (typeof realIp === "string" && realIp.length > 0) return realIp.trim();
     if (req.socket?.remoteAddress) return req.socket.remoteAddress;
     if (req.connection?.remoteAddress) return req.connection.remoteAddress;
     if (req.ip) return req.ip;
   } catch {
   }
   return "unknown";
+}
+function tokenKey(req) {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith("Bearer ")) return null;
+  const token = auth.slice(7);
+  if (token.length < 10) return null;
+  const hash = createHash3("sha256").update(token).digest("base64url");
+  return hash.slice(0, 32);
 }
 function sendLimited(res, limit, resetAt, bucket) {
   const retryAfter = Math.max(1, Math.ceil((resetAt - Date.now()) / 1e3));
@@ -72578,6 +74081,7 @@ function sendLimited(res, limit, resetAt, bucket) {
 }
 function rateLimit(options) {
   const limit = options.limit ?? LIMITS[options.bucket];
+  const burstLimit = options.burstLimit ?? BURST_LIMITS[options.bucket];
   return async (req, res, next) => {
     if (!ENABLED) {
       next();
@@ -72588,13 +74092,19 @@ function rateLimit(options) {
       return;
     }
     const keyPart = options.keyFn?.(req) ?? clientIp(req);
-    const result = await redisIncrement(`${options.bucket}:${keyPart}`) ?? memoryIncrement(`${options.bucket}:${keyPart}`);
-    if (result.count > limit) {
-      sendLimited(res, limit, result.resetAt, options.bucket);
+    const key = `${options.bucket}:${keyPart}`;
+    const result = await redisIncrement(key) ?? memoryIncrement(key);
+    const burstKey = `burst:${key}`;
+    const burstResult = await redisIncrement(burstKey, BURST_WINDOW_SECONDS) ?? memoryIncrement(burstKey, BURST_WINDOW_SECONDS);
+    const trip = result.count > limit ? { limit, resetAt: result.resetAt, bucket: options.bucket, count: result.count } : burstResult.count > burstLimit ? { limit: burstLimit, resetAt: burstResult.resetAt, bucket: `${options.bucket}:burst`, count: burstResult.count } : null;
+    if (trip) {
+      sendLimited(res, trip.limit, trip.resetAt, trip.bucket);
       return;
     }
     res.set("RateLimit-Limit", String(limit));
     res.set("RateLimit-Remaining", String(Math.max(0, limit - result.count)));
+    res.set("RateLimit-Burst-Limit", String(burstLimit));
+    res.set("RateLimit-Burst-Remaining", String(Math.max(0, burstLimit - burstResult.count)));
     next();
   };
 }
@@ -72602,9 +74112,507 @@ var globalRateLimiter = rateLimit({
   bucket: "read",
   skip: (req) => req.path === "/healthz" || req.path === "/cache/warm"
 });
+function authenticatedRateLimit() {
+  return rateLimit({
+    bucket: "user",
+    keyFn: tokenKey
+  });
+}
+
+// src/routes/premium.ts
+var router17 = (0, import_express17.Router)();
+var admin4 = requireRole("admin");
+var DEFAULT_SETTINGS = {
+  ads_enabled: true,
+  ads_target: 5,
+  reward_cooldown_s: 60,
+  grace_minutes: 10,
+  price_usd: 4.99
+};
+function asBool(v, fallback) {
+  return typeof v === "boolean" ? v : fallback;
+}
+function asInt(v, fallback) {
+  return typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.round(v)) : fallback;
+}
+function asNum(v, fallback) {
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : fallback;
+}
+async function getSettings() {
+  try {
+    const { data } = await supabaseProxy.from("site_settings").select("key,value");
+    const map = new Map((data ?? []).map((r) => [r.key, r.value]));
+    return {
+      ads_enabled: asBool(map.get("ads_enabled"), DEFAULT_SETTINGS.ads_enabled),
+      ads_target: asInt(map.get("ads_target"), DEFAULT_SETTINGS.ads_target),
+      reward_cooldown_s: asInt(map.get("reward_cooldown_s"), DEFAULT_SETTINGS.reward_cooldown_s),
+      grace_minutes: asInt(map.get("grace_minutes"), DEFAULT_SETTINGS.grace_minutes),
+      price_usd: asNum(map.get("price_usd"), DEFAULT_SETTINGS.price_usd)
+    };
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+function normalizeReward(raw) {
+  return {
+    granted: asBool(raw.granted, false),
+    cooldown_ms: asInt(raw.cooldown_ms, 0),
+    already_granted_today: asBool(raw.already_granted_today, false),
+    ads_viewed_today: asInt(raw.ads_viewed_today, 0),
+    ads_target: asInt(raw.ads_target, DEFAULT_SETTINGS.ads_target),
+    premium_until: typeof raw.premium_until === "string" ? raw.premium_until : null,
+    is_premium: asBool(raw.is_premium, false)
+  };
+}
+function isPremiumRow(premiumUntil) {
+  if (typeof premiumUntil !== "string") return false;
+  const t = new Date(premiumUntil).getTime();
+  return Number.isFinite(t) && t > Date.now();
+}
+router17.get("/premium/config", async (_req, res) => {
+  const s = await getSettings();
+  res.json({
+    ads_enabled: s.ads_enabled,
+    ads_target: s.ads_target,
+    reward_cooldown_s: s.reward_cooldown_s,
+    grace_minutes: s.grace_minutes,
+    price_usd: s.price_usd,
+    checkout_configured: isStripeConfigured()
+  });
+});
+router17.get("/user/premium/status", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const [s, row] = await Promise.all([
+      getSettings(),
+      supabaseProxy.from("user_premium").select("premium_expires_at,ads_seen_date,ads_seen_count,last_granted_date").eq("user_id", userId).maybeSingle()
+    ]);
+    const premiumUntil = row.data?.premium_expires_at ?? null;
+    const isPremium = isPremiumRow(premiumUntil);
+    const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const adsViewedToday = row.data && row.data.ads_seen_date === today ? row.data.ads_seen_count ?? 0 : 0;
+    const rewardGrantedToday = row.data?.last_granted_date === today;
+    res.json({
+      is_premium: isPremium,
+      premium_until: premiumUntil,
+      ads_viewed_today: adsViewedToday,
+      reward_granted_today: rewardGrantedToday,
+      ads_target: s.ads_target,
+      can_earn: !isPremium,
+      cooldown_s: s.reward_cooldown_s,
+      ads_enabled: s.ads_enabled,
+      grace_minutes: s.grace_minutes
+    });
+  } catch (err) {
+    req.log?.error?.({ err }, "GET /user/premium/status error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+router17.post(
+  "/user/premium/reward",
+  requireAuth,
+  authenticatedRateLimit(),
+  async (req, res) => {
+    const userId = req.user.id;
+    let s;
+    try {
+      s = await getSettings();
+    } catch (err) {
+      req.log?.error?.({ err }, "POST /user/premium/reward settings error");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    if (!s.ads_enabled) {
+      res.status(403).json({ error: "Ads are currently disabled", cooldown_ms: 0 });
+      return;
+    }
+    const { data, error } = await supabaseProxy.rpc("claim_premium_reward", {
+      p_user_id: userId,
+      p_cooldown_s: s.reward_cooldown_s,
+      p_target: s.ads_target
+    });
+    if (error) {
+      req.log?.error?.({ err: error }, "POST /user/premium/reward rpc error");
+      res.status(500).json({ error: "Premium service unavailable" });
+      return;
+    }
+    const result = normalizeReward(data ?? {});
+    if (result.cooldown_ms > 0) {
+      res.status(429).json(result);
+      return;
+    }
+    res.json(result);
+  }
+);
+var STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY ?? "";
+var STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID ?? "";
+var STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? "";
+function isStripeConfigured() {
+  return Boolean(STRIPE_SECRET_KEY && STRIPE_WEBHOOK_SECRET);
+}
+router17.post("/user/premium/checkout", requireAuth, async (req, res) => {
+  try {
+    if (!isStripeConfigured()) {
+      res.status(501).json({ error: "not_configured", provider: "stripe" });
+      return;
+    }
+    const userId = req.user.id;
+    const email = req.user.email;
+    const s = await getSettings();
+    const priceUsd = s.price_usd;
+    const amount = Math.max(50, Math.round(priceUsd * 100));
+    const publicOrigin = (process.env.PUBLIC_URL ?? "https://chuglii.in").trim().replace(/\/+$/, "");
+    const origin = /^https?:\/\//i.test(publicOrigin) ? publicOrigin : "https://chuglii.in";
+    const params = new URLSearchParams();
+    params.set("mode", "payment");
+    params.set("client_reference_id", userId);
+    if (email) params.set("customer_email", email);
+    params.set("success_url", `${origin}/premium?paid=1`);
+    params.set("cancel_url", `${origin}/premium`);
+    params.set("metadata[days]", "30");
+    if (STRIPE_PRICE_ID) {
+      params.set("line_items[0][price]", STRIPE_PRICE_ID);
+    } else {
+      params.set("line_items[0][price_data][currency]", "usd");
+      params.set("line_items[0][price_data][unit_amount]", String(amount));
+      params.set("line_items[0][price_data][product_data][name]", "VAULT Premium \u2014 1 month ad-free");
+      params.set("line_items[0][price_data][product_data][metadata][purpose]", "premium");
+    }
+    params.set("line_items[0][quantity]", "1");
+    const resp = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${STRIPE_SECRET_KEY}`,
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: params.toString()
+    });
+    const json = await resp.json().catch(() => null);
+    if (!resp.ok || !json?.url) {
+      req.log?.error?.({ status: resp.status, stripe: json?.error?.message }, "Stripe checkout session failed");
+      res.status(502).json({ error: "Payment provider failed" });
+      return;
+    }
+    res.json({ provider: "stripe", checkoutUrl: json.url });
+  } catch (err) {
+    req.log?.error?.({ err }, "POST /user/premium/checkout error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+function verifyStripeSignature(payload, signature, secret) {
+  const entries = signature.split(",").map((p) => p.trim());
+  const t = entries.find((p) => p.startsWith("t="))?.slice(2);
+  const v1 = entries.find((p) => p.startsWith("v1="))?.slice(3);
+  if (!t || !v1) return false;
+  const expected = createHmac("sha256", secret).update(`${t}.${payload}`).digest("hex");
+  try {
+    const a = Buffer.from(expected, "utf8");
+    const b = Buffer.from(v1, "utf8");
+    return a.length === b.length && timingSafeEqual3(a, b);
+  } catch {
+    return false;
+  }
+}
+function daysFromMeta(days, fallback = 30) {
+  const n = parseInt(String(days ?? fallback), 10);
+  return Number.isFinite(n) ? Math.min(90, Math.max(1, n)) : fallback;
+}
+async function handleCheckoutCompleted(session) {
+  const sessionId = typeof session.id === "string" ? session.id : void 0;
+  const userId = typeof session.client_reference_id === "string" ? session.client_reference_id : void 0;
+  if (!sessionId || !userId) return;
+  const { data: existing } = await supabaseProxy.from("premium_purchases").select("id").eq("provider_session_id", sessionId).maybeSingle();
+  if (existing) return;
+  const days = daysFromMeta(session.metadata?.days);
+  const { error: insertError } = await supabaseProxy.from("premium_purchases").insert({
+    user_id: userId,
+    provider: "stripe",
+    provider_session_id: sessionId,
+    amount: typeof session.amount_total === "number" ? session.amount_total / 100 : null,
+    currency: typeof session.currency === "string" ? session.currency : "usd",
+    days
+  });
+  if (insertError) throw insertError;
+  const { data: prev, error: prevError } = await supabaseProxy.from("user_premium").select("premium_expires_at").eq("user_id", userId).maybeSingle();
+  if (prevError) throw prevError;
+  const base = prev?.premium_expires_at ? new Date(prev.premium_expires_at).getTime() : Date.now();
+  const expires = new Date(Math.max(Date.now(), base) + days * 864e5).toISOString();
+  const { error: upsertError } = await supabaseProxy.from("user_premium").upsert(
+    { user_id: userId, premium_expires_at: expires, updated_at: (/* @__PURE__ */ new Date()).toISOString() },
+    { onConflict: "user_id" }
+  );
+  if (upsertError) throw upsertError;
+}
+router17.post("/premium/webhook", async (req, res) => {
+  if (!STRIPE_WEBHOOK_SECRET) {
+    res.status(400).json({ error: "webhook_secret_not_configured" });
+    return;
+  }
+  const sig = req.headers["stripe-signature"];
+  if (typeof sig !== "string") {
+    res.status(400).json({ error: "missing_signature" });
+    return;
+  }
+  const payload = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : String(req.body ?? "");
+  if (!verifyStripeSignature(payload, sig, STRIPE_WEBHOOK_SECRET)) {
+    res.status(400).json({ error: "invalid_signature" });
+    return;
+  }
+  let event;
+  try {
+    event = JSON.parse(payload);
+  } catch {
+    res.status(400).json({ error: "invalid_payload" });
+    return;
+  }
+  if (event.type === "checkout.session.completed") {
+    try {
+      await handleCheckoutCompleted(event.data?.object ?? {});
+    } catch (err) {
+      req.log?.error?.({ err }, "premium webhook checkout handler error");
+      res.status(500).json({ error: "handler_failed" });
+      return;
+    }
+  }
+  res.json({ received: true });
+});
+async function fetchProfiles2(userIds) {
+  const profiles = /* @__PURE__ */ new Map();
+  const ids = [...new Set(userIds)].filter(Boolean);
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const { data } = await supabaseProxy.from("user_profiles").select("user_id,display_name,username,email").in("user_id", chunk);
+    for (const row of data ?? []) {
+      profiles.set(row.user_id, {
+        display_name: row.display_name ?? null,
+        username: row.username ?? null,
+        email: row.email ?? null
+      });
+    }
+  }
+  return profiles;
+}
+async function resolveUserId(input) {
+  if (input.user_id) return input.user_id;
+  if (input.email) {
+    const { data } = await supabaseProxy.from("user_profiles").select("user_id").ilike("email", input.email.trim()).maybeSingle();
+    return data?.user_id ?? null;
+  }
+  if (input.username) {
+    const { data } = await supabaseProxy.from("user_profiles").select("user_id").ilike("username", input.username.trim().toLowerCase()).maybeSingle();
+    return data?.user_id ?? null;
+  }
+  return null;
+}
+router17.get("/admin/premium/list", ...admin4, async (_req, res) => {
+  try {
+    const { data, error } = await supabaseProxy.from("user_premium").select("user_id,premium_expires_at,ads_seen_date,ads_seen_count,last_rewarded_at,last_granted_date").order("premium_expires_at", { ascending: false }).limit(200);
+    if (error) {
+      _req.log?.error?.({ err: error }, "GET /admin/premium/list supabase error");
+      res.status(500).json({ error: "Failed to fetch premium users" });
+      return;
+    }
+    const rows = data ?? [];
+    const profiles = await fetchProfiles2(rows.map((r) => r.user_id));
+    const now = Date.now();
+    res.json(
+      rows.map((r) => ({
+        ...r,
+        is_premium: isPremiumRow(r.premium_expires_at),
+        display_name: profiles.get(r.user_id)?.display_name ?? null,
+        username: profiles.get(r.user_id)?.username ?? null,
+        email: profiles.get(r.user_id)?.email ?? null
+      }))
+    );
+  } catch (err) {
+    _req.log?.error?.({ err }, "GET /admin/premium/list error");
+    res.status(500).json({ error: "Failed to fetch premium users" });
+  }
+});
+router17.post("/admin/premium/grant", ...admin4, async (req, res) => {
+  try {
+    const { user_id, email, username, days } = req.body;
+    const d = Math.min(365, Math.max(1, Math.round(Number(days) || 30)));
+    const userId = await resolveUserId({ user_id, email, username });
+    if (!userId) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    const { data: prev } = await supabaseProxy.from("user_premium").select("premium_expires_at").eq("user_id", userId).maybeSingle();
+    const base = prev?.premium_expires_at ? new Date(prev.premium_expires_at).getTime() : Date.now();
+    const expires = new Date(Math.max(Date.now(), base) + d * 864e5).toISOString();
+    const { error } = await supabaseProxy.from("user_premium").upsert(
+      { user_id: userId, premium_expires_at: expires, updated_at: (/* @__PURE__ */ new Date()).toISOString() },
+      { onConflict: "user_id" }
+    );
+    if (error) {
+      req.log?.error?.({ err: error }, "POST /admin/premium/grant upsert error");
+      res.status(500).json({ error: "Failed to grant premium" });
+      return;
+    }
+    res.json({ ok: true, user_id: userId, premium_until: expires, days: d });
+  } catch (err) {
+    req.log?.error?.({ err }, "POST /admin/premium/grant error");
+    res.status(500).json({ error: "Failed to grant premium" });
+  }
+});
+router17.post("/admin/premium/settings", ...admin4, async (req, res) => {
+  try {
+    const { ads_enabled, ads_target, reward_cooldown_s, grace_minutes, price_usd } = req.body;
+    const updates = [];
+    if (typeof ads_enabled === "boolean") updates.push({ key: "ads_enabled", value: ads_enabled });
+    if (typeof ads_target === "number" && Number.isFinite(ads_target)) updates.push({ key: "ads_target", value: Math.max(1, Math.round(ads_target)) });
+    if (typeof reward_cooldown_s === "number" && Number.isFinite(reward_cooldown_s)) updates.push({ key: "reward_cooldown_s", value: Math.max(0, Math.round(reward_cooldown_s)) });
+    if (typeof grace_minutes === "number" && Number.isFinite(grace_minutes)) updates.push({ key: "grace_minutes", value: Math.max(0, Math.round(grace_minutes)) });
+    if (typeof price_usd === "number" && Number.isFinite(price_usd)) updates.push({ key: "price_usd", value: Math.max(0.01, price_usd) });
+    if (updates.length > 0) {
+      const { error } = await supabaseProxy.from("site_settings").upsert(updates.map((u) => ({ key: u.key, value: u.value, updated_at: (/* @__PURE__ */ new Date()).toISOString() })), { onConflict: "key" });
+      if (error) {
+        req.log?.error?.({ err: error }, "POST /admin/premium/settings upsert error");
+        res.status(500).json({ error: "Failed to update settings" });
+        return;
+      }
+    }
+    res.json(await getSettings());
+  } catch (err) {
+    req.log?.error?.({ err }, "POST /admin/premium/settings error");
+    res.status(500).json({ error: "Failed to update settings" });
+  }
+});
+var premium_default = router17;
+
+// src/routes/ads.ts
+var import_express18 = __toESM(require_express2(), 1);
+var API_BASE = "https://api3.adsterratools.com/publisher";
+var router18 = (0, import_express18.Router)();
+router18.get("/ads/status", async (_req, res) => {
+  const token = process.env.ADSTERRA_API_KEY;
+  if (!token) {
+    res.status(503).json({ error: "Adsterra API not configured (ADSTERRA_API_KEY missing)" });
+    return;
+  }
+  const headers = {
+    Accept: "application/json",
+    "X-API-Key": token
+  };
+  try {
+    const [domainsRes, placementsRes] = await Promise.all([
+      fetch(`${API_BASE}/domains.json`, { headers }),
+      fetch(`${API_BASE}/placements.json`, { headers })
+    ]);
+    if (!domainsRes.ok || !placementsRes.ok) {
+      res.status(502).json({ error: `Adsterra API responded ${domainsRes.status}/${placementsRes.status}` });
+      return;
+    }
+    const domains = await domainsRes.json();
+    const placements = await placementsRes.json();
+    const domainMap = new Map(domains.items.map((d) => [d.id, d.title]));
+    res.json({
+      tokenConfigured: true,
+      domains: domains.items,
+      placements: placements.items.map((p) => ({
+        id: p.id,
+        domain: domainMap.get(p.domain_id) ?? `#${p.domain_id}`,
+        title: p.title,
+        direct_url: p.direct_url ?? null
+      }))
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: "failed to reach Adsterra API", detail: message });
+  }
+});
+var ads_default = router18;
+
+// src/routes/hot.ts
+var import_express19 = __toESM(require_express2(), 1);
+init_supabase();
+var router19 = (0, import_express19.Router)();
+router19.get(
+  "/hot/recordings",
+  cache({ ttlSeconds: 60, staleSeconds: 300, tags: ["recordings", "search", "stats"] }),
+  async (req, res) => {
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? "24"), 10) || 24));
+    try {
+      const hot = await getHotRecordings(limit);
+      if (hot.length > 0) {
+        res.json({ data: hot, source: "redis" });
+        return;
+      }
+      const { data, error } = await supabaseProxy.from("recordings_with_links").select("id,username,room_title,thumbnail_url,sprite_url,viewers").not("links", "is", "null").order("viewers", { ascending: false, nullsFirst: false }).limit(limit);
+      if (error) {
+        res.status(500).json({ error: "Failed to fetch hot recordings" });
+        return;
+      }
+      const rows = (data ?? []).map((r) => ({
+        id: r.id,
+        username: r.username,
+        title: r.room_title,
+        image_url: r.thumbnail_url || r.sprite_url,
+        score: Number(r.viewers) || 0
+      }));
+      res.json({ data: rows, source: "db" });
+    } catch (err) {
+      req.log.error({ err }, "GET /hot/recordings unexpected error");
+      res.status(500).json({ error: "Failed to fetch hot recordings" });
+    }
+  }
+);
+router19.get(
+  "/hot/performers",
+  cache({ ttlSeconds: 60, staleSeconds: 300, tags: ["performers", "recordings"] }),
+  async (req, res) => {
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit ?? "50"), 10) || 50));
+    try {
+      const hot = await getHotPerformers(limit);
+      if (hot.length > 0) {
+        res.json({ data: hot, source: "redis" });
+        return;
+      }
+      const snapshot = await getSuggestionSnapshot().catch(() => null);
+      if (snapshot && snapshot.performers.length > 0) {
+        const rows = snapshot.performers.slice(0, limit).map((p, i) => ({
+          username: p.label,
+          image_url: p.image_url,
+          score: snapshot.performers.length - i
+        }));
+        res.json({ data: rows, source: "db" });
+        return;
+      }
+      res.json({ data: [], source: "db" });
+    } catch (err) {
+      req.log.error({ err }, "GET /hot/performers unexpected error");
+      res.status(500).json({ error: "Failed to fetch hot performers" });
+    }
+  }
+);
+var hot_default = router19;
+
+// src/routes/index.ts
+var router20 = (0, import_express20.Router)();
+router20.use(health_default);
+router20.use(recordings_default);
+router20.use(performers_default);
+router20.use(tags_default);
+router20.use(stats_default);
+router20.use(reactions_default);
+router20.use(comments_default);
+router20.use(requests_default);
+router20.use(user_default);
+router20.use(cache_admin_default);
+router20.use(admin_default);
+router20.use(search_default);
+router20.use(media_proxy_default);
+router20.use(cache_warm_default);
+router20.use(views_default);
+router20.use(rum_default);
+router20.use(premium_default);
+router20.use(ads_default);
+router20.use(hot_default);
+var routes_default = router20;
 
 // src/app.ts
-var app = (0, import_express19.default)();
+var app = (0, import_express21.default)();
 app.use(
   (0, import_pino_http.default)({
     logger,
@@ -72624,17 +74632,43 @@ app.use(
     }
   })
 );
+var ALLOWED_ORIGIN_PATTERNS = [
+  /^https:\/\/([\w-]+\.)*chuglii\.in$/,
+  /^https:\/\/.+\.vercel\.app$/,
+  /^https?:\/\/localhost(:\d+)?$/,
+  /^http:\/\/127\.0\.0\.1(:\d+)?$/
+];
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  return ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
+}
 app.use(
   (0, import_cors.default)({
-    origin: true,
+    origin: (origin, callback) => callback(null, isAllowedOrigin(origin)),
     credentials: true
   })
 );
-app.use(import_express19.default.json({ limit: "1mb" }));
-app.use(import_express19.default.urlencoded({ extended: true, limit: "1mb" }));
 app.use("/api", globalRateLimiter);
+var writeLimiter = rateLimit({ bucket: "write" });
+app.use("/api", (req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    writeLimiter(req, res, next);
+    return;
+  }
+  next();
+});
+app.use("/api/premium/webhook", import_express21.default.raw({ type: "*/*", limit: "1mb" }));
+app.use(import_express21.default.json({ limit: "1mb" }));
+app.use(import_express21.default.urlencoded({ extended: true, limit: "1mb" }));
 app.use("/api", routes_default);
 app.use((err, _req, res, _next) => {
+  const status = err?.status ?? err?.statusCode ?? 500;
+  if (status >= 400 && status < 500) {
+    logger.warn({ err }, "Bad request rejected");
+    if (res.headersSent) return;
+    res.status(status).json({ error: "Bad request" });
+    return;
+  }
   logger.error({ err }, "Unhandled route error");
   if (res.headersSent) return;
   res.status(500).json({ error: "Internal server error" });
@@ -72716,6 +74750,7 @@ on-finished/index.js:
    * MIT Licensed
    *)
 
+content-type/dist/index.js:
 content-type/index.js:
   (*!
    * content-type
@@ -72746,6 +74781,7 @@ media-typer/index.js:
    * MIT Licensed
    *)
 
+type-is/index.js:
 type-is/index.js:
   (*!
    * type-is

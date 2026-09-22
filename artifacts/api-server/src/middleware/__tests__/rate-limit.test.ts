@@ -130,6 +130,44 @@ describe("rate limiter (memory fallback)", () => {
     }
   });
 
+  it("trips the burst window before the long window for a rapid burst", async () => {
+    vi.useFakeTimers({ now: new Date("2026-01-01T00:00:00Z") });
+    try {
+      // Long window permits 1000, but the burst window trips at 3 within 5s.
+      const mw = rateLimit({ bucket: "search", limit: 1000, burstLimit: 3 });
+      for (let i = 0; i < 3; i++) {
+        const res = makeRes();
+        const next = await run(mw, makeReq({ "x-real-ip": "3.3.3.3" }), res);
+        expect(next).toBe(true);
+      }
+      const limited = makeRes();
+      const burstNext = await run(mw, makeReq({ "x-real-ip": "3.3.3.3" }), limited);
+      expect(burstNext).toBe(false);
+      expect(limited.statusCode).toBe(429);
+      expect(limited.headers["RateLimit-Burst-Remaining"]).toBeUndefined();
+      expect(limited.body?.error).toBe("Too many requests");
+
+      // The burst window resets well before the 60s long window does.
+      vi.advanceTimersByTime(6_000);
+      const res = makeRes();
+      const next = await run(mw, makeReq({ "x-real-ip": "3.3.3.3" }), res);
+      expect(next).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("is unaffected on non-burst traffic (per-IP buckets stay independent)", async () => {
+    const mw = rateLimit({ bucket: "search", limit: 5, burstLimit: 5 });
+    for (let i = 0; i < 5; i++) {
+      const res = makeRes();
+      const next = await run(mw, makeReq({ "x-real-ip": "4.4.4.4" }), res);
+      expect(next).toBe(true);
+    }
+    const other = await run(mw, makeReq({ "x-real-ip": "5.5.5.5" }), makeRes());
+    expect(other).toBe(true);
+  });
+
   it("skips via the skip predicate", async () => {
     const mw = rateLimit({ bucket: "search", limit: 1, skip: (req) => req.path === "/healthz" });
     for (let i = 0; i < 20; i++) {
