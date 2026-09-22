@@ -31,17 +31,26 @@ export default function Notifications() {
     hasNextPage,
     fetchNextPage,
   } = useInfiniteQuery({
-    queryKey: ["user", "notifications"],
-    queryFn: ({ pageParam = 0 }) =>
-      userApi.getNotifications({ limit: NOTIF_PAGE_SIZE, offset: pageParam }),
+    queryKey: ["user", "notifications", "infinite"],
+    queryFn: async ({ pageParam = 0 }) => {
+      const res = await userApi.getNotifications({ limit: NOTIF_PAGE_SIZE, offset: pageParam });
+      return Array.isArray(res) ? res : [];
+    },
     initialPageParam: 0,
-    getNextPageParam: (lastPage, allPages) =>
-      lastPage.length === NOTIF_PAGE_SIZE ? allPages.length * NOTIF_PAGE_SIZE : undefined,
+    getNextPageParam: (lastPage, allPages) => {
+      if (!Array.isArray(lastPage)) return undefined;
+      return lastPage.length === NOTIF_PAGE_SIZE
+        ? (allPages?.length ?? 1) * NOTIF_PAGE_SIZE
+        : undefined;
+    },
     enabled: !!user,
     staleTime: 30_000,
   });
 
-  const notifications = useMemo(() => (pages?.pages ?? []).flat(), [pages]);
+  const notifications = useMemo(() => {
+    if (!pages?.pages) return [];
+    return pages.pages.filter(Array.isArray).flat();
+  }, [pages]);
 
   const markAll = useTrackedMutation({
     mutationFn: () => userApi.markAllRead(),
@@ -66,7 +75,7 @@ export default function Notifications() {
     if (autoMarkedRef.current) return;
     if (isLoading) return;
     autoMarkedRef.current = true;
-    const unreadCount = notifications.filter((n: UserNotification) => !n.is_read).length;
+    const unreadCount = notifications.filter((n: UserNotification) => n && !n.is_read).length;
     if (unreadCount > 0) {
       markAll.mutate();
     }
@@ -74,7 +83,7 @@ export default function Notifications() {
 
   if (!user) return null;
 
-  const unread = notifications.filter((n: UserNotification) => !n.is_read).length;
+  const unread = notifications.filter((n: UserNotification) => n && !n.is_read).length;
 
   return (
     <Layout>
