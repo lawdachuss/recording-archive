@@ -111,13 +111,38 @@ function getConcurrency(): number {
   return MAX_ACTIVE;
 }
 
+// wsrv.nl already has its own edge CDN cache — the browser HTTP cache is
+// sufficient for repeat visits. Calling fetch() on wsrv URLs just generates
+// 404 console noise when catbox files are 0-byte/deleted (wsrv returns 404,
+// the blob is never stored, but the error still appears in DevTools). Use
+// new Image() for wsrv thumbnails to warm the HTTP cache silently instead.
+function isWsrvUrl(url: string): boolean {
+  return url.includes("wsrv.nl") || url.includes("weserv.nl");
+}
+
+function warmHttpCache(url: string) {
+  const img = new Image();
+  img.referrerPolicy = "no-referrer";
+  img.src = url;
+  // Silent — no onerror handler; 404s don't produce console noise from Image()
+}
+
 // All preloads go through cacheImage() — the same single-flight, per-host
 // concurrency-limited fetch used by OptimizedImage's visible <img>. This means
 // a preload and the visible card for the SAME url share ONE network request
 // (no doubling), and catbox can never be burst with more than a few concurrent
 // connections no matter how many cards/preloads reference it.
+// Exception: wsrv.nl URLs are warmed via new Image() (HTTP cache only) because
+// wsrv has its own edge CDN and fetch() produces noisy 404s for broken catbox files.
 function startRequest(url: string, priority: CachePriority = 3) {
   activeCount++;
+  if (isWsrvUrl(url)) {
+    // Warm browser HTTP cache only — no IDB fetch, no 404 console noise.
+    try { warmHttpCache(url); } catch { /* non-fatal */ }
+    activeCount--;
+    pump();
+    return;
+  }
   cacheImage(url, priority)
     .then(() => {
       // Note: cacheImage resolving null is NOT a failure — null also means
