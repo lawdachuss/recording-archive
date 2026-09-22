@@ -55,7 +55,10 @@ function isNoProxyHost(hostname: string): boolean {
  * global edge cache (~90-110ms repeat hits instead of 8s+ cold direct loads).
  */
 const WSRV_BASE = "https://wsrv.nl/";
-const WSRV_HOSTS = ["catbox.moe", "litter.catbox.moe", "files.catbox.moe"];
+// Disabled: wsrv.nl times out connecting to catbox.moe (returns 404), which was
+// causing 404 console errors and delaying image display. Catbox files load directly
+// with HTTP 200 and full CORS (Access-Control-Allow-Origin: *).
+const WSRV_HOSTS: string[] = [];
 
 const STATIC_RASTER_RE = /\.(jpe?g|png)$/i;
 
