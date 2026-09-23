@@ -16,6 +16,7 @@ import {
   getDirectLink,
   parseAdDimensions,
   setAdCardLimit,
+  stripAdComments,
 } from "@/lib/ad-creatives";
 import { DEFAULT_AD_SETTINGS, mergeAdSettings, type AdSettings } from "@/lib/ad-slots";
 
@@ -225,7 +226,7 @@ export function AdsProvider({ children }: { children: ReactNode }) {
           const markup = bareUrlToMarkup(row.content.trim(), width, height);
           if (markup) out.push(markup);
         } else {
-          out.push(row.content);
+          out.push(stripAdComments(row.content));
         }
       }
       return out;

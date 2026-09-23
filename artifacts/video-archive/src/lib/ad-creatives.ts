@@ -130,21 +130,61 @@ export function parseAdDimensions(file: string): { width: number; height: number
 }
 
 /**
+ * Drop HTML comment blocks (template/instruction headers) — DB creatives get
+ * the same treatment as ads/*.txt file creatives before injection.
+ */
+export const stripAdComments = (html: string): string => html.replace(HTML_COMMENT, "\n");
+
+/**
  * Inject raw ad markup into a host element and EXECUTE its scripts
  * (scripts created via innerHTML never run — swap each for a fresh copy).
- * Returns a cleanup that empties the host again.
+ *
+ * Execution order mirrors the HTML PARSER: ad codes are typically
+ * `<script src="lib.js">` immediately followed by an inline
+ * `<script>lib.fn()</script>` — but a freshly inserted INLINE script runs
+ * the instant it's attached, while an EXTERNAL script loads async, so a
+ * naive copy would run them out of order and the inline part throws
+ * "ReferenceError: lib is not defined". All scripts therefore run in one
+ * sequential chain: wait for each external to finish loading (failures and
+ * a 15s hang-resolve keep the chain moving, like a browser past a broken
+ * script), then insert the next inline/external exactly in order.
+ *
+ * Returns a cleanup that stops any pending chain and empties the host.
  */
 export function injectAdMarkup(host: HTMLElement, html: string): () => void {
   host.innerHTML = html;
-  host.querySelectorAll("script").forEach((old) => {
-    const script = document.createElement("script");
-    for (const attr of Array.from(old.attributes)) {
-      script.setAttribute(attr.name, attr.value);
-    }
-    script.textContent = old.textContent;
-    old.replaceWith(script);
-  });
+  const inert = Array.from(host.querySelectorAll("script"));
+  let cancelled = false;
+
+  let chain: Promise<void> = Promise.resolve();
+  for (const old of inert) {
+    const attrs = Array.from(old.attributes);
+    const isExternal = attrs.some((a) => a.name.toLowerCase() === "src");
+    const text = old.textContent;
+    chain = chain.then(() => {
+      if (cancelled) return;
+      const script = document.createElement("script");
+      for (const attr of attrs) script.setAttribute(attr.name, attr.value);
+      if (!isExternal) {
+        script.textContent = text;
+        old.replaceWith(script); // inline → executes synchronously, in order
+        return;
+      }
+      return new Promise<void>((resolve) => {
+        const done = () => {
+          window.clearTimeout(timer);
+          resolve();
+        };
+        script.addEventListener("load", done, { once: true });
+        script.addEventListener("error", done, { once: true });
+        const timer = window.setTimeout(done, 15_000);
+        old.replaceWith(script); // starts the fetch; wait before the NEXT script
+      });
+    });
+  }
+
   return () => {
+    cancelled = true;
     host.replaceChildren();
   };
 }
