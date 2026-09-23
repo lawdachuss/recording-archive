@@ -57,6 +57,9 @@ async function fetchRole(token: string): Promise<"user" | "moderator" | "admin">
   try {
     const res = await fetch(resolveApiPath("/api/user/role"), {
       headers: { Authorization: `Bearer ${token}` },
+      // Never strand the UI: a hung request falls through to the "user"
+      // fallback below instead of leaving role null forever.
+      signal: AbortSignal.timeout(8_000),
     });
     if (res.ok) {
       const data = (await res.json()) as { role: string };
