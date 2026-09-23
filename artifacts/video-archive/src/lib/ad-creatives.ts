@@ -101,7 +101,10 @@ export function getAdCreatives(file: string): string[] {
   const raw = rawFor(file);
   if (!raw) return [];
   const { width, height } = parseAdDimensions(file);
-  return raw
+  // Strip HTML comments FIRST: instruction headers contain `---` examples
+  // and must never be split (an orphaned comment tail would render as text).
+  const withoutComments = raw.replace(HTML_COMMENT, "\n");
+  return withoutComments
     .split(SEPARATOR)
     .flatMap((block) => blockToCreatives(block, width, height));
 }

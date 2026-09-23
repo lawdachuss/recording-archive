@@ -4,7 +4,7 @@
   VideoDetail above the player, section dividers.
 
   Paste your CrakRevenue banner / HTML ad / iframe code below.
-  Rotate several creatives: separate each one with a line containing only:
-      ---
-  Empty file = styled placeholder at 728 x 90.
+  Rotate several creatives: separate each one with a line containing only
+  three dashes (see README.txt). Empty file = styled placeholder at
+  728 x 90.
 -->

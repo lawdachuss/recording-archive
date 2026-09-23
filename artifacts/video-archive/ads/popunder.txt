@@ -6,10 +6,9 @@
   or a CrakRevenue pop code snippet.
 
   Rotation: one RANDOM creative from this file fires once per page load.
-  Put several codes separated by a line containing only:
-      ---
-  Each page load then picks a different network/offer automatically.
-  Empty file = no popunder at all.
+  Put several codes in and each page load then picks a different
+  network/offer automatically (separate codes with a line of only three
+  dashes — see README.txt). Empty file = no popunder at all.
   (The Adsterra popunder env var VITE_ADSTERRA_POPUNDER still works too.)
 
   Paste starting below this comment.
