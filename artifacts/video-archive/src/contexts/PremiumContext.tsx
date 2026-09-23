@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useMemo, useState, useCallback, t
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAds } from "@/contexts/AdsContext";
+import { adPageId } from "@/lib/ad-slots";
 import { premiumApi, type PremiumConfig, type PremiumStatus } from "@/lib/premium-client";
 import { isAgeGatePassed, onAgeGatePassed } from "@/lib/gating";
 
@@ -43,6 +45,9 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [location] = useLocation();
+  // Per-page / per-zone ad switches live in AdsProvider (mounted outside
+  // this provider on purpose — see App.tsx).
+  const { settings } = useAds();
 
   const [agePassed, setAgePassed] = useState(isAgeGatePassed);
 
@@ -84,9 +89,12 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     // "no" turns every ad slot off at once.
     const adsFlag = (import.meta.env.VITE_ADS_ENABLED ?? "").trim().toLowerCase();
     const adsEnabled = adsFlag !== "false" && adsFlag !== "0" && adsFlag !== "no";
+    // Admin per-page switch (Admin → Ads → Placements): missing key = page ON.
+    const pageAdsOn = settings.pages[adPageId(location)] !== false;
     // Ads render when the switch is on, the age gate has passed, the user is
-    // not premium and the route is not excluded.
-    const showAds = adsEnabled && agePassed && !excludedPage && !isPremium;
+    // not premium, the route is not excluded and this page is switched on.
+    const showAds =
+      adsEnabled && agePassed && !excludedPage && !isPremium && pageAdsOn;
 
     return {
       config,
@@ -110,6 +118,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     user,
     agePassed,
     location,
+    settings,
     refreshStatus,
   ]);
 

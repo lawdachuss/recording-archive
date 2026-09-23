@@ -2,30 +2,33 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { usePremium } from "@/contexts/PremiumContext";
 import { injectAdMarkup, parseAdDimensions } from "@/lib/ad-creatives";
 import { useAds } from "@/contexts/AdsContext";
+import { placementForFile, type AdPlacementId } from "@/lib/ad-slots";
 
 /**
  * AdBanner — the site's single ad slot primitive.
  *
  * Content priority:
- *   1. Creatives pasted into `ads/<file>.txt` are injected (scripts execute)
- *      and ROTATED: a random creative first, then the next one every
- *      `rotateMs` (default 20s) when the file holds several codes.
+ *   1. Creatives from the ad system (Supabase `ad_creatives`, ads/*.txt as
+ *      fallback) are injected (scripts execute) and ROTATED: a random
+ *      creative first, then the next one every `settings.rotationSeconds`
+ *      (default 20s) when the slot holds several codes.
  *   2. Otherwise a styled dashed placeholder reserved at the exact size —
  *      it matches the site UI, so layout is stable until real codes land.
  *
- * The site runs on CrakRevenue only: every slot reads its `ads/*.txt` file,
- * and no ad-network environment variables are consulted anywhere.
+ * Placement zone (Admin → Ads → Placements): each banner belongs to a zone —
+ * "strip" (leaderboards/billboards), "feed" (300×100 in-feed), or "box"
+ * (everything else) — derived from `file` unless the `placement` prop says
+ * otherwise. A zone switched off renders NOTHING, not even a placeholder.
  *
- * Nothing renders at all (not even the placeholder) when PremiumContext
- * says `showAds` is false: under-age-gate, premium members, or on excluded
- * routes (login/signup/premium/admin).
+ * Nothing renders at all when PremiumContext says `showAds` is false:
+ * under-age-gate, premium members, excluded routes (login/signup/premium/
+ * admin), or a page switched off in Placements.
  *
  * `breakpoint` controls responsive visibility; dimensions default to the
  * `NNNxNNN` part of the file name (e.g. `leaderboard-728x90` → 728 × 90).
  * `fluid` stretches the box to the full container width — used for in-feed
  * rows that span a whole grid row (`col-span-full`).
  */
-const DEFAULT_ROTATE_MS = 20_000;
 
 export type AdBreakpoint = "all" | "desktop" | "mobile" | "lg" | "md-lg";
 
@@ -50,9 +53,11 @@ export interface AdBannerProps {
   breakpoint?: AdBreakpoint;
   /** Stretch to the container width (in-feed rows, full-width dividers). */
   fluid?: boolean;
-  /** Rotation period when the file holds several creatives. */
+  /** Placement zone for admin toggles (default derived from `file`). */
+  placement?: AdPlacementId;
+  /** Override the rotation period (default: admin `settings.rotationSeconds`). */
   rotateMs?: number;
-  /** Render the reserved placeholder when the file is empty (default true). */
+  /** Render the reserved placeholder when the slot is empty (default true). */
   placeholder?: boolean;
   /** Extra classes on the slot root (e.g. `col-span-full`, `mb-8`). */
   className?: string;
@@ -65,16 +70,22 @@ export function AdBanner({
   height: heightProp,
   breakpoint = "all",
   fluid = false,
-  rotateMs = DEFAULT_ROTATE_MS,
+  placement: placementProp,
+  rotateMs,
   placeholder = true,
   className,
 }: AdBannerProps) {
   const { showAds } = usePremium();
+  const { creativesFor, settings } = useAds();
+
+  const zone = placementProp ?? placementForFile(file);
+  const visible = showAds && settings.placements[zone] !== false;
+  const rotate = rotateMs ?? settings.rotationSeconds * 1000;
+
   const dims = useMemo(() => parseAdDimensions(file), [file]);
   const width = widthProp ?? dims.width;
   const height = heightProp ?? dims.height;
 
-  const { creativesFor } = useAds();
   const creatives = useMemo(() => creativesFor(file), [creativesFor, file]);
 
   // Start at a random creative so two slots with the same file don't sync.
@@ -82,30 +93,30 @@ export function AdBanner({
     creatives.length > 1 ? Math.floor(Math.random() * creatives.length) : 0
   );
 
-  // Rotate file creatives; skipped for single-creative files (the common
-  // case) so interval churn stays zero.
+  // Rotate creatives; skipped for single-creative slots (the common case)
+  // so interval churn stays zero.
   useEffect(() => {
     if (creatives.length <= 1) return;
     const id = window.setInterval(
       () => setIndex((i) => (i + 1) % creatives.length),
-      rotateMs
+      rotate
     );
     return () => window.clearInterval(id);
-  }, [creatives.length, rotateMs]);
+  }, [creatives.length, rotate]);
 
   const hostRef = useRef<HTMLDivElement>(null);
 
   // (Re)inject the active creative whenever it rotates or ads toggle on.
   // The effect cleanup empties the host, so the outgoing ad is torn down.
   useEffect(() => {
-    if (!showAds) return;
+    if (!visible) return;
     const host = hostRef.current;
     if (!host || creatives.length === 0) return;
     const active = creatives[index % creatives.length];
     return injectAdMarkup(host, active);
-  }, [showAds, creatives, index]);
+  }, [visible, creatives, index]);
 
-  if (!showAds) return null;
+  if (!visible) return null;
 
   const root =
     "w-full justify-center " +

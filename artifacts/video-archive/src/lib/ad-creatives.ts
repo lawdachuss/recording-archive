@@ -207,7 +207,12 @@ export function getDirectLink(): string | null {
 }
 
 /** Max ad cards shown per page/list (random positions). */
-export const AD_CARDS_PER_PAGE = 2;
+/** Max in-card ad cards per page — live-controlled from Admin → Ads → Placements (0 disables in-card ads entirely). */
+let AD_CARDS_PER_PAGE = 2;
+
+export function setAdCardLimit(n: number): void {
+  AD_CARDS_PER_PAGE = Math.max(0, Math.min(6, Math.floor(Number(n) || 0)));
+}
 
 /** Session epoch — a fresh full page load reshuffles the ad positions. */
 const AD_EPOCH = Date.now();

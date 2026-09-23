@@ -170,8 +170,10 @@ function PredictivePrefetch() {
 function Router() {
   return (
     <GlobalErrorBoundary>
-      <PremiumProvider>
+      {/* AdsProvider is OUTSIDE PremiumProvider on purpose: the per-page ad
+          switches from Admin → Ads → Placements feed showAds below. */}
       <AdsProvider>
+      <PremiumProvider>
       <TrackPageView />
       <PredictivePrefetch />
       <AdPopunder />
@@ -237,8 +239,8 @@ function Router() {
         </Route>
         <Route component={NotFound} />
       </Switch>
-      </AdsProvider>
       </PremiumProvider>
+      </AdsProvider>
     </GlobalErrorBoundary>
   );
 }

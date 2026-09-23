@@ -17,7 +17,7 @@ import { injectGlobalAd } from "@/lib/ad-creatives";
  */
 export function AdPopunder() {
   const { showAds } = usePremium();
-  const { creativesFor, status } = useAds();
+  const { creativesFor, status, settings } = useAds();
   const creatives = useMemo(() => creativesFor("popunder"), [creativesFor]);
   const firedRef = useRef(false);
 
@@ -25,13 +25,14 @@ export function AdPopunder() {
     // Wait for the source to settle so a file fallback never pre-empts the
     // real (admin-managed) popunder that's about to arrive.
     if (!showAds || status === "pending") return;
+    if (settings.placements.popunder === false) return;
     if (firedRef.current || creatives.length === 0) return;
     firedRef.current = true;
     injectGlobalAd(
       "popunder",
       creatives[Math.floor(Math.random() * creatives.length)],
     );
-  }, [showAds, status, creatives]);
+  }, [showAds, status, creatives, settings.placements.popunder]);
 
   return null;
 }

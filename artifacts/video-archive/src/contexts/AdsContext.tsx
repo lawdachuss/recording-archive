@@ -15,7 +15,9 @@ import {
   getAdCreatives,
   getDirectLink,
   parseAdDimensions,
+  setAdCardLimit,
 } from "@/lib/ad-creatives";
+import { DEFAULT_AD_SETTINGS, mergeAdSettings, type AdSettings } from "@/lib/ad-slots";
 
 /** One row of the Supabase `ad_creatives` table. */
 export interface AdRow {
@@ -24,6 +26,7 @@ export interface AdRow {
   kind: "html" | "url";
   content: string;
   enabled: boolean;
+  sort_order?: number;
 }
 
 /**
@@ -39,34 +42,44 @@ interface AdsContextValue {
   rows: AdRow[] | null;
   status: AdsStatus;
   /**
+   * Placement config (Admin → Ads → Placements): per-page switches, zone
+   * switches, in-card options, rotation interval. Defaults until loaded;
+   * updates in realtime with everything else.
+   */
+  settings: AdSettings;
+  /**
    * Creatives that should render in a banner/popunder slot right now
-   * (enabled only). Stable per slot identity — arrays are reused while
-   * their content doesn't change, so unrelated ad edits never re-inject
-   * the slots that didn't change.
+   * (enabled only, in rotation order). Stable per slot identity — arrays are
+   * reused while their content doesn't change, so unrelated ad edits never
+   * re-inject the slots that didn't change.
    */
   creativesFor(slot: string): string[];
-  /** Random direct-link for CTAs; stable per page load. */
+  /** Random direct-link for CTAs; stable per page load; null when the reward CTA zone is off. */
   directLink: string | null;
-  /** Re-fetch the table now (admin panel's manual refresh button). */
+  /** Re-fetch creatives + settings now (admin panel's manual refresh button). */
   refresh(): Promise<void>;
 }
 
 const AdsContext = createContext<AdsContextValue | null>(null);
 
 const TABLE = "ad_creatives";
+const SETTINGS_TABLE = "ad_settings";
 
 /**
- * AdsProvider — loads `ad_creatives` from Supabase once per page load and
- * keeps it fresh through a postgres_changes REALTIME subscription, so any
- * add/edit/remove made in Admin → Ads is visible on every open page
- * immediately (no rebuild, no reload). Falls back to the build-time
- * ads/*.txt files when the table can't be reached.
+ * AdsProvider — loads `ad_creatives` + `ad_settings` from Supabase once per
+ * page load and keeps both fresh through a postgres_changes REALTIME
+ * subscription, so any add/edit/remove/placement change made in Admin → Ads
+ * is visible on every open page immediately (no rebuild, no reload). Falls
+ * back to the build-time ads/*.txt files when the creatives table can't be
+ * reached, and to default settings when ad_settings can't.
  *
- * Mounted once in App.tsx around the whole router.
+ * Mounted once in App.tsx — OUTSIDE PremiumProvider, because the page
+ * switches in `settings` feed PremiumContext's `showAds` predicate.
  */
 export function AdsProvider({ children }: { children: ReactNode }) {
   const [rows, setRows] = useState<AdRow[] | null>(null);
   const [status, setStatus] = useState<AdsStatus>("pending");
+  const [settings, setSettings] = useState<AdSettings>(DEFAULT_AD_SETTINGS);
   const sbRef = useRef<SupabaseClient | null>(null);
   /** Per-slot memo so unchanged slots keep their array identity across fetches. */
   const slotCache = useRef(new Map<string, string[]>());
@@ -92,6 +105,21 @@ export function AdsProvider({ children }: { children: ReactNode }) {
     setStatus("database");
   }, []);
 
+  // Placement config is best-effort: a missing/failed ad_settings read just
+  // keeps the defaults (ads on, 2 in-card cards, 20s rotation) — it must
+  // never take the creatives down with it.
+  const loadSettings = useCallback(async () => {
+    const sb = sbRef.current ?? (await getSupabase());
+    sbRef.current = sb;
+    const { data, error } = await sb
+      .from(SETTINGS_TABLE)
+      .select("config")
+      .eq("id", 1)
+      .maybeSingle();
+    if (error) throw error;
+    setSettings(mergeAdSettings(data?.config ?? {}));
+  }, []);
+
   const refresh = useCallback(async () => {
     try {
       await load();
@@ -101,7 +129,18 @@ export function AdsProvider({ children }: { children: ReactNode }) {
         err instanceof Error ? err.message : err,
       );
     }
-  }, [load]);
+    try {
+      await loadSettings();
+    } catch {
+      /* keep current settings */
+    }
+  }, [load, loadSettings]);
+
+  // Push the admin-controlled in-card limit into the isAdCard picker
+  // (module state — grids pick it up on their next render/navigation).
+  useEffect(() => {
+    setAdCardLimit(settings.inCard.maxPerPage);
+  }, [settings]);
 
   useEffect(() => {
     let alive = true;
@@ -112,14 +151,21 @@ export function AdsProvider({ children }: { children: ReactNode }) {
       if (alive) setStatus((s) => (s === "pending" ? "file" : s));
     }, 5000);
 
+    loadSettings().catch((err) => {
+      console.warn(
+        "[ads] ad_settings unavailable, using defaults:",
+        err instanceof Error ? err.message : err,
+      );
+    });
+
     (async () => {
       try {
         await load();
         if (!alive) return;
         const sb = sbRef.current;
         if (!sb) return;
-        // Any INSERT/UPDATE/DELETE anywhere on the table → refetch → every
-        // mounted ad slot re-renders with the new creatives instantly.
+        // Any change on either table → refetch → every mounted ad slot and
+        // every placement gate re-renders with the new state instantly.
         channel = sb
           .channel(`ads-${Math.random().toString(36).slice(2, 8)}`)
           .on(
@@ -129,11 +175,18 @@ export function AdsProvider({ children }: { children: ReactNode }) {
               load().catch(() => {});
             },
           )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: SETTINGS_TABLE },
+            () => {
+              loadSettings().catch(() => {});
+            },
+          )
           .subscribe((state) => {
             if (state === "CHANNEL_ERROR" || state === "TIMED_OUT") {
               console.warn(
                 `[ads] realtime subscription failed (${state}) — live ad edits need ` +
-                  "ad_creatives in the supabase_realtime publication (migration 011).",
+                  "ad_creatives + ad_settings in the supabase_realtime publication (migrations 011/012).",
               );
             }
           });
@@ -157,7 +210,7 @@ export function AdsProvider({ children }: { children: ReactNode }) {
           .catch(() => {});
       }
     };
-  }, [load]);
+  }, [load, loadSettings]);
 
   const dbRows = status === "database" && rows ? rows : null;
 
@@ -193,6 +246,8 @@ export function AdsProvider({ children }: { children: ReactNode }) {
   }, [dbRows]);
 
   const directLink = useMemo(() => {
+    // Reward-CTA zone switched off in Admin → Placements → no link opens.
+    if (settings.placements.rewardCta === false) return null;
     if (!dbRows) return getDirectLink();
     const urls = dbRows
       .filter(
@@ -205,11 +260,11 @@ export function AdsProvider({ children }: { children: ReactNode }) {
       .map((r) => r.content.trim());
     if (urls.length === 0) return null;
     return urls[Math.floor(Math.random() * urls.length)];
-  }, [dbRows]);
+  }, [dbRows, settings.placements.rewardCta]);
 
   const value = useMemo(
-    () => ({ rows, status, creativesFor, directLink, refresh }),
-    [rows, status, creativesFor, directLink, refresh],
+    () => ({ rows, status, settings, creativesFor, directLink, refresh }),
+    [rows, status, settings, creativesFor, directLink, refresh],
   );
 
   return <AdsContext.Provider value={value}>{children}</AdsContext.Provider>;

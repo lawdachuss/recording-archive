@@ -74565,6 +74565,27 @@ var SLOTS = /* @__PURE__ */ new Set([
   "popunder",
   "direct-link"
 ]);
+var IN_CARD_SLOTS = new Set([...SLOTS].filter((s) => s !== "popunder" && s !== "direct-link"));
+var PAGE_IDS = /* @__PURE__ */ new Set([
+  "home",
+  "browse",
+  "video",
+  "performers",
+  "charts",
+  "tags",
+  "collections",
+  "bookmarks",
+  "history",
+  "watch-later",
+  "analytics",
+  "following",
+  "notifications",
+  "my-requests",
+  "request",
+  "profile",
+  "settings"
+]);
+var PLACEMENT_IDS = /* @__PURE__ */ new Set(["strip", "feed", "box", "inCard", "popunder", "rewardCta"]);
 var IMAGE_EXT = /\.(gif|jpe?g|png|webp|avif|bmp)(\?|#|$)/i;
 var URL_RE = /^https?:\/\/\S+$/i;
 var MAX_CONTENT = 2e5;
@@ -74588,12 +74609,41 @@ function validate(slot, kind, content) {
   }
   return null;
 }
+function sanitizeSettings(input) {
+  const src = input && typeof input === "object" ? input : {};
+  const out = {};
+  if (src.pages && typeof src.pages === "object") {
+    const pages = {};
+    for (const [k, v] of Object.entries(src.pages)) {
+      if (PAGE_IDS.has(k) && typeof v === "boolean") pages[k] = v;
+    }
+    out.pages = pages;
+  }
+  if (src.placements && typeof src.placements === "object") {
+    const zones = {};
+    for (const [k, v] of Object.entries(src.placements)) {
+      if (PLACEMENT_IDS.has(k) && typeof v === "boolean") zones[k] = v;
+    }
+    out.placements = zones;
+  }
+  if (src.inCard && typeof src.inCard === "object") {
+    const ic = src.inCard;
+    const inCard = {};
+    const max = Number(ic.maxPerPage);
+    if (Number.isFinite(max)) inCard.maxPerPage = Math.max(0, Math.min(6, Math.round(max)));
+    if (typeof ic.slot === "string" && IN_CARD_SLOTS.has(ic.slot)) inCard.slot = ic.slot;
+    out.inCard = inCard;
+  }
+  const rot = Number(src.rotationSeconds);
+  if (Number.isFinite(rot)) out.rotationSeconds = Math.max(5, Math.min(120, Math.round(rot)));
+  return out;
+}
 router19.get("/admin/ads", ...admin5, async (req, res) => {
-  const { data, error } = await supabaseProxy.from("ad_creatives").select("*").order("slot", { ascending: true }).order("created_at", { ascending: true });
+  const { data, error } = await supabaseProxy.from("ad_creatives").select("*").order("slot", { ascending: true }).order("sort_order", { ascending: true }).order("created_at", { ascending: true });
   if (error) {
     req.log?.error?.({ err: error }, "GET /admin/ads failed");
     res.status(500).json({
-      error: String(error.message ?? "").includes("ad_creatives") ? "The ad_creatives table is missing \u2014 run supabase/migrations/011-ads.sql in the Supabase SQL Editor." : String(error.message ?? "Failed to load ads")
+      error: String(error.message ?? "").includes("ad_creatives") ? "The ad_creatives table is missing \u2014 run supabase/migrations/011-ads.sql (and 012-ad-settings.sql) in the Supabase SQL Editor." : String(error.message ?? "Failed to load ads")
     });
     return;
   }
@@ -74608,13 +74658,36 @@ router19.post("/admin/ads", ...admin5, async (req, res) => {
     res.status(400).json({ error: invalid });
     return;
   }
-  const { data, error } = await supabaseProxy.from("ad_creatives").insert({ slot, kind, content: content.trim() }).select("*").single();
+  const { data: last } = await supabaseProxy.from("ad_creatives").select("sort_order").eq("slot", slot).order("sort_order", { ascending: false }).limit(1).maybeSingle();
+  const { data, error } = await supabaseProxy.from("ad_creatives").insert({
+    slot,
+    kind,
+    content: content.trim(),
+    sort_order: (Number(last?.sort_order) || -1) + 1
+  }).select("*").single();
   if (error) {
     req.log?.error?.({ err: error }, "POST /admin/ads failed");
     res.status(500).json({ error: String(error.message ?? "Insert failed") });
     return;
   }
   res.status(201).json(data);
+});
+router19.put("/admin/ads/reorder", ...admin5, async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+  if (ids.length === 0 || ids.length > 500) {
+    res.status(400).json({ error: "ids must be a non-empty array (max 500)" });
+    return;
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  for (let i = 0; i < ids.length; i += 1) {
+    const { error } = await supabaseProxy.from("ad_creatives").update({ sort_order: i, updated_at: now }).eq("id", ids[i]);
+    if (error) {
+      req.log?.error?.({ err: error }, "PUT /admin/ads/reorder failed");
+      res.status(500).json({ error: String(error.message ?? "Reorder failed") });
+      return;
+    }
+  }
+  res.json({ ok: true, count: ids.length });
 });
 router19.patch("/admin/ads/:id", ...admin5, async (req, res) => {
   const id = String(req.params.id ?? "");
@@ -74661,6 +74734,41 @@ router19.delete("/admin/ads/:id", ...admin5, async (req, res) => {
     return;
   }
   res.json({ ok: true });
+});
+router19.delete("/admin/ads/slot/:slot", ...admin5, async (req, res) => {
+  const slot = String(req.params.slot ?? "");
+  if (!SLOTS.has(slot)) {
+    res.status(400).json({ error: `Unknown ad slot "${slot}"` });
+    return;
+  }
+  const { data, error } = await supabaseProxy.from("ad_creatives").delete().eq("slot", slot).select("id");
+  if (error) {
+    req.log?.error?.({ err: error }, "DELETE /admin/ads/slot failed");
+    res.status(500).json({ error: String(error.message ?? "Clear failed") });
+    return;
+  }
+  res.json({ ok: true, deleted: (data ?? []).length });
+});
+router19.get("/admin/ads/settings", ...admin5, async (req, res) => {
+  const { data, error } = await supabaseProxy.from("ad_settings").select("config, updated_at").eq("id", 1).maybeSingle();
+  if (error) {
+    req.log?.error?.({ err: error }, "GET /admin/ads/settings failed");
+    res.status(500).json({
+      error: String(error.message ?? "").includes("ad_settings") ? "The ad_settings table is missing \u2014 run supabase/migrations/012-ad-settings.sql in the Supabase SQL Editor." : String(error.message ?? "Failed to load settings")
+    });
+    return;
+  }
+  res.json({ config: data?.config ?? {}, updated_at: data?.updated_at ?? null });
+});
+router19.put("/admin/ads/settings", ...admin5, async (req, res) => {
+  const config = sanitizeSettings(req.body);
+  const { data, error } = await supabaseProxy.from("ad_settings").upsert({ id: 1, config, updated_at: (/* @__PURE__ */ new Date()).toISOString() }).select("config, updated_at").single();
+  if (error) {
+    req.log?.error?.({ err: error }, "PUT /admin/ads/settings failed");
+    res.status(500).json({ error: String(error.message ?? "Save failed") });
+    return;
+  }
+  res.json({ config: data?.config ?? {}, updated_at: data?.updated_at ?? null });
 });
 var admin_ads_default = router19;
 

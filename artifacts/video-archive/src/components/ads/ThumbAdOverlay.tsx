@@ -7,26 +7,34 @@ import { useAds } from "@/contexts/AdsContext";
  * ThumbAdOverlay — the in-card ad LAYER.
  *
  * Sits on top of a real VideoCard's thumbnail — chosen RANDOMLY by the
- * grid (isAdCard() picks at most 2 ad cards per page; see VideoCard's
- * `showAd` prop) instead of taking an extra grid cell, so the grid keeps
- * exactly one card per video. The creative is CONTAINED inside the
- * thumbnail (`.ad-thumb-host` object-fit: contain on a black host) so no
- * banner content is ever cropped away; it starts at a random creative and
- * rotates every 20s, and carries a small "Ad" badge.
+ * grid (isAdCard() picks at most `settings.inCard.maxPerPage` ad cards per
+ * page; see VideoCard's `showAd` prop) instead of taking an extra grid
+ * cell, so the grid keeps exactly one card per video. The creative comes
+ * from the slot configured in Admin → Ads → Placements (default
+ * medium-rect-300x250) and is CONTAINED inside the thumbnail
+ * (`.ad-thumb-host` object-fit: contain on a black host) so no banner
+ * content is ever cropped away; it starts at a random creative and rotates
+ * every `settings.rotationSeconds`, and carries a small "Ad" badge.
  *
  * Clicks on a link inside the creative open the AD in a new tab (and never
  * navigate to the video); clicks on a plain image creative fall through to
  * the card's normal video link. Renders nothing when PremiumContext
- * `showAds` is false or `ads/medium-rect-300x250.txt` is empty — the
- * thumbnail simply stays visible.
+ * `showAds` is false, the in-card zone is switched off in Placements, or
+ * the configured slot has no creatives — the thumbnail simply stays
+ * visible.
  */
-const ROTATE_MS = 20_000;
 const AD_FILE = "medium-rect-300x250";
 
 export function ThumbAdOverlay() {
   const { showAds } = usePremium();
-  const { creativesFor } = useAds();
-  const creatives = useMemo(() => creativesFor(AD_FILE), [creativesFor]);
+  const { creativesFor, settings } = useAds();
+
+  const zoneOn = settings.placements.inCard !== false;
+  const visible = showAds && zoneOn;
+  const slot = settings.inCard.slot || AD_FILE;
+  const rotateMs = settings.rotationSeconds * 1000;
+
+  const creatives = useMemo(() => creativesFor(slot), [creativesFor, slot]);
 
   // Random start so several ad cards in view don't sync.
   const [index, setIndex] = useState(() =>
@@ -37,22 +45,22 @@ export function ThumbAdOverlay() {
     if (creatives.length <= 1) return;
     const id = window.setInterval(
       () => setIndex((i) => (i + 1) % creatives.length),
-      ROTATE_MS
+      rotateMs
     );
     return () => window.clearInterval(id);
-  }, [creatives.length]);
+  }, [creatives.length, rotateMs]);
 
   const hostRef = useRef<HTMLDivElement>(null);
 
   // (Re)inject on mount and on every rotation; cleanup tears the ad down.
   useEffect(() => {
-    if (!showAds) return;
+    if (!visible) return;
     const host = hostRef.current;
     if (!host || creatives.length === 0) return;
     return injectAdMarkup(host, creatives[index % creatives.length]);
-  }, [showAds, creatives, index]);
+  }, [visible, creatives, index]);
 
-  if (!showAds || creatives.length === 0) return null;
+  if (!visible || creatives.length === 0) return null;
 
   return (
     <div

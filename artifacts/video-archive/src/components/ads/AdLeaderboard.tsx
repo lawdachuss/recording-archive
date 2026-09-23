@@ -38,9 +38,11 @@ export function AdLeaderboard({
 
   return (
     <div className={"w-full flex justify-center " + (className ?? "")}>
-      <AdBanner file={lg} breakpoint="lg" label={label} />
-      <AdBanner file={md} breakpoint="md-lg" label={label} />
-      <AdBanner file={mobile} breakpoint="mobile" label={label} />
+      {/* Always zone “strip” (not the file-derived default): even the mobile
+          rect tier here is a strip, and strip is what Placements toggles. */}
+      <AdBanner file={lg} breakpoint="lg" label={label} placement="strip" />
+      <AdBanner file={md} breakpoint="md-lg" label={label} placement="strip" />
+      <AdBanner file={mobile} breakpoint="mobile" label={label} placement="strip" />
     </div>
   );
 }
