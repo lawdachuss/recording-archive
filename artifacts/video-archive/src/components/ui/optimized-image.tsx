@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useMemo, useRef, memo } from "react";
 import { cn } from "@/lib/utils";
 import { isConnectionConstrained } from "@/lib/connection";
 import { proxyImageUrl, isHttp2ResetHost, extractOriginalFromWsrv, markWsrvFailedForHost } from "@/lib/proxy-url";
-import { cacheImage } from "@/lib/image-cache";
+import { acquireHostConcurrency, cacheImage } from "@/lib/image-cache";
 
 interface OptimizedImageProps {
   src: string;
@@ -72,8 +72,10 @@ const CORS_HOSTS = ["catbox.moe", "litter.catbox.moe", "files.catbox.moe"];
  * immediate re-attempt rides the same dying connection (the duplicate error
  * pairs in the console) — so retries are DELAYED to wait out the teardown;
  * each attempt opens a fresh connection, which recovers. Three retries ≈ 12s
- * before the card finally gives up. Non-flaky hosts keep the original fast
- * single retry — a definitive 404 shouldn't hold a placeholder for seconds.
+ * before the card finally gives up. A random ±700ms jitter is added per retry
+ * (see onError) so a grid that failed together doesn't resynchronize into an
+ * identical second burst. Non-flaky hosts keep the original fast single
+ * retry — a definitive 404 shouldn't hold a placeholder for seconds.
  */
 const FLAKY_H2_RETRY_DELAYS_MS = [1000, 3000, 8000];
 
@@ -144,6 +146,31 @@ export const OptimizedImage = memo(function OptimizedImage({
   const [inView, setInView] = useState(true);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
+  // Flaky-H2 host admission (catbox & friends). The cache warmers are capped
+  // at 2 concurrent requests per host (image-cache hostConcurrency — catbox's
+  // high-speed band), but <img> elements load OUTSIDE that pipeline: a grid of
+  // ~26 eager thumbnails firing at once trips catbox's HTTP/2 reset storm (the
+  // mass ERR_HTTP2_PROTOCOL_ERROR lines), and every failed element retrying on
+  // the SAME fixed backoff then resynchronizes into a second identical burst
+  // (the duplicate error waves). So a flaky-host element must HOLD one of the
+  // SAME host slots before it may assign src, and release it when the image
+  // settles — element loads and warm fetches together can then never exceed
+  // the host cap. Queued FIFO (priority default) → mount order, top row first.
+  // Non-flaky hosts keep direct, uncapped loads (slotHeld stays irrelevant).
+  const [slotHeld, setSlotHeld] = useState(!flakyH2);
+  const slotReleaseRef = useRef<(() => void) | null>(null);
+  const slotWatchdogRef = useRef<number | null>(null);
+  /** Return the held host slot (idempotent — safe from load, error, cleanup, watchdog). */
+  const releaseSlot = useCallback(() => {
+    if (slotWatchdogRef.current !== null) {
+      window.clearTimeout(slotWatchdogRef.current);
+      slotWatchdogRef.current = null;
+    }
+    const rel = slotReleaseRef.current;
+    slotReleaseRef.current = null;
+    rel?.();
+  }, []);
+
   // Reset state when the src changes (also cancels any pending delayed retry).
   useEffect(() => {
     setLoaded(false);
@@ -176,14 +203,58 @@ export const OptimizedImage = memo(function OptimizedImage({
     return;
   }, [loading, resolvedSrc]);
 
+  // Admission for flaky-H2 hosts: acquire a host slot BEFORE src may render.
+  // Re-runs on src change / retry attempt, so every REQUEST re-acquires; the
+  // cleanup releases (idempotent) so remounts and unmounts can't leak slots.
+  useEffect(() => {
+    if (!flakyH2 || !inView || !resolvedSrc) return;
+    let host: string;
+    try {
+      host = new URL(resolvedSrc, window.location.origin).hostname;
+    } catch {
+      setSlotHeld(true); // unparseable (flakyH2 would be false anyway) — fail open
+      return;
+    }
+    let cancelled = false;
+    acquireHostConcurrency(host)
+      .then((release) => {
+        if (cancelled) {
+          release();
+          return;
+        }
+        slotReleaseRef.current = release;
+        setSlotHeld(true);
+        // Watchdog: a hung stream must not hold one of the host's only two
+        // slots forever — after 30s free it (the request itself keeps running;
+        // the normal load/error path still releases idempotently).
+        slotWatchdogRef.current = window.setTimeout(() => {
+          const rel = slotReleaseRef.current;
+          slotReleaseRef.current = null;
+          rel?.();
+        }, 30_000);
+      })
+      .catch(() => {
+        // Fail open: better an uncapped load than a permanently hidden image.
+        if (!cancelled) setSlotHeld(true);
+      });
+    return () => {
+      cancelled = true;
+      releaseSlot();
+      setSlotHeld(false);
+    };
+  }, [flakyH2, inView, resolvedSrc, attempt, releaseSlot]);
+
   const onLoad = useCallback(() => {
     setLoaded(true);
+    // Bytes arrived — return the host slot to the pool. The gate stays open
+    // and src keeps rendering; only the admission slot is handed back.
+    releaseSlot();
     // Cache the URL that actually loaded into IDB so repeat visits skip the
     // network. When wsrv 404'd and we fell back to directSrc (attempt≥1), cache
     // directSrc — NOT resolvedSrc (which would retry the broken wsrv URL again).
     const urlToCache = (attempt >= 1 && directSrc) ? directSrc : resolvedSrc;
     cacheImage(urlToCache, 3).catch(() => {});
-  }, [resolvedSrc, directSrc, attempt]);
+  }, [resolvedSrc, directSrc, attempt, releaseSlot]);
 
   const onError = useCallback(() => {
     if (directSrc && attempt === 0) {
@@ -195,11 +266,18 @@ export const OptimizedImage = memo(function OptimizedImage({
       return;
     }
     if (flakyH2) {
-      // Connection-death host: schedule the next attempt AFTER the backoff so
-      // it rides a fresh HTTP/2 connection instead of the dying one. The
+      // Return the host slot and close the admission gate for the backoff
+      // window — the next attempt re-acquires a slot before re-requesting.
+      // JITTER: when a whole grid fails together, a fixed delay would
+      // resynchronize every retry into a second identical burst (the
+      // duplicate error waves in the console), so spread attempts over an
+      // extra ±700ms. Otherwise: schedule the next attempt AFTER the backoff
+      // so it rides a fresh HTTP/2 connection instead of the dying one. The
       // shimmer keeps covering the dead <img> until the retry fires.
-      const delay = FLAKY_H2_RETRY_DELAYS_MS[attempt];
-      if (delay !== undefined) {
+      releaseSlot();
+      setSlotHeld(false);
+      const delay = FLAKY_H2_RETRY_DELAYS_MS[attempt] + Math.floor(Math.random() * 700);
+      if (FLAKY_H2_RETRY_DELAYS_MS[attempt] !== undefined) {
         clearRetryTimer();
         retryTimerRef.current = window.setTimeout(() => {
           retryTimerRef.current = null;
@@ -221,13 +299,13 @@ export const OptimizedImage = memo(function OptimizedImage({
       setLoaded(true);
       onErrorProp?.();
     }
-  }, [attempt, directSrc, flakyH2, clearRetryTimer, onErrorProp]);
+  }, [attempt, directSrc, flakyH2, clearRetryTimer, releaseSlot, onErrorProp]);
 
   if (error) {
     return fallback ?? <DefaultFallback />;
   }
 
-  const actualSrc = inView ? (attempt >= 1 && directSrc ? directSrc : resolvedSrc) : undefined;
+  const actualSrc = inView && (!flakyH2 || slotHeld) ? (attempt >= 1 && directSrc ? directSrc : resolvedSrc) : undefined;
   const corsMode = actualSrc ? canLoadInCorsMode(actualSrc) : false;
 
   return (
