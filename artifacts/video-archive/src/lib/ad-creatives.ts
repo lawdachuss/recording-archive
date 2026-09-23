@@ -69,6 +69,23 @@ export function bareUrlToMarkup(url: string, width: number, height: number): str
 }
 
 /**
+ * True when a single line is a complete, self-contained markup fragment —
+ * an `<iframe …></iframe>`, `<script src=…></script>`, `<a …>…</a>` or
+ * `<img …/>` written entirely on one line. Continuation lines of a
+ * multi-line code (e.g. `<a href=…>` … `</a>`) are NOT self-contained.
+ * Used by the admin paste handler: several self-contained one-line codes
+ * become separate rotating creatives instead of one stacked blob.
+ */
+export function isSelfContainedLine(line: string): boolean {
+  const t = line.trim();
+  if (!t.startsWith("<") || !t.endsWith(">")) return false;
+  // <tag … />
+  if (/\/>$/.test(t)) return true;
+  // <tag …>…</tag> — outer tag name must match the closing one.
+  return /^<([a-zA-Z][\w-]*)\b[^>]*>[\s\S]*<\/\1>$/.test(t);
+}
+
+/**
  * One `---`-separated block → zero or more creatives.
  * - HTML comments are stripped (instruction headers never render)
  * - a line that is ONLY a URL becomes its own rotating creative

@@ -1,5 +1,32 @@
 import { describe, it, expect } from "vitest";
-import { buildClickPopMarkup, bareUrlToMarkup } from "../ad-creatives";
+import { buildClickPopMarkup, bareUrlToMarkup, isSelfContainedLine } from "../ad-creatives";
+
+describe("isSelfContainedLine", () => {
+  it("recognises complete one-line codes as self-contained", () => {
+    expect(
+      isSelfContainedLine(
+        '<iframe src="https://x.example/w?bb=1.gif" width="950" height="250" frameborder="0" scrolling="no"></iframe>',
+      ),
+    ).toBe(true);
+    expect(isSelfContainedLine('<script src="https://x.example/a.js"></script>')).toBe(true);
+    expect(isSelfContainedLine('<a href="https://x.example"><img src="https://x.example/b.gif"></a>')).toBe(true);
+    expect(isSelfContainedLine('<img src="https://x.example/b.gif" alt="ad" />')).toBe(true);
+    expect(isSelfContainedLine('  <div class="ad-box">promo</div>  ')).toBe(true);
+  });
+
+  it("rejects continuation lines and non-markup", () => {
+    expect(isSelfContainedLine('<a href="https://x.example">')).toBe(false); // opener only
+    expect(isSelfContainedLine("</a>")).toBe(false);
+    expect(isSelfContainedLine("document.write('ad');")).toBe(false);
+    expect(isSelfContainedLine("")).toBe(false);
+    expect(isSelfContainedLine("<p>unclosed")).toBe(false);
+  });
+
+  it("requires the closing tag name to match the opener", () => {
+    expect(isSelfContainedLine("<div>x</span>")).toBe(false);
+    expect(isSelfContainedLine("<div><div>nested</div></div>")).toBe(true);
+  });
+});
 
 describe("bareUrlToMarkup", () => {
   it("turns an image URL into a sized <img>", () => {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAds, type AdRow } from "@/contexts/AdsContext";
+import { isSelfContainedLine } from "@/lib/ad-creatives";
 import {
   AD_SLOTS, AD_PAGES, AD_PLACEMENTS, DEFAULT_AD_SETTINGS, type AdSettings,
 } from "@/lib/ad-slots";
@@ -165,7 +166,17 @@ export default function AdminAds() {
     // stays together as one HTML/JS creative — mixed pastes work too.
     const urlLines = lines.filter(isSingleUrl);
     const htmlLines = lines.filter((l) => !isSingleUrl(l));
-    const chunks = [...urlLines, ...(htmlLines.length > 0 ? [htmlLines.join("\n")] : [])];
+    // Several COMPLETE one-line codes (iframes, <script src>, <a><img></a>)
+    // paste as SEPARATE rotating creatives — merging them would stack every
+    // banner inside one slot-sized box and hide all but the first. Anything
+    // spanning multiple lines stays together as a single code.
+    const htmlChunks =
+      htmlLines.length === 0
+        ? []
+        : htmlLines.every(isSelfContainedLine)
+          ? htmlLines
+          : [htmlLines.join("\n")];
+    const chunks = [...urlLines, ...htmlChunks];
     for (const chunk of chunks) {
       const err = validateContent(chunk);
       if (err) {
@@ -185,8 +196,8 @@ export default function AdminAds() {
       for (const url of urlLines) {
         await req("/api/admin/ads", "POST", { slot: activeSlot, kind: "url", content: url });
       }
-      if (htmlLines.length > 0) {
-        await req("/api/admin/ads", "POST", { slot: activeSlot, content: htmlLines.join("\n") });
+      for (const html of htmlChunks) {
+        await req("/api/admin/ads", "POST", { slot: activeSlot, content: html });
       }
       setDraft("");
     }, message);
