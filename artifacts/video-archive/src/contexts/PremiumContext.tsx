@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { premiumApi, type PremiumConfig, type PremiumStatus } from "@/lib/premium-client";
-import { isAgeGatePassed, onAgeGatePassed, getGraceRemainingMs, ensureGraceStarted } from "@/lib/gating";
+import { isAgeGatePassed, onAgeGatePassed } from "@/lib/gating";
 
 /** Routes that never mount ad slots (auth + payment + admin screens). */
 function isExcludedPage(pathname: string): boolean {
@@ -45,19 +45,11 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
   const [location] = useLocation();
 
   const [agePassed, setAgePassed] = useState(isAgeGatePassed);
-  const [now, setNow] = useState(() => Date.now());
-
-  // Give returning visitors (age gate already passed before rollout) their
-  // once-per-device grace window instead of ads + upsell on first load.
-  useEffect(() => {
-    ensureGraceStarted();
-  }, []);
 
   // Same-tab signal from the age gate (existing tag reads on mount).
   useEffect(() => {
     const unsub = onAgeGatePassed(() => {
       setAgePassed(true);
-      setNow(Date.now());
     });
     return unsub;
   }, []);
@@ -77,32 +69,19 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     retry: 1,
   });
 
-  // Only tick once per second while the grace/upsell countdown is actually
-  // active. When the user is premium (or grace hasn't started / already
-  // expired) the interval stays off, avoiding re-rendering the entire
-  // component tree every second for the lifetime of the page.
-  const needsGraceTick = agePassed && !(status?.is_premium === true && !premiumExpired(status));
-  useEffect(() => {
-    if (!needsGraceTick) return;
-    const id = window.setInterval(() => setNow(Date.now()), 1_000);
-    return () => window.clearInterval(id);
-  }, [needsGraceTick]);
-
   const refreshStatus = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: STATUS_QUERY_KEY });
   }, [queryClient]);
 
   const value = useMemo<PremiumContextValue>(() => {
     const isPremium = status?.is_premium === true && !premiumExpired(status);
-    const inGrace =
-      agePassed &&
-      !isPremium &&
-      getGraceRemainingMs(config?.grace_minutes ?? 10) > 0;
+    // Grace period disabled - ads show immediately after age gate
+    const inGrace = false;
 
     const excludedPage = isExcludedPage(location);
-    // Ads render when age gate has passed, user is not premium, route is not excluded,
-    // and the first-visit ad-free grace window has elapsed.
-    const showAds = agePassed && !excludedPage && !isPremium && !inGrace;
+    // Ads render when age gate has passed, user is not premium, route is not excluded.
+    // Grace period removed - ads show immediately.
+    const showAds = agePassed && !excludedPage && !isPremium;
 
     return {
       config,
@@ -113,7 +92,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
       checkoutConfigured: config?.checkout_configured === true,
       agePassed,
       inGrace,
-      graceRemainingMs: inGrace ? getGraceRemainingMs(config?.grace_minutes ?? 10) : 0,
+      graceRemainingMs: 0,
       showAds,
       excludedPage,
       refreshStatus,
@@ -127,8 +106,6 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     agePassed,
     location,
     refreshStatus,
-    // `now` drives the grace countdown so voice re-renders each second.
-    now, // eslint-disable-line react-hooks/exhaustive-deps
   ]);
 
   return <PremiumContext.Provider value={value}>{children}</PremiumContext.Provider>;
