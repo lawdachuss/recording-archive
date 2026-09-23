@@ -197,3 +197,82 @@ export function getDirectLink(): string | null {
   return pick;
 }
 
+/** Max ad cards shown per page/list (random positions). */
+export const AD_CARDS_PER_PAGE = 2;
+
+/** Session epoch — a fresh full page load reshuffles the ad positions. */
+const AD_EPOCH = Date.now();
+
+/** Small string hash (cyrb53-style) → 32-bit seed. */
+function hashSeed(str: string): number {
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  h = Math.imul(h ^ (h >>> 16), 2246822507);
+  h = Math.imul(h ^ (h >>> 13), 3266489909);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+/** mulberry32 PRNG — deterministic for a given seed. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Compute the random ad-card index set for one list (max
+ * AD_CARDS_PER_PAGE = 2 positions), seeded from page-load epoch + the
+ * first item's id + the length:
+ *   - every card in the same grid agrees on the same positions (pure fn),
+ *   - positions hold steady while the on-screen data doesn't change (no
+ *     ad cards jumping around on re-renders), and
+ *   - a new page load or a new result set (filters, pagination, edits)
+ *     reshuffles them.
+ * Cached for the last computed seed so a grid render is O(1) per card.
+ */
+let adSeedCache: string | null = null;
+let adCardsCache: ReadonlySet<number> = new Set();
+
+function getAdCardSet<T>(items: readonly T[]): ReadonlySet<number> {
+  const len = items.length;
+  if (len === 0) return new Set();
+  const first = String((items[0] as { id?: unknown } | undefined)?.id ?? "");
+  const seed = `${AD_EPOCH}|${first}|${len}`;
+  if (seed === adSeedCache) return adCardsCache;
+
+  const rand = mulberry32(hashSeed(seed));
+  const idx = Array.from({ length: len }, (_, n) => n);
+  const picked = Math.min(AD_CARDS_PER_PAGE, len);
+  const chosen = new Set<number>();
+  // Partial Fisher-Yates: the first `picked` slots are the sample.
+  for (let i = 0; i < picked; i++) {
+    const j = i + Math.floor(rand() * (len - i));
+    const tmp = idx[i];
+    idx[i] = idx[j];
+    idx[j] = tmp;
+    chosen.add(idx[i]);
+  }
+  adSeedCache = seed;
+  adCardsCache = chosen;
+  return chosen;
+}
+
+/**
+ * Random in-card ad placement — grids call it per card:
+ *   showAd={isAdCard(recordings, i)}
+ * Replaces the old fixed every-8th pattern: each page shows at most 2 ad
+ * cards, at unpredictable positions (see getAdCardSet for the seed rules).
+ */
+export function isAdCard<T>(items: readonly T[], index: number): boolean {
+  if (items.length === 0) return false;
+  return getAdCardSet(items).has(index);
+}
+

@@ -113,18 +113,16 @@ interface VideoCardProps {
   /** 0-100 completion percentage. Shows progress bar when > 0 and < 100. */
   progress?: number;
   /**
-   * Position of this card in its grid. Every 8th card (index % 8 === 7)
-   * overlays the in-card ad layer (ThumbAdOverlay) on its thumbnail — the
-   * ad lives INSIDE a real video card, so the grid never gains an extra
-   * cell. Omit the prop (History, related videos, …) for a normal card.
+   * Show the in-card ad layer (ThumbAdOverlay) on this card's thumbnail.
+   * Grids pick at most 2 RANDOM cards per page with isAdCard(items, i)
+   * and pass showAd={isAdCard(...)} — the ad lives INSIDE a real video
+   * card, so the grid never gains an extra cell. Omit for a normal card
+   * (History, related videos, …).
    */
-  index?: number;
+  showAd?: boolean;
 }
 
-export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemove, fetchPriority, isWatched, progress, index }: VideoCardProps) {
-  // In-card ad layer: every 8th grid position (ThumbAdOverlay itself
-  // enforces PremiumContext.showAds and skips empty creative files).
-  const showAd = index !== undefined && index % 8 === 7;
+export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemove, fetchPriority, isWatched, progress, showAd }: VideoCardProps) {
 
   // Build mirror fallback URLs for preview, thumbnail, and sprite
   const previewFallbacks = useMemo(() => buildPreviewFallbacks(recording), [recording.preview_url, recording.preview_mirrors]);
@@ -689,7 +687,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             </button>
           )}
 
-          {/* In-card ad layer — every 8th card (see `index` prop) */}
+          {/* In-card ad layer — random cards picked by the grid's isAdCard() */}
           {showAd && <ThumbAdOverlay />}
         </div>
 

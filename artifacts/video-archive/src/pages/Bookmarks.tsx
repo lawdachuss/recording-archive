@@ -5,6 +5,7 @@ import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { VideoCard } from "@/components/VideoCard";
+import { isAdCard } from "@/lib/ad-creatives";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, parseCloudItem, cloudItemToRecording, type CloudItem } from "@/lib/user-api";
 import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
@@ -111,7 +112,7 @@ export default function Bookmarks() {
               <div key={rec.id} className="animate-fade-in-up" style={{ animationDelay: `${i * 25}ms` }}>
                 <VideoCard
                   recording={cloudItemToRecording(rec)}
-                  index={i}
+                  showAd={isAdCard(bookmarks, i)}
                   showRemove
                   onRemove={() => handleRemove(rec.id)}
                   isWatched={recentlyWatched.has(rec.id)}

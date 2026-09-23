@@ -57,7 +57,8 @@ FILES & WHERE THEY RENDER
                                            above comments
   medium-rect-300x250.txt         300x250  Sidebars (VideoDetail), narrow-page
                                            banners, footer (phones), in-card
-                                           ad layer on every 8th video card
+                                           ad layer on up to 2 random cards
+                                           per page
   large-rect-336x280.txt          336x280  Spare rectangle slot
   half-page-300x600.txt           300x600  VideoDetail sidebar (desktop)
   skyscraper-160x600.txt          160x600  Spare sidebar skyscraper slot

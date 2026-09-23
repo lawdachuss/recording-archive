@@ -595,19 +595,29 @@
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25), 0 0 0 1px hsl(var(--primary) / 0.3);
 }
 
-/* In-card ad layer - fill a video thumbnail edge-to-edge (cover-crop) */
+/* In-card ad layer - the creative FITS the thumbnail (object-fit: contain)
+   so no banner content is cropped away; the black host shows behind the
+   letterbox bars. */
+.ad-thumb-host {
+  background: #000;
+}
 .ad-thumb-host a {
   display: block;
   width: 100%;
   height: 100%;
 }
-.ad-thumb-host img,
+.ad-thumb-host img {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  object-fit: contain !important;
+  object-position: center;
+  margin: 0 !important;
+  border: 0;
+}
 .ad-thumb-host iframe {
   width: 100% !important;
   height: 100% !important;
   max-width: 100% !important;
-  object-fit: cover !important;
-  object-position: center;
-  margin: 0 !important;
   border: 0;
 }

@@ -5,11 +5,12 @@ import { getAdCreatives, injectAdMarkup } from "@/lib/ad-creatives";
 /**
  * ThumbAdOverlay — the in-card ad LAYER.
  *
- * Sits on top of a real VideoCard's thumbnail (every 8th card — see
- * VideoCard's `index` prop) instead of taking an extra grid cell, so the
- * grid keeps exactly one card per video. The creative fills the thumbnail
- * edge-to-edge (`.ad-thumb-host` CSS cover-crops it, so a 300×250 unit
- * reads like a full-bleed preview), starts at a random creative and
+ * Sits on top of a real VideoCard's thumbnail — chosen RANDOMLY by the
+ * grid (isAdCard() picks at most 2 ad cards per page; see VideoCard's
+ * `showAd` prop) instead of taking an extra grid cell, so the grid keeps
+ * exactly one card per video. The creative is CONTAINED inside the
+ * thumbnail (`.ad-thumb-host` object-fit: contain on a black host) so no
+ * banner content is ever cropped away; it starts at a random creative and
  * rotates every 20s, and carries a small "Ad" badge.
  *
  * Clicks on a link inside the creative open the AD in a new tab (and never
@@ -53,7 +54,7 @@ export function ThumbAdOverlay() {
 
   return (
     <div
-      className="absolute inset-0 z-20 bg-black/40"
+      className="absolute inset-0 z-20 bg-black"
       role="complementary"
       aria-label="Advertisement"
       onClick={(e) => {

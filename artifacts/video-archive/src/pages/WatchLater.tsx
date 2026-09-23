@@ -5,6 +5,7 @@ import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { VideoCard } from "@/components/VideoCard";
+import { isAdCard } from "@/lib/ad-creatives";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, parseCloudItem, cloudItemToRecording } from "@/lib/user-api";
 import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
@@ -113,7 +114,7 @@ export default function WatchLater() {
                 </div>
                 <VideoCard
                   recording={cloudItemToRecording(rec)}
-                  index={index}
+                  showAd={isAdCard(queue, index)}
                   showRemove
                   onRemove={() => handleRemove(rec.id)}
                   isWatched={recentlyWatched.has(rec.id)}

@@ -18,6 +18,7 @@ import {
 import { Layout } from "@/components/Layout";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { VideoCard } from "@/components/VideoCard";
+import { isAdCard } from "@/lib/ad-creatives";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
@@ -745,7 +746,7 @@ export default function Browse() {
                     <div key={rec.id}>
                       <VideoCard
                         recording={rec}
-                        index={i}
+                        showAd={isAdCard(recordings, i)}
                         fetchPriority={i < 10 ? "high" : undefined}
                         isWatched={recentlyWatched.has(rec.id)}
                       />
