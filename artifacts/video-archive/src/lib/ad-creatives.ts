@@ -14,7 +14,7 @@
  *     every 20s (see components/ads/AdBanner.tsx)
  *   - global slots (popunder) inject ONE random creative once per page load
  *
- * Paste CrakRevenue / Adsterra / JuicyAds / any network's HTML or JS codes
+ * Paste CrakRevenue's HTML or JS codes
  * straight into the files — <script>, <iframe>, <a><img></a> all work.
  * Editing a file requires a rebuild/redeploy (codes are baked at build).
  *
@@ -197,17 +197,3 @@ export function getDirectLink(): string | null {
   return pick;
 }
 
-/**
- * First `<script src=…>` (or bare URL) pasted into `ads/<file>.txt`, or
- * null when the file has no code. Used by global loader placements
- * (social bar) that need a script URL instead of injected markup.
- */
-export function getFileScriptSrc(file: string): string | null {
-  const raw = rawFor(file);
-  if (!raw) return null;
-  const text = raw.replace(HTML_COMMENT, "\n");
-  const tag = /<script[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/i.exec(text);
-  if (tag?.[1]) return tag[1].trim();
-  const url = text.match(/https?:\/\/[^\s"'<>]+/);
-  return url ? url[0] : null;
-}

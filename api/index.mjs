@@ -20725,27 +20725,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router21;
+    module.exports = Router20;
     module.exports.Route = Route;
-    function Router21(options) {
-      if (!(this instanceof Router21)) {
-        return new Router21(options);
+    function Router20(options) {
+      if (!(this instanceof Router20)) {
+        return new Router20(options);
       }
       const opts = options || {};
-      function router21(req, res, next) {
-        router21.handle(req, res, next);
+      function router20(req, res, next) {
+        router20.handle(req, res, next);
       }
-      Object.setPrototypeOf(router21, this);
-      router21.caseSensitive = opts.caseSensitive;
-      router21.mergeParams = opts.mergeParams;
-      router21.params = {};
-      router21.strict = opts.strict;
-      router21.stack = [];
-      return router21;
+      Object.setPrototypeOf(router20, this);
+      router20.caseSensitive = opts.caseSensitive;
+      router20.mergeParams = opts.mergeParams;
+      router20.params = {};
+      router20.strict = opts.strict;
+      router20.stack = [];
+      return router20;
     }
-    Router21.prototype = function() {
+    Router20.prototype = function() {
     };
-    Router21.prototype.param = function param(name, fn) {
+    Router20.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20765,7 +20765,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router21.prototype.handle = function handle(req, res, callback) {
+    Router20.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20892,7 +20892,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router21.prototype.use = function use(handler) {
+    Router20.prototype.use = function use(handler) {
       let offset = 0;
       let path = "/";
       if (typeof handler !== "function") {
@@ -20925,7 +20925,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router21.prototype.route = function route(path) {
+    Router20.prototype.route = function route(path) {
       const route2 = new Route(path);
       const layer = new Layer(path, {
         sensitive: this.caseSensitive,
@@ -20940,7 +20940,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router21.prototype[method] = function(path) {
+      Router20.prototype[method] = function(path) {
         const route = this.route(path);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -21123,13 +21123,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router21 = require_router();
+    var Router20 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init() {
-      var router21 = null;
+      var router20 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -21138,13 +21138,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router21 === null) {
-            router21 = new Router21({
+          if (router20 === null) {
+            router20 = new Router20({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router21;
+          return router20;
         }
       });
     };
@@ -21215,15 +21215,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router21 = this.router;
+      var router20 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router21.use(path, fn2);
+          return router20.use(path, fn2);
         }
         debug(".use app under %s", path);
         fn2.mountpath = path;
         fn2.parent = this;
-        router21.use(path, function mounted_app(req, res, next) {
+        router20.use(path, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -23890,7 +23890,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router21 = require_router();
+    var Router20 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23912,8 +23912,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router21.Route;
-    exports.Router = Router21;
+    exports.Route = Router20.Route;
+    exports.Router = Router20;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -64240,12 +64240,12 @@ var require_built3 = __commonJS({
 });
 
 // src/app.ts
-var import_express21 = __toESM(require_express2(), 1);
+var import_express20 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 
 // src/routes/index.ts
-var import_express20 = __toESM(require_express2(), 1);
+var import_express19 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
@@ -74481,54 +74481,11 @@ router17.post("/admin/premium/settings", ...admin4, async (req, res) => {
 });
 var premium_default = router17;
 
-// src/routes/ads.ts
-var import_express18 = __toESM(require_express2(), 1);
-var API_BASE = "https://api3.adsterratools.com/publisher";
-var router18 = (0, import_express18.Router)();
-router18.get("/ads/status", async (_req, res) => {
-  const token = process.env.ADSTERRA_API_KEY;
-  if (!token) {
-    res.status(503).json({ error: "Adsterra API not configured (ADSTERRA_API_KEY missing)" });
-    return;
-  }
-  const headers = {
-    Accept: "application/json",
-    "X-API-Key": token
-  };
-  try {
-    const [domainsRes, placementsRes] = await Promise.all([
-      fetch(`${API_BASE}/domains.json`, { headers }),
-      fetch(`${API_BASE}/placements.json`, { headers })
-    ]);
-    if (!domainsRes.ok || !placementsRes.ok) {
-      res.status(502).json({ error: `Adsterra API responded ${domainsRes.status}/${placementsRes.status}` });
-      return;
-    }
-    const domains = await domainsRes.json();
-    const placements = await placementsRes.json();
-    const domainMap = new Map(domains.items.map((d) => [d.id, d.title]));
-    res.json({
-      tokenConfigured: true,
-      domains: domains.items,
-      placements: placements.items.map((p) => ({
-        id: p.id,
-        domain: domainMap.get(p.domain_id) ?? `#${p.domain_id}`,
-        title: p.title,
-        direct_url: p.direct_url ?? null
-      }))
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: "failed to reach Adsterra API", detail: message });
-  }
-});
-var ads_default = router18;
-
 // src/routes/hot.ts
-var import_express19 = __toESM(require_express2(), 1);
+var import_express18 = __toESM(require_express2(), 1);
 init_supabase();
-var router19 = (0, import_express19.Router)();
-router19.get(
+var router18 = (0, import_express18.Router)();
+router18.get(
   "/hot/recordings",
   cache({ ttlSeconds: 60, staleSeconds: 300, tags: ["recordings", "search", "stats"] }),
   async (req, res) => {
@@ -74558,7 +74515,7 @@ router19.get(
     }
   }
 );
-router19.get(
+router18.get(
   "/hot/performers",
   cache({ ttlSeconds: 60, staleSeconds: 300, tags: ["performers", "recordings"] }),
   async (req, res) => {
@@ -74586,33 +74543,32 @@ router19.get(
     }
   }
 );
-var hot_default = router19;
+var hot_default = router18;
 
 // src/routes/index.ts
-var router20 = (0, import_express20.Router)();
-router20.use(health_default);
-router20.use(recordings_default);
-router20.use(performers_default);
-router20.use(tags_default);
-router20.use(stats_default);
-router20.use(reactions_default);
-router20.use(comments_default);
-router20.use(requests_default);
-router20.use(user_default);
-router20.use(cache_admin_default);
-router20.use(admin_default);
-router20.use(search_default);
-router20.use(media_proxy_default);
-router20.use(cache_warm_default);
-router20.use(views_default);
-router20.use(rum_default);
-router20.use(premium_default);
-router20.use(ads_default);
-router20.use(hot_default);
-var routes_default = router20;
+var router19 = (0, import_express19.Router)();
+router19.use(health_default);
+router19.use(recordings_default);
+router19.use(performers_default);
+router19.use(tags_default);
+router19.use(stats_default);
+router19.use(reactions_default);
+router19.use(comments_default);
+router19.use(requests_default);
+router19.use(user_default);
+router19.use(cache_admin_default);
+router19.use(admin_default);
+router19.use(search_default);
+router19.use(media_proxy_default);
+router19.use(cache_warm_default);
+router19.use(views_default);
+router19.use(rum_default);
+router19.use(premium_default);
+router19.use(hot_default);
+var routes_default = router19;
 
 // src/app.ts
-var app = (0, import_express21.default)();
+var app = (0, import_express20.default)();
 app.use(
   (0, import_pino_http.default)({
     logger,
@@ -74657,9 +74613,9 @@ app.use("/api", (req, res, next) => {
   }
   next();
 });
-app.use("/api/premium/webhook", import_express21.default.raw({ type: "*/*", limit: "1mb" }));
-app.use(import_express21.default.json({ limit: "1mb" }));
-app.use(import_express21.default.urlencoded({ extended: true, limit: "1mb" }));
+app.use("/api/premium/webhook", import_express20.default.raw({ type: "*/*", limit: "1mb" }));
+app.use(import_express20.default.json({ limit: "1mb" }));
+app.use(import_express20.default.urlencoded({ extended: true, limit: "1mb" }));
 app.use("/api", routes_default);
 app.use((err, _req, res, _next) => {
   const status = err?.status ?? err?.statusCode ?? 500;

@@ -16,7 +16,6 @@ import cacheWarmRouter from "./cache-warm.js";
 import viewsRouter from "./views.js";
 import rumRouter from "./rum.js";
 import premiumRouter from "./premium.js";
-import adsRouter from "./ads.js";
 import hotRouter from "./hot.js";
 
 const router: IRouter = Router();
@@ -38,7 +37,6 @@ router.use(cacheWarmRouter);
 router.use(viewsRouter);
 router.use(rumRouter);
 router.use(premiumRouter);
-router.use(adsRouter);
 router.use(hotRouter);
 
 export default router;

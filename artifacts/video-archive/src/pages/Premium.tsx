@@ -17,7 +17,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { usePremium } from "@/contexts/PremiumContext";
 import { premiumApi } from "@/lib/premium-client";
-import { adsterraSmartlinkUrl } from "@/lib/ads";
+import { getDirectLink } from "@/lib/ad-creatives";
 
 export default function Premium() {
   const { user, loading } = useAuth();
@@ -68,9 +68,10 @@ export default function Premium() {
     setClaiming(true);
     setClaimMsg(null);
 
-    // Open the high-CPM Adsterra Smartlink in a new tab
-    const smartlink = adsterraSmartlinkUrl();
-    window.open(smartlink, "_blank", "noopener,noreferrer");
+    // Open the CrakRevenue smartlink (ads/direct-link.txt) in a new tab.
+    // Empty file → no link configured yet, so nothing opens.
+    const smartlink = getDirectLink();
+    if (smartlink) window.open(smartlink, "_blank", "noopener,noreferrer");
 
     try {
       const res = await premiumApi.claimReward();

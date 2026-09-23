@@ -5,8 +5,6 @@ import {
   injectAdMarkup,
   parseAdDimensions,
 } from "@/lib/ad-creatives";
-import { adsterraBannerConfig } from "@/lib/ads";
-import { JuicyAds } from "@/components/ads/JuicyAds";
 
 /**
  * AdBanner — the site's single ad slot primitive.
@@ -15,13 +13,11 @@ import { JuicyAds } from "@/components/ads/JuicyAds";
  *   1. Creatives pasted into `ads/<file>.txt` are injected (scripts execute)
  *      and ROTATED: a random creative first, then the next one every
  *      `rotateMs` (default 20s) when the file holds several codes.
- *   2. Optional env-driven network banner (VITE_ADSTERRA_BANNER_KEY +
- *      VITE_ADSTERRA_BANNER_INVOKE, or VITE_AD_NETWORK_SCRIPT + zone/class)
- *      when configured.
- *   3. Legacy env-driven JuicyAds zones (`VITE_JUICYADS_<NAME>_ZONE`), still
- *      rotated the same way, when passed via `zoneEnv`.
- *   4. Otherwise a styled dashed placeholder reserved at the exact size —
+ *   2. Otherwise a styled dashed placeholder reserved at the exact size —
  *      it matches the site UI, so layout is stable until real codes land.
+ *
+ * The site runs on CrakRevenue only: every slot reads its `ads/*.txt` file,
+ * and no ad-network environment variables are consulted anywhere.
  *
  * Nothing renders at all (not even the placeholder) when PremiumContext
  * says `showAds` is false: under-age-gate, premium members, or on excluded
@@ -44,38 +40,10 @@ const BREAKPOINT_CLASSES: Record<AdBreakpoint, string> = {
   "md-lg": "hidden md:flex lg:hidden",
 };
 
-interface JuicyZone {
-  zone: number;
-  width?: number;
-  height?: number;
-}
-
-/** Parse legacy `VITE_JUICYADS_<NAME>_ZONE` lists ("1126921:300x250,1126922"). */
-function parseJuicyZones(envName: string): JuicyZone[] {
-  const raw = (import.meta.env as Record<string, string | undefined>)[
-    `VITE_JUICYADS_${envName}_ZONE`
-  ];
-  if (!raw) return [];
-  const out: JuicyZone[] = [];
-  for (const part of raw.split(/[\s,;]+/)) {
-    if (!part) continue;
-    const m = /^(\d+)(?::(\d+)x(\d+))?$/i.exec(part);
-    if (!m) continue;
-    const zone = Number(m[1]);
-    if (!Number.isFinite(zone) || zone <= 0) continue;
-    out.push({
-      zone,
-      width: m[2] ? Number(m[2]) : undefined,
-      height: m[3] ? Number(m[3]) : undefined,
-    });
-  }
-  return out;
-}
-
 export interface AdBannerProps {
   /** `ads/<file>.txt` — extension optional; dimensions parsed from name. */
   file: string;
-  /** Text inside the placeholder (defaults to “Advertisement”). */
+  /** Text inside the placeholder (defaults to "Advertisement"). */
   label?: string;
   /** Override the width parsed from the file name. */
   width?: number;
@@ -89,8 +57,6 @@ export interface AdBannerProps {
   rotateMs?: number;
   /** Render the reserved placeholder when the file is empty (default true). */
   placeholder?: boolean;
-  /** Legacy JuicyAds zone env suffix (see parseJuicyZones). */
-  zoneEnv?: string;
   /** Extra classes on the slot root (e.g. `col-span-full`, `mb-8`). */
   className?: string;
 }
@@ -104,7 +70,6 @@ export function AdBanner({
   fluid = false,
   rotateMs = DEFAULT_ROTATE_MS,
   placeholder = true,
-  zoneEnv,
   className,
 }: AdBannerProps) {
   const { showAds } = usePremium();
@@ -112,27 +77,15 @@ export function AdBanner({
   const width = widthProp ?? dims.width;
   const height = heightProp ?? dims.height;
 
-  const creatives = useMemo(() => {
-    const fromFile = getAdCreatives(file);
-    if (fromFile.length > 0) return fromFile;
-    // Tier 2: optional env-driven network banner for empty slots
-    // (VITE_ADSTERRA_BANNER_KEY + _INVOKE, or VITE_AD_NETWORK_SCRIPT +
-    // zone/class) — undefined while those keys are empty, which falls
-    // through to the zone / placeholder tiers below.
-    const fromEnv = adsterraBannerConfig(width, height);
-    return fromEnv ? [fromEnv] : [];
-  }, [file, width, height]);
-  const zones = useMemo(() => (zoneEnv ? parseJuicyZones(zoneEnv) : []), [zoneEnv]);
+  const creatives = useMemo(() => getAdCreatives(file), [file]);
 
   // Start at a random creative so two slots with the same file don't sync.
   const [index, setIndex] = useState(() =>
     creatives.length > 1 ? Math.floor(Math.random() * creatives.length) : 0
   );
-  const [zoneIndex, setZoneIndex] = useState(() =>
-    zones.length > 1 ? Math.floor(Math.random() * zones.length) : 0
-  );
 
-  // Rotate file creatives …
+  // Rotate file creatives; skipped for single-creative files (the common
+  // case) so interval churn stays zero.
   useEffect(() => {
     if (creatives.length <= 1) return;
     const id = window.setInterval(
@@ -141,16 +94,6 @@ export function AdBanner({
     );
     return () => window.clearInterval(id);
   }, [creatives.length, rotateMs]);
-
-  // … and legacy JuicyAds zones on the same cadence.
-  useEffect(() => {
-    if (zones.length <= 1) return;
-    const id = window.setInterval(
-      () => setZoneIndex((i) => (i + 1) % zones.length),
-      rotateMs
-    );
-    return () => window.clearInterval(id);
-  }, [zones.length, rotateMs]);
 
   const hostRef = useRef<HTMLDivElement>(null);
 
@@ -183,19 +126,6 @@ export function AdBanner({
           aria-label={`Advertisement ${width} by ${height}`}
           className="flex items-center justify-center overflow-hidden"
           style={boxStyle}
-        />
-      </div>
-    );
-  }
-
-  if (zones.length > 0) {
-    const active = zones[Math.min(zoneIndex, zones.length - 1)];
-    return (
-      <div className={root}>
-        <JuicyAds
-          adzone={active.zone}
-          width={active.width ?? width}
-          height={active.height ?? height}
         />
       </div>
     );

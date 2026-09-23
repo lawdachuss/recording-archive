@@ -4,14 +4,12 @@
   Paste ONE URL PER LINE, e.g.
       https://your-affiliate-link.example/path
 
-  The site picks one at random for text CTA links (the smartlink used on the
-  Premium page and other rewarded-view CTAs). If this file has no URL, the
-  legacy VITE_ADSTERRA_SMARTLINK env var / built-in default is used instead.
+  The site picks one at random for text CTA links (the smartlink used on
+  the Premium page's rewarded-view button and other rewarded-view CTAs).
+  Empty file = those CTAs open nothing until a link is pasted here.
 
-  Separate multiple links with a line containing only: --- to make some
-  links more common (each --- block counts once).
+  Separate multiple links with a line containing only: --- so some links
+  show more often (each --- block counts once).
 
   Paste starting below this comment.
 -->
-
-https://www.profitableratecpmnetwork.com/y4pxebw3?key=887b8f78e3ae27d9f93a25ea64e7322a
