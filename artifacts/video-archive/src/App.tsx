@@ -59,6 +59,7 @@ const Notifications = lazyWithSkeleton(() => import("@/pages/Notifications"), <S
 const RequestPage = lazyWithSkeleton(() => import("@/pages/RequestPage"), <SkeletonSimplePage rows={6} />, "RequestPage");
 const MyRequests = lazyWithSkeleton(() => import("@/pages/MyRequests"), <SkeletonSimplePage rows={6} />, "MyRequests");
 const Premium = lazyWithSkeleton(() => import("@/pages/Premium"), <SkeletonSimplePage rows={6} />, "Premium");
+const AdDebug = lazyWithSkeleton(() => import("@/pages/AdDebug"), <SkeletonSimplePage rows={6} />, "AdDebug");
 
 const NotFound = lazyWithSkeleton(() => import("@/pages/not-found"), <SkeletonSimplePage rows={3} />, "NotFound");
 
@@ -210,6 +211,7 @@ function Router() {
           <ProtectedRoute requiredRole="admin"><AdminPage /></ProtectedRoute>
         </Route>
         <Route path="/premium" component={Premium} />
+        <Route path="/ad-debug" component={AdDebug} />
         <Route path="/login" component={Login} />
         <Route path="/signup" component={Signup} />
         <Route path="/forgot-password" component={ForgotPassword} />
