@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, memo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef, memo } from "react";
 import { cn } from "@/lib/utils";
 import { isConnectionConstrained } from "@/lib/connection";
 import { proxyImageUrl, isHttp2ResetHost, extractOriginalFromWsrv, markWsrvFailedForHost } from "@/lib/proxy-url";
@@ -67,6 +67,17 @@ function DefaultFallback() {
 const CORS_HOSTS = ["catbox.moe", "litter.catbox.moe", "files.catbox.moe"];
 
 /**
+ * Retry backoff for hosts whose shared HTTP/2 connection dies mid-flight
+ * (ERR_HTTP2_PING_FAILED): the death kills EVERY queued request at once and an
+ * immediate re-attempt rides the same dying connection (the duplicate error
+ * pairs in the console) — so retries are DELAYED to wait out the teardown;
+ * each attempt opens a fresh connection, which recovers. Three retries ≈ 12s
+ * before the card finally gives up. Non-flaky hosts keep the original fast
+ * single retry — a definitive 404 shouldn't hold a placeholder for seconds.
+ */
+const FLAKY_H2_RETRY_DELAYS_MS = [1000, 3000, 8000];
+
+/**
  * True when an <img> may load `url` in CORS mode without being blocked.
  * Same-origin URLs (relative /api/media proxy) are always readable; catbox
  * family sends ACAO. Everything else (iili.io, freeimage.host, imgchest, ...)
@@ -105,9 +116,27 @@ export const OptimizedImage = memo(function OptimizedImage({
   // When the proxy URL is wsrv.nl, remember the original so we can fall back
   // to loading directly if wsrv.nl is down (returns 404).
   const directSrc = extractOriginalFromWsrv(resolvedSrc);
+  // Is the image hosted on an HTTP/2-flaky host (catbox family)? Those get
+  // DELAYED retries (see FLAKY_H2_RETRY_DELAYS_MS) instead of one instant one.
+  const flakyH2 = useMemo(() => {
+    try {
+      return isHttp2ResetHost(new URL(resolvedSrc, window.location.origin).hostname);
+    } catch {
+      return false;
+    }
+  }, [resolvedSrc]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  // Pending delayed-retry timer — cleared on unmount / src change so a retry
+  // can never fire against a stale element.
+  const retryTimerRef = useRef<number | null>(null);
+  const clearRetryTimer = useCallback(() => {
+    if (retryTimerRef.current !== null) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+  }, []);
   // Whether the element is near the viewport. Below-fold lazy images keep a
   // blank src until an IntersectionObserver flips this — otherwise a 40-card
   // grid fires ~30 network requests at once on first paint and they serialize
@@ -115,12 +144,13 @@ export const OptimizedImage = memo(function OptimizedImage({
   const [inView, setInView] = useState(true);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Reset state when the src changes.
+  // Reset state when the src changes (also cancels any pending delayed retry).
   useEffect(() => {
     setLoaded(false);
     setError(false);
     setAttempt(0);
-  }, [resolvedSrc]);
+    return clearRetryTimer;
+  }, [resolvedSrc, clearRetryTimer]);
 
   // Below-fold lazy images wait for near-viewport intersection before fetching.
   useEffect(() => {
@@ -162,7 +192,28 @@ export const OptimizedImage = memo(function OptimizedImage({
       markWsrvFailedForHost(directSrc);
       // Immediately switch to direct URL on attempt 1! Do NOT retry the failed wsrv URL!
       setAttempt(1);
-    } else if (attempt === 0) {
+      return;
+    }
+    if (flakyH2) {
+      // Connection-death host: schedule the next attempt AFTER the backoff so
+      // it rides a fresh HTTP/2 connection instead of the dying one. The
+      // shimmer keeps covering the dead <img> until the retry fires.
+      const delay = FLAKY_H2_RETRY_DELAYS_MS[attempt];
+      if (delay !== undefined) {
+        clearRetryTimer();
+        retryTimerRef.current = window.setTimeout(() => {
+          retryTimerRef.current = null;
+          setAttempt((a) => a + 1);
+        }, delay);
+        return;
+      }
+      // Backoff budget exhausted — give up like any other host.
+      setError(true);
+      setLoaded(true);
+      onErrorProp?.();
+      return;
+    }
+    if (attempt === 0) {
       // One soft retry for non-wsrv URLs
       setAttempt(1);
     } else {
@@ -170,7 +221,7 @@ export const OptimizedImage = memo(function OptimizedImage({
       setLoaded(true);
       onErrorProp?.();
     }
-  }, [attempt, directSrc, onErrorProp]);
+  }, [attempt, directSrc, flakyH2, clearRetryTimer, onErrorProp]);
 
   if (error) {
     return fallback ?? <DefaultFallback />;

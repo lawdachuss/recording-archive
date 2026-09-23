@@ -750,4 +750,53 @@ describe("image-cache", () => {
       else (globalThis as any).window.location = prevLocation;
     });
   });
+
+  describe("cacheImage — HTTP/2 connection-death retry", () => {
+    it(
+      "retries a flaky-host network failure and caches on the next attempt",
+      { timeout: 15000 },
+      async () => {
+        const originalFetch = globalThis.fetch;
+        let calls = 0;
+        globalThis.fetch = vi.fn().mockImplementation(() => {
+          calls += 1;
+          if (calls === 1) return Promise.reject(new TypeError("Failed to fetch"));
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers: new Map([["content-type", "image/png"], ["content-length", "1000"]]),
+            blob: () => Promise.resolve(createMockBlob(1000)),
+            arrayBuffer: () => Promise.resolve(new ArrayBuffer(1000)),
+          });
+        });
+        try {
+          // files.catbox.moe is on the HTTP/2-flaky list → one rejected attempt
+          // (connection death), a 1s backoff, then a fresh attempt succeeds.
+          const entry = await imageCache.cacheImage("https://files.catbox.moe/retry.png", 3);
+          expect(entry).not.toBeNull();
+          expect(calls).toBe(2);
+          expect(await imageCache.isCached("https://files.catbox.moe/retry.png")).toBe(true);
+        } finally {
+          globalThis.fetch = originalFetch;
+        }
+      },
+    );
+
+    it("does NOT retry a network failure on a non-flaky host", async () => {
+      const originalFetch = globalThis.fetch;
+      let calls = 0;
+      globalThis.fetch = vi.fn().mockImplementation(() => {
+        calls += 1;
+        return Promise.reject(new TypeError("Failed to fetch"));
+      });
+      try {
+        // wsrv.nl is CORS-fetchable but NOT flaky → single attempt, no backoff wait.
+        const entry = await imageCache.cacheImage("https://images.weserv.nl/miss.png", 3);
+        expect(entry).toBeNull();
+        expect(calls).toBe(1);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
 });

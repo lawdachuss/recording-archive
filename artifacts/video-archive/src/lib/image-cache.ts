@@ -133,6 +133,9 @@ const FRESHNESS_MS = 30 * 60 * 1000; // 30 minutes — skip re-fetch if cached w
 const MAX_CACHE_BYTES = 200 * 1024 * 1024; // 200 MB — up from 150 MB to hold more sprites
 const FETCH_TIMEOUT_MS = 15_000; // 15s — HTTP/2 resets (ERR_HTTP2_PROTOCOL_ERROR) on some hosts timeout prematurely; give them room to recover
 const CONCURRENT_FETCHES = 8; // parallel workers for batch cacheImages (cacheImage() adds per-host limiting on top)
+const RETRY_DELAYS_MS = [1000, 3000]; // backoff between network-level attempts on HTTP/2-flaky hosts (see _cacheImageInner)
+/** Promise-based sleep for retry backoff. */
+const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ─── Priority types ─────────────────────────────────────────────────────────
 
@@ -803,72 +806,103 @@ async function _cacheImageInner(
     }
   } catch { /* not parseable — continue with the fetch */ }
 
+  // Cap concurrent in-flight requests to this host (catbox especially throttles).
+  const host = hostOf(url);
+
+  // HTTP/2 connection death (ERR_HTTP2_PING_FAILED) kills EVERY request on the
+  // shared connection at once — connect AND mid-body — and an immediate
+  // re-attempt rides the same dying connection (that's the duplicate error
+  // pairs in the console). Backoff retries wait out the teardown, then recover
+  // on a fresh connection. Only network-level throws and 429/5xx are retried;
+  // definitive 4xx / invalid bodies return null right away. Non-flaky hosts
+  // keep the single-attempt behaviour (maxAttempts = 1 → identical to before).
+  const flakyHost = isHttp2ResetHost(host) || SLOW_HOST_RE.test(host);
+  const maxAttempts = flakyHost ? RETRY_DELAYS_MS.length + 1 : 1;
+
   try {
     trackHit("fetch", url);
-    const fetchStart = performance.now();
-    const controller = new AbortController();
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (attempt > 0) await sleepMs(RETRY_DELAYS_MS[attempt - 1]);
 
-    // Cap concurrent in-flight requests to this host (catbox especially throttles).
-    const host = hostOf(url);
-    await acquireHost(host, priority);
+      const attemptStart = performance.now();
+      await acquireHost(host, priority);
+      const controller = new AbortController();
+      let entry: ImageCacheEntry | null = null;
+      let definitive = false;
+      try {
+        // Arm the timeout only AFTER the host slot is acquired. Arming it before
+        // the semaphore wait would let the 15s clock run while queued behind other
+        // in-flight fetches to a saturated host — the request would abort before
+        // it even started.
+        const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+        let res: Response;
+        try {
+          res = await fetch(url, {
+            signal: controller.signal,
+            headers: { "Accept": "image/*,video/*,*/*" },
+            credentials: url.startsWith("/") ? "same-origin" : "omit",
+            cache: "force-cache",
+          });
+          profile.fetchMs += performance.now() - attemptStart;
+          profile.fetchCount++;
+        } finally {
+          clearTimeout(timer);
+          releaseHost(host);
+        }
 
-    // Arm the timeout only AFTER the host slot is acquired. Arming it before
-    // the semaphore wait would let the 15s clock run while queued behind other
-    // in-flight fetches to a saturated host — the request would abort before
-    // it even started.
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        signal: controller.signal,
-        headers: { "Accept": "image/*,video/*,*/*" },
-        credentials: url.startsWith("/") ? "same-origin" : "omit",
-        cache: "force-cache",
-      });
-    } finally {
-      clearTimeout(timer);
-      releaseHost(host);
+        if (!res.ok) {
+          // 429 / 5xx are transient (rate-limit, CDN trouble) — retryable on
+          // flaky hosts; any other status is definitive.
+          if (res.status !== 429 && res.status < 500) definitive = true;
+        } else {
+          const contentType = res.headers.get("content-type") || "application/octet-stream";
+          const contentLength = parseInt(res.headers.get("content-length") || "0", 10);
+          // Previews/videos can be tens of MB — allow a much larger cap for media
+          // that isn't a small image. Images stay capped small (a multi-MB "image"
+          // is almost certainly a mis-detected video being fetched as a thumbnail).
+          const isVideoType = /video\//i.test(contentType) || /\/mp4$|\.webm|video\//i.test(url);
+          const isAnimatedMedia = /image\/webp/i.test(contentType) || /\.webp|\.mp4_preview/i.test(url);
+          const sizeCap = isVideoType ? 80 * 1024 * 1024 : isAnimatedMedia ? 40 * 1024 * 1024 : 10 * 1024 * 1024;
+          if (contentLength > sizeCap) {
+            definitive = true;
+          // Never cache the proxy's "Image unavailable" placeholder — storing it as a
+          // real thumbnail would mask a recovered image and serve a broken placeholder
+          // from IDB for up to 7 days.
+          } else if (contentType.includes("image/svg+xml")) {
+            definitive = true;
+          } else {
+            // Body read — an h2 connection dying mid-stream throws HERE, which
+            // the per-attempt catch treats as retryable.
+            const blob = await res.blob();
+            if (blob.size === 0 || blob.size > sizeCap) {
+              definitive = true;
+            } else {
+              // Validate magic bytes so a corrupt / non-image body is never stored.
+              const head = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+              if (!isValidImageMagic(head)) {
+                definitive = true;
+              } else {
+                const fresh: ImageCacheEntry = {
+                  url, blob, type: contentType,
+                  cachedAt: Date.now(), size: blob.size, priority,
+                };
+                enqueueWrite(fresh);
+                // Populate in-memory cache immediately
+                const blobUrl = URL.createObjectURL(blob);
+                memSet(url, blobUrl, fresh.size);
+                entry = fresh;
+              }
+            }
+          }
+        }
+      } catch {
+        // Network-level failure (connection death / abort / body stream cut).
+      }
+
+      if (entry) return entry;
+      if (definitive) return null;
     }
-    profile.fetchMs += performance.now() - fetchStart;
-    profile.fetchCount++;
-
-    if (!res.ok) {
-      return null;
-    }
-
-    const contentType = res.headers.get("content-type") || "application/octet-stream";
-    const contentLength = parseInt(res.headers.get("content-length") || "0", 10);
-    // Previews/videos can be tens of MB — allow a much larger cap for media
-    // that isn't a small image. Images stay capped small (a multi-MB "image"
-    // is almost certainly a mis-detected video being fetched as a thumbnail).
-    const isVideoType = /video\//i.test(contentType) || /\/mp4$|\.webm|video\//i.test(url);
-    const isAnimatedMedia = /image\/webp/i.test(contentType) || /\.webp|\.mp4_preview/i.test(url);
-    const sizeCap = isVideoType ? 80 * 1024 * 1024 : isAnimatedMedia ? 40 * 1024 * 1024 : 10 * 1024 * 1024;
-    if (contentLength > sizeCap) return null;
-    // Never cache the proxy's "Image unavailable" placeholder — storing it as a
-    // real thumbnail would mask a recovered image and serve a broken placeholder
-    // from IDB for up to 7 days.
-    if (contentType.includes("image/svg+xml")) return null;
-
-    const blob = await res.blob();
-    if (blob.size === 0 || blob.size > sizeCap) return null;
-
-    // Validate magic bytes so a corrupt / non-image body is never stored.
-    const head = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
-    if (!isValidImageMagic(head)) return null;
-
-    const entry: ImageCacheEntry = {
-      url, blob, type: contentType,
-      cachedAt: Date.now(), size: blob.size, priority,
-    };
-
-    enqueueWrite(entry);
-
-    // Populate in-memory cache immediately
-    const blobUrl = URL.createObjectURL(blob);
-    memSet(url, blobUrl, entry.size);
-
-    return entry;
+    return null;
   } catch {
     return null;
   }
