@@ -176,6 +176,22 @@ export function parseAdDimensions(file: string): { width: number; height: number
 export const stripAdComments = (html: string): string => html.replace(HTML_COMMENT, "\n");
 
 /**
+ * Bare URL lines from `ads/preroll.txt` — the file-fallback source for the
+ * pre-roll player (see lib/preroll.ts). Unlike banner-slot file creatives
+ * these stay RAW: the player feeds them straight to `<video src>`, never
+ * through bareUrlToMarkup's boxing.
+ */
+export function getPrerollFileUrls(): string[] {
+  const raw = rawFor("preroll");
+  if (!raw) return [];
+  const text = raw.replace(HTML_COMMENT, "\n");
+  return text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => BARE_URL.test(l));
+}
+
+/**
  * Inject raw ad markup into a host element and EXECUTE its scripts
  * (scripts created via innerHTML never run — swap each for a fresh copy).
  *

@@ -9,7 +9,7 @@ import { resolveApiPath } from "@/lib/api-base";
 import {
   Megaphone, Plus, Trash2, Pencil, Check, X,
   AlertTriangle, RefreshCw, Code2, Link2, Radio, Database,
-  ChevronUp, ChevronDown, Copy, Eye, SlidersHorizontal, Save, RotateCcw,
+  ChevronUp, ChevronDown, Copy, Eye, SlidersHorizontal, Save, RotateCcw, Film,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,8 +23,11 @@ const SELECT_CLASS =
   "h-9 rounded-md border border-input bg-transparent px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50";
 
 const SINGLE_URL = /^https?:\/\/\S+$/i;
+/** Hosted video files (pre-roll slot) — shown with a <video> preview instead of an <img>. */
+const VIDEO_EXT = /\.(mp4|webm|mov|m4v)(\?|#|$)/i;
 
 const isSingleUrl = (s: string) => SINGLE_URL.test(s.trim()) && !/\s/.test(s.trim());
+const isVideoUrl = (s: string) => VIDEO_EXT.test(s.trim());
 
 /** Same heuristic the API uses: a lone http(s) URL with no spaces → url creative. */
 const detectKind = (content: string): "html" | "url" =>
@@ -43,7 +46,7 @@ type TabId = "creatives" | "placements";
 /**
  * Admin → Ads — the full ad control system:
  *
- *  • **Creatives tab** — CRUD over `ad_creatives` for all 13 placeholders:
+ *  • **Creatives tab** — CRUD over `ad_creatives` for all 14 placeholders:
  *    add (bulk URL lines), inline edit, enable/disable, duplicate, delete,
  *    clear-slot, rotation order (↑↓), and a sandboxed HTML preview.
  *  • **Placements tab** — WHERE ads show: per-page switches, per-zone
@@ -186,18 +189,24 @@ export default function AdminAds() {
     }
     const n = chunks.length;
     // Banner slots probe pasted links at save time and store the embed that
-    // fits them (img / iframe / click box); popunder & direct-link keep raw.
+    // fits them (img / iframe / click box); popunder, direct-link & preroll
+    // keep raw (script codes, smartlinks, video URLs for <video src>).
     const autoEmbedNote =
-      urlLines.length > 0 && activeSlot !== "direct-link" && activeSlot !== "popunder"
+      urlLines.length > 0 &&
+      activeSlot !== "direct-link" &&
+      activeSlot !== "popunder" &&
+      activeSlot !== "preroll"
         ? ` ${urlLines.length} link${urlLines.length === 1 ? "" : "s"} auto-embedded.`
         : "";
     // Tell the truth about visibility: slots rotate ONE creative at a time at
     // a random start, so a new banner can take a full cycle to appear.
     const afterAdd = (rows ?? []).filter((r) => r.slot === activeSlot).length + n;
     const message =
-      (afterAdd > 1
-        ? `Added ${n === 1 ? "creative" : `${n} creatives`} to “${slotDef.label}” — ${afterAdd} creatives rotate there (one at a time, every ${settings.rotationSeconds}s, random start — preview yours with the Eye)`
-        : `Added ${n === 1 ? "creative" : `${n} creatives`} to “${slotDef.label}”`) + autoEmbedNote;
+      activeSlot === "preroll"
+        ? `Added ${n === 1 ? "creative" : `${n} creatives`} to “${slotDef.label}” — each video page picks one at random per visit (Skip after 5s)`
+        : (afterAdd > 1
+            ? `Added ${n === 1 ? "creative" : `${n} creatives`} to “${slotDef.label}” — ${afterAdd} creatives rotate there (one at a time, every ${settings.rotationSeconds}s, random start — preview yours with the Eye)`
+            : `Added ${n === 1 ? "creative" : `${n} creatives`} to “${slotDef.label}”`) + autoEmbedNote;
     run(async () => {
       for (const url of urlLines) {
         await req("/api/admin/ads", "POST", { slot: activeSlot, kind: "url", content: url });
@@ -301,7 +310,7 @@ export default function AdminAds() {
   const totalOn = counts.get(activeSlot)?.on ?? 0;
   const totalRows = counts.get(activeSlot)?.total ?? 0;
   const inCardSlots = AD_SLOTS.filter(
-    (s) => s.file !== "popunder" && s.file !== "direct-link",
+    (s) => s.file !== "popunder" && s.file !== "direct-link" && s.file !== "preroll",
   );
 
   return (
@@ -442,6 +451,8 @@ export default function AdminAds() {
                       <Link2 className="w-4 h-4 text-primary" />
                     ) : activeSlot === "popunder" ? (
                       <Code2 className="w-4 h-4 text-primary" />
+                    ) : activeSlot === "preroll" ? (
+                      <Film className="w-4 h-4 text-primary" />
                     ) : (
                       <Megaphone className="w-4 h-4 text-primary" />
                     )}
@@ -483,7 +494,9 @@ export default function AdminAds() {
                       ? "https://affiliate-link.example/…  (one URL per line)"
                       : activeSlot === "popunder"
                         ? "Paste your popunder <script>…</script> code here"
-                        : "Paste a link — it auto-embeds (image, widget, or click-through) — or a full HTML/JS ad code, one per line…"
+                        : activeSlot === "preroll"
+                          ? "https://video.example/prerolls/ad.mp4  — hosted pre-roll video URL (StripCash), one per line…"
+                          : "Paste a link — it auto-embeds (image, widget, or click-through) — or a full HTML/JS ad code, one per line…"
                   }
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
@@ -511,7 +524,9 @@ export default function AdminAds() {
                 </div>
               ) : slotRows.length === 0 ? (
                 <div className="py-10 text-center text-sm text-muted-foreground border border-dashed border-border/40 rounded-lg">
-                  No creatives in this slot yet — the site shows a styled size placeholder until you add one.
+                  {activeSlot === "preroll"
+                    ? "No pre-roll videos yet — video pages start the main video directly until you add one."
+                    : "No creatives in this slot yet — the site shows a styled size placeholder until you add one."}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -524,16 +539,29 @@ export default function AdminAds() {
                     >
                       {/* Preview */}
                       {row.kind === "url" ? (
-                        <img
-                          src={row.content}
-                          alt=""
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                          className="w-20 h-16 object-contain bg-black rounded border border-border/40 shrink-0"
-                          onError={(e) => {
-                            (e.currentTarget as HTMLImageElement).style.visibility = "hidden";
-                          }}
-                        />
+                        isVideoUrl(row.content) ? (
+                          <video
+                            src={row.content}
+                            preload="metadata"
+                            muted
+                            playsInline
+                            className="w-20 h-16 object-contain bg-black rounded border border-border/40 shrink-0"
+                            onError={(e) => {
+                              e.currentTarget.style.visibility = "hidden";
+                            }}
+                          />
+                        ) : (
+                          <img
+                            src={row.content}
+                            alt=""
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                            className="w-20 h-16 object-contain bg-black rounded border border-border/40 shrink-0"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).style.visibility = "hidden";
+                            }}
+                          />
+                        )
                       ) : (
                         <div className="w-20 h-16 flex items-center justify-center bg-black/40 rounded border border-border/40 shrink-0">
                           <Code2 className="w-5 h-5 text-muted-foreground" />
@@ -553,7 +581,11 @@ export default function AdminAds() {
                           <>
                             <div className="flex items-center gap-2 mb-1">
                               <Badge variant="outline" className="text-[9px] uppercase">
-                                {row.kind === "url" ? "Image URL" : "HTML/JS"}
+                                {row.kind === "url"
+                                  ? isVideoUrl(row.content)
+                                    ? "Video URL"
+                                    : "Image URL"
+                                  : "HTML/JS"}
                               </Badge>
                               {!row.enabled && <Badge variant="rejected">Disabled</Badge>}
                             </div>

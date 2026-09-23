@@ -1,0 +1,15 @@
+<!--
+  preroll.txt — Pre-roll video ads (StripCash / hosted .mp4 files)
+
+  Paste ONE VIDEO URL PER LINE, e.g.
+      https://video.whitetrafsa.com/production/prerolls/example.mp4
+
+  Each Video detail page picks one at random and plays it over the player
+  before the main video starts (Skip button after 5s). A dead URL releases
+  the player immediately — it never blocks the video.
+
+  Prefer Admin → Ads → "Pre-roll video": file edits need a rebuild, admin
+  edits are instant and go live on every open page.
+
+  Paste starting below this comment.
+-->

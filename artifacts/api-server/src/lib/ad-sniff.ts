@@ -18,8 +18,9 @@
  *     failure) → store the raw link: exactly what pasting did before the
  *     sniff existed, so a flaky probe never regresses a working paste.
  *
- * Banner slots only — slotDims() returns null for popunder / direct-link,
- * which keep raw script codes / smartlinks by design.
+ * Banner slots only — slotDims() returns null for popunder / direct-link /
+ * preroll, which keep raw content by design (script codes, smartlinks, and
+ * pre-roll video URLs that must reach a `<video src>` untouched).
  *
  * The generated <iframe>/<img>/box markup mirrors
  * artifacts/video-archive/src/lib/ad-creatives.ts `bareUrlToMarkup`
@@ -39,7 +40,7 @@ export interface AdDims {
   height: number;
 }
 
-/** `billboard-970x250` → 970 × 250; dimension-less slots (popunder, direct-link) → null. */
+/** `billboard-970x250` → 970 × 250; dimension-less slots (popunder, direct-link, preroll) → null. */
 export function slotDims(slot: string): AdDims | null {
   const m = /(\d{2,4})\s*[x×]\s*(\d{2,4})/i.exec(slot);
   return m ? { width: Number(m[1]), height: Number(m[2]) } : null;

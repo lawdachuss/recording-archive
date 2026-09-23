@@ -34,7 +34,7 @@ FILE FORMAT (same in files and in the admin panel)
   * Popunder.html and direct-link.txt (smartlink URLs) take the same
     content types — they are also managed from Admin → Ads.
 
-SLOT INVENTORY (13 placeholders — admin panel lists them all)
+SLOT INVENTORY (14 placeholders — admin panel lists them all)
 -------------------------------------------------------------
   File                        Size      Used on
   --------------------------- --------- -----------------------------------
@@ -59,6 +59,10 @@ SLOT INVENTORY (13 placeholders — admin panel lists them all)
   popunder                    —         HTML/JS popunder code, once/pageload
   direct-link                 —         smartlink URLs (one per row); used
                                         by the Premium page reward CTA
+  preroll                     —         pre-roll video URLs (one per row);
+                                        one plays at random before the main
+                                        video on Video detail pages, skip
+                                        after 5s
 
 IMPORTANT NOTES
 ---------------

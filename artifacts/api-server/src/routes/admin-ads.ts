@@ -38,10 +38,13 @@ const SLOTS = new Set([
   "square-250x250",
   "popunder",
   "direct-link",
+  "preroll",
 ]);
 
-/** Slots that may feed the in-card thumbnail layer (banner slots, not popunder/direct-link). */
-const IN_CARD_SLOTS = new Set([...SLOTS].filter((s) => s !== "popunder" && s !== "direct-link"));
+/** Slots that may feed the in-card thumbnail layer (banner slots — not popunder/direct-link/preroll). */
+const IN_CARD_SLOTS = new Set(
+  [...SLOTS].filter((s) => s !== "popunder" && s !== "direct-link" && s !== "preroll"),
+);
 
 const PAGE_IDS = new Set([
   "home", "browse", "video", "performers", "charts", "tags", "collections",
@@ -49,7 +52,7 @@ const PAGE_IDS = new Set([
   "notifications", "my-requests", "request", "profile", "settings",
 ]);
 
-const PLACEMENT_IDS = new Set(["strip", "feed", "box", "inCard", "popunder", "rewardCta", "stripcash"]);
+const PLACEMENT_IDS = new Set(["strip", "feed", "box", "inCard", "popunder", "rewardCta", "stripcash", "preroll"]);
 
 const URL_RE = /^https?:\/\/\S+$/i;
 const MAX_CONTENT = 200_000;

@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
@@ -28,6 +28,10 @@ import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { proxyUrl } from "@/lib/proxy-url";
 import { AdBanner } from "@/components/ads/AdBanner";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
+import { PrerollPlayer } from "@/components/ads/PrerollPlayer";
+import { usePremium } from "@/contexts/PremiumContext";
+import { useAds } from "@/contexts/AdsContext";
+import { pickPreroll, type PrerollCreative } from "@/lib/preroll";
 
 import {
   AlertCircle, ArrowLeft, Maximize2, Minimize2,
@@ -194,6 +198,39 @@ export default function VideoDetail() {
     if (typeof window === "undefined") return false;
     return sessionStorage.getItem("vplayed") === id;
   });
+
+  // Pre-roll ad (Admin → Ads → "Pre-roll video" slot): "idle" waits for the
+  // play gesture on iframe servers (auto-arms on mount for direct-<video>
+  // servers — no click exists there), "playing" shows the overlay, "done"
+  // never re-arms during this page visit (server switches included).
+  const [prerollPhase, setPrerollPhase] = useState<"idle" | "playing" | "done">("idle");
+  const [activePreroll, setActivePreroll] = useState<PrerollCreative | null>(null);
+  const { showAds } = usePremium();
+  const { rows: adRows, settings: adSettings } = useAds();
+  const prerollOn = showAds && adSettings.placements.preroll !== false;
+  const preroll = useMemo(() => (prerollOn ? pickPreroll(adRows) : null), [prerollOn, adRows]);
+
+  const startPlayback = useCallback(() => {
+    setVideoStarted(true);
+    if (id) sessionStorage.setItem("vplayed", id);
+  }, [id]);
+
+  /** Poster click: gate through the preroll when one is armed, else start. */
+  const handlePosterClick = () => {
+    if (prerollOn && prerollPhase === "idle" && preroll) {
+      setActivePreroll(preroll);
+      setPrerollPhase("playing");
+      return;
+    }
+    startPlayback();
+  };
+
+  /** Preroll ended/errored/skipped → start the main video (never the other way around). */
+  const finishPreroll = useCallback(() => {
+    setPrerollPhase("done");
+    setActivePreroll(null);
+    startPlayback();
+  }, [startPlayback]);
   const [bookmarked, setBookmarked] = useState(false);
   const bookmarkedRef = useRef(false);
   const [watchLater, setWatchLater] = useState(false);
@@ -258,6 +295,8 @@ export default function VideoDetail() {
 
   useEffect(() => {
     setVideoStarted(sessionStorage.getItem("vplayed") === id);
+    setPrerollPhase("idle");
+    setActivePreroll(null);
     setActiveServer(0);
     setCollectionOpen(false);
     setAddedToCol(null);
@@ -392,6 +431,16 @@ export default function VideoDetail() {
 
   const servers = deriveServers(video?.embed_url, video?.preview_url, video?.links);
   const currentServer = servers[activeServer] ?? servers[0];
+
+  // Direct-<video> servers start playing on their own (no click to gate), so
+  // arm the preroll here; iframe servers arm on the poster click instead.
+  // A video already started in this tab (`vplayed`) never re-arms.
+  useEffect(() => {
+    if (prerollPhase !== "idle" || !preroll || videoStarted) return;
+    if (currentServer?.type !== "video") return;
+    setActivePreroll(preroll);
+    setPrerollPhase("playing");
+  }, [prerollPhase, preroll, videoStarted, currentServer?.type]);
 
   const posterUrl = video?.sprite_url || video?.thumbnail_url;
 
@@ -633,13 +682,13 @@ export default function VideoDetail() {
                 className="relative group aspect-video w-full bg-black overflow-hidden rounded-sm"
               >
                   {currentServer?.type === "iframe" && !videoStarted ? (
-                    /* Poster / click-to-play */
+                    /* Pre-roll first (armed by this click), else poster / click-to-play */
+                    prerollPhase === "playing" && prerollOn && activePreroll ? (
+                      <PrerollPlayer creative={activePreroll} onDone={finishPreroll} withGesture />
+                    ) : (
                     <button
                       className="absolute inset-0 w-full h-full cursor-pointer focus:outline-none"
-                      onClick={() => {
-                        setVideoStarted(true);
-                        if (id) sessionStorage.setItem("vplayed", id);
-                      }}
+                      onClick={handlePosterClick}
                       aria-label="Play video"
                     >
                     {proxyUrl(posterUrl) ? (
@@ -672,7 +721,8 @@ export default function VideoDetail() {
                         {video.resolution}
                       </div>
                     )}
-                  </button>
+                    </button>
+                    )
                 ) : currentServer?.type === "link" ? (
                   <div className="w-full h-full flex flex-col items-center justify-center gap-4 bg-black/80 p-8">
                     <p className="text-muted-foreground text-sm text-center">
@@ -697,6 +747,7 @@ export default function VideoDetail() {
                     title={video.room_title || video.filename}
                   />
                 ) : currentServer?.type === "video" ? (
+                  <>
                   <video
                     key={currentServer.src}
                     src={currentServer.src}
@@ -707,6 +758,10 @@ export default function VideoDetail() {
                     playsInline
                     controls
                   />
+                    {prerollPhase === "playing" && prerollOn && activePreroll && (
+                      <PrerollPlayer creative={activePreroll} onDone={finishPreroll} />
+                    )}
+                  </>
                 ) : currentServer?.type === "img" ? (
                   <OptimizedImage
                     src={currentServer.src}

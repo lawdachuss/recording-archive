@@ -18,6 +18,7 @@ describe("slotDims", () => {
   it("returns null for dimension-less slots (raw content by design)", () => {
     expect(slotDims("popunder")).toBeNull();
     expect(slotDims("direct-link")).toBeNull();
+    expect(slotDims("preroll")).toBeNull(); // video URLs must stay raw for <video src>
   });
 });
 

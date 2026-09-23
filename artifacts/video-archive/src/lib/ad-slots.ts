@@ -33,6 +33,7 @@ export const AD_SLOTS: AdSlotDef[] = [
   { file: "square-250x250", label: "Square", size: "250×250", note: "Spare square slot.", spare: true },
   { file: "popunder", label: "Popunder", size: "—", note: "HTML/JS popunder code — one random creative fires once per page load." },
   { file: "direct-link", label: "Direct Links / Smartlinks", size: "—", note: "One URL per row — used by the Premium page's reward CTA." },
+  { file: "preroll", label: "Pre-roll video", size: "—", note: "Plays before the video on Video detail — paste hosted .mp4 links (StripCash prerolls), one per line." },
 ];
 
 /** Zones ads render in — each can be switched off from Admin → Ads → Placements. */
@@ -43,7 +44,8 @@ export type AdPlacementId =
   | "inCard"
   | "popunder"
   | "rewardCta"
-  | "stripcash";
+  | "stripcash"
+  | "preroll";
 
 export interface AdPlacementDef {
   id: AdPlacementId;
@@ -59,6 +61,7 @@ export const AD_PLACEMENTS: AdPlacementDef[] = [
   { id: "popunder", label: "Popunder", note: "One popunder fires per page load." },
   { id: "rewardCta", label: "Premium reward CTA link", note: "The direct link opened by the reward claim button on the Premium page." },
   { id: "stripcash", label: "StripCash smartlink (Stripchat)", note: "API-key smartlink — rotates into the reward CTA link pool and the popunder. StripCash banner codes go in slots as usual." },
+  { id: "preroll", label: "Pre-roll video", note: "Plays before the video on Video detail pages — one random creative per visit, skip after 5s." },
 ];
 
 /** Pages with an individual ad on/off switch. */
