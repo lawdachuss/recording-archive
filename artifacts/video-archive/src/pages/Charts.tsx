@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Link } from "wouter";
 import { useListRecordings, useGetStats, getListRecordingsQueryKey, getGetStatsQueryKey } from "@workspace/api-client-react";
 import { useListPerformers } from "@/lib/api";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
+import { AdGridCard } from "@/components/ads/AdGridCard";
 import { isAdCard } from "@/lib/ad-creatives";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OptimizedImage } from "@/components/ui/optimized-image";
@@ -249,7 +250,12 @@ export default function Charts() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
                   {loading
                     ? Array.from({ length: 18 }).map((_, i) => <VideoSkeleton key={i} />)
-                    : recordings?.slice(3).map((rec, i) => <VideoCard key={rec.id} recording={rec} showAd={isAdCard(recordings?.slice(3) ?? [], i)} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />)}
+                    : recordings?.slice(3).map((rec, i) => (
+                        <Fragment key={rec.id}>
+                          <VideoCard recording={rec} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
+                          {isAdCard(recordings?.slice(3) ?? [], i) && <AdGridCard />}
+                        </Fragment>
+                      ))}
                 </div>
               </>
             )}

@@ -10,9 +10,10 @@ import { useListPerformers, useListRecommendations } from "@/lib/api";
 import { Link, useLocation } from "wouter";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
+import { AdGridCard } from "@/components/ads/AdGridCard";
 import { isAdCard } from "@/lib/ad-creatives";
 import { PerformerCard } from "@/components/PerformerCard";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, parseCloudItem, cloudItemToRecording } from "@/lib/user-api";
@@ -223,9 +224,10 @@ export default function Home() {
           ) : recordings && recordings.length > 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-8 animate-fade-in-up">
               {recordings.map((rec, i) => (
-                <div key={rec.id}>
-                  <VideoCard recording={rec} showAd={isAdCard(recordings, i)} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
-                </div>
+                <Fragment key={rec.id}>
+                  <VideoCard recording={rec} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
+                  {isAdCard(recordings, i) && <AdGridCard />}
+                </Fragment>
               ))}
             </div>
           ) : (

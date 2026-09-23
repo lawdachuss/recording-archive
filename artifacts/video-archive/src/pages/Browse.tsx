@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useCallback,
+  Fragment,
 } from "react";
 import { useSearch, useLocation } from "wouter";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
@@ -18,6 +19,7 @@ import {
 import { Layout } from "@/components/Layout";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { VideoCard } from "@/components/VideoCard";
+import { AdGridCard } from "@/components/ads/AdGridCard";
 import { isAdCard } from "@/lib/ad-creatives";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
@@ -743,14 +745,14 @@ export default function Browse() {
                   className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8 animate-fade-in-up ${pageLoading ? "opacity-30 saturate-50" : "transition-all duration-300"}`}
                 >
                   {recordings.map((rec, i) => (
-                    <div key={rec.id}>
+                    <Fragment key={rec.id}>
                       <VideoCard
                         recording={rec}
-                        showAd={isAdCard(recordings, i)}
                         fetchPriority={i < 10 ? "high" : undefined}
                         isWatched={recentlyWatched.has(rec.id)}
                       />
-                    </div>
+                      {isAdCard(recordings, i) && <AdGridCard />}
+                    </Fragment>
                   ))}
                 </div>
 

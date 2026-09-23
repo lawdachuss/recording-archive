@@ -399,8 +399,12 @@ function getAdCardSet<T>(items: readonly T[]): ReadonlySet<number> {
 }
 
 /**
- * Random in-card ad placement — grids call it per card:
- *   showAd={isAdCard(recordings, i)}
+ * Random in-feed ad placement — grids insert a STANDALONE <AdGridCard />
+ * next to the picked card (its own grid cell, never over a video):
+ *   <Fragment key={rec.id}>
+ *     <VideoCard recording={rec} … />
+ *     {isAdCard(recordings, i) && <AdGridCard />}
+ *   </Fragment>
  * Replaces the old fixed every-8th pattern: each page shows at most 2 ad
  * cards, at unpredictable positions (see getAdCardSet for the seed rules).
  */

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
@@ -6,6 +6,7 @@ import { Layout } from "@/components/Layout";
 import { AdBanner } from "@/components/ads/AdBanner";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { VideoCard } from "@/components/VideoCard";
+import { AdGridCard } from "@/components/ads/AdGridCard";
 import { isAdCard } from "@/lib/ad-creatives";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import { useAuth } from "@/contexts/AuthContext";
@@ -262,16 +263,19 @@ export default function CollectionDetail() {
             {items.map((item: CloudItem, i) => {
               const rec = parseCloudItem(item);
               return (
-                <div key={rec.id} className="relative group/card">
-                  <VideoCard recording={toRecording(rec)} showAd={isAdCard(items, i)} isWatched={recentlyWatched.has(rec.id)} />
-                  <button
-                    onClick={() => handleRemove(rec.id)}
-                    className="absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center bg-black/30 backdrop-blur-sm ring-1 ring-white/10 text-white/60 hover:text-red-400 hover:bg-red-600/60 hover:ring-red-600/30 transition-all rounded opacity-0 group-hover/card:opacity-100"
-                    title="Remove from collection"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
+                <Fragment key={rec.id}>
+                  <div className="relative group/card">
+                    <VideoCard recording={toRecording(rec)} isWatched={recentlyWatched.has(rec.id)} />
+                    <button
+                      onClick={() => handleRemove(rec.id)}
+                      className="absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center bg-black/30 backdrop-blur-sm ring-1 ring-white/10 text-white/60 hover:text-red-400 hover:bg-red-600/60 hover:ring-red-600/30 transition-all rounded opacity-0 group-hover/card:opacity-100"
+                      title="Remove from collection"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                  {isAdCard(items, i) && <AdGridCard />}
+                </Fragment>
               );
             })}
           </div>

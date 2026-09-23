@@ -26,7 +26,7 @@ export const AD_SLOTS: AdSlotDef[] = [
   { file: "banner-468x60", label: "Banner", size: "468×60", note: "Top strip + footer (medium screens)." },
   { file: "mobile-banner-320x50", label: "Mobile Banner", size: "320×50", note: "Site-wide top strip (phones)." },
   { file: "rect-300x100", label: "Rectangle (in-feed)", size: "300×100", note: "In-feed rows — Home, Browse, grids, above comments." },
-  { file: "medium-rect-300x250", label: "Medium Rectangle", size: "300×250", note: "Sidebars, footer (phones), narrow pages, and the default in-card layer source." },
+  { file: "medium-rect-300x250", label: "Medium Rectangle", size: "300×250", note: "Sidebars, footer (phones), narrow pages, and the default grid ad card source." },
   { file: "large-rect-336x280", label: "Large Rectangle", size: "336×280", note: "Spare rectangle slot.", spare: true },
   { file: "half-page-300x600", label: "Half Page", size: "300×600", note: "VideoDetail sidebar (desktop)." },
   { file: "skyscraper-160x600", label: "Skyscraper", size: "160×600", note: "Spare sidebar skyscraper slot.", spare: true },
@@ -57,7 +57,7 @@ export const AD_PLACEMENTS: AdPlacementDef[] = [
   { id: "strip", label: "Top strips & dividers", note: "Leaderboard/billboard/banner tiers — headers, footers, section dividers." },
   { id: "feed", label: "In-feed rectangles", note: "300×100 banners inside video grids (Home, Browse, Charts, comments…)." },
   { id: "box", label: "Sidebars & boxes", note: "Medium/half-page/skyscraper boxes — VideoDetail sidebar, footers, narrow pages." },
-  { id: "inCard", label: "In-card thumbnail layer", note: "Ads overlaid on random video thumbnails (count/slot set below)." },
+  { id: "inCard", label: "In-feed grid ad cards", note: "Standalone ad cards inserted into video grids — never covering a recording (count/slot set below)." },
   { id: "popunder", label: "Popunder", note: "One popunder fires per page load." },
   { id: "rewardCta", label: "Premium reward CTA link", note: "The direct link opened by the reward claim button on the Premium page." },
   { id: "stripcash", label: "StripCash smartlink (Stripchat)", note: "API-key smartlink — rotates into the reward CTA link pool and the popunder. StripCash banner codes go in slots as usual." },
@@ -126,9 +126,9 @@ export interface AdSettings {
   /** zoneId → zone enabled (missing = on). */
   placements: Record<string, boolean>;
   inCard: {
-    /** How many in-card ad slots a grid may pick per page (0 disables). */
+    /** How many standalone ad cards a grid may insert per page (0 disables). */
     maxPerPage: number;
-    /** Which slot feeds the in-card layer. */
+    /** Which slot feeds the grid ad cards. */
     slot: string;
   };
   /** Creative rotation interval in seconds. */

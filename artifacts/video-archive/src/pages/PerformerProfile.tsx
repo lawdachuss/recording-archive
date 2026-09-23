@@ -1,10 +1,11 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { Fragment, useState, useMemo, useEffect, useRef } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { useGetPerformer, getGetPerformerQueryKey } from "@workspace/api-client-react";
 import { Layout } from "@/components/Layout";
 import { VideoCard } from "@/components/VideoCard";
+import { AdGridCard } from "@/components/ads/AdGridCard";
 import { isAdCard } from "@/lib/ad-creatives";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OptimizedImage } from "@/components/ui/optimized-image";
@@ -262,9 +263,12 @@ export default function PerformerProfile() {
           <>
             <div ref={gridRef} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8">
               {pagedRecordings.map((rec, i) => (
-                <div key={rec.id} className="animate-fade-in-up" style={{ animationDelay: `${i * 30}ms` }}>
-                  <VideoCard recording={rec} showAd={isAdCard(pagedRecordings, i)} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
-                </div>
+                <Fragment key={rec.id}>
+                  <div className="animate-fade-in-up" style={{ animationDelay: `${i * 30}ms` }}>
+                    <VideoCard recording={rec} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
+                  </div>
+                  {isAdCard(pagedRecordings, i) && <AdGridCard />}
+                </Fragment>
               ))}
             </div>
 

@@ -51,7 +51,7 @@ type TabId = "creatives" | "placements";
  *    clear-slot, rotation order (↑↓), and a sandboxed HTML preview.
  *  • **Placements tab** — WHERE ads show: per-page switches, per-zone
  *    switches (strips / in-feed / boxes / in-card / popunder / reward CTA /
- *    StripCash), the in-card layer (max per page + source slot), the rotation
+ *    StripCash), the in-feed ad cards (max per page + source slot), the rotation
  *    interval and a live StripCash API-key connection card — all persisted
  *    to `ad_settings`.
  *
@@ -732,7 +732,7 @@ export default function AdminAds() {
             <CardHeader>
               <CardTitle className="text-sm font-bold tracking-tight">Show ads on which pages</CardTitle>
               <p className="text-xs text-muted-foreground">
-                Turn a page off and every ad on it disappears instantly (banners, in-card layer,
+                Turn a page off and every ad on it disappears instantly (banners, grid ad cards,
                 popunder). Auth, premium and admin pages are always excluded regardless.
               </p>
             </CardHeader>
@@ -872,14 +872,14 @@ export default function AdminAds() {
           {/* In-card + rotation */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm font-bold tracking-tight">In-card layer &amp; rotation</CardTitle>
+              <CardTitle className="text-sm font-bold tracking-tight">In-feed ad cards &amp; rotation</CardTitle>
               <p className="text-xs text-muted-foreground">
-                Fine-tune the thumbnail ad overlay and how fast creatives rotate inside every slot.
+                Fine-tune the standalone ad cards grids insert and how fast creatives rotate inside every slot.
               </p>
             </CardHeader>
             <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <label className="space-y-1.5 text-sm">
-                <span className="block font-medium">In-card ads per page (0–6)</span>
+                <span className="block font-medium">Grid ad cards per page (0–6)</span>
                 <select
                   className={SELECT_CLASS + " w-full"}
                   value={draftSettings.inCard.maxPerPage}
@@ -893,12 +893,12 @@ export default function AdminAds() {
                   ))}
                 </select>
                 <span className="block text-[11px] text-muted-foreground">
-                  How many video thumbnails may carry an ad (grid picks them randomly).
+                  How many ad cards each grid inserts (picked at random, own cell — never over a video).
                 </span>
               </label>
 
               <label className="space-y-1.5 text-sm">
-                <span className="block font-medium">In-card source slot</span>
+                <span className="block font-medium">Grid ad card source slot</span>
                 <select
                   className={SELECT_CLASS + " w-full"}
                   value={draftSettings.inCard.slot}

@@ -1,10 +1,11 @@
-import { useEffect } from "react";
+import { Fragment, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { VideoCard } from "@/components/VideoCard";
+import { AdGridCard } from "@/components/ads/AdGridCard";
 import { isAdCard } from "@/lib/ad-creatives";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, parseCloudItem, cloudItemToRecording } from "@/lib/user-api";
@@ -108,18 +109,20 @@ export default function WatchLater() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
             {queue.map((rec, index) => (
-              <div key={rec.id} className="relative group/card animate-fade-in-up" style={{ animationDelay: `${index * 20}ms` }}>
-                <div className="absolute top-2 left-2 z-10 w-6 h-6 rounded-lg border border-primary/40 text-primary text-[10px] font-bold flex items-center justify-center">
-                  {index + 1}
+              <Fragment key={rec.id}>
+                <div className="relative group/card animate-fade-in-up" style={{ animationDelay: `${index * 20}ms` }}>
+                  <div className="absolute top-2 left-2 z-10 w-6 h-6 rounded-lg border border-primary/40 text-primary text-[10px] font-bold flex items-center justify-center">
+                    {index + 1}
+                  </div>
+                  <VideoCard
+                    recording={cloudItemToRecording(rec)}
+                    showRemove
+                    onRemove={() => handleRemove(rec.id)}
+                    isWatched={recentlyWatched.has(rec.id)}
+                  />
                 </div>
-                <VideoCard
-                  recording={cloudItemToRecording(rec)}
-                  showAd={isAdCard(queue, index)}
-                  showRemove
-                  onRemove={() => handleRemove(rec.id)}
-                  isWatched={recentlyWatched.has(rec.id)}
-                />
-              </div>
+                {isAdCard(queue, index) && <AdGridCard />}
+              </Fragment>
             ))}
           </div>
         )}

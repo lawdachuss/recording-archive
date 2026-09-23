@@ -15,7 +15,6 @@ import { getSpriteGrid } from "@/lib/sprite-grid";
 import { buildPreviewFallbacks, buildThumbnailFallbacks, buildSpriteFallbacks } from "@/lib/mirrors";
 import { prefetchRoute } from "@/lib/route-chunks";
 import { dlog } from "@/lib/debug";
-import { ThumbAdOverlay } from "@/components/ads/ThumbAdOverlay";
 
 /**
  * Unwrap a media-proxy URL to extract the real upstream URL for
@@ -112,17 +111,9 @@ interface VideoCardProps {
   isWatched?: boolean;
   /** 0-100 completion percentage. Shows progress bar when > 0 and < 100. */
   progress?: number;
-  /**
-   * Show the in-card ad layer (ThumbAdOverlay) on this card's thumbnail.
-   * Grids pick at most 2 RANDOM cards per page with isAdCard(items, i)
-   * and pass showAd={isAdCard(...)} — the ad lives INSIDE a real video
-   * card, so the grid never gains an extra cell. Omit for a normal card
-   * (History, related videos, …).
-   */
-  showAd?: boolean;
 }
 
-export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemove, fetchPriority, isWatched, progress, showAd }: VideoCardProps) {
+export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemove, fetchPriority, isWatched, progress }: VideoCardProps) {
 
   // Build mirror fallback URLs for preview, thumbnail, and sprite
   const previewFallbacks = useMemo(() => buildPreviewFallbacks(recording), [recording.preview_url, recording.preview_mirrors]);
@@ -686,9 +677,6 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               ✕
             </button>
           )}
-
-          {/* In-card ad layer — random cards picked by the grid's isAdCard() */}
-          {showAd && <ThumbAdOverlay />}
         </div>
 
         <div className="px-0.5 space-y-1">

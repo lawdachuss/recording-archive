@@ -1,10 +1,11 @@
-import { useEffect } from "react";
+import { Fragment, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { VideoCard } from "@/components/VideoCard";
+import { AdGridCard } from "@/components/ads/AdGridCard";
 import { isAdCard } from "@/lib/ad-creatives";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, parseCloudItem, cloudItemToRecording, type CloudItem } from "@/lib/user-api";
@@ -109,15 +110,17 @@ export default function Bookmarks() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
             {bookmarks.map((rec, i) => (
-              <div key={rec.id} className="animate-fade-in-up" style={{ animationDelay: `${i * 25}ms` }}>
-                <VideoCard
-                  recording={cloudItemToRecording(rec)}
-                  showAd={isAdCard(bookmarks, i)}
-                  showRemove
-                  onRemove={() => handleRemove(rec.id)}
-                  isWatched={recentlyWatched.has(rec.id)}
-                />
-              </div>
+              <Fragment key={rec.id}>
+                <div className="animate-fade-in-up" style={{ animationDelay: `${i * 25}ms` }}>
+                  <VideoCard
+                    recording={cloudItemToRecording(rec)}
+                    showRemove
+                    onRemove={() => handleRemove(rec.id)}
+                    isWatched={recentlyWatched.has(rec.id)}
+                  />
+                </div>
+                {isAdCard(bookmarks, i) && <AdGridCard />}
+              </Fragment>
             ))}
           </div>
         )}

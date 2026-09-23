@@ -29,7 +29,7 @@ FILE FORMAT (same in files and in the admin panel)
     Lines starting with <!-- are comments (headers) and are ignored.
   * Empty slot = styled placeholder at the slot's size.
   * Rotation: components cycle creatives every 20s from a random start;
-    the in-card layer picks a random creative per page load.
+    each in-feed ad card picks a random creative per page load.
     Popunder: ONE random creative fires once per page load, maximum.
   * Popunder.html and direct-link.txt (smartlink URLs) take the same
     content types — they are also managed from Admin → Ads.
@@ -49,9 +49,9 @@ SLOT INVENTORY (14 placeholders — admin panel lists them all)
                                         mobile)
   medium-rect-300x250         300 x 250 VideoDetail sidebar (all sizes),
                                         narrow page banners, footer on
-                                        phones, AND the in-card ad layer on
-                                        random video cards (max 2 per page,
-                                        <2 per page, fits inside thumbnails)
+                                        phones, AND the standalone ad cards
+                                        grids insert (max 2 per page, own
+                                        cell — never over a video)
   large-rect-336x280          336 x 280 spare rectangle slot
   half-page-300x600           300 x 600 VideoDetail sidebar (desktop)
   skyscraper-160x600          160 x 600 spare sidebar skyscraper slot
