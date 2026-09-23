@@ -8,6 +8,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { SyncStatusProvider } from "@/contexts/SyncStatusContext";
 import { PremiumProvider } from "@/contexts/PremiumContext";
 import { AdsterraGlobal } from "@/components/ads/AdsterraGlobal";
+import { AdPopunder } from "@/components/ads/AdPopunder";
 import { JuicyAdsFloat } from "@/components/ads/JuicyAdsFloat";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { lazyWithSkeleton } from "@/components/lazy-route";
@@ -174,6 +175,7 @@ function Router() {
       <TrackPageView />
       <PredictivePrefetch />
       <AdsterraGlobal />
+      <AdPopunder />
       <JuicyAdsFloat />
       <Switch>
         <Route path="/" component={Home} />

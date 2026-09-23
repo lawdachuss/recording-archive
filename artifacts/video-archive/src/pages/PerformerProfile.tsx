@@ -13,6 +13,8 @@ import { trackActivity } from "@/lib/rum";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { AlertCircle, ArrowLeft, Heart, LogIn, Users, Film } from "lucide-react";
+import { AdBanner } from "@/components/ads/AdBanner";
+import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { toast } from "@/hooks/use-toast";
 import { proxyUrl } from "@/lib/proxy-url";
 
@@ -243,6 +245,9 @@ export default function PerformerProfile() {
       </div>
 
       <div className="container mx-auto px-4 sm:px-6 py-10">
+        {/* Top ad — 728×90 / 468×60 / 300×100 */}
+        <AdLeaderboard className="mb-8" />
+
         {isLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8 animate-pulse">
             {[...Array(10)].map((_, i) => (
@@ -261,6 +266,10 @@ export default function PerformerProfile() {
                   <VideoCard recording={rec} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
                 </div>
               ))}
+              {/* In-feed ad row — spans the grid */}
+              {pagedRecordings.length > 8 && (
+                <AdBanner file="rect-300x100" fluid className="col-span-full" />
+              )}
             </div>
 
             {totalPages > 1 && (

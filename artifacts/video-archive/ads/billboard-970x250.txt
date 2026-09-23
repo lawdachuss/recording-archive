@@ -1,0 +1,9 @@
+<!--
+  billboard-970x250.txt — 970 x 250 billboard (site-wide TOP STRIP, large screens)
+
+  Paste your CrakRevenue banner / HTML ad / iframe code below this comment.
+  Rotate several creatives: separate each one with a line containing only:
+      ---
+  Block comments are ignored when a block has no code. Empty file = the slot
+  shows a styled "Advertisement" placeholder at 970 x 250.
+-->

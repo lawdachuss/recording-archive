@@ -1,0 +1,8 @@
+<!--
+  mobile-banner-320x50.txt — 320 x 50 mobile leaderboard (phones)
+  Used on: site-wide TOP STRIP below the md breakpoint.
+
+  Paste your ad code below. Separate multiple creatives with a line
+  containing only: ---
+  Empty file = styled placeholder at 320 x 50.
+-->

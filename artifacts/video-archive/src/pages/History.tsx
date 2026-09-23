@@ -4,6 +4,8 @@ import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
+import { AdBanner } from "@/components/ads/AdBanner";
+import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { VideoCard } from "@/components/VideoCard";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, parseCloudItem, cloudItemToRecording } from "@/lib/user-api";
@@ -141,6 +143,9 @@ export default function History() {
           )}
         </div>
 
+        {/* Top ad — 728×90 / 468×60 / 300×100 */}
+        <AdLeaderboard className="mb-8" />
+
         {isLoading && user ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
             {[...Array(10)].map((_, i) => (
@@ -181,6 +186,12 @@ export default function History() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+        {/* Bottom ad — 300×250 medium rectangle */}
+        {!isLoading && totalCount > 0 && (
+          <div className="mt-10 flex justify-center">
+            <AdBanner file="medium-rect-300x250" />
           </div>
         )}
       </div>

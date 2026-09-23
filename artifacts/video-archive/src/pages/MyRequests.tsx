@@ -2,6 +2,8 @@ import { Link } from "wouter";
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/Layout";
+import { AdBanner } from "@/components/ads/AdBanner";
+import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { useMyRequests, useDeleteRequest, type UserRequest } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
@@ -223,6 +225,9 @@ export default function MyRequests() {
           </Link>
         </div>
 
+        {/* Top ad — 728×90 / 468×60 / 300×100 */}
+        <AdLeaderboard className="mb-8" />
+
         {/* Content */}
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
@@ -366,6 +371,10 @@ export default function MyRequests() {
             )}
           </>
         )}
+        {/* Bottom ad — 300×250 medium rectangle */}
+        <div className="mt-10 flex justify-center">
+          <AdBanner file="medium-rect-300x250" />
+        </div>
       </div>
     </Layout>
   );

@@ -10,6 +10,8 @@ import { formatBytes } from "@/lib/formatters";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { proxyUrl } from "@/lib/proxy-url";
+import { AdBanner } from "@/components/ads/AdBanner";
+import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { TrendingUp, Users, HardDrive, Film, Trophy, Star, Flame, Clapperboard } from "lucide-react";
 
 type ChartTab = "popular" | "largest" | "performers";
@@ -72,6 +74,9 @@ export default function Charts() {
             The best and biggest from the archive
           </p>
         </div>
+
+        {/* Top ad — 728×90 / 468×60 / 300×100 */}
+        <AdLeaderboard className="mb-8" />
 
         {/* Stats strip */}
         {stats && stats.total_recordings != null && (
@@ -245,6 +250,10 @@ export default function Charts() {
                   {loading
                     ? Array.from({ length: 18 }).map((_, i) => <VideoSkeleton key={i} />)
                     : recordings?.slice(3).map((rec, i) => <VideoCard key={rec.id} recording={rec} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />)}
+                  {/* In-feed ad row — spans the chart grid */}
+                  {!loading && (recordings?.slice(3).length ?? 0) > 6 && (
+                    <AdBanner file="rect-300x100" fluid className="col-span-full" />
+                  )}
                 </div>
               </>
             )}

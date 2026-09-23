@@ -1,0 +1,11 @@
+<!--
+  rect-300x100.txt — 300 x 100 rectangle (in-feed / header / footer)
+  CrakRevenue's recommended best-performing mobile header+footer size.
+  Used on: Home divider, in-grid feed rows (Home, Browse, Performers,
+  PerformerProfile, Charts, Tags), Settings/Profile/List page banners,
+  above comments on VideoDetail, 404 page.
+
+  Paste your ad code below. Separate multiple creatives with a line
+  containing only: ---
+  Empty file = styled placeholder at 300 x 100 (fluid width in feed rows).
+-->

@@ -20,6 +20,8 @@ import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { useConnectionConstrained } from "@/hooks/use-connection-quality";
 import { buildThumbnailFallbacks } from "@/lib/mirrors";
+import { AdBanner } from "@/components/ads/AdBanner";
+import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { Search, ArrowRight, TrendingUp, Clock, Users, Tags, Clapperboard, Star } from "lucide-react";
 
 type Tab = "recent" | "popular";
@@ -225,6 +227,10 @@ export default function Home() {
                   <VideoCard recording={rec} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
                 </div>
               ))}
+              {/* In-feed ad row — spans the grid once there are enough cards */}
+              {recordings.length > 8 && (
+                <AdBanner file="rect-300x100" fluid className="col-span-full" />
+              )}
             </div>
           ) : (
             <div className="py-20 text-center border border-border/40 rounded-xl bg-secondary/10 animate-fade-in-up">
@@ -286,6 +292,13 @@ export default function Home() {
           </div>
         </section>
       )}
+
+      {/* Mid-page ad divider — 728×90 / 468×60 / 300×100 */}
+      <section className="px-4 sm:px-6 py-6 border-t border-border/50">
+        <div className="container mx-auto">
+          <AdLeaderboard />
+        </div>
+      </section>
 
       {/* Top Performers — Circular avatars */}
       {(topPerformers.length > 0 || performersLoading) && (

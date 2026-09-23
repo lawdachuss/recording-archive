@@ -2,6 +2,8 @@ import { useState, useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Layout } from "@/components/Layout";
+import { AdBanner } from "@/components/ads/AdBanner";
+import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, parseCloudItem, type PerformerFollow } from "@/lib/user-api";
 import { useMyRequests } from "@/lib/api";
@@ -227,6 +229,9 @@ export default function Profile() {
           </div>
         </div>
 
+        {/* Top ad — 728×90 / 468×60 / 300×100 */}
+        <AdLeaderboard className="mb-8" />
+
         {/* Library Stat Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-8">
           <Link href="/bookmarks">
@@ -402,6 +407,11 @@ export default function Profile() {
             )}
           </div>
         </section>
+
+        {/* Bottom ad — 300×250 medium rectangle */}
+        <div className="mt-10 flex justify-center">
+          <AdBanner file="medium-rect-300x250" />
+        </div>
       </div>
     </Layout>
   );

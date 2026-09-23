@@ -3,6 +3,8 @@ import { useLocation } from "wouter";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
+import { AdBanner } from "@/components/ads/AdBanner";
+import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, type UserNotification } from "@/lib/user-api";
 import { useRealtimeNotifications } from "@/hooks/use-realtime-notifications";
@@ -112,6 +114,9 @@ export default function Notifications() {
           )}
         </div>
 
+        {/* Top ad — 728×90 / 468×60 / 300×100 */}
+        <AdLeaderboard className="mb-8" />
+
         {isLoading ? (
           <div className="space-y-2">
             {[...Array(5)].map((_, i) => (
@@ -200,6 +205,10 @@ export default function Notifications() {
             )}
           </div>
         )}
+        {/* Bottom ad — 300×250 medium rectangle */}
+        <div className="mt-10 flex justify-center">
+          <AdBanner file="medium-rect-300x250" />
+        </div>
       </div>
     </Layout>
   );

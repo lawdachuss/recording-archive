@@ -1,0 +1,8 @@
+<!--
+  banner-468x60.txt — 468 x 60 full banner (medium screens / tablets)
+  Used on: top strip and footer between md and lg breakpoints, dividers.
+
+  Paste your ad code below. Separate multiple creatives with a line
+  containing only: ---
+  Empty file = styled placeholder at 468 x 60.
+-->

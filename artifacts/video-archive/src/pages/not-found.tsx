@@ -1,5 +1,6 @@
 import { Link } from "wouter";
 import { Layout } from "@/components/Layout";
+import { AdBanner } from "@/components/ads/AdBanner";
 import { Film } from "lucide-react";
 
 export default function NotFound() {
@@ -27,6 +28,11 @@ export default function NotFound() {
           >
             Browse
           </Link>
+        </div>
+
+        {/* Ad below the 404 actions — 300×250 medium rectangle */}
+        <div className="mt-12 flex justify-center">
+          <AdBanner file="medium-rect-300x250" />
         </div>
       </div>
     </Layout>

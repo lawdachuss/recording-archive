@@ -7,6 +7,7 @@ import { DesktopNav } from "@/components/nav/DesktopNav";
 import { SearchDropdown } from "@/components/nav/SearchDropdown";
 import { markAgeGatePassed } from "@/lib/gating";
 import { PremiumUpsellPopup } from "@/components/ads/PremiumUpsellPopup";
+import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 
 // Lazy-load components that are heavy or only needed on interaction:
 // - NotificationBell: pulls in notification hooks, only visible for auth users
@@ -316,10 +317,28 @@ export function Navbar() {
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const { showAds } = usePremium();
+
   return (
     <div className="min-h-screen text-foreground flex flex-col font-sans">
       <AgeGate />
       <Navbar />
+
+      {/* ── Site-wide top ad strip (every page) ──────────────────────────
+          970×250 billboard on large screens, 728×90 on medium, 320×50 on
+          phones — codes live in ads/*.txt, styled placeholder until pasted. */}
+      {showAds && (
+        <div className="border-b border-border/40 bg-secondary/10">
+          <div className="container mx-auto px-4 sm:px-6 py-4">
+            <AdLeaderboard
+              lg="billboard-970x250"
+              md="leaderboard-728x90"
+              mobile="mobile-banner-320x50"
+            />
+          </div>
+        </div>
+      )}
+
       <main className="flex-1 flex flex-col">
         {children}
       </main>
@@ -339,6 +358,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
           aria-hidden="true"
         />
         <div className="container mx-auto px-4 sm:px-6">
+          {/* ── Site-wide footer ad (every page) ────────────────────────
+              728×90 desktop / 468×60 tablet / 300×250 phones. */}
+          {showAds && (
+            <div className="mb-8 flex justify-center">
+              <AdLeaderboard
+                lg="leaderboard-728x90"
+                md="banner-468x60"
+                mobile="medium-rect-300x250"
+              />
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
             <div className="space-y-2">
               <Link href="/" className="flex items-center gap-1.5 group w-fit">

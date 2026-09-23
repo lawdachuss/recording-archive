@@ -7,6 +7,7 @@ import { PerformerDetailsCard, PerformerLookupLoading, PerformerLookupNotFound, 
 import { usePerformerLookup, useCreateRequest, useDeleteRequest, type PerformerLookupResult, type UserRequest } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { Layout } from "@/components/Layout";
+import { AdBanner } from "@/components/ads/AdBanner";
 import { toast } from "@/hooks/use-toast";
 import { Film, Sparkles, CheckCircle, Loader2, ArrowLeft, Trash2, XCircle } from "lucide-react";
 import { formatRelativeTime } from "@/lib/formatters";
@@ -357,6 +358,9 @@ export default function RequestPage() {
               />
             </Step>
           </Stepper>
+
+          {/* Bottom ad — 300×100 rectangle under the form */}
+          <AdBanner file="rect-300x100" className="mt-8" />
         </div>
       </div>
     </Layout>

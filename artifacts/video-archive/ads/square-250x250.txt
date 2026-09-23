@@ -1,0 +1,6 @@
+<!--
+  square-250x250.txt — 250 x 250 square (spare slot)
+  Paste your ad code below. Separate multiple creatives with a line
+  containing only: ---
+  Empty file = styled placeholder at 250 x 250.
+-->

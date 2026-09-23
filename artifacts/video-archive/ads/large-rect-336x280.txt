@@ -1,0 +1,6 @@
+<!--
+  large-rect-336x280.txt — 336 x 280 large rectangle (spare slot)
+  Paste your ad code below. Separate multiple creatives with a line
+  containing only: ---
+  Empty file = styled placeholder at 336 x 280.
+-->

@@ -62,3 +62,5 @@ adsterra.txt
 artifacts/api-server/tmp-analyze-*
 artifacts/video-archive/json
 artifacts/video-archive/dist/
+
+.env*

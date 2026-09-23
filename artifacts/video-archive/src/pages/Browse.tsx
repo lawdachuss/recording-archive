@@ -16,6 +16,8 @@ import {
   ListRecordingsSort,
 } from "@workspace/api-client-react";
 import { Layout } from "@/components/Layout";
+import { AdBanner } from "@/components/ads/AdBanner";
+import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { VideoCard } from "@/components/VideoCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
@@ -721,6 +723,9 @@ export default function Browse() {
 
       <section className="px-4 sm:px-6 py-10 pt-2">
         <div className="container mx-auto">
+          {/* Top-of-grid ad — 728×90 / 468×60 / 300×100 */}
+          <AdLeaderboard className="mb-8" />
+
           {isLoading && recordingsParams.page === 1 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8">
               {Array.from({ length: ITEMS_PER_PAGE }).map((_, i) => (
@@ -747,6 +752,12 @@ export default function Browse() {
                         />
                       </div>,
                     ];
+                    // In-feed ad row after the 2nd row of cards
+                    if (i === 7 && recordings.length > 12) {
+                      cells.push(
+                        <AdBanner key="ad-feed" file="rect-300x100" fluid className="col-span-full" />
+                      );
+                    }
                     return cells;
                   })}
                 </div>
@@ -795,6 +806,11 @@ export default function Browse() {
               </button>
             </div>
           )}
+
+          {/* Pre-pagination ad — 300×250 medium rectangle, centered */}
+          <div className="mt-12 flex justify-center">
+            <AdBanner file="medium-rect-300x250" />
+          </div>
 
           {/* ── Pagination (renders even on empty pages so users can navigate back) ── */}
           {data && data.total > 0 && (

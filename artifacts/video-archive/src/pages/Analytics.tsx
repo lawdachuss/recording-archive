@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Layout } from "@/components/Layout";
+import { AdBanner } from "@/components/ads/AdBanner";
+import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi } from "@/lib/user-api";
 import { Link } from "wouter";
@@ -56,6 +58,9 @@ export default function Analytics() {
           <h1 className="text-2xl sm:text-3xl font-black tracking-tighter">Watch Analytics</h1>
           <p className="text-sm text-muted-foreground mt-2">Your viewing habits at a glance</p>
         </div>
+
+        {/* Top ad — 728×90 / 468×60 / 300×100 */}
+        <AdLeaderboard className="mb-8" />
 
         {isLoading ? (
           <div className="flex items-center justify-center py-24">
@@ -163,6 +168,10 @@ export default function Analytics() {
             </div>
           </div>
         )}
+        {/* Bottom ad — 300×250 medium rectangle */}
+        <div className="mt-10 flex justify-center">
+          <AdBanner file="medium-rect-300x250" />
+        </div>
       </div>
     </Layout>
   );

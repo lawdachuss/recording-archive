@@ -3,6 +3,8 @@ import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
+import { AdBanner } from "@/components/ads/AdBanner";
+import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, type CloudCollection } from "@/lib/user-api";
@@ -105,6 +107,9 @@ export default function Collections() {
             New Collection
           </button>
         </div>
+
+        {/* Top ad — 728×90 / 468×60 / 300×100 */}
+        <AdLeaderboard className="mb-8" />
 
         {showCreate && (
           <form
@@ -236,6 +241,10 @@ export default function Collections() {
             ))}
           </div>
         )}
+        {/* Bottom ad — 300×250 medium rectangle */}
+        <div className="mt-10 flex justify-center">
+          <AdBanner file="medium-rect-300x250" />
+        </div>
       </div>
     </Layout>
   );

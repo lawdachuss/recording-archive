@@ -1,0 +1,7 @@
+<!--
+  super-leaderboard-970x90.txt — 970 x 90 super leaderboard (wide top slot)
+
+  Paste your ad code below. Separate multiple creatives with a line
+  containing only: ---
+  Empty file = styled placeholder at 970 x 90.
+-->

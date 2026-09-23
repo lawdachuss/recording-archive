@@ -3,6 +3,8 @@ import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
+import { AdBanner } from "@/components/ads/AdBanner";
+import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { VideoCard } from "@/components/VideoCard";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, parseCloudItem, cloudItemToRecording } from "@/lib/user-api";
@@ -81,6 +83,9 @@ export default function WatchLater() {
           )}
         </div>
 
+        {/* Top ad — 728×90 / 468×60 / 300×100 */}
+        <AdLeaderboard className="mb-8" />
+
         {isLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
             {[...Array(10)].map((_, i) => (
@@ -115,6 +120,10 @@ export default function WatchLater() {
                 />
               </div>
             ))}
+            {/* In-feed ad row — spans the grid */}
+            {queue.length > 8 && (
+              <AdBanner file="rect-300x100" fluid className="col-span-full" />
+            )}
           </div>
         )}
       </div>

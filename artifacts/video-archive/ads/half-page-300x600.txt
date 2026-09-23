@@ -1,0 +1,6 @@
+<!--
+  half-page-300x600.txt — 300 x 600 half page (VideoDetail sidebar, desktop lg+)
+  Paste your ad code below. Separate multiple creatives with a line
+  containing only: ---
+  Empty file = styled placeholder at 300 x 600.
+-->

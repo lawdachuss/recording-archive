@@ -8,6 +8,8 @@
  * server-side (ADSTERRA_API_KEY) behind /api/ads/status.
  */
 
+import { getDirectLink } from "@/lib/ad-creatives";
+
 function sanitizeScriptUrl(val: string | undefined): string | undefined {
   if (!val) return undefined;
   const trimmed = val.trim();
@@ -33,8 +35,13 @@ export function adsterraSocialBarScript(): string | undefined {
   return sanitizeScriptUrl(src);
 }
 
-/** Adsterra high-CPM smartlink for rewarded views / sponsor links. */
+/** High-CPM smartlink for rewarded views / sponsor links.
+ *  Resolution order: URLs pasted into `ads/direct-link.txt` (CrakRevenue
+ *  direct links — random pick so several rotate) → VITE_ADSTERRA_SMARTLINK →
+ *  built-in default. */
 export function adsterraSmartlinkUrl(): string {
+  const fromFiles = getDirectLink();
+  if (fromFiles) return fromFiles;
   const configured = import.meta.env.VITE_ADSTERRA_SMARTLINK as string | undefined;
   const sanitized = sanitizeScriptUrl(configured);
   return (

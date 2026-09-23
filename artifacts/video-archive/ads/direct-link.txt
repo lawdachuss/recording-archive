@@ -1,0 +1,15 @@
+<!--
+  direct-link.txt — Smartlink / Direct Link URLs (CrakRevenue direct links)
+
+  Paste ONE URL PER LINE, e.g.
+      https://your-affiliate-link.example/path
+
+  The site picks one at random for text CTA links (the smartlink used on the
+  Premium page and other rewarded-view CTAs). If this file has no URL, the
+  legacy VITE_ADSTERRA_SMARTLINK env var / built-in default is used instead.
+
+  Separate multiple links with a line containing only: --- to make some
+  links more common (each --- block counts once).
+
+  Paste starting below this comment.
+-->

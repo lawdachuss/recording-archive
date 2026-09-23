@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { Layout } from "@/components/Layout";
+import { AdBanner } from "@/components/ads/AdBanner";
+import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, type UserProfile } from "@/lib/user-api";
 import { getSoundEnabled, getVibrationEnabled, fetchSoundPreferences, saveSoundPreferences } from "@/lib/sound-prefs";
@@ -168,6 +170,9 @@ export default function Settings() {
             </button>
           </Link>
         </div>
+
+        {/* Top ad — 728×90 / 468×60 / 300×100 (fits the narrow column) */}
+        <AdLeaderboard mobile="rect-300x100" className="mb-8" />
 
         {/* Profile */}
         <section className="mb-8 border border-border/40 rounded-xl p-5 sm:p-6 bg-card">
@@ -756,6 +761,11 @@ export default function Settings() {
             </div>
           )}
         </section>
+
+        {/* Bottom ad — 300×250 medium rectangle */}
+        <div className="mt-10 flex justify-center">
+          <AdBanner file="medium-rect-300x250" />
+        </div>
       </div>
     </Layout>
   );

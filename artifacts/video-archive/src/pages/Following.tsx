@@ -3,6 +3,8 @@ import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
+import { AdBanner } from "@/components/ads/AdBanner";
+import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { useAuth } from "@/contexts/AuthContext";
 import { userApi, type PerformerFollow } from "@/lib/user-api";
 import { formatRelativeTime } from "@/lib/formatters";
@@ -44,6 +46,9 @@ export default function Following() {
             </p>
           </div>
         </div>
+
+        {/* Top ad — 728×90 / 468×60 / 300×100 */}
+        <AdLeaderboard className="mb-8" />
 
         {isLoading ? (
           <div className="space-y-2">
@@ -97,6 +102,10 @@ export default function Following() {
             ))}
           </div>
         )}
+        {/* Bottom ad — 300×250 medium rectangle */}
+        <div className="mt-10 flex justify-center">
+          <AdBanner file="medium-rect-300x250" />
+        </div>
       </div>
     </Layout>
   );

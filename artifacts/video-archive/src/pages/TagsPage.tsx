@@ -2,6 +2,8 @@ import { useListTags, getListTagsQueryKey } from "@workspace/api-client-react";
 import { Layout } from "@/components/Layout";
 import { Link } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AdBanner } from "@/components/ads/AdBanner";
+import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { Tags, Hash } from "lucide-react";
 
 export default function TagsPage() {
@@ -23,6 +25,9 @@ export default function TagsPage() {
             <p className="text-sm text-muted-foreground mt-2">{tags.length.toLocaleString()} categories across the archive</p>
           )}
         </div>
+
+        {/* Top ad — 728×90 / 468×60 / 300×250 on phones */}
+        <AdLeaderboard mobile="medium-rect-300x250" className="mb-10" />
 
         {isLoading ? (
           <div className="flex flex-wrap gap-2">
@@ -60,6 +65,10 @@ export default function TagsPage() {
             <p className="text-sm text-muted-foreground">No tags found.</p>
           </div>
         )}
+        {/* Bottom ad — 300×100 rectangle */}
+        <div className="mt-10 flex justify-center">
+          <AdBanner file="rect-300x100" />
+        </div>
       </div>
     </Layout>
   );

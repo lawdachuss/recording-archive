@@ -4,6 +4,8 @@ import { Layout } from "@/components/Layout";
 import { PerformerCard } from "@/components/PerformerCard";
 import { Search, X, ChevronDown, Users } from "lucide-react";
 import { AppPagination } from "@/components/ui/app-pagination";
+import { AdBanner } from "@/components/ads/AdBanner";
+import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { GENDER_OPTIONS } from "@/lib/genders";
 
 type SortOption = "name" | "count";
@@ -156,6 +158,8 @@ export default function PerformersList() {
 
       <section className="px-4 sm:px-6 py-8 sm:py-12 pt-2">
         <div className="container mx-auto">
+          {/* Top-of-grid ad — 728×90 / 468×60 / 300×100 */}
+          <AdLeaderboard className="mb-8" />
           <div className="relative">
             {isLoading ? (
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-9 gap-y-6 justify-items-center">
@@ -189,6 +193,10 @@ export default function PerformersList() {
                       />
                     </div>
                   ))}
+                  {/* In-feed ad row — spans the directory grid */}
+                  {performers.length > 21 && (
+                    <AdBanner file="rect-300x100" fluid className="col-span-full" />
+                  )}
                 </div>
 
                 {isFetching && (

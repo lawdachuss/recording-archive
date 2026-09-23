@@ -26,6 +26,8 @@ import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { useWatchProgress } from "@/hooks/use-watch-progress";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { proxyUrl } from "@/lib/proxy-url";
+import { AdBanner } from "@/components/ads/AdBanner";
+import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 
 import {
   AlertCircle, ArrowLeft, Maximize2, Minimize2,
@@ -597,6 +599,9 @@ export default function VideoDetail() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-8">
           {/* ─── Main column ──────────────────────────────────── */}
           <div className="space-y-5 min-w-0">
+            {/* Ad above the player — 728×90 / 468×60 / 300×100 */}
+            <AdLeaderboard />
+
             {/* Server selector */}
             {!isLoading && servers.length > 1 && (
               <div className="flex items-center gap-2">
@@ -1009,6 +1014,9 @@ export default function VideoDetail() {
                   </div>
                 )}
 
+                {/* In-content ad above comments — full-width 300×100 row */}
+                <AdBanner file="rect-300x100" fluid />
+
                 {/* Comments */}
                 <div className="pt-4 border-t border-border/30">
                   <CommentSection recordingId={id || ""} />
@@ -1019,6 +1027,10 @@ export default function VideoDetail() {
 
           {/* ─── Sidebar — Related ─────────────────────────── */}
           <div className="space-y-4">
+            {/* Sidebar ads — 300×250 medium rect + 300×600 half page (lg+) */}
+            <AdBanner file="medium-rect-300x250" />
+            <AdBanner file="half-page-300x600" breakpoint="lg" />
+
             <div className="flex items-center justify-between">
               <p className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground font-semibold">
                 More from {video?.username ?? "this performer"}

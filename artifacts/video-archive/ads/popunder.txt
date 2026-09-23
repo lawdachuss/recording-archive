@@ -1,0 +1,16 @@
+<!--
+  popunder.txt — site-wide POPUNDER (CrakRevenue "Pop Code" / any network)
+
+  Paste your popunder script below, e.g.
+      <script src="https://example.com/pop.js"></script>
+  or a CrakRevenue pop code snippet.
+
+  Rotation: one RANDOM creative from this file fires once per page load.
+  Put several codes separated by a line containing only:
+      ---
+  Each page load then picks a different network/offer automatically.
+  Empty file = no popunder at all.
+  (The Adsterra popunder env var VITE_ADSTERRA_POPUNDER still works too.)
+
+  Paste starting below this comment.
+-->

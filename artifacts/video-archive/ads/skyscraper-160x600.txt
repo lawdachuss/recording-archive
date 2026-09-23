@@ -1,0 +1,6 @@
+<!--
+  skyscraper-160x600.txt — 160 x 600 wide skyscraper (spare sidebar slot)
+  Paste your ad code below. Separate multiple creatives with a line
+  containing only: ---
+  Empty file = styled placeholder at 160 x 600.
+-->
