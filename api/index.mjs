@@ -20725,27 +20725,27 @@ var require_router = __commonJS({
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var methods = METHODS.map((method) => method.toLowerCase());
-    module.exports = Router20;
+    module.exports = Router21;
     module.exports.Route = Route;
-    function Router20(options) {
-      if (!(this instanceof Router20)) {
-        return new Router20(options);
+    function Router21(options) {
+      if (!(this instanceof Router21)) {
+        return new Router21(options);
       }
       const opts = options || {};
-      function router20(req, res, next) {
-        router20.handle(req, res, next);
+      function router21(req, res, next) {
+        router21.handle(req, res, next);
       }
-      Object.setPrototypeOf(router20, this);
-      router20.caseSensitive = opts.caseSensitive;
-      router20.mergeParams = opts.mergeParams;
-      router20.params = {};
-      router20.strict = opts.strict;
-      router20.stack = [];
-      return router20;
+      Object.setPrototypeOf(router21, this);
+      router21.caseSensitive = opts.caseSensitive;
+      router21.mergeParams = opts.mergeParams;
+      router21.params = {};
+      router21.strict = opts.strict;
+      router21.stack = [];
+      return router21;
     }
-    Router20.prototype = function() {
+    Router21.prototype = function() {
     };
-    Router20.prototype.param = function param(name, fn) {
+    Router21.prototype.param = function param(name, fn) {
       if (!name) {
         throw new TypeError("argument name is required");
       }
@@ -20765,7 +20765,7 @@ var require_router = __commonJS({
       params.push(fn);
       return this;
     };
-    Router20.prototype.handle = function handle(req, res, callback) {
+    Router21.prototype.handle = function handle(req, res, callback) {
       if (!callback) {
         throw new TypeError("argument callback is required");
       }
@@ -20892,7 +20892,7 @@ var require_router = __commonJS({
         }
       }
     };
-    Router20.prototype.use = function use(handler) {
+    Router21.prototype.use = function use(handler) {
       let offset = 0;
       let path = "/";
       if (typeof handler !== "function") {
@@ -20925,7 +20925,7 @@ var require_router = __commonJS({
       }
       return this;
     };
-    Router20.prototype.route = function route(path) {
+    Router21.prototype.route = function route(path) {
       const route2 = new Route(path);
       const layer = new Layer(path, {
         sensitive: this.caseSensitive,
@@ -20940,7 +20940,7 @@ var require_router = __commonJS({
       return route2;
     };
     methods.concat("all").forEach(function(method) {
-      Router20.prototype[method] = function(path) {
+      Router21.prototype[method] = function(path) {
         const route = this.route(path);
         route[method].apply(route, slice.call(arguments, 1));
         return this;
@@ -21123,13 +21123,13 @@ var require_application = __commonJS({
     var compileTrust = require_utils3().compileTrust;
     var resolve = __require("node:path").resolve;
     var once = require_once();
-    var Router20 = require_router();
+    var Router21 = require_router();
     var slice = Array.prototype.slice;
     var flatten = Array.prototype.flat;
     var app2 = exports = module.exports = {};
     var trustProxyDefaultSymbol = "@@symbol:trust_proxy_default";
     app2.init = function init() {
-      var router20 = null;
+      var router21 = null;
       this.cache = /* @__PURE__ */ Object.create(null);
       this.engines = /* @__PURE__ */ Object.create(null);
       this.settings = /* @__PURE__ */ Object.create(null);
@@ -21138,13 +21138,13 @@ var require_application = __commonJS({
         configurable: true,
         enumerable: true,
         get: function getrouter() {
-          if (router20 === null) {
-            router20 = new Router20({
+          if (router21 === null) {
+            router21 = new Router21({
               caseSensitive: this.enabled("case sensitive routing"),
               strict: this.enabled("strict routing")
             });
           }
-          return router20;
+          return router21;
         }
       });
     };
@@ -21215,15 +21215,15 @@ var require_application = __commonJS({
       if (fns.length === 0) {
         throw new TypeError("app.use() requires a middleware function");
       }
-      var router20 = this.router;
+      var router21 = this.router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router20.use(path, fn2);
+          return router21.use(path, fn2);
         }
         debug(".use app under %s", path);
         fn2.mountpath = path;
         fn2.parent = this;
-        router20.use(path, function mounted_app(req, res, next) {
+        router21.use(path, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             Object.setPrototypeOf(req, orig.request);
@@ -23890,7 +23890,7 @@ var require_express = __commonJS({
     var EventEmitter = __require("node:events").EventEmitter;
     var mixin = require_merge_descriptors();
     var proto = require_application();
-    var Router20 = require_router();
+    var Router21 = require_router();
     var req = require_request();
     var res = require_response();
     exports = module.exports = createApplication;
@@ -23912,8 +23912,8 @@ var require_express = __commonJS({
     exports.application = proto;
     exports.request = req;
     exports.response = res;
-    exports.Route = Router20.Route;
-    exports.Router = Router20;
+    exports.Route = Router21.Route;
+    exports.Router = Router21;
     exports.json = bodyParser.json;
     exports.raw = bodyParser.raw;
     exports.static = require_serve_static();
@@ -64240,12 +64240,12 @@ var require_built3 = __commonJS({
 });
 
 // src/app.ts
-var import_express20 = __toESM(require_express2(), 1);
+var import_express21 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 var import_pino_http = __toESM(require_logger(), 1);
 
 // src/routes/index.ts
-var import_express19 = __toESM(require_express2(), 1);
+var import_express20 = __toESM(require_express2(), 1);
 
 // src/routes/health.ts
 var import_express = __toESM(require_express2(), 1);
@@ -74545,30 +74545,150 @@ router18.get(
 );
 var hot_default = router18;
 
-// src/routes/index.ts
+// src/routes/admin-ads.ts
+var import_express19 = __toESM(require_express2(), 1);
+init_supabase();
 var router19 = (0, import_express19.Router)();
-router19.use(health_default);
-router19.use(recordings_default);
-router19.use(performers_default);
-router19.use(tags_default);
-router19.use(stats_default);
-router19.use(reactions_default);
-router19.use(comments_default);
-router19.use(requests_default);
-router19.use(user_default);
-router19.use(cache_admin_default);
-router19.use(admin_default);
-router19.use(search_default);
-router19.use(media_proxy_default);
-router19.use(cache_warm_default);
-router19.use(views_default);
-router19.use(rum_default);
-router19.use(premium_default);
-router19.use(hot_default);
-var routes_default = router19;
+var admin5 = requireRole("admin");
+var SLOTS = /* @__PURE__ */ new Set([
+  "billboard-970x250",
+  "super-leaderboard-970x90",
+  "leaderboard-728x90",
+  "banner-468x60",
+  "mobile-banner-320x50",
+  "rect-300x100",
+  "medium-rect-300x250",
+  "large-rect-336x280",
+  "half-page-300x600",
+  "skyscraper-160x600",
+  "square-250x250",
+  "popunder",
+  "direct-link"
+]);
+var IMAGE_EXT = /\.(gif|jpe?g|png|webp|avif|bmp)(\?|#|$)/i;
+var URL_RE = /^https?:\/\/\S+$/i;
+var MAX_CONTENT = 2e5;
+function detectKind(content) {
+  const t = content.trim();
+  return URL_RE.test(t) && !/\s/.test(t) ? "url" : "html";
+}
+function pickKind(raw, content) {
+  return raw === "html" || raw === "url" ? raw : detectKind(content);
+}
+function validate(slot, kind, content) {
+  if (!SLOTS.has(slot)) return `Unknown ad slot "${slot}"`;
+  const t = content.trim();
+  if (!t) return "Content is empty";
+  if (t.length > MAX_CONTENT) return `Content exceeds ${MAX_CONTENT} characters`;
+  if (kind === "url") {
+    if (!URL_RE.test(t) || /\s/.test(t)) return "URL creatives must be a single http(s) URL";
+    if (slot !== "direct-link" && !IMAGE_EXT.test(t)) {
+      return "Non-image URLs belong in the direct-link slot";
+    }
+  }
+  return null;
+}
+router19.get("/admin/ads", ...admin5, async (req, res) => {
+  const { data, error } = await supabaseProxy.from("ad_creatives").select("*").order("slot", { ascending: true }).order("created_at", { ascending: true });
+  if (error) {
+    req.log?.error?.({ err: error }, "GET /admin/ads failed");
+    res.status(500).json({
+      error: String(error.message ?? "").includes("ad_creatives") ? "The ad_creatives table is missing \u2014 run supabase/migrations/011-ads.sql in the Supabase SQL Editor." : String(error.message ?? "Failed to load ads")
+    });
+    return;
+  }
+  res.json(data ?? []);
+});
+router19.post("/admin/ads", ...admin5, async (req, res) => {
+  const slot = String(req.body?.slot ?? "");
+  const content = String(req.body?.content ?? "");
+  const kind = pickKind(req.body?.kind, content);
+  const invalid = validate(slot, kind, content);
+  if (invalid) {
+    res.status(400).json({ error: invalid });
+    return;
+  }
+  const { data, error } = await supabaseProxy.from("ad_creatives").insert({ slot, kind, content: content.trim() }).select("*").single();
+  if (error) {
+    req.log?.error?.({ err: error }, "POST /admin/ads failed");
+    res.status(500).json({ error: String(error.message ?? "Insert failed") });
+    return;
+  }
+  res.status(201).json(data);
+});
+router19.patch("/admin/ads/:id", ...admin5, async (req, res) => {
+  const id = String(req.params.id ?? "");
+  const { data: existing, error: fetchErr } = await supabaseProxy.from("ad_creatives").select("*").eq("id", id).maybeSingle();
+  if (fetchErr) {
+    res.status(500).json({ error: String(fetchErr.message ?? "Fetch failed") });
+    return;
+  }
+  if (!existing) {
+    res.status(404).json({ error: "Creative not found" });
+    return;
+  }
+  const content = req.body?.content !== void 0 ? String(req.body.content) : existing.content;
+  const kind = req.body?.kind !== void 0 ? pickKind(req.body.kind, content) : req.body?.content !== void 0 ? detectKind(content) : existing.kind;
+  const enabled = typeof req.body?.enabled === "boolean" ? req.body.enabled : existing.enabled;
+  const invalid = validate(existing.slot, kind, content);
+  if (invalid) {
+    res.status(400).json({ error: invalid });
+    return;
+  }
+  const { data, error } = await supabaseProxy.from("ad_creatives").update({
+    kind,
+    content: content.trim(),
+    enabled,
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  }).eq("id", id).select("*").single();
+  if (error) {
+    req.log?.error?.({ err: error }, "PATCH /admin/ads failed");
+    res.status(500).json({ error: String(error.message ?? "Update failed") });
+    return;
+  }
+  res.json(data);
+});
+router19.delete("/admin/ads/:id", ...admin5, async (req, res) => {
+  const id = String(req.params.id ?? "");
+  if (!id) {
+    res.status(400).json({ error: "Missing id" });
+    return;
+  }
+  const { error } = await supabaseProxy.from("ad_creatives").delete().eq("id", id);
+  if (error) {
+    req.log?.error?.({ err: error }, "DELETE /admin/ads failed");
+    res.status(500).json({ error: String(error.message ?? "Delete failed") });
+    return;
+  }
+  res.json({ ok: true });
+});
+var admin_ads_default = router19;
+
+// src/routes/index.ts
+var router20 = (0, import_express20.Router)();
+router20.use(health_default);
+router20.use(recordings_default);
+router20.use(performers_default);
+router20.use(tags_default);
+router20.use(stats_default);
+router20.use(reactions_default);
+router20.use(comments_default);
+router20.use(requests_default);
+router20.use(user_default);
+router20.use(cache_admin_default);
+router20.use(admin_default);
+router20.use(search_default);
+router20.use(media_proxy_default);
+router20.use(cache_warm_default);
+router20.use(views_default);
+router20.use(rum_default);
+router20.use(premium_default);
+router20.use(hot_default);
+router20.use(admin_ads_default);
+var routes_default = router20;
 
 // src/app.ts
-var app = (0, import_express20.default)();
+var app = (0, import_express21.default)();
 app.use(
   (0, import_pino_http.default)({
     logger,
@@ -74613,9 +74733,9 @@ app.use("/api", (req, res, next) => {
   }
   next();
 });
-app.use("/api/premium/webhook", import_express20.default.raw({ type: "*/*", limit: "1mb" }));
-app.use(import_express20.default.json({ limit: "1mb" }));
-app.use(import_express20.default.urlencoded({ extended: true, limit: "1mb" }));
+app.use("/api/premium/webhook", import_express21.default.raw({ type: "*/*", limit: "1mb" }));
+app.use(import_express21.default.json({ limit: "1mb" }));
+app.use(import_express21.default.urlencoded({ extended: true, limit: "1mb" }));
 app.use("/api", routes_default);
 app.use((err, _req, res, _next) => {
   const status = err?.status ?? err?.statusCode ?? 500;

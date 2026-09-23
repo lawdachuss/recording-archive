@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { SyncStatusProvider } from "@/contexts/SyncStatusContext";
 import { PremiumProvider } from "@/contexts/PremiumContext";
+import { AdsProvider } from "@/contexts/AdsContext";
 import { AdPopunder } from "@/components/ads/AdPopunder";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { lazyWithSkeleton } from "@/components/lazy-route";
@@ -170,6 +171,7 @@ function Router() {
   return (
     <GlobalErrorBoundary>
       <PremiumProvider>
+      <AdsProvider>
       <TrackPageView />
       <PredictivePrefetch />
       <AdPopunder />
@@ -235,6 +237,7 @@ function Router() {
         </Route>
         <Route component={NotFound} />
       </Switch>
+      </AdsProvider>
       </PremiumProvider>
     </GlobalErrorBoundary>
   );

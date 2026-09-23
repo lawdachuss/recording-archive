@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { usePremium } from "@/contexts/PremiumContext";
-import {
-  getAdCreatives,
-  injectAdMarkup,
-  parseAdDimensions,
-} from "@/lib/ad-creatives";
+import { injectAdMarkup, parseAdDimensions } from "@/lib/ad-creatives";
+import { useAds } from "@/contexts/AdsContext";
 
 /**
  * AdBanner — the site's single ad slot primitive.
@@ -77,7 +74,8 @@ export function AdBanner({
   const width = widthProp ?? dims.width;
   const height = heightProp ?? dims.height;
 
-  const creatives = useMemo(() => getAdCreatives(file), [file]);
+  const { creativesFor } = useAds();
+  const creatives = useMemo(() => creativesFor(file), [creativesFor, file]);
 
   // Start at a random creative so two slots with the same file don't sync.
   const [index, setIndex] = useState(() =>

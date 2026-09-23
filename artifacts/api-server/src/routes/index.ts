@@ -17,6 +17,7 @@ import viewsRouter from "./views.js";
 import rumRouter from "./rum.js";
 import premiumRouter from "./premium.js";
 import hotRouter from "./hot.js";
+import adminAdsRouter from "./admin-ads.js";
 
 const router: IRouter = Router();
 
@@ -38,5 +39,6 @@ router.use(viewsRouter);
 router.use(rumRouter);
 router.use(premiumRouter);
 router.use(hotRouter);
+router.use(adminAdsRouter);
 
 export default router;

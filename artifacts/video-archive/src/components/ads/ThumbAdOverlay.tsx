@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePremium } from "@/contexts/PremiumContext";
-import { getAdCreatives, injectAdMarkup } from "@/lib/ad-creatives";
+import { injectAdMarkup } from "@/lib/ad-creatives";
+import { useAds } from "@/contexts/AdsContext";
 
 /**
  * ThumbAdOverlay — the in-card ad LAYER.
@@ -24,7 +25,8 @@ const AD_FILE = "medium-rect-300x250";
 
 export function ThumbAdOverlay() {
   const { showAds } = usePremium();
-  const creatives = useMemo(() => getAdCreatives(AD_FILE), []);
+  const { creativesFor } = useAds();
+  const creatives = useMemo(() => creativesFor(AD_FILE), [creativesFor]);
 
   // Random start so several ad cards in view don't sync.
   const [index, setIndex] = useState(() =>

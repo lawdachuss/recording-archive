@@ -17,7 +17,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { usePremium } from "@/contexts/PremiumContext";
 import { premiumApi } from "@/lib/premium-client";
-import { getDirectLink } from "@/lib/ad-creatives";
+import { useAds } from "@/contexts/AdsContext";
 
 export default function Premium() {
   const { user, loading } = useAuth();
@@ -63,15 +63,16 @@ export default function Premium() {
     if (paid) void refreshStatus();
   }, [paid, refreshStatus]);
 
+  const { directLink } = useAds();
+
   const handleClaimReward = async () => {
     if (claiming || cooldownSeconds > 0) return;
     setClaiming(true);
     setClaimMsg(null);
 
-    // Open the CrakRevenue smartlink (ads/direct-link.txt) in a new tab.
-    // Empty file → no link configured yet, so nothing opens.
-    const smartlink = getDirectLink();
-    if (smartlink) window.open(smartlink, "_blank", "noopener,noreferrer");
+    // Open the CrakRevenue smartlink (admin-managed direct links slot) in
+    // a new tab. None configured → nothing opens.
+    if (directLink) window.open(directLink, "_blank", "noopener,noreferrer");
 
     try {
       const res = await premiumApi.claimReward();

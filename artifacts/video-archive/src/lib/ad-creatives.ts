@@ -45,7 +45,7 @@ const IMAGE_EXT = /\.(gif|jpe?g|png|webp|avif|bmp)(\?|#|$)/i;
  * non-image URLs (smartlinks etc.) don't belong in banner slots → null
  * (paste those into ads/direct-link.txt instead).
  */
-function bareUrlToMarkup(url: string, width: number, height: number): string | null {
+export function bareUrlToMarkup(url: string, width: number, height: number): string | null {
   if (!IMAGE_EXT.test(url)) return null;
   const safe = url.replace(/"/g, "&quot;");
   return (
@@ -153,18 +153,27 @@ export function injectAdMarkup(host: HTMLElement, html: string): () => void {
 const injectedGlobal = new Set<string>();
 
 /**
- * Site-wide, invisible placements (popunder …): picks ONE random creative
- * from `ads/<file>.txt` and injects it into a hidden body-level host,
- * at most once per page load per file. Returns the injected html, or null.
+ * Site-wide, invisible placements (popunder …): injects ONE random creative
+ * into a hidden body-level host, at most once per page load per file.
+ * Returns the injected html, or null.
+ *
+ * When `creative` is passed (AdPopunder resolved it from AdsContext — the
+ * admin-managed database row), that exact creative is used; otherwise the
+ * random pick comes from `ads/<file>.txt` (file fallback).
  */
-export function injectGlobalAd(file: string): string | null {
+export function injectGlobalAd(file: string, creative?: string): string | null {
   if (typeof document === "undefined") return null;
   const name = normalizeFile(file);
   if (injectedGlobal.has(name)) return null;
-  const creatives = getAdCreatives(name);
-  if (creatives.length === 0) return null;
+  let html: string;
+  if (creative !== undefined && creative.trim()) {
+    html = creative;
+  } else {
+    const creatives = getAdCreatives(name);
+    if (creatives.length === 0) return null;
+    html = creatives[Math.floor(Math.random() * creatives.length)];
+  }
   injectedGlobal.add(name);
-  const html = creatives[Math.floor(Math.random() * creatives.length)];
   const host = document.createElement("div");
   host.setAttribute("aria-hidden", "true");
   host.style.display = "none";

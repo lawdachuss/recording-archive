@@ -1,71 +1,73 @@
-==============================================================================
- ADS FOLDER — paste your CrakRevenue ad codes here
-==============================================================================
+VAULT BANNER SLOTS — HOW THEY WORK
+===================================
 
-Every .txt file in this folder is compiled into the website bundle. The site
-finds its ad slots by FILE NAME, and each file can hold ONE OR MANY ad codes
-that rotate automatically.
+ADS ARE NOW MANAGED FROM THE ADMIN PANEL (Supabase), NOT FROM THESE FILES.
 
-HOW TO PASTE AN AD
-  1. Open the .txt file matching the slot size you bought (see table below).
-  2. Paste the creative's HTML/JS code — e.g. <script src="…"></script>,
-     an <iframe …></iframe>, or an <a href="…"><img src="…" width height></a>.
-     OR simply paste the banner IMAGE URL on its own line (…/banner.gif) —
-     each URL line auto-becomes a sized <img> creative and rotates too.
-     Non-image URLs (smartlinks) belong in direct-link.txt, not here.
-  3. Save the file, then rebuild/redeploy the site (in dev: it hot-reloads).
+  Admin → Ads  (/admin/ads)
+    - Add, edit, enable/disable and delete creatives for EVERY placeholder
+      below, from the browser.
+    - Saved in the Supabase `ad_creatives` table (migration 011-ads.sql).
+    - Every change goes live on ALL open pages immediately (Supabase
+      realtime) — no rebuild, no redeploy.
 
-HOW ROTATION WORKS (multiple ads in one slot)
-  - Every bare URL line is its own creative; for HTML codes, separate each
-    additional creative with a line containing ONLY three dashes, on its own
-    line:
-        ---
-  - The slot starts at a RANDOM creative, then swaps every 20 seconds,
-    cycling through all creatives in that file.
-  - Popunder: one random creative from popunder.txt fires once per page
-    load (network codes are self-limiting per session).
+  The .txt files in this folder are the BUILD-TIME FALLBACK only: they are
+  served when the `ad_creatives` table can't be reached (migration not run,
+  network failure). Once the table exists it is authoritative — including
+  for empty slots (deleting a slot's last creative in the admin panel
+  really does remove the ads there).
 
-IF A FILE IS EMPTY
-  - Banner slots render a styled "Advertisement" placeholder at the exact
-    reserved size (matches the site UI), so layout never jumps when you
-    paste the real code.
-  - Global slots (popunder) simply do nothing.
+  If you run the site locally without Supabase, paste creatives directly
+  into the files below and they will show.
+
+FILE FORMAT (same in files and in the admin panel)
+---------------------------------------------------
+  * One creative per entry.
+  * A bare image URL renders as a contained <img> that fits any slot.
+    (e.g. https://cdn.example.com/banner-300x250.gif)
+  * Anything else is treated as raw HTML/JS ad code and injected as-is.
+  * In the files: separate multiple creatives with a line containing only ---
+    Lines starting with <!-- are comments (headers) and are ignored.
+  * Empty slot = styled placeholder at the slot's size.
+  * Rotation: components cycle creatives every 20s from a random start;
+    the in-card layer picks a random creative per page load.
+    Popunder: ONE random creative fires once per page load, maximum.
+  * Popunder.html and direct-link.txt (smartlink URLs) take the same
+    content types — they are also managed from Admin → Ads.
+
+SLOT INVENTORY (13 placeholders — admin panel lists them all)
+-------------------------------------------------------------
+  File                        Size      Used on
+  --------------------------- --------- -----------------------------------
+  billboard-970x250           970 x 250 spare wide slot (top strip alt)
+  super-leaderboard-970x90    970 x 90  spare wide slot (top strip alt)
+  leaderboard-728x90          728 x 90  footer, Browse top, VideoDetail,
+                                        dividers (default AdLeaderboard lg)
+  banner-468x60               468 x 60  top strip + footer (md tier)
+  mobile-banner-320x50        320 x 50  site-wide top strip (phones)
+  rect-300x100                300 x 100 in-feed rows — Home, Browse, grids,
+                                        above comments (default AdLeaderboard
+                                        mobile)
+  medium-rect-300x250         300 x 250 VideoDetail sidebar (all sizes),
+                                        narrow page banners, footer on
+                                        phones, AND the in-card ad layer on
+                                        random video cards (max 2 per page,
+                                        <2 per page, fits inside thumbnails)
+  large-rect-336x280          336 x 280 spare rectangle slot
+  half-page-300x600           300 x 600 VideoDetail sidebar (desktop)
+  skyscraper-160x600          160 x 600 spare sidebar skyscraper slot
+  square-250x250              250 x 250 spare square slot
+  popunder                    —         HTML/JS popunder code, once/pageload
+  direct-link                 —         smartlink URLs (one per row); used
+                                        by the Premium page reward CTA
 
 IMPORTANT NOTES
-  - Codes are baked into the JS bundle at build time: after editing a file
-    you must redeploy for the live site to pick it up.
-  - Lines that are only HTML comments ( <!-- … --> ) are ignored, so you can
-    keep notes inside the files.
-  - Keep ad codes out of login/signup/premium/admin pages — those routes are
-    intentionally excluded by PremiumContext.isExcludedPage().
-  - Premium users and visitors who have not passed the 18+ age gate never
-    see any of these slots.
-
-FILES & WHERE THEY RENDER
--------------------------------------------------------------------------------
-  FILE                            SIZE     PLACEMENTS
--------------------------------------------------------------------------------
-  billboard-970x250.txt           970x250  Site-wide top strip (large screens)
-  super-leaderboard-970x90.txt    970x90   Spare wide slot (top strip alt)
-  leaderboard-728x90.txt          728x90   Footer (desktop), Browse top,
-                                           VideoDetail above player, dividers
-  banner-468x60.txt               468x60   Top strip + footer (medium screens)
-  mobile-banner-320x50.txt        320x50   Site-wide top strip (phones)
-  rect-300x100.txt                300x100  In-feed rows (CrakRevenue's
-                                           recommended mobile header/footer
-                                           rectangle) — Home, Browse, grids,
-                                           above comments
-  medium-rect-300x250.txt         300x250  Sidebars (VideoDetail), narrow-page
-                                           banners, footer (phones), in-card
-                                           ad layer on up to 2 random cards
-                                           per page
-  large-rect-336x280.txt          336x280  Spare rectangle slot
-  half-page-300x600.txt           300x600  VideoDetail sidebar (desktop)
-  skyscraper-160x600.txt          160x600  Spare sidebar skyscraper slot
-  square-250x250.txt              250x250  Spare square slot
-  popunder.txt                    —        Site-wide popunder (Pop Codes) —
-                                           injected once per page load
-  direct-link.txt                 —        Smartlink/Direct Link URLs — used
-                                           as the default CTA link (one URL
-                                           per line)
--------------------------------------------------------------------------------
+---------------
+  * VITE_ADS_ENABLED: empty/unset = ON. Set to "false" to hide ALL ads.
+  * Ads never show for premium members or before the age gate is passed,
+    and never on: login, signup, auth callback, premium, admin, RandomRedirect.
+  * All networks are CrakRevenue-only. No Adsterra/JuicyAds/ExoClick code,
+    env keys or routes exist anywhere anymore.
+  * Still applies to file fallback content: paste codes at build time and
+    they're baked into the JS bundle — a redeploy is required for FILE
+    edits. Admin-panel edits are instant.
+  * verify-ads script: node "C:\Users\basud\AppData\Local\Temp\opencode\verify-ads.mjs" "<path-to-this-ads-folder>"

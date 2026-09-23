@@ -1,25 +1,37 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { usePremium } from "@/contexts/PremiumContext";
+import { useAds } from "@/contexts/AdsContext";
 import { injectGlobalAd } from "@/lib/ad-creatives";
 
 /**
- * AdPopunder — site-wide popunder driven by `ads/popunder.txt`.
+ * AdPopunder — site-wide popunder, managed from Admin → Ads (Supabase
+ * `ad_creatives`, slot "popunder") with ads/popunder.txt as the
+ * build-time fallback.
  *
- * When ads are allowed (PremiumContext `showAds`), ONE random creative from
- * the file is injected once per page load; paste several codes separated by
- * a `---` line and each pageload fires a different network/offer (built-in
- * rotation). Ad-blocked users simply never fetch it, and an empty file means
- * no popunder at all.
- *
- * File-driven only: the site runs on CrakRevenue, so this is the single
- * popunder source — one popunder fires per page load, maximum.
+ * Once ads are allowed (PremiumContext `showAds`) AND the ad source has
+ * RESOLVED (Supabase fetched, or fell back to files), ONE random creative
+ * fires at most once per page load. Realtime admin edits apply instantly to
+ * every page that hasn't fired yet; a page that already fired keeps its
+ * popunder (re-firing would be obnoxious) — the new code fires on the next
+ * pageload. Empty everywhere = no popunder at all.
  */
 export function AdPopunder() {
   const { showAds } = usePremium();
+  const { creativesFor, status } = useAds();
+  const creatives = useMemo(() => creativesFor("popunder"), [creativesFor]);
+  const firedRef = useRef(false);
 
   useEffect(() => {
-    if (showAds) injectGlobalAd("popunder");
-  }, [showAds]);
+    // Wait for the source to settle so a file fallback never pre-empts the
+    // real (admin-managed) popunder that's about to arrive.
+    if (!showAds || status === "pending") return;
+    if (firedRef.current || creatives.length === 0) return;
+    firedRef.current = true;
+    injectGlobalAd(
+      "popunder",
+      creatives[Math.floor(Math.random() * creatives.length)],
+    );
+  }, [showAds, status, creatives]);
 
   return null;
 }

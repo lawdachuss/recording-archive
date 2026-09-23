@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, ListOrdered, Users, Database, ChevronLeft,
-  Shield, LogOut, Settings, Crown,
+  Shield, LogOut, Settings, Crown, Megaphone,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/admin/requests", label: "Requests", icon: ListOrdered },
   { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/ads", label: "Ads", icon: Megaphone },
   { href: "/admin/cache", label: "Cache", icon: Database },
   { href: "/admin/premium", label: "Premium", icon: Crown },
 ];
