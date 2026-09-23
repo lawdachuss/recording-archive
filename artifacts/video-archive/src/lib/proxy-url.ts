@@ -55,14 +55,13 @@ function isNoProxyHost(hostname: string): boolean {
  * global edge cache (~90-110ms repeat hits instead of 8s+ cold direct loads).
  */
 const WSRV_BASE = "https://wsrv.nl/";
-// Re-enabled (verified 200 after the earlier disable): wsrv again serves
-// files.catbox.moe cold in 1.4-3.4s and warm in ~180-220ms, resized+webp at
-// 7-14KB vs the ~49-104KB direct JPEGs trickling over catbox's ~16KB/s
-// throttle — that trickle starved the grid AND provoked the HTTP/2
-// connection-death error wall. Any per-image wsrv failure still falls back to
-// the direct catbox URL through OptimizedImage's attempt chain, and that
-// direct path keeps the connection-death retry backoff.
-const WSRV_HOSTS: string[] = ["catbox.moe", "files.catbox.moe", "litter.catbox.moe"];
+// Disabled (reverted after live testing): serial curl probes return 200 fast,
+// but a real page load BURSTS ~26 eager thumbnails + IDB warms at wsrv at
+// once — wsrv rate-limits that with HTML error pages and Chrome's ORB blocks
+// them (ERR_BLOCKED_BY_ORB, ~45% of requests), leaving thumbnails stuck
+// forever. Direct catbox + the HTTP/2 connection-death retry backoff in
+// OptimizedImage/image-cache is the stable path (0 failures, steady loads).
+const WSRV_HOSTS: string[] = [];
 
 const STATIC_RASTER_RE = /\.(jpe?g|png)$/i;
 
