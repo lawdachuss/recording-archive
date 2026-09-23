@@ -270,7 +270,17 @@ const SLOW_HOST_MAX_CONCURRENT = 2; // Catbox throttles to ~35KB/s if >2 concurr
 const MID_HOST_MAX_CONCURRENT = 8;
 const MID_CAP_HOSTS = new Set(["images.weserv.nl", "wsrv.nl"]);
 
-const hostSemaphores = new Map<string, { running: number; waiters: (() => void)[] }>();
+type HostSem = { running: number; waiters: (() => void)[]; imgWaiters: (() => void)[] };
+const hostSemaphores = new Map<string, HostSem>();
+
+function getHostSem(host: string): HostSem {
+  let sem = hostSemaphores.get(host);
+  if (!sem) {
+    sem = { running: 0, waiters: [], imgWaiters: [] };
+    hostSemaphores.set(host, sem);
+  }
+  return sem;
+}
 
 function isHttp2ResetHost(host: string): boolean {
   return HTTP2_RESET_HOSTS.has(host) || HTTP2_RESET_HOSTS.has(host.replace(/^www\./, ""));
@@ -283,23 +293,44 @@ function hostConcurrency(host: string): number {
 }
 
 function acquireHost(host: string, priority: CachePriority = 1): Promise<void> {
-  let sem = hostSemaphores.get(host);
-  if (!sem) {
-    sem = { running: 0, waiters: [] };
-    hostSemaphores.set(host, sem);
-  }
+  const sem = getHostSem(host);
   return new Promise<void>((resolve) => {
     const tryRun = () => {
-      if (sem!.running < hostConcurrency(host)) {
-        sem!.running++;
+      if (sem.running < hostConcurrency(host)) {
+        sem.running++;
         resolve();
       } else {
         // High priority (hover / user interaction) jumps ahead of background warmers
         if (priority >= 2) {
-          sem!.waiters.unshift(tryRun);
+          sem.waiters.unshift(tryRun);
         } else {
-          sem!.waiters.push(tryRun);
+          sem.waiters.push(tryRun);
         }
+      }
+    };
+    tryRun();
+  });
+}
+
+/**
+ * Element-level admission for OptimizedImage: FIFO AND always served BEFORE
+ * the regular warmer/interaction queue. Without its own lane a grid of <img>
+ * waiters (default priority = tail) starves behind the IDB warmers that every
+ * already-loaded card and sprite preload enqueue with priority ≥ 2 (which
+ * unshifts to the FRONT): released slots kept going to warmers — which on a
+ * resetting host take up to a 15s timeout each — while 24+ visible
+ * thumbnails sat src-less indefinitely. Element waiters are finite and
+ * self-limiting (one slot each, released on load/error), so they lead.
+ */
+function acquireImgHost(host: string): Promise<void> {
+  const sem = getHostSem(host);
+  return new Promise<void>((resolve) => {
+    const tryRun = () => {
+      if (sem.running < hostConcurrency(host)) {
+        sem.running++;
+        resolve();
+      } else {
+        sem.imgWaiters.push(tryRun);
       }
     };
     tryRun();
@@ -310,10 +341,11 @@ function releaseHost(host: string): void {
   const sem = hostSemaphores.get(host);
   if (!sem) return;
   sem.running = Math.max(0, sem.running - 1);
-  const next = sem.waiters.shift();
+  // Visible <img> element waiters first (FIFO), then the regular queue.
+  const next = sem.imgWaiters.shift() || sem.waiters.shift();
   if (next) {
     next();
-  } else if (sem.running === 0 && sem.waiters.length === 0) {
+  } else if (sem.running === 0 && sem.waiters.length === 0 && sem.imgWaiters.length === 0) {
     hostSemaphores.delete(host);
   }
 }
@@ -327,7 +359,7 @@ function releaseHost(host: string): void {
  * the image actually finishes loading).
  */
 export function acquireHostConcurrency(host: string): Promise<() => void> {
-  return acquireHost(host).then(() => () => releaseHost(host));
+  return acquireImgHost(host).then(() => () => releaseHost(host));
 }
 
 function hostOf(url: string): string {
