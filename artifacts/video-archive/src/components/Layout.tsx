@@ -359,13 +359,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
         />
         <div className="container mx-auto px-4 sm:px-6">
           {/* ── Site-wide footer ad (every page) ────────────────────────
-              728×90 desktop / 468×60 tablet / 300×250 phones. */}
+              728×90 desktop / 468×60 tablet / 300×100 phones (rectangle). */}
           {showAds && (
             <div className="mb-8 flex justify-center">
               <AdLeaderboard
                 lg="leaderboard-728x90"
                 md="banner-468x60"
-                mobile="medium-rect-300x250"
+                mobile="rect-300x100"
               />
             </div>
           )}

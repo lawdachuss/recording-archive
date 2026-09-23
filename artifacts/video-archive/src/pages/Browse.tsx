@@ -807,10 +807,8 @@ export default function Browse() {
             </div>
           )}
 
-          {/* Pre-pagination ad — 300×250 medium rectangle, centered */}
-          <div className="mt-12 flex justify-center">
-            <AdBanner file="medium-rect-300x250" />
-          </div>
+          {/* Pre-pagination ad — responsive rectangle: 728×90 / 468×60 / 300×100 */}
+          <AdLeaderboard mobile="rect-300x100" className="mt-12" />
 
           {/* ── Pagination (renders even on empty pages so users can navigate back) ── */}
           {data && data.total > 0 && (
