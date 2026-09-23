@@ -38,6 +38,16 @@ describe("bareUrlToMarkup", () => {
     expect(html).toContain('height="90"');
   });
 
+  it("self-heals an image-extension URL that serves HTML into a slot-sized iframe", () => {
+    const html = bareUrlToMarkup("https://w.example/wrapper?bb=1.gif", 970, 250);
+    expect(html).toContain("onerror=");
+    expect(html).toContain("createElement('iframe')");
+    // The swap reuses this.src — the URL is never re-embedded in JS.
+    expect(html).toContain("i.src=this.src");
+    expect(html).toContain("this.replaceWith(i)");
+    expect(html).toContain('i.width=this.width');
+  });
+
   it("turns a bare StripCash smartlink into a clickable banner instead of rejecting it", () => {
     const html = bareUrlToMarkup("https://go.stripchat.com/?userId=abc&p1=vault", 728, 90);
     expect(html).not.toBeNull();

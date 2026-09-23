@@ -1,6 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { supabase } from "../lib/supabase.js";
 import { requireRole } from "../middleware/requireRole.js";
+import { sniffBannerUrl, slotDims } from "../lib/ad-sniff.js";
 
 /**
  * Admin ad system — creatives CRUD + placement settings.
@@ -150,6 +151,22 @@ router.post("/admin/ads", ...admin, async (req: Request, res: Response) => {
     return;
   }
 
+  // Auto-embed: a bare pasted LINK is probed once and stored as the creative
+  // it should actually render as (sized <img> / slot <iframe> / click box) —
+  // the admin never has to hand-copy <iframe> codes. Banner slots only:
+  // popunder/direct-link have no dimensions and keep raw content by design.
+  let storeKind = kind;
+  let storeContent = content.trim();
+  if (detectKind(storeContent) === "url") {
+    const dims = slotDims(slot);
+    if (dims) {
+      const decided = await sniffBannerUrl(storeContent, dims);
+      req.log?.info?.({ slot, url: storeContent, kind: decided.kind }, "admin ad link auto-embed");
+      storeKind = decided.kind;
+      storeContent = decided.content;
+    }
+  }
+
   const { data: last } = await supabase
     .from("ad_creatives")
     .select("sort_order")
@@ -162,8 +179,8 @@ router.post("/admin/ads", ...admin, async (req: Request, res: Response) => {
     .from("ad_creatives")
     .insert({
       slot,
-      kind,
-      content: content.trim(),
+      kind: storeKind,
+      content: storeContent,
       sort_order: (Number(last?.sort_order) || -1) + 1,
     })
     .select("*")
@@ -234,11 +251,25 @@ router.patch("/admin/ads/:id", ...admin, async (req: Request, res: Response) => 
     return;
   }
 
+  // Same auto-embed probe as POST — only when content itself is being
+  // edited to a bare link (an enabled-only toggle must not re-sniff).
+  let storeKind = kind;
+  let storeContent = content.trim();
+  if (req.body?.content !== undefined && detectKind(storeContent) === "url") {
+    const dims = slotDims(existing.slot);
+    if (dims) {
+      const decided = await sniffBannerUrl(storeContent, dims);
+      req.log?.info?.({ slot: existing.slot, url: storeContent, kind: decided.kind }, "admin ad link auto-embed");
+      storeKind = decided.kind;
+      storeContent = decided.content;
+    }
+  }
+
   const { data, error } = await supabase
     .from("ad_creatives")
     .update({
-      kind,
-      content: content.trim(),
+      kind: storeKind,
+      content: storeContent,
       enabled,
       updated_at: new Date().toISOString(),
     })

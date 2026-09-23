@@ -185,13 +185,19 @@ export default function AdminAds() {
       }
     }
     const n = chunks.length;
+    // Banner slots probe pasted links at save time and store the embed that
+    // fits them (img / iframe / click box); popunder & direct-link keep raw.
+    const autoEmbedNote =
+      urlLines.length > 0 && activeSlot !== "direct-link" && activeSlot !== "popunder"
+        ? ` ${urlLines.length} link${urlLines.length === 1 ? "" : "s"} auto-embedded.`
+        : "";
     // Tell the truth about visibility: slots rotate ONE creative at a time at
     // a random start, so a new banner can take a full cycle to appear.
     const afterAdd = (rows ?? []).filter((r) => r.slot === activeSlot).length + n;
     const message =
-      afterAdd > 1
+      (afterAdd > 1
         ? `Added ${n === 1 ? "creative" : `${n} creatives`} to “${slotDef.label}” — ${afterAdd} creatives rotate there (one at a time, every ${settings.rotationSeconds}s, random start — preview yours with the Eye)`
-        : `Added ${n === 1 ? "creative" : `${n} creatives`} to “${slotDef.label}”`;
+        : `Added ${n === 1 ? "creative" : `${n} creatives`} to “${slotDef.label}”`) + autoEmbedNote;
     run(async () => {
       for (const url of urlLines) {
         await req("/api/admin/ads", "POST", { slot: activeSlot, kind: "url", content: url });
@@ -477,7 +483,7 @@ export default function AdminAds() {
                       ? "https://affiliate-link.example/…  (one URL per line)"
                       : activeSlot === "popunder"
                         ? "Paste your popunder <script>…</script> code here"
-                        : "Paste an image URL, a StripCash/smartlink URL (one per line), or a full HTML/JS ad code…"
+                        : "Paste a link — it auto-embeds (image, widget, or click-through) — or a full HTML/JS ad code, one per line…"
                   }
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}

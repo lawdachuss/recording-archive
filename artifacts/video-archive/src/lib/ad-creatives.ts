@@ -42,11 +42,16 @@ const IMAGE_EXT = /\.(gif|jpe?g|png|webp|avif|bmp)(\?|#|$)/i;
 
 /**
  * Turn a bare URL into a creative sized for the slot:
- *  - image URLs (gif/jpg/png/…) → a sized `<img>`;
+ *  - image URLs (gif/jpg/png/…) → a sized `<img>` that SELF-HEALS: if the
+ *    URL actually serves HTML (widget wrappers like `…&bb=123.gif`), the
+ *    image error swaps itself for a slot-sized `<iframe>` of the same URL;
  *  - ANY other http(s) URL (StripCash smartlinks, tracked links,
  *    extension-less CDN images) → a clickable banner box that fills the slot
  *    and opens the link in a new tab — so pasting a lone link into a banner
  *    slot always "takes" instead of being rejected.
+ * The admin API sniffs links at save time and stores finished markup for
+ * most cases (see api-server/src/lib/ad-sniff.ts); this stays the render
+ * path for ads/*.txt files and raw links saved when the probe failed.
  * Returns null only for an empty input.
  */
 export function bareUrlToMarkup(url: string, width: number, height: number): string | null {
@@ -55,7 +60,11 @@ export function bareUrlToMarkup(url: string, width: number, height: number): str
   if (IMAGE_EXT.test(url)) {
     return (
       `<img src="${safe}" alt="Advertisement" width="${width}" height="${height}" ` +
-      `style="display:block;max-width:100%;height:auto;margin:0 auto;" />`
+      `style="display:block;max-width:100%;height:auto;margin:0 auto;" ` +
+      // Self-heal: <img> errors on an HTML response → replace with an iframe
+      // of the SAME URL (reuses this.src — no URL re-escaping in JS, and the
+      // single-quoted JS keeps this safe inside the double-quoted attribute).
+      `onerror="if(!this.dataset.fb){this.dataset.fb='1';var i=document.createElement('iframe');i.src=this.src;i.width=this.width;i.height=this.height;i.frameBorder='0';i.scrolling='no';i.style.cssText='display:block;border:0;margin:0 auto;max-width:100%';this.replaceWith(i)}" />`
     );
   }
   return (
