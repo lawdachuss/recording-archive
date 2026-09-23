@@ -50,7 +50,6 @@ const PAGE_IDS = new Set([
 
 const PLACEMENT_IDS = new Set(["strip", "feed", "box", "inCard", "popunder", "rewardCta", "stripcash"]);
 
-const IMAGE_EXT = /\.(gif|jpe?g|png|webp|avif|bmp)(\?|#|$)/i;
 const URL_RE = /^https?:\/\/\S+$/i;
 const MAX_CONTENT = 200_000;
 
@@ -72,11 +71,8 @@ function validate(slot: string, kind: Kind, content: string): string | null {
   const t = content.trim();
   if (!t) return "Content is empty";
   if (t.length > MAX_CONTENT) return `Content exceeds ${MAX_CONTENT} characters`;
-  if (kind === "url") {
-    if (!URL_RE.test(t) || /\s/.test(t)) return "URL creatives must be a single http(s) URL";
-    if (slot !== "direct-link" && !IMAGE_EXT.test(t)) {
-      return "Non-image URLs belong in the direct-link slot";
-    }
+  if (kind === "url" && (!URL_RE.test(t) || /\s/.test(t))) {
+    return "URL creatives must be a single http(s) URL";
   }
   return null;
 }

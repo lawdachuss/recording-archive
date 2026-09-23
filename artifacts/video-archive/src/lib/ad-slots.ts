@@ -15,20 +15,22 @@ export interface AdSlotDef {
   size: string;
   /** Short hint shown above the add-form. */
   note: string;
+  /** True when no page component mounts this slot — creatives here never display (the admin shows a warning). */
+  spare?: boolean;
 }
 
 export const AD_SLOTS: AdSlotDef[] = [
   { file: "billboard-970x250", label: "Billboard", size: "970×250", note: "Site-wide top strip (large screens)." },
-  { file: "super-leaderboard-970x90", label: "Super Leaderboard", size: "970×90", note: "Spare wide slot (top strip alt)." },
+  { file: "super-leaderboard-970x90", label: "Super Leaderboard", size: "970×90", note: "Spare wide slot (top strip alt).", spare: true },
   { file: "leaderboard-728x90", label: "Leaderboard", size: "728×90", note: "Footer, Browse top, VideoDetail, dividers." },
   { file: "banner-468x60", label: "Banner", size: "468×60", note: "Top strip + footer (medium screens)." },
   { file: "mobile-banner-320x50", label: "Mobile Banner", size: "320×50", note: "Site-wide top strip (phones)." },
   { file: "rect-300x100", label: "Rectangle (in-feed)", size: "300×100", note: "In-feed rows — Home, Browse, grids, above comments." },
   { file: "medium-rect-300x250", label: "Medium Rectangle", size: "300×250", note: "Sidebars, footer (phones), narrow pages, and the default in-card layer source." },
-  { file: "large-rect-336x280", label: "Large Rectangle", size: "336×280", note: "Spare rectangle slot." },
+  { file: "large-rect-336x280", label: "Large Rectangle", size: "336×280", note: "Spare rectangle slot.", spare: true },
   { file: "half-page-300x600", label: "Half Page", size: "300×600", note: "VideoDetail sidebar (desktop)." },
-  { file: "skyscraper-160x600", label: "Skyscraper", size: "160×600", note: "Spare sidebar skyscraper slot." },
-  { file: "square-250x250", label: "Square", size: "250×250", note: "Spare square slot." },
+  { file: "skyscraper-160x600", label: "Skyscraper", size: "160×600", note: "Spare sidebar skyscraper slot.", spare: true },
+  { file: "square-250x250", label: "Square", size: "250×250", note: "Spare square slot.", spare: true },
   { file: "popunder", label: "Popunder", size: "—", note: "HTML/JS popunder code — one random creative fires once per page load." },
   { file: "direct-link", label: "Direct Links / Smartlinks", size: "—", note: "One URL per row — used by the Premium page's reward CTA." },
 ];

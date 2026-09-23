@@ -41,16 +41,30 @@ const BARE_URL = /^https?:\/\/\S+$/i;
 const IMAGE_EXT = /\.(gif|jpe?g|png|webp|avif|bmp)(\?|#|$)/i;
 
 /**
- * Turn a bare image URL into an <img> creative sized for the slot;
- * non-image URLs (smartlinks etc.) don't belong in banner slots → null
- * (paste those into ads/direct-link.txt instead).
+ * Turn a bare URL into a creative sized for the slot:
+ *  - image URLs (gif/jpg/png/…) → a sized `<img>`;
+ *  - ANY other http(s) URL (StripCash smartlinks, tracked links,
+ *    extension-less CDN images) → a clickable banner box that fills the slot
+ *    and opens the link in a new tab — so pasting a lone link into a banner
+ *    slot always "takes" instead of being rejected.
+ * Returns null only for an empty input.
  */
 export function bareUrlToMarkup(url: string, width: number, height: number): string | null {
-  if (!IMAGE_EXT.test(url)) return null;
+  if (!url) return null;
   const safe = url.replace(/"/g, "&quot;");
+  if (IMAGE_EXT.test(url)) {
+    return (
+      `<img src="${safe}" alt="Advertisement" width="${width}" height="${height}" ` +
+      `style="display:block;max-width:100%;height:auto;margin:0 auto;" />`
+    );
+  }
   return (
-    `<img src="${safe}" alt="Advertisement" width="${width}" height="${height}" ` +
-    `style="display:block;max-width:100%;height:auto;margin:0 auto;" />`
+    `<a href="${safe}" target="_blank" rel="sponsored noopener nofollow" ` +
+    `style="display:flex;align-items:center;justify-content:center;width:100%;` +
+    `height:${height}px;box-sizing:border-box;border:1px dashed rgba(148,163,184,.45);` +
+    `border-radius:8px;background:rgba(148,163,184,.08);color:rgba(148,163,184,.95);` +
+    `font:600 11px/1 system-ui,-apple-system,sans-serif;letter-spacing:.12em;` +
+    `text-transform:uppercase;text-decoration:none;">Advertisement</a>`
   );
 }
 
@@ -58,7 +72,7 @@ export function bareUrlToMarkup(url: string, width: number, height: number): str
  * One `---`-separated block → zero or more creatives.
  * - HTML comments are stripped (instruction headers never render)
  * - a line that is ONLY a URL becomes its own rotating creative
- *   (image URLs → sized <img>; other URLs are skipped here)
+ *   (image URLs → sized <img>; other URLs → clickable banner box)
  * - everything else stays together as one HTML/JS creative
  */
 function blockToCreatives(block: string, width: number, height: number): string[] {

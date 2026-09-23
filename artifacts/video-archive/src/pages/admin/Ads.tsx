@@ -22,7 +22,6 @@ const SELECT_CLASS =
   "h-9 rounded-md border border-input bg-transparent px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50";
 
 const SINGLE_URL = /^https?:\/\/\S+$/i;
-const IMAGE_EXT = /\.(gif|jpe?g|png|webp|avif|bmp)(\?|#|$)/i;
 
 const isSingleUrl = (s: string) => SINGLE_URL.test(s.trim()) && !/\s/.test(s.trim());
 
@@ -31,13 +30,10 @@ const detectKind = (content: string): "html" | "url" =>
   isSingleUrl(content) ? "url" : "html";
 
 /** Client-side mirror of the API's validation rules — errors appear before the round-trip. */
-function validateContent(slot: string, content: string): string | null {
+function validateContent(content: string): string | null {
   const t = content.trim();
   if (!t) return "Content is empty";
   if (t.length > 200_000) return "Content exceeds 200,000 characters";
-  if (detectKind(t) === "url" && slot !== "direct-link" && !IMAGE_EXT.test(t)) {
-    return "Non-image URLs belong in the direct-link slot";
-  }
   return null;
 }
 
@@ -164,32 +160,41 @@ export default function AdminAds() {
   const handleAdd = () => {
     const lines = draft.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     if (lines.length === 0) return;
-    // Validate first: bulk URL pastes line-by-line, HTML as a whole block.
-    const chunks = lines.every(isSingleUrl) ? lines : [lines.join("\n")];
+    // Match the file-parser semantics: bare-URL lines become individual
+    // rotating creatives (StripCash smartlinks, image URLs), everything else
+    // stays together as one HTML/JS creative — mixed pastes work too.
+    const urlLines = lines.filter(isSingleUrl);
+    const htmlLines = lines.filter((l) => !isSingleUrl(l));
+    const chunks = [...urlLines, ...(htmlLines.length > 0 ? [htmlLines.join("\n")] : [])];
     for (const chunk of chunks) {
-      const err = validateContent(activeSlot, chunk);
+      const err = validateContent(chunk);
       if (err) {
         setResult({ type: "error", message: err });
         return;
       }
     }
-    const n = lines.length;
+    const n = chunks.length;
+    // Tell the truth about visibility: slots rotate ONE creative at a time at
+    // a random start, so a new banner can take a full cycle to appear.
+    const afterAdd = (rows ?? []).filter((r) => r.slot === activeSlot).length + n;
+    const message =
+      afterAdd > 1
+        ? `Added ${n === 1 ? "creative" : `${n} creatives`} to “${slotDef.label}” — ${afterAdd} creatives rotate there (one at a time, every ${settings.rotationSeconds}s, random start — preview yours with the Eye)`
+        : `Added ${n === 1 ? "creative" : `${n} creatives`} to “${slotDef.label}”`;
     run(async () => {
-      if (lines.every(isSingleUrl)) {
-        // One row per URL (direct-link pastes, multi-image adds).
-        for (const url of lines) {
-          await req("/api/admin/ads", "POST", { slot: activeSlot, kind: "url", content: url });
-        }
-      } else {
-        await req("/api/admin/ads", "POST", { slot: activeSlot, content: lines.join("\n") });
+      for (const url of urlLines) {
+        await req("/api/admin/ads", "POST", { slot: activeSlot, kind: "url", content: url });
+      }
+      if (htmlLines.length > 0) {
+        await req("/api/admin/ads", "POST", { slot: activeSlot, content: htmlLines.join("\n") });
       }
       setDraft("");
-    }, `Added ${n === 1 ? "creative" : `${n} creatives`} to “${slotDef.label}”`);
+    }, message);
   };
 
   const handleSave = (row: AdRow) => {
     const content = editDraft.trim();
-    const err = validateContent(row.slot, content);
+    const err = validateContent(content);
     if (err) {
       setResult({ type: "error", message: err });
       return;
@@ -427,6 +432,11 @@ export default function AdminAds() {
                     <Badge variant="outline">{slotDef.size}</Badge>
                   </CardTitle>
                   <p className="text-xs text-muted-foreground mt-1">{slotDef.note}</p>
+                  {slotDef.spare && (
+                    <p className="text-xs font-medium text-amber-500 mt-1">
+                      Not mounted anywhere on the site yet — creatives added here will not display.
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <Badge variant="approved">
@@ -456,7 +466,7 @@ export default function AdminAds() {
                       ? "https://affiliate-link.example/…  (one URL per line)"
                       : activeSlot === "popunder"
                         ? "Paste your popunder <script>…</script> code here"
-                        : "Paste an image URL (one per line) or a full HTML/JS ad code…"
+                        : "Paste an image URL, a StripCash/smartlink URL (one per line), or a full HTML/JS ad code…"
                   }
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}

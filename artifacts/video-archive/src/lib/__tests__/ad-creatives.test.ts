@@ -1,5 +1,37 @@
 import { describe, it, expect } from "vitest";
-import { buildClickPopMarkup } from "../ad-creatives";
+import { buildClickPopMarkup, bareUrlToMarkup } from "../ad-creatives";
+
+describe("bareUrlToMarkup", () => {
+  it("turns an image URL into a sized <img>", () => {
+    const html = bareUrlToMarkup("https://cdn.example.com/banner.gif?x=1", 728, 90);
+    expect(html).not.toBeNull();
+    expect(html).toContain("<img");
+    expect(html).toContain('src="https://cdn.example.com/banner.gif?x=1"');
+    expect(html).toContain('width="728"');
+    expect(html).toContain('height="90"');
+  });
+
+  it("turns a bare StripCash smartlink into a clickable banner instead of rejecting it", () => {
+    const html = bareUrlToMarkup("https://go.stripchat.com/?userId=abc&p1=vault", 728, 90);
+    expect(html).not.toBeNull();
+    expect(html).toContain('<a href="https://go.stripchat.com/?userId=abc&p1=vault"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="sponsored noopener nofollow"');
+    expect(html).toContain("height:90px");
+    expect(html).toContain("Advertisement");
+    expect(html).not.toContain("<img");
+  });
+
+  it("quote-escapes the URL in the href", () => {
+    const html = bareUrlToMarkup('https://x.com/?a="b"', 300, 100);
+    expect(html).not.toBeNull();
+    expect(html).toContain("&quot;b&quot;");
+  });
+
+  it("returns null only for an empty input", () => {
+    expect(bareUrlToMarkup("", 300, 100)).toBeNull();
+  });
+});
 
 describe("buildClickPopMarkup", () => {
   it("builds a once-per-load click pop for a valid URL", () => {
