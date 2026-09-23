@@ -5,6 +5,7 @@ import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
 import { AdBanner } from "@/components/ads/AdBanner";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
+import { AdVideoCard } from "@/components/ads/AdVideoCard";
 import { VideoCard } from "@/components/VideoCard";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import { useAuth } from "@/contexts/AuthContext";
@@ -273,6 +274,8 @@ export default function CollectionDetail() {
                 </div>
               );
             })}
+            {/* Native ad card — one grid cell, xHamster-style */}
+            {items.length > 8 && <AdVideoCard />}
           </div>
         )}
         {/* Bottom ad — 300×250 medium rectangle */}

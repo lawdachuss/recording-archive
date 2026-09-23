@@ -13,7 +13,7 @@ import { trackActivity } from "@/lib/rum";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { AlertCircle, ArrowLeft, Heart, LogIn, Users, Film } from "lucide-react";
-import { AdBanner } from "@/components/ads/AdBanner";
+import { AdVideoCard } from "@/components/ads/AdVideoCard";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { toast } from "@/hooks/use-toast";
 import { proxyUrl } from "@/lib/proxy-url";
@@ -266,10 +266,8 @@ export default function PerformerProfile() {
                   <VideoCard recording={rec} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
                 </div>
               ))}
-              {/* In-feed ad row — spans the grid */}
-              {pagedRecordings.length > 8 && (
-                <AdBanner file="rect-300x100" fluid className="col-span-full" />
-              )}
+              {/* Native ad card — one grid cell, xHamster-style */}
+              {pagedRecordings.length > 8 && <AdVideoCard />}
             </div>
 
             {totalPages > 1 && (

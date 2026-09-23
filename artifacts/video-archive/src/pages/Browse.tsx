@@ -16,7 +16,7 @@ import {
   ListRecordingsSort,
 } from "@workspace/api-client-react";
 import { Layout } from "@/components/Layout";
-import { AdBanner } from "@/components/ads/AdBanner";
+import { AdVideoCard } from "@/components/ads/AdVideoCard";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { VideoCard } from "@/components/VideoCard";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -752,11 +752,9 @@ export default function Browse() {
                         />
                       </div>,
                     ];
-                    // In-feed ad row after the 2nd row of cards
+                    // Native ad card after the 2nd row of cards
                     if (i === 7 && recordings.length > 12) {
-                      cells.push(
-                        <AdBanner key="ad-feed" file="rect-300x100" fluid className="col-span-full" />
-                      );
+                      cells.push(<AdVideoCard key="ad-card" />);
                     }
                     return cells;
                   })}
