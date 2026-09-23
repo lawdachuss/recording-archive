@@ -21,8 +21,6 @@ import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { useConnectionConstrained } from "@/hooks/use-connection-quality";
 import { buildThumbnailFallbacks } from "@/lib/mirrors";
 import { Search, ArrowRight, TrendingUp, Clock, Users, Tags, Clapperboard, Star } from "lucide-react";
-import { AdSlot } from "@/components/ads/AdSlot";
-import { MarineAds } from "@/components/ads/MarineAds";
 
 type Tab = "recent" | "popular";
 
@@ -145,12 +143,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Ad strip — leaderboard on desktop, mobile banner below md */}
-      <div className="container mx-auto px-4 sm:px-6 py-4 flex flex-col items-center gap-3">
-        <AdSlot name="LEADERBOARD" label="728×90 — Leaderboard" width={728} height={90} />
-        <AdSlot name="MOBILE_SMALL" label="300×50 — Mobile" width={300} height={50} desktop={false} />
-      </div>
-
       {/* Continue Watching */}
       {user && continueWithThumbnails.length > 0 && (
         <section className="px-4 sm:px-6 py-10 relative overflow-hidden">
@@ -256,11 +248,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Post-recordings ad — billboard on desktop, mobile large below lg */}
-      <div className="container mx-auto px-4 sm:px-6 py-8 flex flex-col items-center gap-6">
-        <AdSlot name="BILLBOARD" label="908×258 — Billboard" width={908} height={258} />
-      </div>
-
       {/* You might like these — personalized recommendations */}
       {(recommendations.length > 0 || recLoading) && (
         <section className="border-t border-border/50 px-4 sm:px-6 py-14 relative overflow-hidden">
@@ -299,11 +286,6 @@ export default function Home() {
           </div>
         </section>
       )}
-
-      {/* Pre-footer ad — medium rectangle */}
-      <div className="container mx-auto px-4 sm:px-6 py-8 flex justify-center border-t border-border/50">
-        <AdSlot name="MEDIUM_RECT" label="300×250 — Medium Rectangle" width={300} height={250} />
-      </div>
 
       {/* Top Performers — Circular avatars */}
       {(topPerformers.length > 0 || performersLoading) && (
@@ -376,13 +358,6 @@ export default function Home() {
           </div>
         </section>
       )}
-
-      {/* Marine Ads — native slot */}
-      <div className="container mx-auto px-4 sm:px-6 py-8">
-        <div className="flex justify-center">
-          <MarineAds adzone={6031794} />
-        </div>
-      </div>
     </Layout>
   );
 }
