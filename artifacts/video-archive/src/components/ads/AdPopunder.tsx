@@ -11,8 +11,9 @@ import { injectGlobalAd } from "@/lib/ad-creatives";
  * rotation). Ad-blocked users simply never fetch it, and an empty file means
  * no popunder at all.
  *
- * The env-driven Adsterra popunder (AdsterraGlobal) keeps working alongside
- * it — remove VITE_ADSTERRA_POPUNDER if you only want file-driven pops.
+ * While this file has codes, the env-driven Adsterra popunder
+ * (VITE_ADSTERRA_POPUNDER) is skipped automatically — the file wins, so only
+ * one popunder ever fires per page load.
  */
 export function AdPopunder() {
   const { showAds } = usePremium();

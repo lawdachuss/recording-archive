@@ -79,9 +79,14 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     const inGrace = false;
 
     const excludedPage = isExcludedPage(location);
-    // Ads render when age gate has passed, user is not premium, route is not excluded.
-    // Grace period removed - ads show immediately.
-    const showAds = agePassed && !excludedPage && !isPremium;
+    // Master switch VITE_ADS_ENABLED: unset/empty means ON (Vercel ships the
+    // key empty today, and it previously had no effect at all); "false"/"0"/
+    // "no" turns every ad slot off at once.
+    const adsFlag = (import.meta.env.VITE_ADS_ENABLED ?? "").trim().toLowerCase();
+    const adsEnabled = adsFlag !== "false" && adsFlag !== "0" && adsFlag !== "no";
+    // Ads render when the switch is on, the age gate has passed, the user is
+    // not premium and the route is not excluded.
+    const showAds = adsEnabled && agePassed && !excludedPage && !isPremium;
 
     return {
       config,

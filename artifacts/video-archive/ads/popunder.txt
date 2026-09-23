@@ -9,7 +9,10 @@
   Put several codes in and each page load then picks a different
   network/offer automatically (separate codes with a line of only three
   dashes — see README.txt). Empty file = no popunder at all.
-  (The Adsterra popunder env var VITE_ADSTERRA_POPUNDER still works too.)
+  While this file has a code, the VITE_ADSTERRA_POPUNDER env fallback is
+  skipped (the file wins) so only ONE popunder ever fires.
 
   Paste starting below this comment.
 -->
+
+<script src="https://pl31364829.profitableratecpmnetwork.com/ce/0d/4a/ce0d4ae66ec6ddfb81a8f425c82b840f.js"></script>

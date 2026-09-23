@@ -34,6 +34,8 @@ IF A FILE IS EMPTY
 IMPORTANT NOTES
   - Codes are baked into the JS bundle at build time: after editing a file
     you must redeploy for the live site to pick it up.
+  - File codes win over the legacy VITE_* env fallbacks (popunder, social
+    bar, smartlink), so nothing can ever fire twice.
   - Lines that are only HTML comments ( <!-- … --> ) are ignored, so you can
     keep notes inside the files.
   - Keep ad codes out of login/signup/premium/admin pages — those routes are
@@ -62,6 +64,8 @@ FILES & WHERE THEY RENDER
   square-250x250.txt        250x250     Spare square slot
   popunder.txt              —           Site-wide popunder (Pop Codes) —
                                         injected once per page load
+  socialbar.txt             —           Sticky social-bar script — loaded
+                                        once per session site-wide
   direct-link.txt           —           Smartlink/Direct Link URLs — used as
                                         the default CTA link (one URL per line)
 -------------------------------------------------------------------------------

@@ -22,11 +22,16 @@
  * (age gate passed, not premium, route not excluded).
  */
 
-const rawFiles = import.meta.glob<string>("../../ads/*.txt", {
+const globbedFiles = import.meta.glob<string>("../../ads/*.txt", {
   query: "?raw",
   import: "default",
   eager: true,
 }) as Record<string, string>;
+
+/** Slot files only — README.txt documents the folder and is never a slot. */
+const rawFiles = Object.fromEntries(
+  Object.entries(globbedFiles).filter(([key]) => !key.endsWith("/README.txt"))
+) as Record<string, string>;
 
 /** A line containing only three-or-more dashes separates creatives. */
 const SEPARATOR = /^\s*-{3,}\s*$/m;
@@ -170,13 +175,39 @@ export function injectGlobalAd(file: string): string | null {
 
 /**
  * Smartlink / direct-link URL from `ads/direct-link.txt` (one URL per line,
- * random pick so several offers rotate). Null when none are configured.
+ * random pick so several offers rotate across page loads). The pick is
+ * cached for the whole page load so every link on screen resolves to the
+ * SAME offer instead of flapping on each render. Null when none are
+ * configured.
  */
+let cachedDirectLink: string | null | undefined;
+
 export function getDirectLink(): string | null {
+  if (cachedDirectLink !== undefined) return cachedDirectLink;
   const raw = rawFor("direct-link");
+  let pick: string | null = null;
+  if (raw) {
+    const text = raw.replace(HTML_COMMENT, "\n");
+    const urls = text.match(/https?:\/\/[^\s"'<>]+/g);
+    if (urls && urls.length > 0) {
+      pick = urls[Math.floor(Math.random() * urls.length)];
+    }
+  }
+  cachedDirectLink = pick;
+  return pick;
+}
+
+/**
+ * First `<script src=…>` (or bare URL) pasted into `ads/<file>.txt`, or
+ * null when the file has no code. Used by global loader placements
+ * (social bar) that need a script URL instead of injected markup.
+ */
+export function getFileScriptSrc(file: string): string | null {
+  const raw = rawFor(file);
   if (!raw) return null;
   const text = raw.replace(HTML_COMMENT, "\n");
-  const urls = text.match(/https?:\/\/[^\s"'<>]+/g);
-  if (!urls || urls.length === 0) return null;
-  return urls[Math.floor(Math.random() * urls.length)];
+  const tag = /<script[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/i.exec(text);
+  if (tag?.[1]) return tag[1].trim();
+  const url = text.match(/https?:\/\/[^\s"'<>]+/);
+  return url ? url[0] : null;
 }

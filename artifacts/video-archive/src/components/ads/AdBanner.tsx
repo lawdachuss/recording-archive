@@ -5,6 +5,7 @@ import {
   injectAdMarkup,
   parseAdDimensions,
 } from "@/lib/ad-creatives";
+import { adsterraBannerConfig } from "@/lib/ads";
 import { JuicyAds } from "@/components/ads/JuicyAds";
 
 /**
@@ -14,9 +15,12 @@ import { JuicyAds } from "@/components/ads/JuicyAds";
  *   1. Creatives pasted into `ads/<file>.txt` are injected (scripts execute)
  *      and ROTATED: a random creative first, then the next one every
  *      `rotateMs` (default 20s) when the file holds several codes.
- *   2. Legacy env-driven JuicyAds zones (`VITE_JUICYADS_<NAME>_ZONE`), still
+ *   2. Optional env-driven network banner (VITE_ADSTERRA_BANNER_KEY +
+ *      VITE_ADSTERRA_BANNER_INVOKE, or VITE_AD_NETWORK_SCRIPT + zone/class)
+ *      when configured.
+ *   3. Legacy env-driven JuicyAds zones (`VITE_JUICYADS_<NAME>_ZONE`), still
  *      rotated the same way, when passed via `zoneEnv`.
- *   3. Otherwise a styled dashed placeholder reserved at the exact size —
+ *   4. Otherwise a styled dashed placeholder reserved at the exact size —
  *      it matches the site UI, so layout is stable until real codes land.
  *
  * Nothing renders at all (not even the placeholder) when PremiumContext
@@ -108,7 +112,16 @@ export function AdBanner({
   const width = widthProp ?? dims.width;
   const height = heightProp ?? dims.height;
 
-  const creatives = useMemo(() => getAdCreatives(file), [file]);
+  const creatives = useMemo(() => {
+    const fromFile = getAdCreatives(file);
+    if (fromFile.length > 0) return fromFile;
+    // Tier 2: optional env-driven network banner for empty slots
+    // (VITE_ADSTERRA_BANNER_KEY + _INVOKE, or VITE_AD_NETWORK_SCRIPT +
+    // zone/class) — undefined while those keys are empty, which falls
+    // through to the zone / placeholder tiers below.
+    const fromEnv = adsterraBannerConfig(width, height);
+    return fromEnv ? [fromEnv] : [];
+  }, [file, width, height]);
   const zones = useMemo(() => (zoneEnv ? parseJuicyZones(zoneEnv) : []), [zoneEnv]);
 
   // Start at a random creative so two slots with the same file don't sync.
