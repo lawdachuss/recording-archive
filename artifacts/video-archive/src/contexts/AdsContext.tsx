@@ -10,6 +10,7 @@ import {
 } from "react";
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { getSupabase } from "@/lib/supabase";
+import { resolveApiPath } from "@/lib/api-base";
 import {
   bareUrlToMarkup,
   getAdCreatives,
@@ -38,6 +39,16 @@ export interface AdRow {
  */
 export type AdsStatus = "pending" | "database" | "file";
 
+/** StripCash (Stripchat) smartlink status from `GET /api/ads/stripcash`. */
+export interface StripCashConfig {
+  /** Server env has a usable key (or STRIPCASH_SMARTLINK override). */
+  configured: boolean;
+  /** Last probe of the smartlink saw a live redirect (10-min server cache). */
+  verified: boolean;
+  /** Tracked smartlink, or null when nothing usable is configured. */
+  smartlink: string | null;
+}
+
 interface AdsContextValue {
   /** All rows (null until the first fetch settles). Admin panel reads these raw. */
   rows: AdRow[] | null;
@@ -57,6 +68,13 @@ interface AdsContextValue {
   creativesFor(slot: string): string[];
   /** Random direct-link for CTAs; stable per page load; null when the reward CTA zone is off. */
   directLink: string | null;
+  /**
+   * StripCash smartlink status (null until the fetch settles, and it stays
+   * null when the endpoint is unreachable — StripCash then simply contributes
+   * no candidates; other ads are unaffected). Feeds the direct-link pool and
+   * the popunder rotation whenever its zone switch is on.
+   */
+  stripcash: StripCashConfig | null;
   /** Re-fetch creatives + settings now (admin panel's manual refresh button). */
   refresh(): Promise<void>;
 }
@@ -81,6 +99,7 @@ export function AdsProvider({ children }: { children: ReactNode }) {
   const [rows, setRows] = useState<AdRow[] | null>(null);
   const [status, setStatus] = useState<AdsStatus>("pending");
   const [settings, setSettings] = useState<AdSettings>(DEFAULT_AD_SETTINGS);
+  const [stripcash, setStripCash] = useState<StripCashConfig | null>(null);
   const sbRef = useRef<SupabaseClient | null>(null);
   /** Per-slot memo so unchanged slots keep their array identity across fetches. */
   const slotCache = useRef(new Map<string, string[]>());
@@ -142,6 +161,28 @@ export function AdsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setAdCardLimit(settings.inCard.maxPerPage);
   }, [settings]);
+
+  // StripCash smartlink — best-effort like settings: endpoint down or key not
+  // configured just means StripCash adds no candidates (never breaks others).
+  useEffect(() => {
+    let alive = true;
+    fetch(resolveApiPath("/api/ads/stripcash"), { signal: AbortSignal.timeout(5000) })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { configured?: unknown; verified?: unknown; smartlink?: unknown } | null) => {
+        if (!alive || !d) return;
+        setStripCash({
+          configured: Boolean(d.configured),
+          verified: Boolean(d.verified),
+          smartlink: typeof d.smartlink === "string" && d.smartlink ? d.smartlink : null,
+        });
+      })
+      .catch(() => {
+        /* StripCash stays off — other ads keep working */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -249,23 +290,34 @@ export function AdsProvider({ children }: { children: ReactNode }) {
   const directLink = useMemo(() => {
     // Reward-CTA zone switched off in Admin → Placements → no link opens.
     if (settings.placements.rewardCta === false) return null;
-    if (!dbRows) return getDirectLink();
-    const urls = dbRows
-      .filter(
-        (r) =>
+    const pool: string[] = [];
+    if (dbRows) {
+      for (const r of dbRows) {
+        if (
           r.slot === "direct-link" &&
           r.enabled &&
           r.kind === "url" &&
-          /^https?:\/\/\S+$/i.test(r.content.trim()),
-      )
-      .map((r) => r.content.trim());
-    if (urls.length === 0) return null;
-    return urls[Math.floor(Math.random() * urls.length)];
-  }, [dbRows, settings.placements.rewardCta]);
+          /^https?:\/\/\S+$/i.test(r.content.trim())
+        ) {
+          pool.push(r.content.trim());
+        }
+      }
+    } else {
+      const fileLink = getDirectLink();
+      if (fileLink) pool.push(fileLink);
+    }
+    // StripCash smartlink rotates into the same pool (its own zone switch);
+    // in database mode it also keeps the CTA alive when no direct-link rows exist.
+    if (settings.placements.stripcash !== false && stripcash?.smartlink) {
+      pool.push(stripcash.smartlink);
+    }
+    if (pool.length === 0) return null;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }, [dbRows, settings.placements.rewardCta, settings.placements.stripcash, stripcash]);
 
   const value = useMemo(
-    () => ({ rows, status, settings, creativesFor, directLink, refresh }),
-    [rows, status, settings, creativesFor, directLink, refresh],
+    () => ({ rows, status, settings, creativesFor, directLink, stripcash, refresh }),
+    [rows, status, settings, creativesFor, directLink, stripcash, refresh],
   );
 
   return <AdsContext.Provider value={value}>{children}</AdsContext.Provider>;

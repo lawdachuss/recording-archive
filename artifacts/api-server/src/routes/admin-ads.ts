@@ -48,7 +48,7 @@ const PAGE_IDS = new Set([
   "notifications", "my-requests", "request", "profile", "settings",
 ]);
 
-const PLACEMENT_IDS = new Set(["strip", "feed", "box", "inCard", "popunder", "rewardCta"]);
+const PLACEMENT_IDS = new Set(["strip", "feed", "box", "inCard", "popunder", "rewardCta", "stripcash"]);
 
 const IMAGE_EXT = /\.(gif|jpe?g|png|webp|avif|bmp)(\?|#|$)/i;
 const URL_RE = /^https?:\/\/\S+$/i;

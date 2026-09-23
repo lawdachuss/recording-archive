@@ -18,6 +18,7 @@ import rumRouter from "./rum.js";
 import premiumRouter from "./premium.js";
 import hotRouter from "./hot.js";
 import adminAdsRouter from "./admin-ads.js";
+import stripcashRouter from "./stripcash.js";
 
 const router: IRouter = Router();
 
@@ -40,5 +41,6 @@ router.use(rumRouter);
 router.use(premiumRouter);
 router.use(hotRouter);
 router.use(adminAdsRouter);
+router.use(stripcashRouter);
 
 export default router;

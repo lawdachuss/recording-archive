@@ -223,6 +223,29 @@ export function injectGlobalAd(file: string, creative?: string): string | null {
 }
 
 /**
+ * Markup for a click-activated popunder that opens `url` once per page load
+ * — used for the StripCash smartlink candidate in the popunder pool.
+ *
+ * A plain window.open() from a load handler would be eaten by popup
+ * blockers, so the open happens inside a real user gesture (first click);
+ * the listener removes itself so the page never pops twice. The URL is
+ * JSON-serialised with "<" escaped so a crafted link can't break out of the
+ * script tag. Returns null for anything that isn't a bare http(s) URL.
+ */
+export function buildClickPopMarkup(url: string): string | null {
+  const u = url.trim();
+  if (!/^https?:\/\/\S+$/i.test(u)) return null;
+  const serialized = JSON.stringify(u).replace(/</g, "\\u003c");
+  return (
+    "<script>(function(){var u=" +
+    serialized +
+    ';function p(){document.removeEventListener("click",p,true);' +
+    'try{window.open(u,"_blank","noopener,noreferrer");}catch(e){}}' +
+    'document.addEventListener("click",p,true);})();<\/script>'
+  );
+}
+
+/**
  * Smartlink / direct-link URL from `ads/direct-link.txt` (one URL per line,
  * random pick so several offers rotate across page loads). The pick is
  * cached for the whole page load so every link on screen resolves to the

@@ -34,7 +34,14 @@ export const AD_SLOTS: AdSlotDef[] = [
 ];
 
 /** Zones ads render in — each can be switched off from Admin → Ads → Placements. */
-export type AdPlacementId = "strip" | "feed" | "box" | "inCard" | "popunder" | "rewardCta";
+export type AdPlacementId =
+  | "strip"
+  | "feed"
+  | "box"
+  | "inCard"
+  | "popunder"
+  | "rewardCta"
+  | "stripcash";
 
 export interface AdPlacementDef {
   id: AdPlacementId;
@@ -49,6 +56,7 @@ export const AD_PLACEMENTS: AdPlacementDef[] = [
   { id: "inCard", label: "In-card thumbnail layer", note: "Ads overlaid on random video thumbnails (count/slot set below)." },
   { id: "popunder", label: "Popunder", note: "One popunder fires per page load." },
   { id: "rewardCta", label: "Premium reward CTA link", note: "The direct link opened by the reward claim button on the Premium page." },
+  { id: "stripcash", label: "StripCash smartlink (Stripchat)", note: "API-key smartlink — rotates into the reward CTA link pool and the popunder. StripCash banner codes go in slots as usual." },
 ];
 
 /** Pages with an individual ad on/off switch. */

@@ -65,8 +65,10 @@ IMPORTANT NOTES
   * VITE_ADS_ENABLED: empty/unset = ON. Set to "false" to hide ALL ads.
   * Ads never show for premium members or before the age gate is passed,
     and never on: login, signup, auth callback, premium, admin, RandomRedirect.
-  * All networks are CrakRevenue-only. No Adsterra/JuicyAds/ExoClick code,
-    env keys or routes exist anywhere anymore.
+  * All network codes: CrakRevenue (slot codes) + StripCash/Stripchat
+    (smartlink from the server-side STRIPCASH_API_KEY — see
+    GET /api/ads/stripcash; banner/popunder codes paste into slots as HTML).
+    No Adsterra/JuicyAds/ExoClick code, env keys or routes exist anywhere.
   * Still applies to file fallback content: paste codes at build time and
     they're baked into the JS bundle — a redeploy is required for FILE
     edits. Admin-panel edits are instant.

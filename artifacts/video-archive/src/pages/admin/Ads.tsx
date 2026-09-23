@@ -50,9 +50,10 @@ type TabId = "creatives" | "placements";
  *    add (bulk URL lines), inline edit, enable/disable, duplicate, delete,
  *    clear-slot, rotation order (↑↓), and a sandboxed HTML preview.
  *  • **Placements tab** — WHERE ads show: per-page switches, per-zone
- *    switches (strips / in-feed / boxes / in-card / popunder / reward CTA),
- *    the in-card layer (max per page + source slot) and the rotation
- *    interval — all persisted to `ad_settings`.
+ *    switches (strips / in-feed / boxes / in-card / popunder / reward CTA /
+ *    StripCash), the in-card layer (max per page + source slot), the rotation
+ *    interval and a live StripCash API-key connection card — all persisted
+ *    to `ad_settings`.
  *
  * Rows/settings come from AdsContext (live via Supabase realtime on both
  * tables), mutations go through `/api/admin/ads` (service-role +
@@ -78,6 +79,32 @@ export default function AdminAds() {
   useEffect(() => {
     if (!settingsDirty) setDraftSettings(settings);
   }, [settings, settingsDirty]);
+
+  // StripCash smartlink connection status (public endpoint, best-effort).
+  const [stripcash, setStripCash] = useState<{
+    configured: boolean;
+    verified: boolean;
+    smartlink: string | null;
+  } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch(resolveApiPath("/api/ads/stripcash"), { signal: AbortSignal.timeout(5000) })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { configured?: unknown; verified?: unknown; smartlink?: unknown } | null) => {
+        if (!alive || !d) return;
+        setStripCash({
+          configured: Boolean(d.configured),
+          verified: Boolean(d.verified),
+          smartlink: typeof d.smartlink === "string" && d.smartlink ? d.smartlink : null,
+        });
+      })
+      .catch(() => {
+        /* card stays on "Checking…" — no blocking */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const headers = useCallback(() => {
     return {
@@ -711,6 +738,75 @@ export default function AdminAds() {
                   </div>
                 );
               })}
+            </CardContent>
+          </Card>
+
+          {/* StripCash (Stripchat) API-key status */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-bold tracking-tight flex items-center gap-2">
+                <Radio className="w-4 h-4" />
+                StripCash (Stripchat) smartlink
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Served from the server-side API key — the tracked link below rotates into the
+                reward CTA link pool and the popunder, both gated by the StripCash zone switch
+                above. For banner or popunder codes: create an Easy Link in the StripCash
+                dashboard (Banner iframe/js or Popunder) and paste the code into any slot on
+                the Creatives tab.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {stripcash === null ? (
+                <span className="text-xs text-muted-foreground">Checking connection…</span>
+              ) : !stripcash.configured ? (
+                <Badge
+                  variant="outline"
+                  className="border-destructive/40 bg-destructive/10 text-destructive"
+                >
+                  <AlertTriangle className="w-3 h-3 mr-1" />
+                  Not configured — set STRIPCASH_API_KEY on the API
+                </Badge>
+              ) : stripcash.verified ? (
+                <Badge
+                  variant="outline"
+                  className="border-primary/40 bg-primary/10 text-primary"
+                >
+                  <Check className="w-3 h-3 mr-1" />
+                  API key active — link verified live
+                </Badge>
+              ) : (
+                <Badge
+                  variant="outline"
+                  className="border-amber-500/40 bg-amber-500/10 text-amber-500"
+                >
+                  <AlertTriangle className="w-3 h-3 mr-1" />
+                  Key set — link not responding yet
+                </Badge>
+              )}
+              {stripcash?.smartlink && (
+                <div className="flex items-center gap-2 min-w-0">
+                  <code className="truncate text-xs text-muted-foreground">
+                    {stripcash.smartlink}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(stripcash.smartlink ?? "")}
+                    className="shrink-0 p-1 rounded border border-border/40 hover:bg-secondary/30"
+                    title="Copy smartlink"
+                  >
+                    <Copy className="w-3 h-3" />
+                  </button>
+                  <a
+                    href={stripcash.smartlink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 text-xs underline text-muted-foreground hover:text-foreground"
+                  >
+                    Open
+                  </a>
+                </div>
+              )}
             </CardContent>
           </Card>
 
