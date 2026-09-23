@@ -3,7 +3,6 @@ import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
 import { Layout } from "@/components/Layout";
-import { AdVideoCard } from "@/components/ads/AdVideoCard";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { VideoCard } from "@/components/VideoCard";
 import { useAuth } from "@/contexts/AuthContext";
@@ -114,14 +113,13 @@ export default function WatchLater() {
                 </div>
                 <VideoCard
                   recording={cloudItemToRecording(rec)}
+                  index={index}
                   showRemove
                   onRemove={() => handleRemove(rec.id)}
                   isWatched={recentlyWatched.has(rec.id)}
                 />
               </div>
             ))}
-            {/* Native ad card — one grid cell, xHamster-style */}
-            {queue.length > 8 && <AdVideoCard />}
           </div>
         )}
       </div>

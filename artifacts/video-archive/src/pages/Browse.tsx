@@ -16,7 +16,6 @@ import {
   ListRecordingsSort,
 } from "@workspace/api-client-react";
 import { Layout } from "@/components/Layout";
-import { AdVideoCard } from "@/components/ads/AdVideoCard";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { VideoCard } from "@/components/VideoCard";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -742,22 +741,16 @@ export default function Browse() {
                 <div
                   className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8 animate-fade-in-up ${pageLoading ? "opacity-30 saturate-50" : "transition-all duration-300"}`}
                 >
-                  {recordings.flatMap((rec, i) => {
-                    const cells = [
-                      <div key={rec.id}>
-                        <VideoCard
-                          recording={rec}
-                          fetchPriority={i < 10 ? "high" : undefined}
-                          isWatched={recentlyWatched.has(rec.id)}
-                        />
-                      </div>,
-                    ];
-                    // Native ad card after the 2nd row of cards
-                    if (i === 7 && recordings.length > 12) {
-                      cells.push(<AdVideoCard key="ad-card" />);
-                    }
-                    return cells;
-                  })}
+                  {recordings.map((rec, i) => (
+                    <div key={rec.id}>
+                      <VideoCard
+                        recording={rec}
+                        index={i}
+                        fetchPriority={i < 10 ? "high" : undefined}
+                        isWatched={recentlyWatched.has(rec.id)}
+                      />
+                    </div>
+                  ))}
                 </div>
 
                 {pageLoading && (

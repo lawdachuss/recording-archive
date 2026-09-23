@@ -20,7 +20,6 @@ import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { useConnectionConstrained } from "@/hooks/use-connection-quality";
 import { buildThumbnailFallbacks } from "@/lib/mirrors";
-import { AdVideoCard } from "@/components/ads/AdVideoCard";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { Search, ArrowRight, TrendingUp, Clock, Users, Tags, Clapperboard, Star } from "lucide-react";
 
@@ -224,11 +223,9 @@ export default function Home() {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-8 animate-fade-in-up">
               {recordings.map((rec, i) => (
                 <div key={rec.id}>
-                  <VideoCard recording={rec} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
+                  <VideoCard recording={rec} index={i} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
                 </div>
               ))}
-              {/* Native ad card — one grid cell, xHamster-style */}
-              {recordings.length > 8 && <AdVideoCard />}
             </div>
           ) : (
             <div className="py-20 text-center border border-border/40 rounded-xl bg-secondary/10 animate-fade-in-up">

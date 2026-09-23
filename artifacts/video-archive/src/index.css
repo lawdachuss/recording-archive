@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
 
@@ -143,7 +143,7 @@
   --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
 }
 
-/* DARK MODE — VAULT default */
+/* DARK MODE â€” VAULT default */
 .dark {
   --button-outline: rgba(255,255,255, .10);
   --badge-outline: rgba(255,255,255, .05);
@@ -372,7 +372,7 @@
     animation: pulse-glow 2s ease-in-out infinite;
   }
 
-  /* ── Diamond lattice background pattern ──────────────── */
+  /* â”€â”€ Diamond lattice background pattern â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   .pattern-square {
     background:
       repeating-linear-gradient(
@@ -526,10 +526,10 @@
   }
 }
 
-/* ── Hover-preview glass shine ────────────────────────────────────
+/* â”€â”€ Hover-preview glass shine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    A subtle diagonal glass sweep across the card while hover media loads.
    The real-time progress bar (bottom edge) reports actual bytes received;
-   there is deliberately NO spinner/loader circle — progress is the bar. */
+   there is deliberately NO spinner/loader circle â€” progress is the bar. */
 @keyframes preview-shimmer {
   0% { transform: translateX(-100%) skewX(-15deg); }
   100% { transform: translateX(200%) skewX(-15deg); }
@@ -559,7 +559,7 @@
   animation: preview-shimmer 1.5s ease-in-out infinite;
 }
 
-/* ── Circle performer card hover bloom ────────────────── */
+/* â”€â”€ Circle performer card hover bloom â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 @keyframes circle-bloom {
   0% {
     box-shadow: 0 0 0 0 hsl(var(--primary) / 0.35);
@@ -579,7 +579,7 @@
   animation: circle-bloom 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-/* ── Random FAB button ────────────────────────────── */
+/* â”€â”€ Random FAB button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .random-fab {
   width: 56px;
   height: 56px;
@@ -595,11 +595,19 @@
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25), 0 0 0 1px hsl(var(--primary) / 0.3);
 }
 
-/* -- Native ad card (in-grid) � letterbox any creative inside a 16:9 cell -- */
-.ad-card-host img,
-.ad-card-host iframe {
-  max-width: 100%;
-  max-height: 100%;
-  height: auto;
-  object-fit: contain;
+/* In-card ad layer - fill a video thumbnail edge-to-edge (cover-crop) */
+.ad-thumb-host a {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.ad-thumb-host img,
+.ad-thumb-host iframe {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  object-fit: cover !important;
+  object-position: center;
+  margin: 0 !important;
+  border: 0;
 }

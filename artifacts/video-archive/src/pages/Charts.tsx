@@ -10,7 +10,6 @@ import { formatBytes } from "@/lib/formatters";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { proxyUrl } from "@/lib/proxy-url";
-import { AdVideoCard } from "@/components/ads/AdVideoCard";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { TrendingUp, Users, HardDrive, Film, Trophy, Star, Flame, Clapperboard } from "lucide-react";
 
@@ -249,9 +248,7 @@ export default function Charts() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
                   {loading
                     ? Array.from({ length: 18 }).map((_, i) => <VideoSkeleton key={i} />)
-                    : recordings?.slice(3).map((rec, i) => <VideoCard key={rec.id} recording={rec} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />)}
-                  {/* Native ad card — one grid cell, xHamster-style */}
-                  {!loading && (recordings?.slice(3).length ?? 0) > 6 && <AdVideoCard />}
+                    : recordings?.slice(3).map((rec, i) => <VideoCard key={rec.id} recording={rec} index={i} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />)}
                 </div>
               </>
             )}

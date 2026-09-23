@@ -57,7 +57,8 @@ FILES & WHERE THEY RENDER
                                         mobile header/footer rectangle) —
                                         Home, Browse, grids, above comments
   medium-rect-300x250.txt   300x250     Sidebars (VideoDetail), narrow-page
-                                        banners, footer (phones)
+                                        banners, footer (phones), in-card
+                                        ad layer on every 8th video card
   large-rect-336x280.txt    336x280     Spare rectangle slot
   half-page-300x600.txt     300x600     VideoDetail sidebar (desktop)
   skyscraper-160x600.txt    160x600     Spare sidebar skyscraper slot

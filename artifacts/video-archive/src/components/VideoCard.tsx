@@ -15,6 +15,7 @@ import { getSpriteGrid } from "@/lib/sprite-grid";
 import { buildPreviewFallbacks, buildThumbnailFallbacks, buildSpriteFallbacks } from "@/lib/mirrors";
 import { prefetchRoute } from "@/lib/route-chunks";
 import { dlog } from "@/lib/debug";
+import { ThumbAdOverlay } from "@/components/ads/ThumbAdOverlay";
 
 /**
  * Unwrap a media-proxy URL to extract the real upstream URL for
@@ -111,9 +112,20 @@ interface VideoCardProps {
   isWatched?: boolean;
   /** 0-100 completion percentage. Shows progress bar when > 0 and < 100. */
   progress?: number;
+  /**
+   * Position of this card in its grid. Every 8th card (index % 8 === 7)
+   * overlays the in-card ad layer (ThumbAdOverlay) on its thumbnail — the
+   * ad lives INSIDE a real video card, so the grid never gains an extra
+   * cell. Omit the prop (History, related videos, …) for a normal card.
+   */
+  index?: number;
 }
 
-export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemove, fetchPriority, isWatched, progress }: VideoCardProps) {
+export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemove, fetchPriority, isWatched, progress, index }: VideoCardProps) {
+  // In-card ad layer: every 8th grid position (ThumbAdOverlay itself
+  // enforces PremiumContext.showAds and skips empty creative files).
+  const showAd = index !== undefined && index % 8 === 7;
+
   // Build mirror fallback URLs for preview, thumbnail, and sprite
   const previewFallbacks = useMemo(() => buildPreviewFallbacks(recording), [recording.preview_url, recording.preview_mirrors]);
   const thumbnailFallbacks = useMemo(() => buildThumbnailFallbacks(recording), [recording.thumbnail_url, recording.thumbnail_mirrors]);
@@ -670,12 +682,15 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
           {showRemove && onRemove && (
             <button
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
-              className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center bg-black/30 backdrop-blur-sm ring-1 ring-white/10 hover:bg-red-600/70 hover:ring-red-600/30 text-white rounded-[2px] opacity-0 group-hover:opacity-100 transition-all text-[10px] font-bold"
+              className="absolute top-2 right-2 z-30 w-6 h-6 flex items-center justify-center bg-black/30 backdrop-blur-sm ring-1 ring-white/10 hover:bg-red-600/70 hover:ring-red-600/30 text-white rounded-[2px] opacity-0 group-hover:opacity-100 transition-all text-[10px] font-bold"
               aria-label="Remove"
             >
               ✕
             </button>
           )}
+
+          {/* In-card ad layer — every 8th card (see `index` prop) */}
+          {showAd && <ThumbAdOverlay />}
         </div>
 
         <div className="px-0.5 space-y-1">
