@@ -50963,10 +50963,18 @@ function normalizeUrl(url) {
   }
   return trimmed;
 }
+function requireSupabaseKey() {
+  if (!supabaseKey) {
+    throw new Error(
+      "Supabase credential missing: set SUPABASE_SERVICE_ROLE_KEY (preferred) or SUPABASE_ANON_KEY. Source artifacts/api-server/.env locally."
+    );
+  }
+  return supabaseKey;
+}
 function getSupabaseSync() {
   if (_supabase) return _supabase;
   try {
-    _supabase = createClient(supabaseUrl, supabaseKey);
+    _supabase = createClient(supabaseUrl, requireSupabaseKey());
     return _supabase;
   } catch (err) {
     throw new Error(`Supabase client creation failed: ${String(err)}`);
@@ -50977,7 +50985,7 @@ function refreshSupabaseSchema() {
   return getSupabaseSync();
 }
 function createUserClient(token) {
-  return createClient(supabaseUrl, supabaseKey, {
+  return createClient(supabaseUrl, requireSupabaseKey(), {
     global: {
       headers: { Authorization: `Bearer ${token}` }
     },
@@ -51007,7 +51015,7 @@ var init_supabase = __esm({
     "use strict";
     init_dist4();
     supabaseUrl = normalizeUrl(process.env.SUPABASE_URL);
-    supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || process.env.SUPABASE_ANON_KEY?.trim() || "***REMOVED***";
+    supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || process.env.SUPABASE_ANON_KEY?.trim() || "";
     _supabase = null;
     supabaseProxy = new Proxy({}, {
       get(_target, prop) {
@@ -74548,6 +74556,69 @@ var hot_default = router18;
 // src/routes/admin-ads.ts
 var import_express19 = __toESM(require_express2(), 1);
 init_supabase();
+
+// src/lib/ad-sniff.ts
+var IMAGE_EXT = /\.(gif|jpe?g|png|webp|avif|bmp)(\?|#|$)/i;
+var SNIFF_TIMEOUT_MS = 8e3;
+function slotDims(slot) {
+  const m = /(\d{2,4})\s*[x×]\s*(\d{2,4})/i.exec(slot);
+  return m ? { width: Number(m[1]), height: Number(m[2]) } : null;
+}
+function sizedImg(url, { width, height }) {
+  const safe = url.replace(/"/g, "&quot;");
+  return `<img src="${safe}" alt="Advertisement" width="${width}" height="${height}" style="display:block;max-width:100%;height:auto;margin:0 auto;" />`;
+}
+function iframeEmbed(url, { width, height }) {
+  const safe = url.replace(/"/g, "&quot;");
+  return `<iframe src="${safe}" width="${width}" height="${height}" marginwidth="0" marginheight="0" frameborder="0" scrolling="no" style="display:block;border:0;margin:0 auto;max-width:100%;"></iframe>`;
+}
+function linkBox(url, { height }) {
+  const safe = url.replace(/"/g, "&quot;");
+  return `<a href="${safe}" target="_blank" rel="sponsored noopener nofollow" style="display:flex;align-items:center;justify-content:center;width:100%;height:${height}px;box-sizing:border-box;border:1px dashed rgba(148,163,184,.45);border-radius:8px;background:rgba(148,163,184,.08);color:rgba(148,163,184,.95);font:600 11px/1 system-ui,-apple-system,sans-serif;letter-spacing:.12em;text-transform:uppercase;text-decoration:none;">Advertisement</a>`;
+}
+function isFrameable(headers) {
+  const xfo = (headers.get("x-frame-options") ?? "").toLowerCase();
+  if (xfo.includes("deny") || xfo.includes("sameorigin")) return false;
+  const csp = (headers.get("content-security-policy") ?? "").toLowerCase();
+  const m = /frame-ancestors\s+([^;]+)/.exec(csp);
+  if (m) {
+    const list = m[1];
+    if (!list.includes("*") && !list.includes("https:") && !list.includes("http:")) return false;
+  }
+  return true;
+}
+function decideCreative(url, dims, info) {
+  if (!info.ok) return { kind: "url", content: url };
+  const ct = (info.contentType ?? "").toLowerCase();
+  if (ct.startsWith("image/")) {
+    return IMAGE_EXT.test(url) ? { kind: "url", content: url } : { kind: "html", content: sizedImg(url, dims) };
+  }
+  if (ct.includes("text/html") || ct.includes("application/xhtml")) {
+    if (isFrameable(info.headers)) return { kind: "html", content: iframeEmbed(url, dims) };
+    return IMAGE_EXT.test(url) ? { kind: "html", content: linkBox(url, dims) } : { kind: "url", content: url };
+  }
+  return { kind: "url", content: url };
+}
+async function sniffBannerUrl(url, dims) {
+  try {
+    const res = await fetch(url, {
+      redirect: "follow",
+      headers: { "user-agent": "Mozilla/5.0 (compatible; VAULT-AdSniff/1.0)" },
+      signal: AbortSignal.timeout(SNIFF_TIMEOUT_MS)
+    });
+    void res.body?.cancel().catch(() => {
+    });
+    return decideCreative(url, dims, {
+      ok: res.ok,
+      contentType: res.headers.get("content-type"),
+      headers: res.headers
+    });
+  } catch {
+    return { kind: "url", content: url };
+  }
+}
+
+// src/routes/admin-ads.ts
 var router19 = (0, import_express19.Router)();
 var admin5 = requireRole("admin");
 var SLOTS = /* @__PURE__ */ new Set([
@@ -74563,9 +74634,12 @@ var SLOTS = /* @__PURE__ */ new Set([
   "skyscraper-160x600",
   "square-250x250",
   "popunder",
-  "direct-link"
+  "direct-link",
+  "preroll"
 ]);
-var IN_CARD_SLOTS = new Set([...SLOTS].filter((s) => s !== "popunder" && s !== "direct-link"));
+var IN_CARD_SLOTS = new Set(
+  [...SLOTS].filter((s) => s !== "popunder" && s !== "direct-link" && s !== "preroll")
+);
 var PAGE_IDS = /* @__PURE__ */ new Set([
   "home",
   "browse",
@@ -74585,8 +74659,7 @@ var PAGE_IDS = /* @__PURE__ */ new Set([
   "profile",
   "settings"
 ]);
-var PLACEMENT_IDS = /* @__PURE__ */ new Set(["strip", "feed", "box", "inCard", "popunder", "rewardCta", "stripcash"]);
-var IMAGE_EXT = /\.(gif|jpe?g|png|webp|avif|bmp)(\?|#|$)/i;
+var PLACEMENT_IDS = /* @__PURE__ */ new Set(["strip", "feed", "box", "inCard", "popunder", "rewardCta", "stripcash", "preroll"]);
 var URL_RE = /^https?:\/\/\S+$/i;
 var MAX_CONTENT = 2e5;
 function detectKind(content) {
@@ -74601,11 +74674,8 @@ function validate(slot, kind, content) {
   const t = content.trim();
   if (!t) return "Content is empty";
   if (t.length > MAX_CONTENT) return `Content exceeds ${MAX_CONTENT} characters`;
-  if (kind === "url") {
-    if (!URL_RE.test(t) || /\s/.test(t)) return "URL creatives must be a single http(s) URL";
-    if (slot !== "direct-link" && !IMAGE_EXT.test(t)) {
-      return "Non-image URLs belong in the direct-link slot";
-    }
+  if (kind === "url" && (!URL_RE.test(t) || /\s/.test(t))) {
+    return "URL creatives must be a single http(s) URL";
   }
   return null;
 }
@@ -74658,11 +74728,22 @@ router19.post("/admin/ads", ...admin5, async (req, res) => {
     res.status(400).json({ error: invalid });
     return;
   }
+  let storeKind = kind;
+  let storeContent = content.trim();
+  if (detectKind(storeContent) === "url") {
+    const dims = slotDims(slot);
+    if (dims) {
+      const decided = await sniffBannerUrl(storeContent, dims);
+      req.log?.info?.({ slot, url: storeContent, kind: decided.kind }, "admin ad link auto-embed");
+      storeKind = decided.kind;
+      storeContent = decided.content;
+    }
+  }
   const { data: last } = await supabaseProxy.from("ad_creatives").select("sort_order").eq("slot", slot).order("sort_order", { ascending: false }).limit(1).maybeSingle();
   const { data, error } = await supabaseProxy.from("ad_creatives").insert({
     slot,
-    kind,
-    content: content.trim(),
+    kind: storeKind,
+    content: storeContent,
     sort_order: (Number(last?.sort_order) || -1) + 1
   }).select("*").single();
   if (error) {
@@ -74708,9 +74789,20 @@ router19.patch("/admin/ads/:id", ...admin5, async (req, res) => {
     res.status(400).json({ error: invalid });
     return;
   }
+  let storeKind = kind;
+  let storeContent = content.trim();
+  if (req.body?.content !== void 0 && detectKind(storeContent) === "url") {
+    const dims = slotDims(existing.slot);
+    if (dims) {
+      const decided = await sniffBannerUrl(storeContent, dims);
+      req.log?.info?.({ slot: existing.slot, url: storeContent, kind: decided.kind }, "admin ad link auto-embed");
+      storeKind = decided.kind;
+      storeContent = decided.content;
+    }
+  }
   const { data, error } = await supabaseProxy.from("ad_creatives").update({
-    kind,
-    content: content.trim(),
+    kind: storeKind,
+    content: storeContent,
     enabled,
     updated_at: (/* @__PURE__ */ new Date()).toISOString()
   }).eq("id", id).select("*").single();

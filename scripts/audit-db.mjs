@@ -1,5 +1,6 @@
+import { requireKey } from "./env.mjs";
 const url = 'https://supabase.chuglii.in/pg/query';
-const key = '***REMOVED***';
+const key = requireKey("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_ANON_KEY");
 
 async function query(sql) {
   const r = await fetch(url, {

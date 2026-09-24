@@ -1,4 +1,5 @@
-const SERVICE_KEY = "***REMOVED***";
+import { requireKey } from "./scripts/env.mjs";
+const SERVICE_KEY = requireKey("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_ANON_KEY");
 
 async function trySql(query) {
   const url = "https://supabase.chuglii.in";

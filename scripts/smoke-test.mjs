@@ -1,8 +1,9 @@
+import { requireKey } from "./env.mjs";
 // Smoke test: verify key API endpoints return expected responses
 const BASE = 'https://chuglii.in';
 const SUPABASE = 'https://supabase.chuglii.in';
-const ANON = '***REMOVED***';
-const SVC = '***REMOVED***';
+const ANON = requireKey("SUPABASE_ANON_KEY");
+const SVC = requireKey("SUPABASE_SERVICE_ROLE_KEY");
 
 async function get(url, headers={}) {
   try {

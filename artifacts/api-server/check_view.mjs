@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = 'https://supabase.chuglii.in';
-const supabaseKey = '***REMOVED***';
+const supabaseKey = requireKey("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_ANON_KEY");
+import { requireKey } from "../../scripts/env.mjs";
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function main() {

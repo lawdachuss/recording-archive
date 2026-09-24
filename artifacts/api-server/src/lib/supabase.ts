@@ -9,18 +9,32 @@ function normalizeUrl(url?: string): string {
   return trimmed;
 }
 
+// Credentials come ONLY from env — no hardcoded fallback. This file used to
+// inline the service-role key, and because api/index.mjs is a committed esbuild
+// bundle of it, that key was published in this public repository's history.
+// Vercel sets SUPABASE_SERVICE_ROLE_KEY; locally source artifacts/api-server/.env.
 const supabaseUrl = normalizeUrl(process.env.SUPABASE_URL);
 const supabaseKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
   process.env.SUPABASE_ANON_KEY?.trim() ||
-  "***REMOVED***";
+  "";
+
+function requireSupabaseKey(): string {
+  if (!supabaseKey) {
+    throw new Error(
+      "Supabase credential missing: set SUPABASE_SERVICE_ROLE_KEY (preferred) or " +
+        "SUPABASE_ANON_KEY. Source artifacts/api-server/.env locally.",
+    );
+  }
+  return supabaseKey;
+}
 
 let _supabase: SupabaseClient | null = null;
 
 function getSupabaseSync(): SupabaseClient {
   if (_supabase) return _supabase;
   try {
-    _supabase = createClient(supabaseUrl, supabaseKey);
+    _supabase = createClient(supabaseUrl, requireSupabaseKey());
     return _supabase;
   } catch (err) {
     throw new Error(`Supabase client creation failed: ${String(err)}`);
@@ -55,7 +69,7 @@ export function refreshSupabaseSchema(): SupabaseClient {
  * client makes RLS treat every request as unauthenticated.
  */
 export function createUserClient(token: string): SupabaseClient {
-  return createClient(supabaseUrl, supabaseKey, {
+  return createClient(supabaseUrl, requireSupabaseKey(), {
     global: {
       headers: { Authorization: `Bearer ${token}` },
     },
