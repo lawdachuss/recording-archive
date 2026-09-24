@@ -72,7 +72,8 @@ IMPORTANT NOTES
   * All network codes: CrakRevenue (slot codes) + StripCash/Stripchat
     (smartlink from the server-side STRIPCASH_API_KEY — see
     GET /api/ads/stripcash; banner/popunder codes paste into slots as HTML).
-    No Adsterra/JuicyAds/ExoClick code, env keys or routes exist anywhere.
+    Adsterra and JuicyAds are deliberately NOT integrated — no codes, env
+    keys or routes for them exist anywhere.
   * Still applies to file fallback content: paste codes at build time and
     they're baked into the JS bundle — a redeploy is required for FILE
     edits. Admin-panel edits are instant.

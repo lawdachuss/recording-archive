@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAds, type AdRow } from "@/contexts/AdsContext";
-import { isSelfContainedLine } from "@/lib/ad-creatives";
+import { isSelfContainedLine, PINNED_IN_CARD_LIMIT } from "@/lib/ad-creatives";
 import {
   AD_SLOTS, AD_PAGES, AD_PLACEMENTS, DEFAULT_AD_SETTINGS, type AdSettings,
 } from "@/lib/ad-slots";
@@ -298,7 +298,12 @@ export default function AdminAds() {
 
   const handleSaveSettings = () =>
     run(async () => {
-      await req("/api/admin/ads/settings", "PUT", draftSettings);
+      // maxPerPage is pinned in code — always persist the pinned value so the
+      // stored config row stays truthful (rendering ignores it regardless).
+      await req("/api/admin/ads/settings", "PUT", {
+        ...draftSettings,
+        inCard: { ...draftSettings.inCard, maxPerPage: PINNED_IN_CARD_LIMIT },
+      });
       setSettingsDirty(false);
     }, "Placement settings saved — live on every open page");
 
@@ -808,11 +813,12 @@ export default function AdminAds() {
                 StripCash (Stripchat) smartlink
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                Served from the server-side API key — the tracked link below rotates into the
-                reward CTA link pool and the popunder, both gated by the StripCash zone switch
-                above. For banner or popunder codes: create an Easy Link in the StripCash
-                dashboard (Banner iframe/js or Popunder) and paste the code into any slot on
-                the Creatives tab.
+                Served from the server-side API key — the tracked link below feeds the reward
+                CTA link pool, and opens as the popunder only when the Popunder slot is empty
+                (it never displaces a configured popunder). Both are gated by the StripCash
+                zone switch above. For banner or popunder codes: create an Easy Link in the
+                StripCash dashboard (Banner iframe/js or Popunder) and paste the code into any
+                slot on the Creatives tab.
               </p>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -879,21 +885,18 @@ export default function AdminAds() {
             </CardHeader>
             <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <label className="space-y-1.5 text-sm">
-                <span className="block font-medium">Grid ad cards per page (0–6)</span>
+                <span className="block font-medium">Grid ad cards per page</span>
                 <select
-                  className={SELECT_CLASS + " w-full"}
-                  value={draftSettings.inCard.maxPerPage}
-                  onChange={(e) => patchInCard({ maxPerPage: Number(e.target.value) })}
-                  disabled={busy}
+                  className={SELECT_CLASS + " w-full opacity-70"}
+                  value={PINNED_IN_CARD_LIMIT}
+                  disabled
                 >
-                  {[0, 1, 2, 3, 4, 5, 6].map((n) => (
-                    <option key={n} value={n}>
-                      {n === 0 ? "0 (off)" : n}
-                    </option>
-                  ))}
+                  <option value={PINNED_IN_CARD_LIMIT}>
+                    {PINNED_IN_CARD_LIMIT}
+                  </option>
                 </select>
                 <span className="block text-[11px] text-muted-foreground">
-                  How many ad cards each grid inserts (picked at random, own cell — never over a video).
+                  Pinned in code — fixed at <strong>{PINNED_IN_CARD_LIMIT}</strong> ad cards per grid (Home: 24 videos + 4 ads = 28, Browse: 40 + 4 = 44). Admin changes have no effect.
                 </span>
               </label>
 

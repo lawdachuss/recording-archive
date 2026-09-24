@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { buildClickPopMarkup, bareUrlToMarkup, isSelfContainedLine } from "../ad-creatives";
+import {
+  buildClickPopMarkup,
+  bareUrlToMarkup,
+  isSelfContainedLine,
+  pickPopunderMarkup,
+  withJQueryBootstrap,
+} from "../ad-creatives";
+
+const POPUNDER =
+  "<script src='https://chaturbate.com/affiliates/promotools/popup/LKGEE/popchaturbate.js' type='text/javascript'></script>";
 
 describe("isSelfContainedLine", () => {
   it("recognises complete one-line codes as self-contained", () => {
@@ -104,5 +113,72 @@ describe("buildClickPopMarkup", () => {
     const html = buildClickPopMarkup('https://x.com/?a="b"');
     expect(html).not.toBeNull();
     expect(html).toContain('\\"b\\"');
+  });
+});
+
+describe("withJQueryBootstrap", () => {
+  it("prepends jQuery BEFORE a creative that needs it", () => {
+    const out = withJQueryBootstrap(POPUNDER, false);
+    expect(out).toContain("ajax.googleapis.com/ajax/libs/jquery");
+    // Ordering matters: injectAdMarkup runs scripts in HTML-parser order, so
+    // jQuery must be the FIRST script in the chain.
+    expect(out.indexOf("jquery")).toBeLessThan(out.indexOf("chaturbate"));
+    expect(out.endsWith(POPUNDER)).toBe(true);
+  });
+
+  it("matches the jQuery/$(…) signals real pop codes actually use", () => {
+    expect(withJQueryBootstrap("<script>doMyStuff(jQuery)</script>", false)).toContain("jquery");
+    expect(withJQueryBootstrap("<script>$(document).ready(f)</script>", false)).toContain("jquery");
+  });
+
+  it("bootstraps jQuery for EXTERNAL scripts, whose remote bodies we cannot inspect", () => {
+    const out = withJQueryBootstrap('<script src="https://x.example/pop.js"></script>', false);
+    expect(out).toContain("ajax.googleapis.com/ajax/libs/jquery");
+    expect(out.endsWith('<script src="https://x.example/pop.js"></script>')).toBe(true);
+  });
+
+  it("leaves the creative alone when jQuery is already on the page", () => {
+    const html = "<script>doMyStuff(jQuery)</script>";
+    expect(withJQueryBootstrap(html, true)).toBe(html);
+    expect(withJQueryBootstrap(POPUNDER, true)).toBe(POPUNDER);
+  });
+
+  it("leaves inline creatives that need nothing alone", () => {
+    const inline = "<script>window.open('https://x.example')</script>";
+    expect(withJQueryBootstrap(inline, false)).toBe(inline);
+    // The StripCash click-pop is inline and jQuery-free — no wasted download.
+    const clickPop = buildClickPopMarkup("https://go.stripchat.com/?userId=abc")!;
+    expect(withJQueryBootstrap(clickPop, false)).toBe(clickPop);
+  });
+});
+
+describe("pickPopunderMarkup", () => {
+  const STRIPCASH = buildClickPopMarkup("https://go.stripchat.com/?userId=abc")!;
+
+  it("always prefers the configured popunder over the StripCash click-pop", () => {
+    // Regression: both used to share one Math.random() pick, so a live
+    // STRIPCASH_API_KEY suppressed the real popunder on ~half of page loads.
+    for (const r of [0, 0.25, 0.5, 0.75, 0.999]) {
+      expect(pickPopunderMarkup([POPUNDER], STRIPCASH, () => r)).toBe(POPUNDER);
+    }
+  });
+
+  it("still rotates between several configured popunder creatives", () => {
+    const other = "<script src='https://n.example/pop2.js'></script>";
+    expect(pickPopunderMarkup([POPUNDER, other], STRIPCASH, () => 0)).toBe(POPUNDER);
+    expect(pickPopunderMarkup([POPUNDER, other], STRIPCASH, () => 0.99)).toBe(other);
+  });
+
+  it("falls back to the StripCash click-pop only when the slot is empty", () => {
+    expect(pickPopunderMarkup([], STRIPCASH, () => 0.5)).toBe(STRIPCASH);
+    expect(pickPopunderMarkup(["   "], STRIPCASH, () => 0.5)).toBe(STRIPCASH);
+  });
+
+  it("returns null when there is nothing to fire at all", () => {
+    expect(pickPopunderMarkup([], null)).toBeNull();
+    expect(pickPopunderMarkup([], undefined)).toBeNull();
+    expect(pickPopunderMarkup([], "")).toBeNull();
+    expect(pickPopunderMarkup([], "  ")).toBeNull();
+    expect(pickPopunderMarkup(["  "], null)).toBeNull();
   });
 });

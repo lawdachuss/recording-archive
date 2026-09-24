@@ -83,8 +83,8 @@ BEGIN
     ('medium-rect-300x250', 'url', 'https://www.imglnky.com/779/20180815140636-006605A_MYFC_18_ALL_EN_71_L.gif'),
     ('medium-rect-300x250', 'url', 'https://www.imglnky.com/779/006271A_MYFC_18_ALL_EN_71_L.gif'),
     ('medium-rect-300x250', 'url', 'https://www.imglnky.com/779/005250A_MYFC_18_ALL_EN_71_N.jpg'),
-    ('medium-rect-300x250', 'url', 'https://www.imglnky.com/779/005688A_MYFC_18_ALL_EN_71_L.gif'),
-    ('medium-rect-300x250', 'url', 'https://www.imglnky.com/779/005689A_MYFC_18_ALL_EN_71_L.gif'),
+    ('medium-rect-300x250', 'url', 'https://www.imglnky.com/779/005449B_MYFC_18_ALL_EN_71_L.gif'),
+    ('medium-rect-300x250', 'url', 'https://www.imglnky.com/779/006611U_MYFC_18_ALL_EN_71_L.gif'),
     ('medium-rect-300x250', 'url', 'https://www.imglnky.com/779/005449B_MYFC_18_ALL_DE_71_L.gif'),
     ('medium-rect-300x250', 'url', 'https://www.imglnky.com/779/005438A_MYFC_18_ALL_EN_71_L.gif'),
     ('medium-rect-300x250', 'url', 'https://www.imglnky.com/779/003496H_MYFC_18_ALL_EN_71_N.gif'),
@@ -104,5 +104,5 @@ BEGIN
     ('medium-rect-300x250', 'url', 'https://www.imglnky.com/153/008565A_SLUT_18_ALL_EN_71_L.jpg'),
     ('medium-rect-300x250', 'url', 'https://www.imglnky.com/153/010726G_SLUT_18_ALL_EN_71_L.gif'),
     ('medium-rect-300x250', 'url', 'https://www.imglnky.com/153/005199G_SLUT_18_ALL_ES_71_E.gif'),
-    ('medium-rect-300x250', 'url', 'https://www.imglnky.com/153/011671H_SLUT_18_ALL_EN_71_L.gif');
+    ('medium-rect-300x250', 'url', 'https://www.imglnky.com/153/010726G_SLUT_18_ALL_EN_71_L.gif');
 END $$;

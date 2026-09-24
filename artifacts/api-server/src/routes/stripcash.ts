@@ -11,9 +11,11 @@ import { Router, type Request, type Response } from "express";
  * own affiliate link format, which is client-visible by design (the redirect
  * carries the userId anyway, exactly like every CrakRevenue offer URL).
  *
- * The link rotates into the reward-CTA direct-link pool and the popunder
- * rotation on the frontend; both are gated by the admin "StripCash" zone
- * switch (ad_settings.placements.stripcash).
+ * The link feeds the reward-CTA direct-link pool on the frontend, and opens
+ * as the popunder ONLY when the popunder slot itself is empty (it never
+ * displaces a configured popunder creative — see pickPopunderMarkup). Both
+ * are gated by the admin "StripCash" zone switch
+ * (ad_settings.placements.stripcash).
  *
  * `verified` probes the link (redirect:manual → any 3xx + Location) behind a
  * 10-minute cache so the admin panel can show a live/unlive status without

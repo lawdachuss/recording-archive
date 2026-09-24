@@ -16,6 +16,7 @@ import {
   getAdCreatives,
   getDirectLink,
   parseAdDimensions,
+  PINNED_IN_CARD_LIMIT,
   setAdCardLimit,
   stripAdComments,
 } from "@/lib/ad-creatives";
@@ -156,10 +157,12 @@ export function AdsProvider({ children }: { children: ReactNode }) {
     }
   }, [load, loadSettings]);
 
-  // Push the admin-controlled in-card limit into the isAdCard picker
-  // (module state — grids pick it up on their next render/navigation).
+  // Push the PINNED in-card limit into the isAdCard picker (module state —
+  // grids pick it up on their next render/navigation). The count is fixed in
+  // code so every deployment renders the same grids; the DB/admin value is
+  // intentionally NOT applied here (see PINNED_IN_CARD_LIMIT).
   useEffect(() => {
-    setAdCardLimit(settings.inCard.maxPerPage);
+    setAdCardLimit(PINNED_IN_CARD_LIMIT);
   }, [settings]);
 
   // StripCash smartlink — best-effort like settings: endpoint down or key not

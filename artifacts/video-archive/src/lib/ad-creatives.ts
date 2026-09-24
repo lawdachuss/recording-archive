@@ -249,6 +249,92 @@ export function injectAdMarkup(host: HTMLElement, html: string): () => void {
 const injectedGlobal = new Set<string>();
 
 /**
+ * jQuery build that third-party popunder codes bootstrap when the page has no
+ * jQuery of its own (CrakRevenue/Chaturbate pop code, and most legacy ad
+ * network scripts). It is the SAME CDN those codes reach for themselves, so no
+ * new third party is introduced — the existing dependency is only fetched a
+ * little earlier.
+ */
+const JQUERY_BOOTSTRAP_SRC =
+  "https://ajax.googleapis.com/ajax/libs/jquery/1.6/jquery.min.js";
+
+/** Creative text that clearly needs a `window.jQuery` global in order to run. */
+const NEEDS_JQUERY = /\bjQuery\b|\$\s*\(/;
+
+/**
+ * An EXTERNAL script. Its body lives on a remote server and is never visible to
+ * us, and legacy popunder codes overwhelmingly reach for jQuery — so it has to
+ * be treated as "may need it". Inline creatives state their needs plainly and
+ * are only bootstrapped when they actually mention jQuery.
+ */
+const HAS_EXTERNAL_SCRIPT = /<script\b[^>]*\bsrc\s*=/i;
+
+/** Does this creative need a jQuery global supplied BEFORE it runs? */
+function needsJQuery(html: string): boolean {
+  return NEEDS_JQUERY.test(html) || HAS_EXTERNAL_SCRIPT.test(html);
+}
+
+/** Is a jQuery global already present on this page? */
+function hasJQueryGlobal(): boolean {
+  return typeof window !== "undefined" && Boolean((window as { jQuery?: unknown }).jQuery);
+}
+
+/**
+ * Prepend the jQuery bootstrap a creative needs but the page doesn't have.
+ *
+ * Legacy popunder codes almost all branch like this (verbatim from
+ * Chaturbate's `popchaturbate.js`):
+ *
+ *   if (check()) { doMyStuff(jQuery); }            // binds immediately
+ *   else { …inject jQuery…; window.addEventListener('load', boot); }
+ *
+ * Global ads are injected from an ASYNC React effect (only after the Supabase
+ * read resolves), which routinely lands AFTER the window `load` event has
+ * already fired — and a `load` listener registered at that point never runs.
+ * The code then binds nothing and the popunder silently never fires, with no
+ * error logged anywhere. Supplying jQuery up-front takes the synchronous
+ * branch instead, so event timing can no longer decide whether the ad works.
+ *
+ * The CDN is the one those codes reach for themselves, so no new third party
+ * is introduced and a jQuery-hungry script adds no extra bytes.
+ *
+ * Pure so the ordering rule is unit-testable without a DOM.
+ */
+export function withJQueryBootstrap(html: string, hasJQuery: boolean): string {
+  if (hasJQuery || !needsJQuery(html)) return html;
+  return `<script src="${JQUERY_BOOTSTRAP_SRC}"></script>\n${html}`;
+}
+
+/**
+ * Pick the markup the site-wide popunder slot fires this page load.
+ *
+ * The admin-managed creatives (Supabase `ad_creatives` slot "popunder", or
+ * `ads/popunder.txt` as the file fallback) ALWAYS win the slot; the StripCash
+ * smartlink click-pop only steps in when the slot itself has nothing to fire.
+ *
+ * They previously shared one `Math.random()` pick, so a live STRIPCASH_API_KEY
+ * silently displaced the real popunder on roughly half of all page loads: the
+ * page then opened a foreground StripCash tab on first click instead of the
+ * popunder the admin had actually configured — which reads as "the popunder is
+ * broken".
+ *
+ * Returns null when there is nothing to fire (= no popunder at all).
+ */
+export function pickPopunderMarkup(
+  creatives: readonly string[],
+  stripcashPop: string | null | undefined,
+  random: () => number = Math.random,
+): string | null {
+  const real = creatives.filter((c) => c.trim().length > 0);
+  if (real.length > 0) {
+    const i = Math.max(0, Math.min(real.length - 1, Math.floor(random() * real.length)));
+    return real[i];
+  }
+  const fallback = stripcashPop?.trim();
+  return fallback ? fallback : null;
+}
+
+/**
  * Site-wide, invisible placements (popunder …): injects ONE random creative
  * into a hidden body-level host, at most once per page load per file.
  * Returns the injected html, or null.
@@ -274,7 +360,9 @@ export function injectGlobalAd(file: string, creative?: string): string | null {
   host.setAttribute("aria-hidden", "true");
   host.style.display = "none";
   document.body.appendChild(host);
-  injectAdMarkup(host, html);
+  // Chain runs in HTML-parser order, so jQuery is guaranteed to be in place
+  // before the creative's own script executes (see withJQueryBootstrap).
+  injectAdMarkup(host, withJQueryBootstrap(html, hasJQueryGlobal()));
   return html;
 }
 
@@ -325,9 +413,20 @@ export function getDirectLink(): string | null {
   return pick;
 }
 
-/** Max ad cards shown per page/list (random positions). */
-/** Max in-card ad cards per page — live-controlled from Admin → Ads → Placements (0 disables in-card ads entirely). */
-let AD_CARDS_PER_PAGE = 2;
+/**
+ * Pinned in-card ad card limit (per grid/list).
+ *
+ * The count is fixed in code rather than DB/admin-driven so every
+ * environment renders identical grids:
+ *   - Home "(Recent / Most viewed)" grid: 24 videos + 4 ads = 28 cards
+ *   - Browse grid: 40 videos + 4 ads = 44 cards
+ *   - Constrained links: 12 videos + 4 ads = 16 cards
+ * Grids render this many standalone ad cards at seeded random positions.
+ */
+export const PINNED_IN_CARD_LIMIT = 4;
+
+/** Max in-card ad cards per page — always resolves to PINNED_IN_CARD_LIMIT (setAdCardLimit kept for the AdsContext pin and any future toggles). */
+let AD_CARDS_PER_PAGE = PINNED_IN_CARD_LIMIT;
 
 export function setAdCardLimit(n: number): void {
   AD_CARDS_PER_PAGE = Math.max(0, Math.min(6, Math.floor(Number(n) || 0)));
@@ -362,7 +461,7 @@ function mulberry32(seed: number): () => number {
 
 /**
  * Compute the random ad-card index set for one list (max
- * AD_CARDS_PER_PAGE = 2 positions), seeded from page-load epoch + the
+ * AD_CARDS_PER_PAGE = PINNED_IN_CARD_LIMIT positions), seeded from page-load epoch + the
  * first item's id + the length:
  *   - every card in the same grid agrees on the same positions (pure fn),
  *   - positions hold steady while the on-screen data doesn't change (no

@@ -6,6 +6,8 @@
  * artifacts/api-server/src/routes/admin-ads.ts (and ads/*.txt files).
  */
 
+import { PINNED_IN_CARD_LIMIT } from "./ad-creatives";
+
 export interface AdSlotDef {
   /** Slot id — matches the ads/<file>.txt name and the DB `slot` column. */
   file: string;
@@ -60,7 +62,7 @@ export const AD_PLACEMENTS: AdPlacementDef[] = [
   { id: "inCard", label: "In-feed grid ad cards", note: "Standalone ad cards inserted into video grids — never covering a recording (count/slot set below)." },
   { id: "popunder", label: "Popunder", note: "One popunder fires per page load." },
   { id: "rewardCta", label: "Premium reward CTA link", note: "The direct link opened by the reward claim button on the Premium page." },
-  { id: "stripcash", label: "StripCash smartlink (Stripchat)", note: "API-key smartlink — rotates into the reward CTA link pool and the popunder. StripCash banner codes go in slots as usual." },
+  { id: "stripcash", label: "StripCash smartlink (Stripchat)", note: "API-key smartlink — feeds the reward CTA link pool, and opens as the popunder ONLY when the Popunder slot is empty (it never displaces a configured popunder). StripCash banner codes go in slots as usual." },
   { id: "preroll", label: "Pre-roll video", note: "Plays before the video on Video detail pages — one random creative per visit, skip after 5s." },
 ];
 
@@ -138,7 +140,7 @@ export interface AdSettings {
 export const DEFAULT_AD_SETTINGS: AdSettings = {
   pages: {},
   placements: {},
-  inCard: { maxPerPage: 2, slot: "medium-rect-300x250" },
+  inCard: { maxPerPage: PINNED_IN_CARD_LIMIT, slot: "medium-rect-300x250" },
   rotationSeconds: 20,
 };
 
