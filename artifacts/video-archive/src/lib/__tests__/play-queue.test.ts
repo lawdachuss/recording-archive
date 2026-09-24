@@ -102,6 +102,23 @@ describe("play-queue", () => {
       expect(mod.getQueue()).toBeNull();
     });
 
+    it("deduplicates items by id, keeping the first occurrence", () => {
+      const saved = mod.setQueue(
+        "Dupey",
+        [mod.toQueueItem(rec("a"))!, mod.toQueueItem(rec("b"))!, mod.toQueueItem(rec("a"))!, mod.toQueueItem(rec("c"))!],
+      );
+      expect(saved!.items.map((i) => i.id)).toEqual(["a", "b", "c"]);
+      expect(mod.getQueue()!.items.map((i) => i.id)).toEqual(["a", "b", "c"]);
+    });
+
+    it("starts new queues unlooped even if the previous one was looping", () => {
+      mod.setQueue("Looped", [mod.toQueueItem(rec("a"))!]);
+      mod.setQueueLoop(true);
+      expect(mod.getQueue()!.loop).toBe(true);
+      mod.setQueue("Fresh", [mod.toQueueItem(rec("b"))!]);
+      expect(mod.getQueue()!.loop).toBe(false);
+    });
+
     it("caps the queue at MAX_ITEMS", () => {
       const many = Array.from({ length: 250 }, (_, i) => mod.toQueueItem(rec(`id-${i}`))!);
       const saved = mod.setQueue("Huge", many);
@@ -119,6 +136,107 @@ describe("play-queue", () => {
       expect(mod.getQueue()).toBeNull();
       store.set("vault-play-queue", JSON.stringify({ title: "x", createdAt: 1 }));
       expect(mod.getQueue()).toBeNull();
+    });
+
+    it("deduplicates on read and tolerates a loop flag", () => {
+      const item = (id: string) => JSON.stringify(mod.toQueueItem(rec(id)));
+      store.set(
+        "vault-play-queue",
+        `{"title":"x","createdAt":1,"loop":true,"items":[${item("a")},${item("b")},${item("a")}]}`,
+      );
+      const loaded = mod.getQueue()!;
+      expect(loaded.items.map((i) => i.id)).toEqual(["a", "b"]);
+      expect(loaded.loop).toBe(true);
+    });
+
+    it("preserves an absent loop flag as false", () => {
+      store.set(
+        "vault-play-queue",
+        JSON.stringify({ title: "x", createdAt: 1, items: [mod.toQueueItem(rec("a"))] }),
+      );
+      expect(mod.getQueue()!.loop).toBe(false);
+    });
+  });
+
+  describe("setQueueLoop", () => {
+    it("toggles loop on the stored queue and notifies", () => {
+      mod.setQueue("Mix", [mod.toQueueItem(rec("a"))!]);
+      expect(mod.setQueueLoop(true)!.loop).toBe(true);
+      expect(mod.getQueue()!.loop).toBe(true);
+      expect(dispatchEvent).toHaveBeenCalledTimes(2); // set + loop toggle
+      expect(mod.setQueueLoop(false)!.loop).toBe(false);
+      expect(mod.getQueue()!.loop).toBe(false);
+    });
+
+    it("is a no-op without an active queue", () => {
+      expect(mod.setQueueLoop(true)).toBeNull();
+      expect(mod.getQueue()).toBeNull();
+    });
+  });
+
+  describe("nextQueueItem", () => {
+    const makeQueue = (ids: string[], loop = false) => ({
+      title: "Mix",
+      items: ids.map((id) => mod.toQueueItem(rec(id))!),
+      createdAt: 1,
+      loop,
+    });
+
+    it("returns the in-order next item", () => {
+      expect(mod.nextQueueItem(makeQueue(["a", "b", "c"]), "b")!.id).toBe("c");
+    });
+
+    it("wraps to the first item at the end when loop is on", () => {
+      expect(mod.nextQueueItem(makeQueue(["a", "b"], true), "b")!.id).toBe("a");
+    });
+
+    it("replays the only item in a one-item looped queue", () => {
+      expect(mod.nextQueueItem(makeQueue(["a"], true), "a")!.id).toBe("a");
+    });
+
+    it("returns null at the end when loop is off", () => {
+      expect(mod.nextQueueItem(makeQueue(["a", "b"]), "b")).toBeNull();
+    });
+
+    it("returns null for unknown ids, empty queues, or missing currentId", () => {
+      expect(mod.nextQueueItem(makeQueue(["a"]), "zzz")).toBeNull();
+      expect(mod.nextQueueItem(makeQueue([]), "a")).toBeNull();
+      expect(mod.nextQueueItem(null, "a")).toBeNull();
+      expect(mod.nextQueueItem(makeQueue(["a"]), null)).toBeNull();
+    });
+  });
+
+  describe("shuffleQueueItems", () => {
+    it("keeps the pinned first item first and shuffles the rest", () => {
+      const items = ["a", "b", "c", "d", "e"].map((id) => mod.toQueueItem(rec(id))!);
+      const out = mod.shuffleQueueItems(items, "a");
+      expect(out[0].id).toBe("a");
+      expect(out).toHaveLength(items.length);
+      // Same multiset of ids — nothing lost, nothing invented.
+      expect([...out].map((i) => i.id).sort()).toEqual(["a", "b", "c", "d", "e"]);
+    });
+
+    it("shuffles everything when no first id is given", () => {
+      const items = ["a", "b", "c", "d", "e", "f"].map((id) => mod.toQueueItem(rec(id))!);
+      const out = mod.shuffleQueueItems(items);
+      expect(out).toHaveLength(items.length);
+      expect([...out].map((i) => i.id).sort()).toEqual(["a", "b", "c", "d", "e", "f"]);
+    });
+
+    it("does not mutate the input array", () => {
+      const items = ["a", "b", "c"].map((id) => mod.toQueueItem(rec(id))!);
+      const before = items.map((i) => i.id);
+      mod.shuffleQueueItems(items, "a");
+      expect(items.map((i) => i.id)).toEqual(before);
+    });
+
+    it("handles a one-item queue and an unknown pinned id", () => {
+      const single = [mod.toQueueItem(rec("a"))!];
+      expect(mod.shuffleQueueItems(single, "a")).toEqual(single);
+      const items = [mod.toQueueItem(rec("a"))!, mod.toQueueItem(rec("b"))!];
+      const out = mod.shuffleQueueItems(items, "zzz");
+      expect(out).toHaveLength(2);
+      expect([...out].map((i) => i.id).sort()).toEqual(["a", "b"]);
     });
   });
 
@@ -233,6 +351,20 @@ describe("play-queue", () => {
       const { calls, deps } = makeDeps();
       expect(mod.advanceQueue(makeQueue(["a", "b"]), "b", deps)).toBe(false);
       expect(calls).toEqual([]);
+    });
+
+    it("wraps to the first item at the end when the queue loops", () => {
+      const { calls, deps } = makeDeps();
+      const q = { ...makeQueue(["a", "b"]), loop: true };
+      expect(mod.advanceQueue(q, "b", deps)).toBe(true);
+      expect(calls.at(-1)).toEqual(["navigate", "/video/a"]);
+    });
+
+    it("replays the single item in a one-item looped queue", () => {
+      const { calls, deps } = makeDeps();
+      const q = { ...makeQueue(["a"]), loop: true };
+      expect(mod.advanceQueue(q, "a", deps)).toBe(true);
+      expect(calls.at(-1)).toEqual(["navigate", "/video/a"]);
     });
 
     it("is a no-op when the current recording is not queued", () => {

@@ -14,8 +14,9 @@ import { userApi, parseCloudItem, type CloudItem, type CloudCollection } from "@
 import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
-import { setQueue, toQueueItem, type QueueItem } from "@/lib/play-queue";
-import { ArrowLeft, Film, Pencil, Check, X, Trash2, ListVideo, Play } from "lucide-react";
+import { setQueue, shuffleQueueItems, toQueueItem, type QueueItem } from "@/lib/play-queue";
+import { trackActivity } from "@/lib/rum";
+import { ArrowLeft, Film, Pencil, Check, X, Trash2, ListVideo, Play, Shuffle } from "lucide-react";
 import { formatRelativeTime } from "@/lib/formatters";
 import { proxyUrl } from "@/lib/proxy-url";
 
@@ -132,15 +133,38 @@ export default function CollectionDetail() {
     return null;
   })();
 
+  /** Usable queue items for the collection (invalid shapes dropped). */
+  const listItems = (): QueueItem[] =>
+    cloudItems.map((it) => toQueueItem(parseCloudItem(it))).filter((it): it is QueueItem => it !== null);
+
+  /**
+   * Start playback from a list of items. Marks the arrival as queue-driven
+   * (vauto) so the player auto-starts — same continuous-playback contract as
+   * the Playlists page.
+   */
+  const startQueue = (title: string, items: QueueItem[], startIndex = 0) => {
+    setQueue(title, items);
+    sessionStorage.setItem("vauto", items[startIndex].id);
+    window.scrollTo({ top: 0, behavior: "auto" });
+    setLocation(`/video/${items[startIndex].id}`);
+  };
+
   /** Queue the whole collection and start playback from its first recording. */
   const handlePlayAll = () => {
-    const queueItems = cloudItems
-      .map((it) => toQueueItem(parseCloudItem(it)))
-      .filter((it): it is QueueItem => it !== null);
+    const queueItems = listItems();
     if (queueItems.length === 0) return;
-    setQueue(collectionName, queueItems);
-    window.scrollTo({ top: 0, behavior: "auto" });
-    setLocation(`/video/${queueItems[0].id}`);
+    trackActivity("playlist_start", { meta: { mix: "collection", count: queueItems.length, index: 0, order: "sequential" } });
+    startQueue(collectionName, queueItems);
+  };
+
+  /** Shuffle the whole collection and start from a random recording. */
+  const handleShuffle = () => {
+    const queueItems = listItems();
+    if (queueItems.length === 0) return;
+    const startId = queueItems[Math.floor(Math.random() * queueItems.length)].id;
+    const shuffled = shuffleQueueItems(queueItems, startId);
+    trackActivity("playlist_start", { meta: { mix: "collection", count: shuffled.length, index: 0, order: "shuffle" } });
+    startQueue(collectionName, shuffled);
   };
 
   if (notFound) {
@@ -237,13 +261,23 @@ export default function CollectionDetail() {
 
           <div className="flex items-center gap-2 shrink-0">
             {items.length > 0 && (
-              <button
-                onClick={handlePlayAll}
-                className="flex items-center gap-1.5 h-9 px-3 text-xs font-semibold border border-primary/30 text-primary hover:border-primary/60 transition-all rounded-sm"
-              >
-                <Play className="w-3.5 h-3.5" />
-                Play all
-              </button>
+              <>
+                <button
+                  onClick={handleShuffle}
+                  className="flex items-center gap-1.5 h-9 px-2.5 text-xs font-medium border border-border/50 text-muted-foreground hover:border-primary/40 hover:text-primary transition-all rounded-sm"
+                  title="Shuffle play"
+                >
+                  <Shuffle className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Shuffle</span>
+                </button>
+                <button
+                  onClick={handlePlayAll}
+                  className="flex items-center gap-1.5 h-9 px-3 text-xs font-semibold border border-primary/30 text-primary hover:border-primary/60 transition-all rounded-sm"
+                >
+                  <Play className="w-3.5 h-3.5" />
+                  Play all
+                </button>
+              </>
             )}
             <button
               onClick={async () => {

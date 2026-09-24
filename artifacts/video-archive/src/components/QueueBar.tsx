@@ -2,9 +2,9 @@ import { Link, useLocation } from "wouter";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import { proxyUrl } from "@/lib/proxy-url";
 import { formatDuration } from "@/lib/formatters";
-import { clearQueue, queueHref, type PlayQueue } from "@/lib/play-queue";
+import { clearQueue, nextQueueItem, queueHref, setQueueLoop, type PlayQueue } from "@/lib/play-queue";
 import { trackActivity } from "@/lib/rum";
-import { ListVideo, ChevronLeft, ChevronRight, X, Clapperboard } from "lucide-react";
+import { ListVideo, ChevronLeft, ChevronRight, X, Clapperboard, Repeat } from "lucide-react";
 
 interface QueueBarProps {
   queue: PlayQueue;
@@ -23,16 +23,30 @@ interface QueueBarProps {
 export function QueueBar({ queue, index }: QueueBarProps) {
   const [, setLocation] = useLocation();
   const items = queue.items;
-  const next = items[index + 1] ?? null;
-  const hasPrev = index > 0;
+  const loop = queue.loop === true;
+  // Loop-aware: at the end of a looping queue the next item wraps to the
+  // first (and vice versa for previous) — mirrors the auto-advance path.
+  const next = nextQueueItem(queue, items[index]?.id);
+  const nextIndex = next ? items.findIndex((it) => it.id === next.id) : -1;
+  const prevIndex = index > 0 ? index - 1 : loop ? items.length - 1 : -1;
   const nextThumb = next?.thumbnail_url ? proxyUrl(next.thumbnail_url) : null;
 
   const goTo = (target: number) => {
     const item = items[target];
-    if (!item) return;
+    // target === index happens in one-item looping queues (next/prev resolve
+    // to the item itself) — navigating would remount nothing.
+    if (!item || target === index) return;
     trackActivity("queue_nav", { meta: { queue_title: queue.title, index: target } });
+    // Queue-driven jump: mark the arrival so the player auto-starts (and
+    // replays) instead of parking on the click-to-play poster.
+    sessionStorage.setItem("vauto", item.id);
     window.scrollTo({ top: 0, behavior: "auto" });
     setLocation(queueHref(item));
+  };
+
+  const toggleLoop = () => {
+    trackActivity("queue_loop", { meta: { queue_title: queue.title, loop: !loop } });
+    setQueueLoop(!loop);
   };
 
   return (
@@ -103,8 +117,21 @@ export function QueueBar({ queue, index }: QueueBarProps) {
       {/* Controls */}
       <div className="flex items-center gap-1 shrink-0">
         <button
-          onClick={() => goTo(index - 1)}
-          disabled={!hasPrev}
+          onClick={() => toggleLoop()}
+          className={`w-7 h-7 flex items-center justify-center border transition-all rounded-[3px] ${
+            loop
+              ? "border-primary/60 text-primary bg-primary/5"
+              : "border-border/40 text-muted-foreground hover:text-foreground hover:border-border"
+          }`}
+          aria-label={loop ? "Disable loop" : "Loop queue"}
+          aria-pressed={loop}
+          title={loop ? "Loop on — queue repeats" : "Loop queue"}
+        >
+          <Repeat className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={() => goTo(prevIndex)}
+          disabled={prevIndex < 0 || prevIndex === index}
           className="w-7 h-7 flex items-center justify-center border border-border/40 text-muted-foreground hover:text-foreground hover:border-border transition-all rounded-[3px] disabled:opacity-30 disabled:pointer-events-none"
           aria-label="Previous in queue"
           title="Previous"
@@ -112,8 +139,8 @@ export function QueueBar({ queue, index }: QueueBarProps) {
           <ChevronLeft className="w-4 h-4" />
         </button>
         <button
-          onClick={() => goTo(index + 1)}
-          disabled={!next}
+          onClick={() => goTo(nextIndex)}
+          disabled={nextIndex < 0 || nextIndex === index}
           className="w-7 h-7 flex items-center justify-center border border-border/40 text-muted-foreground hover:text-foreground hover:border-border transition-all rounded-[3px] disabled:opacity-30 disabled:pointer-events-none"
           aria-label="Next in queue"
           title="Next"

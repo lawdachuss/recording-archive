@@ -1,5 +1,6 @@
-import { type ComponentType } from "react";
+import { useMemo, type ComponentType, type MouseEvent } from "react";
 import { Link, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import {
   useListRecordings,
   useListTags,
@@ -16,11 +17,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { useAuth } from "@/contexts/AuthContext";
-import { setQueue, toQueueItem, type QueueItem } from "@/lib/play-queue";
+import { userApi } from "@/lib/user-api";
+import { getWatchedEntries } from "@/lib/watched-storage";
+import { setQueue, shuffleQueueItems, toQueueItem, type QueueItem } from "@/lib/play-queue";
 import { trackActivity } from "@/lib/rum";
 import {
   ListVideo, Flame, Clock, HardDrive, Star, Tags, Users,
-  Play, ArrowRight, Clapperboard,
+  Play, ArrowRight, Clapperboard, Shuffle, Bookmark,
 } from "lucide-react";
 
 function VideoSkeleton() {
@@ -72,8 +75,26 @@ export default function Playlists() {
     { query: { queryKey: getListRecordingsQueryKey(longParams), staleTime: 60_000 } },
   );
 
-  // Recommendations exclude what the visitor already watched this session.
-  const excludeIds = recentlyWatched.size > 0 ? [...recentlyWatched].join(",") : undefined;
+  // Recommendations exclude what the visitor already watched recently. The
+  // list is capped at the 50 most-recent entries (watched-storage keeps them
+  // sorted newest-first): an unbounded exclude param eventually produces URLs
+  // too long for the API or any proxy in front of it.
+  const excludeIds = useMemo(() => {
+    if (recentlyWatched.size === 0) return undefined;
+    const ids = getWatchedEntries()
+      .slice(0, 50)
+      .map((e) => e.id)
+      .filter((id) => recentlyWatched.has(id));
+    return ids.length > 0 ? ids.join(",") : undefined;
+  }, [recentlyWatched]);
+
+  // Signed-in users get their saved lists surfaced as playable playlists too.
+  const { data: collections } = useQuery({
+    queryKey: ["user", "collections"],
+    queryFn: () => userApi.getCollections(),
+    enabled: !!user,
+    staleTime: 30_000,
+  });
   const { data: recData, isLoading: recLoading } = useListRecommendations(
     { limit: MIXES_PER_PAGE, exclude: excludeIds },
     { staleTime: 30_000 },
@@ -229,27 +250,56 @@ export default function Playlists() {
   ];
 
   // ── Queue actions ────────────────────────────────────────────────
-  /** Snapshot the mix into the playback queue (invalid items dropped). */
-  const seedQueue = (mix: Mix, startIndex: number) => {
-    const recs = mix.items ?? [];
-    if (recs.length === 0) return;
-    const items = recs.map(toQueueItem).filter((it): it is QueueItem => it !== null);
-    if (items.length === 0) return;
+  /** Usable queue items for a mix (invalid shapes dropped) — null when empty. */
+  const mixItems = (mix: Mix): QueueItem[] | null => {
+    const items = (mix.items ?? []).map(toQueueItem).filter((it): it is QueueItem => it !== null);
+    return items.length > 0 ? items : null;
+  };
+
+  /**
+   * Card click: seed the whole mix so the queue continues from wherever the
+   * visitor landed. Returns the seeded items — handlePlayAll navigates to
+   * items[0] from this (never the raw first recording, which could differ
+   * once invalid items are dropped).
+   */
+  const seedQueue = (mix: Mix, startIndex: number): QueueItem[] | null => {
+    const items = mixItems(mix);
+    if (!items) return null;
     setQueue(mix.title, items);
     // Analytics: a playlist/queue was started from the Playlists page.
     trackActivity("playlist_start", {
-      meta: { mix: mix.id, count: items.length, index: startIndex },
+      meta: { mix: mix.id, count: items.length, index: startIndex, order: "sequential" },
     });
+    return items;
   };
 
-  /** Play-all: queue the whole mix and jump to its first recording. */
+  /** Play-all: queue the whole mix and jump to its first queued recording. */
   const handlePlayAll = (mix: Mix) => {
-    const recs = mix.items ?? [];
-    if (recs.length === 0) return;
-    seedQueue(mix, 0);
+    const items = seedQueue(mix, 0);
+    if (!items) return;
     window.scrollTo({ top: 0, behavior: "auto" });
-    setLocation(`/video/${recs[0].id}`);
+    setLocation(`/video/${items[0].id}`);
   };
+
+  /** Shuffle: random start, shuffled order after it (the whole mix still plays). */
+  const handleShuffle = (mix: Mix) => {
+    const items = mixItems(mix);
+    if (!items) return;
+    const startId = items[Math.floor(Math.random() * items.length)].id;
+    const shuffled = shuffleQueueItems(items, startId);
+    setQueue(mix.title, shuffled);
+    trackActivity("playlist_start", {
+      meta: { mix: mix.id, count: shuffled.length, index: 0, order: "shuffle" },
+    });
+    window.scrollTo({ top: 0, behavior: "auto" });
+    setLocation(`/video/${shuffled[0].id}`);
+  };
+
+  /** Guard for card click-capture: only plain left-clicks seed the queue —
+   * modifier combos (new tab/window) navigate elsewhere and must not hijack
+   * the session queue for a video the user isn't opening here. */
+  const plainClick = (e: MouseEvent) =>
+    !e.defaultPrevented && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
 
   const loadingAny = mixes.some((m) => m.loading);
   const totalItems = mixes.reduce((n, m) => n + (m.items?.length ?? 0), 0);
@@ -285,6 +335,52 @@ export default function Playlists() {
           </div>
         )}
 
+        {/* Your playlists — saved collections + Watch Later (signed-in only) */}
+        {user && (
+          <section className="mb-10">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 rounded-lg border border-primary/25 flex items-center justify-center shrink-0">
+                <Bookmark className="w-4 h-4 text-primary/80" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-sm font-bold tracking-tight">Your playlists</h2>
+                <p className="text-[11px] text-muted-foreground">Saved lists you can play end-to-end</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              <Link
+                href="/watch-later"
+                className="group flex items-center gap-3 p-3.5 border border-border/40 hover:border-primary/40 rounded-lg bg-background/40 transition-colors animate-fade-in-up"
+              >
+                <div className="w-9 h-9 rounded-md bg-secondary/60 flex items-center justify-center shrink-0">
+                  <Clock className="w-4 h-4 text-muted-foreground" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold truncate group-hover:text-primary transition-colors">Watch Later</p>
+                  <p className="text-[10px] text-muted-foreground/60">Your saved queue</p>
+                </div>
+              </Link>
+              {(collections ?? []).map((col) => (
+                <Link
+                  key={col.id}
+                  href={`/collections/${col.id}`}
+                  className="group flex items-center gap-3 p-3.5 border border-border/40 hover:border-primary/40 rounded-lg bg-background/40 transition-colors animate-fade-in-up"
+                >
+                  <div className="w-9 h-9 rounded-md bg-secondary/60 flex items-center justify-center shrink-0">
+                    <ListVideo className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold truncate group-hover:text-primary transition-colors">{col.name}</p>
+                    <p className="text-[10px] text-muted-foreground/60">
+                      {col.item_count ?? 0} recording{(col.item_count ?? 0) !== 1 ? "s" : ""}
+                    </p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* Mix shelves */}
         {mixes.map((mix) => {
           if (!mix.loading && !(mix.items && mix.items.length > 0)) return null;
@@ -311,14 +407,26 @@ export default function Playlists() {
                       <ArrowRight className="w-3 h-3 transition-transform duration-200 group-hover:translate-x-0.5" />
                     </Link>
                   )}
-                  <button
-                    onClick={() => handlePlayAll(mix)}
-                    disabled={mix.loading || (mix.items?.length ?? 0) === 0}
-                    className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold border border-primary/30 text-primary hover:border-primary/60 transition-colors rounded-md disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
-                  >
-                    <Play className="w-3.5 h-3.5" />
-                    Play all
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => handleShuffle(mix)}
+                      disabled={mix.loading || (mix.items?.length ?? 0) === 0}
+                      className="inline-flex items-center gap-1.5 h-8 px-2.5 text-xs font-medium border border-border/50 text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors rounded-md disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+                      title="Shuffle play"
+                      aria-label={`Shuffle play ${mix.title}`}
+                    >
+                      <Shuffle className="w-3.5 h-3.5" />
+                      <span className="hidden md:inline">Shuffle</span>
+                    </button>
+                    <button
+                      onClick={() => handlePlayAll(mix)}
+                      disabled={mix.loading || (mix.items?.length ?? 0) === 0}
+                      className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold border border-primary/30 text-primary hover:border-primary/60 transition-colors rounded-md disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+                    >
+                      <Play className="w-3.5 h-3.5" />
+                      Play all
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -335,7 +443,10 @@ export default function Playlists() {
                       key={rec.id}
                       // Clicking any card queues the whole mix from that position,
                       // so the QueueBar continues the shelf wherever they start.
-                      onClickCapture={() => seedQueue(mix, i)}
+                      // Modifier-clicks (new tab/window) must not hijack the queue.
+                      onClickCapture={(e) => {
+                        if (plainClick(e)) seedQueue(mix, i);
+                      }}
                     >
                       <VideoCard
                         recording={rec}

@@ -12,8 +12,9 @@ import { userApi, parseCloudItem, cloudItemToRecording } from "@/lib/user-api";
 import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
-import { setQueue, toQueueItem, type QueueItem } from "@/lib/play-queue";
-import { Clock, Trash2, ListX, Play } from "lucide-react";
+import { setQueue, shuffleQueueItems, toQueueItem, type QueueItem } from "@/lib/play-queue";
+import { trackActivity } from "@/lib/rum";
+import { Clock, Trash2, ListX, Play, Shuffle } from "lucide-react";
 
 
 export default function WatchLater() {
@@ -52,15 +53,38 @@ export default function WatchLater() {
     clearCloud.mutate();
   };
 
+  /** Usable queue items for the watch-later list (invalid shapes dropped). */
+  const listItems = (): QueueItem[] =>
+    cloudItems.map((it) => toQueueItem(parseCloudItem(it))).filter((it): it is QueueItem => it !== null);
+
+  /**
+   * Start playback from a list of items. Marks the arrival as queue-driven
+   * (vauto) so the player auto-starts — same continuous-playback contract as
+   * the Playlists page.
+   */
+  const startQueue = (title: string, items: QueueItem[], startIndex = 0) => {
+    setQueue(title, items);
+    sessionStorage.setItem("vauto", items[startIndex].id);
+    window.scrollTo({ top: 0, behavior: "auto" });
+    setLocation(`/video/${items[startIndex].id}`);
+  };
+
   /** Queue the whole watch-later list and start from the first recording. */
   const handlePlayAll = () => {
-    const queueItems = cloudItems
-      .map((it) => toQueueItem(parseCloudItem(it)))
-      .filter((it): it is QueueItem => it !== null);
+    const queueItems = listItems();
     if (queueItems.length === 0) return;
-    setQueue("Watch Later", queueItems);
-    window.scrollTo({ top: 0, behavior: "auto" });
-    setLocation(`/video/${queueItems[0].id}`);
+    trackActivity("playlist_start", { meta: { mix: "watch-later", count: queueItems.length, index: 0, order: "sequential" } });
+    startQueue("Watch Later", queueItems);
+  };
+
+  /** Shuffle the whole list and start from a random recording. */
+  const handleShuffle = () => {
+    const queueItems = listItems();
+    if (queueItems.length === 0) return;
+    const startId = queueItems[Math.floor(Math.random() * queueItems.length)].id;
+    const shuffled = shuffleQueueItems(queueItems, startId);
+    trackActivity("playlist_start", { meta: { mix: "watch-later", count: shuffled.length, index: 0, order: "shuffle" } });
+    startQueue("Watch Later", shuffled);
   };
 
   // Warm thumbnails, sprites, and animated previews for every queued recording
@@ -77,7 +101,7 @@ export default function WatchLater() {
           <div>
             <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground font-semibold mb-3">
               <Clock className="w-3.5 h-3.5 text-primary" />
-              Queue
+              Watch Later
             </div>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tighter">Watch Later</h1>
             <p className="text-sm text-muted-foreground mt-2">
@@ -87,6 +111,14 @@ export default function WatchLater() {
           </div>
           {queue.length > 0 && (
             <div className="flex items-center gap-2">
+              <button
+                onClick={handleShuffle}
+                className="inline-flex items-center gap-1.5 h-8 px-2.5 text-xs font-medium border border-border/50 text-muted-foreground hover:border-primary/40 hover:text-primary transition-all rounded-lg"
+                title="Shuffle play"
+              >
+                <Shuffle className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Shuffle</span>
+              </button>
               <button
                 onClick={handlePlayAll}
                 className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold border border-primary/30 text-primary hover:border-primary/60 transition-all rounded-lg"

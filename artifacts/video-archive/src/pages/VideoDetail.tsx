@@ -29,7 +29,7 @@ import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { usePlayQueue } from "@/hooks/use-play-queue";
 import { QueueBar } from "@/components/QueueBar";
 import { UpNextOverlay } from "@/components/UpNextOverlay";
-import { advanceQueue } from "@/lib/play-queue";
+import { advanceQueue, nextQueueItem } from "@/lib/play-queue";
 import { proxyUrl } from "@/lib/proxy-url";
 import { AdBanner } from "@/components/ads/AdBanner";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
@@ -137,7 +137,7 @@ function deriveServers(
   embedUrl?: string | null,
   links?: Record<string, string> | null,
 ) {
-  const servers: { label: string; src: string; type: "iframe" | "img" | "link" }[] = [];
+  const servers: { label: string; src: string; type: "iframe" | "link" }[] = [];
   const seen = new Set<string>();
   const seenHosts = new Set<string>();
 
@@ -215,7 +215,6 @@ export default function VideoDetail() {
     if (typeof window === "undefined") return false;
     return sessionStorage.getItem("vplayed") === id;
   });
-
   // Pre-roll ad (Admin → Ads → "Pre-roll video" slot): "idle" waits for the
   // play gesture on the poster click, "playing" shows the overlay, "done"
   // never re-arms during this page visit (server switches included).
@@ -281,9 +280,10 @@ export default function VideoDetail() {
 
   // Playback queue (Playlists → Play all): position is derived from the route,
   // so deep links, back/forward and manual URL edits all stay in sync.
+  // nextInQueue is loop-aware (wraps to the first item when loop is on).
   const queue = usePlayQueue();
   const queueIndex = queue ? queue.items.findIndex((it) => it.id === id) : -1;
-  const nextInQueue = queue && queueIndex >= 0 ? queue.items[queueIndex + 1] ?? null : null;
+  const nextInQueue = queue && queueIndex >= 0 ? nextQueueItem(queue, id) : null;
 
   // Analytics: recording detail view (once per recording mount).
   useEffect(() => {
@@ -325,9 +325,26 @@ export default function VideoDetail() {
   const toggleReaction = useToggleReaction();
 
   useEffect(() => {
-    setVideoStarted(sessionStorage.getItem("vplayed") === id);
-    setPrerollPhase("idle");
-    setActivePreroll(null);
+    // Consume a pending queue-arrival flag (vauto, set by handleQueueAdvance /
+    // QueueBar before navigation): start playback immediately instead of
+    // parking on the click-to-play poster — a queue means continuous
+    // playback. When a preroll is loaded it is armed for the auto-arrival
+    // without a gesture (PrerollPlayer then autoplays it muted); otherwise
+    // the video starts straight away. The flag is consumed unconditionally so
+    // a stale value can never auto-start an unrelated video later.
+    const autoId = sessionStorage.getItem("vauto");
+    sessionStorage.removeItem("vauto");
+    const isAutoArrival = !!id && autoId === id;
+    if (isAutoArrival && prerollOn && preroll) {
+      setVideoStarted(false);
+      setActivePreroll(preroll);
+      setPrerollPhase("playing");
+    } else {
+      setPrerollPhase("idle");
+      setActivePreroll(null);
+      if (isAutoArrival) startPlayback();
+      else setVideoStarted(sessionStorage.getItem("vplayed") === id);
+    }
     setActiveServer(0);
     setCollectionOpen(false);
     setAddedToCol(null);
@@ -344,6 +361,7 @@ export default function VideoDetail() {
         setWatchLater(items.some((i) => i.recording_id === id));
       }).catch(() => {});
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, user]);
 
   useEffect(() => {
@@ -641,6 +659,24 @@ export default function VideoDetail() {
    * (advanceQueue) so the ordering and no-op rules stay unit-testable.
    */
   const handleQueueAdvance = useCallback(() => {
+    const next = nextQueueItem(queue, id);
+    if (!queue || !next) return;
+    if (next.id === id) {
+      // Loop replay of the current recording: cross-origin players can't be
+      // restarted programmatically and navigating to the same URL remounts
+      // nothing, so drop back to the poster — the click is the gesture that
+      // loads a fresh iframe (and re-arms the preroll for the new playback).
+      trackActivity("queue_advance", { meta: { queue_title: queue.title, recording_id: next.id } });
+      sessionStorage.removeItem("vplayed");
+      setVideoStarted(false);
+      setPrerollPhase("idle");
+      window.scrollTo({ top: 0, behavior: "auto" });
+      return;
+    }
+    // Mark the arrival as queue-driven: the next page consumes `vauto` and
+    // starts playback itself (continuous playback, no dead poster between
+    // queue items).
+    sessionStorage.setItem("vauto", next.id);
     advanceQueue(queue, id, {
       navigate: (href) => setLocation(href),
       scrollToTop: () => window.scrollTo({ top: 0, behavior: "auto" }),
@@ -652,6 +688,9 @@ export default function VideoDetail() {
   const likePercent = totalReactions > 0 ? Math.round(((reactions?.likes ?? 0) / totalReactions) * 100) : null;
 
   if (isError) {
+    // A recording can vanish from the archive while it sits in a playback
+    // queue — offer the next queued item instead of dead-ending.
+    const deadNext = queue ? nextQueueItem(queue, id) : null;
     return (
       <Layout>
         <div className="container mx-auto px-4 sm:px-6 py-24 text-center">
@@ -660,6 +699,17 @@ export default function VideoDetail() {
           <p className="text-sm text-muted-foreground mb-6">
             This video doesn&apos;t exist or was removed.
           </p>
+          {deadNext && (
+            <div className="mb-6">
+              <button
+                onClick={handleQueueAdvance}
+                className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-semibold border border-primary/40 text-primary hover:border-primary/70 transition-colors rounded-md"
+              >
+                <Play className="w-3.5 h-3.5" />
+                Play next in queue: {deadNext.username}
+              </button>
+            </div>
+          )}
           <Link href="/browse" className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline">
             <ArrowLeft className="w-3.5 h-3.5" /> Back to Browse
           </Link>
@@ -781,18 +831,6 @@ export default function VideoDetail() {
                     className="w-full h-full border-0"
                     allow="autoplay; fullscreen; picture-in-picture"
                     title={video.room_title || video.filename}
-                  />
-                ) : currentServer?.type === "img" ? (
-                  <OptimizedImage
-                    src={currentServer.src}
-                    alt={video.filename}
-                    className="w-full h-full object-contain"
-                    containerClassName="w-full h-full"
-                    fallback={
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Clapperboard className="w-12 h-12 text-muted-foreground/20" />
-                      </div>
-                    }
                   />
                 ) : proxyUrl(posterUrl) ? (
                   <OptimizedImage

@@ -25,6 +25,8 @@ export interface PlayQueue {
   title: string;
   items: QueueItem[];
   createdAt: number;
+  /** When true, advancing past the last item wraps to the first (replay when there is only one). */
+  loop?: boolean;
 }
 
 export const QUEUE_CHANGED_EVENT = "vault-queue-changed";
@@ -66,20 +68,32 @@ function storage(): Storage | null {
   }
 }
 
+/** Keep the first occurrence of each id — duplicates would break position math. */
+function dedupeById(items: QueueItem[]): QueueItem[] {
+  const seen = new Set<string>();
+  return items.filter((it) => {
+    if (seen.has(it.id)) return false;
+    seen.add(it.id);
+    return true;
+  });
+}
+
 function sanitizeQueue(raw: unknown): PlayQueue | null {
   if (!raw || typeof raw !== "object") return null;
   const q = raw as Partial<PlayQueue>;
   const items = Array.isArray(q.items)
-    ? q.items
-        .map((it) => toQueueItem(it ?? {}))
-        .filter((it): it is QueueItem => it !== null)
-        .slice(0, MAX_ITEMS)
+    ? dedupeById(
+        q.items
+          .map((it) => toQueueItem(it ?? {}))
+          .filter((it): it is QueueItem => it !== null),
+      ).slice(0, MAX_ITEMS)
     : [];
   if (items.length === 0) return null;
   return {
     title: typeof q.title === "string" && q.title ? q.title : "Queue",
     items,
     createdAt: typeof q.createdAt === "number" ? q.createdAt : Date.now(),
+    loop: q.loop === true,
   };
 }
 
@@ -111,14 +125,16 @@ export function getQueue(): PlayQueue | null {
  * Returns the stored queue, or null when it was cleared.
  */
 export function setQueue(title: string, rawItems: QueueItem[]): PlayQueue | null {
-  const items = rawItems
-    .filter((it) => it && typeof it.id === "string" && it.id)
-    .slice(0, MAX_ITEMS);
+  const items = dedupeById(
+    rawItems.filter((it) => it && typeof it.id === "string" && it.id),
+  ).slice(0, MAX_ITEMS);
   if (items.length === 0) {
     clearQueue();
     return null;
   }
-  const queue: PlayQueue = { title, items, createdAt: Date.now() };
+  // A freshly seeded queue always starts unlooped — the toggle is per-session
+  // queue state, not something a new "Play all" should inherit.
+  const queue: PlayQueue = { title, items, createdAt: Date.now(), loop: false };
   const s = storage();
   if (s) {
     try {
@@ -129,6 +145,26 @@ export function setQueue(title: string, rawItems: QueueItem[]): PlayQueue | null
   }
   notifyQueueChanged();
   return queue;
+}
+
+/**
+ * Toggle loop on the stored queue in place (no-op when no queue is active).
+ * Returns the updated queue so callers can reflect the new state immediately.
+ */
+export function setQueueLoop(loop: boolean): PlayQueue | null {
+  const current = getQueue();
+  if (!current) return null;
+  const updated: PlayQueue = { ...current, loop };
+  const s = storage();
+  if (s) {
+    try {
+      s.setItem(STORAGE_KEY, JSON.stringify(updated));
+    } catch {
+      /* quota failure — in-memory state is still correct for this session */
+    }
+  }
+  notifyQueueChanged();
+  return updated;
 }
 
 /** Remove the queue and notify listeners. */
@@ -160,10 +196,46 @@ export interface QueueAdvanceDeps {
 }
 
 /**
+ * The item that plays after `currentId` — the next in order, or the first
+ * item again when loop is on (end-of-queue wrap; a one-item looped queue
+ * returns the item itself, i.e. replay). Null when nothing should play next:
+ * no queue, unknown id, or end of queue with loop off.
+ */
+export function nextQueueItem(
+  queue: PlayQueue | null | undefined,
+  currentId: string | null | undefined,
+): QueueItem | null {
+  if (!queue || !currentId) return null;
+  const index = queue.items.findIndex((it) => it.id === currentId);
+  if (index < 0) return null;
+  const next = queue.items[index + 1];
+  if (next) return next;
+  return queue.loop && queue.items.length > 0 ? queue.items[0] : null;
+}
+
+/**
+ * Fisher–Yates shuffle for queue items. When `keepFirstId` is given, that
+ * item stays first (Spotify-style "start from the track you chose") and only
+ * the rest are shuffled. Returns a new array; the input is not mutated.
+ */
+export function shuffleQueueItems(items: QueueItem[], keepFirstId?: string): QueueItem[] {
+  const pool = items.filter((it) => it.id !== keepFirstId);
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = pool[i];
+    pool[i] = pool[j];
+    pool[j] = tmp;
+  }
+  const first = keepFirstId ? items.find((it) => it.id === keepFirstId) : undefined;
+  return first ? [first, ...pool] : pool;
+}
+
+/**
  * Advance past `currentId` in `queue`: report → scroll reset → navigate to the
- * next item's route. Returns false and fires no side effect when there is
- * nothing to advance to (no queue, unknown id, end of queue) — callers simply
- * do nothing, never a broken navigation.
+ * next item's route (loop-aware — wraps to the first item when loop is on).
+ * Returns false and fires no side effect when there is nothing to advance to
+ * (no queue, unknown id, end of queue with loop off) — callers simply do
+ * nothing, never a broken navigation.
  *
  * Extracted from VideoDetail's handleQueueAdvance (fed by the UpNextOverlay
  * countdown / "Play now") so the ordering and no-op rules are testable
@@ -174,9 +246,9 @@ export function advanceQueue(
   currentId: string | null | undefined,
   deps: QueueAdvanceDeps,
 ): boolean {
-  const index = queue && currentId ? queue.items.findIndex((it) => it.id === currentId) : -1;
-  const next = queue && index >= 0 ? (queue.items[index + 1] ?? null) : null;
-  if (!queue || !next) return false;
+  if (!queue) return false;
+  const next = nextQueueItem(queue, currentId);
+  if (!next) return false;
   deps.track("queue_advance", { queue_title: queue.title, recording_id: next.id });
   deps.scrollToTop();
   deps.navigate(queueHref(next));
