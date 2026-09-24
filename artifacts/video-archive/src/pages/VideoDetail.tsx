@@ -9,6 +9,7 @@ import {
   getGetRecordingQueryKey,
   getListRelatedRecordingsQueryKey,
   getGetReactionsQueryKey,
+  getRecording,
 } from "@workspace/api-client-react";
 import { Layout } from "@/components/Layout";
 import { CommentSection } from "@/components/CommentSection";
@@ -25,6 +26,10 @@ import { addWatchedId } from "@/lib/watched-storage";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { useWatchProgress } from "@/hooks/use-watch-progress";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
+import { usePlayQueue } from "@/hooks/use-play-queue";
+import { QueueBar } from "@/components/QueueBar";
+import { UpNextOverlay } from "@/components/UpNextOverlay";
+import { advanceQueue } from "@/lib/play-queue";
 import { proxyUrl } from "@/lib/proxy-url";
 import { AdBanner } from "@/components/ads/AdBanner";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
@@ -130,10 +135,9 @@ function isEmbedUrl(url: string): boolean {
 
 function deriveServers(
   embedUrl?: string | null,
-  previewUrl?: string | null,
   links?: Record<string, string> | null,
 ) {
-  const servers: { label: string; src: string; type: "iframe" | "img" | "link" | "video" }[] = [];
+  const servers: { label: string; src: string; type: "iframe" | "img" | "link" }[] = [];
   const seen = new Set<string>();
   const seenHosts = new Set<string>();
 
@@ -142,7 +146,20 @@ function deriveServers(
       if (src) {
         let url = src;
         try {
-          const parsed = new URL(url);
+          let parsed = new URL(url);
+
+          // Repair malformed values where an absolute URL was embedded inside
+          // the path, e.g. "https://vidara.so/v/https://vidara.to/e/XXXX"
+          // (983 such rows in production data). Rebuild a clean embed URL from
+          // the innermost (e|v|embed|player)/<id> segment; skip links that
+          // can't be repaired instead of rendering a broken iframe.
+          if (/https?:\/\//i.test(parsed.pathname)) {
+            const inner = parsed.pathname.match(/\/(e|v|embed|player)\/([A-Za-z0-9_-]+)\/?$/i);
+            if (!inner) continue;
+            url = `${parsed.origin}/${inner[1]}/${inner[2]}`;
+            parsed = new URL(url);
+          }
+
           if (parsed.hostname.includes("voe") && !parsed.pathname.startsWith("/e/")) {
             url = parsed.origin + "/e" + parsed.pathname;
           }
@@ -200,8 +217,7 @@ export default function VideoDetail() {
   });
 
   // Pre-roll ad (Admin → Ads → "Pre-roll video" slot): "idle" waits for the
-  // play gesture on iframe servers (auto-arms on mount for direct-<video>
-  // servers — no click exists there), "playing" shows the overlay, "done"
+  // play gesture on the poster click, "playing" shows the overlay, "done"
   // never re-arms during this page visit (server switches included).
   const [prerollPhase, setPrerollPhase] = useState<"idle" | "playing" | "done">("idle");
   const [activePreroll, setActivePreroll] = useState<PrerollCreative | null>(null);
@@ -263,6 +279,12 @@ export default function VideoDetail() {
   // Track watch progress (time spent, resume position, completion %)
   useWatchProgress({ video, durationSeconds: video?.duration });
 
+  // Playback queue (Playlists → Play all): position is derived from the route,
+  // so deep links, back/forward and manual URL edits all stay in sync.
+  const queue = usePlayQueue();
+  const queueIndex = queue ? queue.items.findIndex((it) => it.id === id) : -1;
+  const nextInQueue = queue && queueIndex >= 0 ? queue.items[queueIndex + 1] ?? null : null;
+
   // Analytics: recording detail view (once per recording mount).
   useEffect(() => {
     if (id) trackActivity("recording_view", { meta: { recording_id: id } });
@@ -290,6 +312,15 @@ export default function VideoDetail() {
 
   usePreloadRecordings(related);
   usePreloadRecordings(recData?.data);
+
+  // Warm the next queued recording so queue advances feel instant.
+  useEffect(() => {
+    if (!nextInQueue) return;
+    void queryClient.prefetchQuery({
+      queryKey: getGetRecordingQueryKey(nextInQueue.id),
+      queryFn: ({ signal }) => getRecording(nextInQueue.id, { signal }),
+    });
+  }, [nextInQueue, queryClient]);
 
   const toggleReaction = useToggleReaction();
 
@@ -429,18 +460,8 @@ export default function VideoDetail() {
     return () => window.removeEventListener("keydown", handleKey);
   }, [isFullscreen, enterFS, exitFS]);
 
-  const servers = deriveServers(video?.embed_url, video?.preview_url, video?.links);
+  const servers = deriveServers(video?.embed_url, video?.links);
   const currentServer = servers[activeServer] ?? servers[0];
-
-  // Direct-<video> servers start playing on their own (no click to gate), so
-  // arm the preroll here; iframe servers arm on the poster click instead.
-  // A video already started in this tab (`vplayed`) never re-arms.
-  useEffect(() => {
-    if (prerollPhase !== "idle" || !preroll || videoStarted) return;
-    if (currentServer?.type !== "video") return;
-    setActivePreroll(preroll);
-    setPrerollPhase("playing");
-  }, [prerollPhase, preroll, videoStarted, currentServer?.type]);
 
   const posterUrl = video?.sprite_url || video?.thumbnail_url;
 
@@ -612,6 +633,21 @@ export default function VideoDetail() {
     }
   };
 
+  /**
+   * Queue auto-advance — fired by the iframe Up Next countdown (cross-origin
+   * `ended` is unobservable, so that path runs on the metadata-duration
+   * estimate from lib/up-next.ts) and by its "Play now" button. The
+   * report → scroll → navigate sequence lives in lib/play-queue.ts
+   * (advanceQueue) so the ordering and no-op rules stay unit-testable.
+   */
+  const handleQueueAdvance = useCallback(() => {
+    advanceQueue(queue, id, {
+      navigate: (href) => setLocation(href),
+      scrollToTop: () => window.scrollTo({ top: 0, behavior: "auto" }),
+      track: (event, meta) => trackActivity(event, { meta }),
+    });
+  }, [queue, id, setLocation]);
+
   const totalReactions = (reactions?.likes ?? 0) + (reactions?.dislikes ?? 0);
   const likePercent = totalReactions > 0 ? Math.round(((reactions?.likes ?? 0) / totalReactions) * 100) : null;
 
@@ -746,22 +782,6 @@ export default function VideoDetail() {
                     allow="autoplay; fullscreen; picture-in-picture"
                     title={video.room_title || video.filename}
                   />
-                ) : currentServer?.type === "video" ? (
-                  <>
-                  <video
-                    key={currentServer.src}
-                    src={currentServer.src}
-                    className="w-full h-full object-contain"
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
-                    controls
-                  />
-                    {prerollPhase === "playing" && prerollOn && activePreroll && (
-                      <PrerollPlayer creative={activePreroll} onDone={finishPreroll} />
-                    )}
-                  </>
                 ) : currentServer?.type === "img" ? (
                   <OptimizedImage
                     src={currentServer.src}
@@ -792,6 +812,18 @@ export default function VideoDetail() {
                   </div>
                 )}
 
+                {/* Iframe Up Next countdown — cross-origin players can't report
+                    `ended`, so this runs on the metadata-duration estimate from
+                    lib/up-next.ts. Keyed by video so cancel state resets per video. */}
+                {currentServer?.type === "iframe" && videoStarted && video && nextInQueue && (
+                  <UpNextOverlay
+                    key={video.id}
+                    next={nextInQueue}
+                    durationSeconds={video.duration ?? 0}
+                    onPlayNow={handleQueueAdvance}
+                  />
+                )}
+
                 {videoStarted && (
                   <button
                     onClick={isFullscreen ? exitFS : enterFS}
@@ -804,6 +836,11 @@ export default function VideoDetail() {
                 )}
               </div>
             ) : null}
+
+            {/* Queue — up-next strip (seeded from Playlists / Collections / Watch Later) */}
+            {queue && queueIndex >= 0 && (
+              <QueueBar queue={queue} index={queueIndex} />
+            )}
 
             {/* Video info */}
             {isLoading ? (

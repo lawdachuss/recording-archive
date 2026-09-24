@@ -1,13 +1,13 @@
 import { Link } from "wouter";
 import { useCallback, memo } from "react";
-import { Clapperboard, Users, Tags, BarChart3, Send } from "lucide-react";
+import { Clapperboard, Users, Tags, ListVideo, Send } from "lucide-react";
 import { prefetchRoute } from "@/lib/route-chunks";
 
 export const NAV_LINKS = [
   { href: "/browse", label: "Browse", icon: Clapperboard },
   { href: "/performers", label: "Performers", icon: Users },
   { href: "/tags", label: "Tags", icon: Tags },
-  { href: "/charts", label: "Charts", icon: BarChart3 },
+  { href: "/playlists", label: "Playlists", icon: ListVideo },
 ] as const;
 
 interface DesktopNavProps {

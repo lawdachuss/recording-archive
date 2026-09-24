@@ -17,7 +17,7 @@ const ROUTE_IMPORTS: ReadonlyArray<[string, () => Promise<unknown>]> = [
   ["/browse", () => import("@/pages/Browse")],
   ["/performers", () => import("@/pages/PerformersList")],
   ["/tags", () => import("@/pages/TagsPage")],
-  ["/charts", () => import("@/pages/Charts")],
+  ["/playlists", () => import("@/pages/Playlists")],
   ["/collections", () => import("@/pages/Collections")],
   ["/bookmarks", () => import("@/pages/Bookmarks")],
   ["/watch-later", () => import("@/pages/WatchLater")],

@@ -12,7 +12,8 @@ import { userApi, parseCloudItem, cloudItemToRecording } from "@/lib/user-api";
 import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
-import { Clock, Trash2, ListX } from "lucide-react";
+import { setQueue, toQueueItem, type QueueItem } from "@/lib/play-queue";
+import { Clock, Trash2, ListX, Play } from "lucide-react";
 
 
 export default function WatchLater() {
@@ -51,6 +52,17 @@ export default function WatchLater() {
     clearCloud.mutate();
   };
 
+  /** Queue the whole watch-later list and start from the first recording. */
+  const handlePlayAll = () => {
+    const queueItems = cloudItems
+      .map((it) => toQueueItem(parseCloudItem(it)))
+      .filter((it): it is QueueItem => it !== null);
+    if (queueItems.length === 0) return;
+    setQueue("Watch Later", queueItems);
+    window.scrollTo({ top: 0, behavior: "auto" });
+    setLocation(`/video/${queueItems[0].id}`);
+  };
+
   // Warm thumbnails, sprites, and animated previews for every queued recording
   // the moment the page has them — hovering any card later is instant.
   usePreloadRecordings(cloudItems.map(parseCloudItem));
@@ -74,13 +86,22 @@ export default function WatchLater() {
             </p>
           </div>
           {queue.length > 0 && (
-            <button
-              onClick={handleClearAll}
-              className="inline-flex items-center gap-1.5 h-8 px-3 text-xs text-muted-foreground/50 hover:text-destructive border border-border/40 hover:border-destructive/30 rounded-lg transition-all"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Clear queue
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handlePlayAll}
+                className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold border border-primary/30 text-primary hover:border-primary/60 transition-all rounded-lg"
+              >
+                <Play className="w-3.5 h-3.5" />
+                Play all
+              </button>
+              <button
+                onClick={handleClearAll}
+                className="inline-flex items-center gap-1.5 h-8 px-3 text-xs text-muted-foreground/50 hover:text-destructive border border-border/40 hover:border-destructive/30 rounded-lg transition-all"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Clear queue
+              </button>
+            </div>
           )}
         </div>
 

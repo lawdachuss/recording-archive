@@ -44,7 +44,7 @@ const Bookmarks = lazyWithSkeleton(() => import("@/pages/Bookmarks"), <SkeletonG
 const History = lazyWithSkeleton(() => import("@/pages/History"), <SkeletonGridPage count={8} />, "History");
 const Analytics = lazyWithSkeleton(() => import("@/pages/Analytics"), <SkeletonSimplePage rows={6} />, "Analytics");
 const WatchLater = lazyWithSkeleton(() => import("@/pages/WatchLater"), <SkeletonGridPage count={8} />, "WatchLater");
-const Charts = lazyWithSkeleton(() => import("@/pages/Charts"), <SkeletonGridPage count={12} />, "Charts");
+const Playlists = lazyWithSkeleton(() => import("@/pages/Playlists"), <SkeletonGridPage count={12} />, "Playlists");
 const Collections = lazyWithSkeleton(() => import("@/pages/Collections"), <SkeletonGridPage count={8} />, "Collections");
 const CollectionDetail = lazyWithSkeleton(() => import("@/pages/CollectionDetail"), <SkeletonGridPage count={12} />, "CollectionDetail");
 const AdminPage = lazyWithSkeleton(() => import("@/pages/admin"), <SkeletonAdminPage />, "Admin");
@@ -198,7 +198,7 @@ function Router() {
         </Route>
 
         <Route path="/random" component={RandomRedirect} />
-        <Route path="/charts" component={Charts} />
+        <Route path="/playlists" component={Playlists} />
         <Route path="/collections">
           <ProtectedRoute><Collections /></ProtectedRoute>
         </Route>

@@ -14,7 +14,8 @@ import { userApi, parseCloudItem, type CloudItem, type CloudCollection } from "@
 import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
-import { ArrowLeft, Film, Pencil, Check, X, Trash2, ListVideo } from "lucide-react";
+import { setQueue, toQueueItem, type QueueItem } from "@/lib/play-queue";
+import { ArrowLeft, Film, Pencil, Check, X, Trash2, ListVideo, Play } from "lucide-react";
 import { formatRelativeTime } from "@/lib/formatters";
 import { proxyUrl } from "@/lib/proxy-url";
 
@@ -131,6 +132,17 @@ export default function CollectionDetail() {
     return null;
   })();
 
+  /** Queue the whole collection and start playback from its first recording. */
+  const handlePlayAll = () => {
+    const queueItems = cloudItems
+      .map((it) => toQueueItem(parseCloudItem(it)))
+      .filter((it): it is QueueItem => it !== null);
+    if (queueItems.length === 0) return;
+    setQueue(collectionName, queueItems);
+    window.scrollTo({ top: 0, behavior: "auto" });
+    setLocation(`/video/${queueItems[0].id}`);
+  };
+
   if (notFound) {
     return (
       <Layout>
@@ -223,22 +235,33 @@ export default function CollectionDetail() {
             </p>
           </div>
 
-          <button
-            onClick={async () => {
-              if (!confirm("Delete this collection? This cannot be undone.")) return;
-              try {
-                await deleteCloud.mutateAsync();
-                setLocation("/collections");
-              } catch {
-                // Delete failed — stay on page so user can retry
-              }
-            }}
-            className="shrink-0 flex items-center gap-1.5 h-9 px-3 text-xs font-medium text-muted-foreground/50 hover:text-destructive border border-border/40 hover:border-destructive/40 rounded-sm transition-all"
-            title="Delete collection"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Delete</span>
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {items.length > 0 && (
+              <button
+                onClick={handlePlayAll}
+                className="flex items-center gap-1.5 h-9 px-3 text-xs font-semibold border border-primary/30 text-primary hover:border-primary/60 transition-all rounded-sm"
+              >
+                <Play className="w-3.5 h-3.5" />
+                Play all
+              </button>
+            )}
+            <button
+              onClick={async () => {
+                if (!confirm("Delete this collection? This cannot be undone.")) return;
+                try {
+                  await deleteCloud.mutateAsync();
+                  setLocation("/collections");
+                } catch {
+                  // Delete failed — stay on page so user can retry
+                }
+              }}
+              className="flex items-center gap-1.5 h-9 px-3 text-xs font-medium text-muted-foreground/50 hover:text-destructive border border-border/40 hover:border-destructive/40 rounded-sm transition-all"
+              title="Delete collection"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Delete</span>
+            </button>
+          </div>
         </div>
 
         {/* Top ad — 728×90 / 468×60 / 300×100 */}

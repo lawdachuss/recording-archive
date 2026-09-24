@@ -47,7 +47,7 @@ const IN_CARD_SLOTS = new Set(
 );
 
 const PAGE_IDS = new Set([
-  "home", "browse", "video", "performers", "charts", "tags", "collections",
+  "home", "browse", "video", "performers", "playlists", "tags", "collections",
   "bookmarks", "history", "watch-later", "analytics", "following",
   "notifications", "my-requests", "request", "profile", "settings",
 ]);

@@ -74645,7 +74645,7 @@ var PAGE_IDS = /* @__PURE__ */ new Set([
   "browse",
   "video",
   "performers",
-  "charts",
+  "playlists",
   "tags",
   "collections",
   "bookmarks",

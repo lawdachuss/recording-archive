@@ -57,7 +57,7 @@ export interface AdPlacementDef {
 
 export const AD_PLACEMENTS: AdPlacementDef[] = [
   { id: "strip", label: "Top strips & dividers", note: "Leaderboard/billboard/banner tiers — headers, footers, section dividers." },
-  { id: "feed", label: "In-feed rectangles", note: "300×100 banners inside video grids (Home, Browse, Charts, comments…)." },
+  { id: "feed", label: "In-feed rectangles", note: "300×100 banners inside video grids (Home, Browse, Playlists, comments…)." },
   { id: "box", label: "Sidebars & boxes", note: "Medium/half-page/skyscraper boxes — VideoDetail sidebar, footers, narrow pages." },
   { id: "inCard", label: "In-feed grid ad cards", note: "Standalone ad cards inserted into video grids — never covering a recording (count/slot set below)." },
   { id: "popunder", label: "Popunder", note: "One popunder fires per page load." },
@@ -79,7 +79,7 @@ export const AD_PAGES: AdPageDef[] = [
   { id: "browse", label: "Browse", match: ["/browse"] },
   { id: "video", label: "Video detail", match: ["/video"] },
   { id: "performers", label: "Performers", match: ["/performers"] },
-  { id: "charts", label: "Charts", match: ["/charts"] },
+  { id: "playlists", label: "Playlists", match: ["/playlists"] },
   { id: "tags", label: "Tags", match: ["/tags"] },
   { id: "collections", label: "Collections", match: ["/collections"] },
   { id: "bookmarks", label: "Bookmarks", match: ["/bookmarks"] },
