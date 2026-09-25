@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useCallback, useRef, memo } from "react";
 import { Link } from "wouter";
 import type { Recording } from "@workspace/api-client-react";
 import { formatBytes, formatRelativeTime, formatViewers, formatDuration } from "@/lib/formatters";
-import { Eye, HardDrive, Clock, CheckCircle } from "lucide-react";
+import { Eye, HardDrive, Clock, CheckCircle, FolderPlus } from "lucide-react";
 import { OptimizedImage, ImageUnavailable } from "@/components/ui/optimized-image";
 import { useHoverPreview } from "@/hooks/use-hover-preview";
 import { useProgressiveImage } from "@/hooks/use-progressive-image";
@@ -12,6 +12,7 @@ import { SpriteSlideshow } from "@/components/SpriteSlideshow";
 import { cn } from "@/lib/utils";
 import { proxyUrl, proxySpriteUrl, catboxProxyUrl, markWsrvFailedForHost } from "@/lib/proxy-url";
 import { getSpriteGrid } from "@/lib/sprite-grid";
+import { openAddToCollection } from "@/components/AddToCollectionDialog";
 import { buildPreviewFallbacks, buildThumbnailFallbacks, buildSpriteFallbacks } from "@/lib/mirrors";
 import { prefetchRoute } from "@/lib/route-chunks";
 import { dlog } from "@/lib/debug";
@@ -107,13 +108,15 @@ interface VideoCardProps {
   recording: Recording;
   showRemove?: boolean;
   onRemove?: () => void;
+  /** Shows the "add to collection" button (opens the global dialog). */
+  showAdd?: boolean;
   fetchPriority?: "high" | "low" | "auto";
   isWatched?: boolean;
   /** 0-100 completion percentage. Shows progress bar when > 0 and < 100. */
   progress?: number;
 }
 
-export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemove, fetchPriority, isWatched, progress }: VideoCardProps) {
+export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemove, showAdd, fetchPriority, isWatched, progress }: VideoCardProps) {
 
   // Build mirror fallback URLs for preview, thumbnail, and sprite
   const previewFallbacks = useMemo(() => buildPreviewFallbacks(recording), [recording.preview_url, recording.preview_mirrors]);
@@ -668,6 +671,30 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             ) : <span />}
           </div>
 
+          {showAdd && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openAddToCollection({
+                  id: recording.id,
+                  username: recording.username,
+                  filename: recording.filename,
+                  room_title: recording.room_title,
+                  thumbnail_url: recording.thumbnail_url,
+                  preview_url: recording.preview_url,
+                  sprite_url: recording.sprite_url,
+                  resolution: recording.resolution,
+                  timestamp: recording.timestamp,
+                });
+              }}
+              className="absolute top-2 right-2 z-30 w-6 h-6 flex items-center justify-center bg-black/30 backdrop-blur-sm ring-1 ring-white/10 hover:bg-primary/70 hover:ring-primary/30 text-white rounded-[2px] opacity-0 group-hover:opacity-100 transition-all"
+              aria-label="Add to collection"
+              title="Add to collection"
+            >
+              <FolderPlus className="w-3.5 h-3.5" />
+            </button>
+          )}
           {showRemove && onRemove && (
             <button
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}

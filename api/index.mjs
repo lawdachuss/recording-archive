@@ -71261,7 +71261,7 @@ router9.get("/user/collections/:id/items", async (req, res) => {
       res.status(404).json({ error: "Not found" });
       return;
     }
-    const { data: items, error } = await req.supabase.from("user_collection_items").select("recording_id, metadata, added_at").eq("collection_id", req.params.id).order("added_at", { ascending: false });
+    const { data: items, error } = await req.supabase.from("user_collection_items").select("recording_id, metadata, added_at, position").eq("collection_id", req.params.id).order("position", { ascending: true, nullsFirst: false }).order("added_at", { ascending: false });
     if (error) {
       req.log.error({ err: error }, "Supabase error fetching collection items");
       res.status(500).json({ error: "Internal server error" });
@@ -71298,6 +71298,42 @@ router9.post("/user/collections/:id/items", async (req, res) => {
     res.status(201).json({ ok: true });
   } catch (err) {
     req.log.error({ err }, "POST /user/collections/:id/items unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+router9.put("/user/collections/:id/items/reorder", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { recording_ids } = req.body;
+    if (!Array.isArray(recording_ids) || recording_ids.length === 0) {
+      res.status(400).json({ error: "recording_ids (non-empty array) required" });
+      return;
+    }
+    if (recording_ids.length > 1e3) {
+      res.status(400).json({ error: "too many items" });
+      return;
+    }
+    if (recording_ids.some((id) => typeof id !== "string" || !id)) {
+      res.status(400).json({ error: "recording_ids must be non-empty strings" });
+      return;
+    }
+    const { data: col, error: colError } = await req.supabase.from("user_collections").select("id").eq("id", req.params.id).eq("user_id", userId).single();
+    if (colError || !col) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    const { data, error } = await req.supabase.rpc("reorder_collection_items", {
+      p_collection_id: req.params.id,
+      p_recording_ids: recording_ids
+    });
+    if (error) {
+      req.log.error({ err: error }, "Supabase error reordering collection items");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json({ ok: true, updated: data ?? 0 });
+  } catch (err) {
+    req.log.error({ err }, "PUT /user/collections/:id/items/reorder unexpected error");
     res.status(500).json({ error: "Internal server error" });
   }
 });

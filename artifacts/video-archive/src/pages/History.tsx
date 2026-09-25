@@ -180,6 +180,7 @@ export default function History() {
                         recording={cloudItemToRecording(rec)}
                         isWatched={recentlyWatched.has(rec.id)}
                         progress={rec.progress}
+                        showAdd
                       />
                     </div>
                   ))}

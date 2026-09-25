@@ -9,6 +9,7 @@ import { SyncStatusProvider } from "@/contexts/SyncStatusContext";
 import { PremiumProvider } from "@/contexts/PremiumContext";
 import { AdsProvider } from "@/contexts/AdsContext";
 import { AdPopunder } from "@/components/ads/AdPopunder";
+import { AddToCollectionDialog } from "@/components/AddToCollectionDialog";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { lazyWithSkeleton } from "@/components/lazy-route";
 import { prefetchRoute } from "@/lib/route-chunks";
@@ -177,6 +178,7 @@ function Router() {
       <TrackPageView />
       <PredictivePrefetch />
       <AdPopunder />
+      <AddToCollectionDialog />
       <Switch>
         <Route path="/" component={Home} />
         <Route path="/browse" component={Browse} />

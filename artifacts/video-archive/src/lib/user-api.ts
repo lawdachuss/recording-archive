@@ -32,6 +32,8 @@ export interface CloudItem {
   saved_at?: string;
   watched_at?: string;
   added_at?: string;
+  /** Playlist order (migration 013). Null/absent = legacy/unranked row. */
+  position?: number | null;
   progress?: number;
   last_position_ms?: number;
   total_watch_ms?: number;
@@ -212,7 +214,7 @@ export const userApi = {
       method: "POST",
       body: JSON.stringify({ name, description }),
     }),
-  updateCollection: (id: string, name: string, description?: string) =>
+  updateCollection: (id: string, name: string, description?: string | null) =>
     apiFetch<CloudCollection>(`/api/user/collections/${id}`, {
       method: "PUT",
       body: JSON.stringify({ name, description }),
@@ -230,6 +232,15 @@ export const userApi = {
     apiFetch(
       `/api/user/collections/${id}/items/${encodeURIComponent(recording_id)}`,
       { method: "DELETE" },
+    ),
+  /**
+   * Persist a collection's full ordering (drag & drop). The server renumbers
+   * atomically by array index — send every id, in the desired order.
+   */
+  reorderCollectionItems: (id: string, recording_ids: string[]) =>
+    apiFetch<{ ok: boolean; updated: number }>(
+      `/api/user/collections/${id}/items/reorder`,
+      { method: "PUT", body: JSON.stringify({ recording_ids }) },
     ),
 
   getFollows: () => apiFetch<PerformerFollow[]>("/api/user/follows"),

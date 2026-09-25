@@ -750,6 +750,7 @@ export default function Browse() {
                         recording={rec}
                         fetchPriority={i < 10 ? "high" : undefined}
                         isWatched={recentlyWatched.has(rec.id)}
+                        showAdd
                       />
                       {isAdCard(recordings, i) && <AdGridCard />}
                     </Fragment>

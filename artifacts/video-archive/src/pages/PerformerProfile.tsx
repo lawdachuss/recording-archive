@@ -265,7 +265,7 @@ export default function PerformerProfile() {
               {pagedRecordings.map((rec, i) => (
                 <Fragment key={rec.id}>
                   <div className="animate-fade-in-up" style={{ animationDelay: `${i * 30}ms` }}>
-                    <VideoCard recording={rec} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} />
+                    <VideoCard recording={rec} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} showAdd />
                   </div>
                   {isAdCard(pagedRecordings, i) && <AdGridCard />}
                 </Fragment>

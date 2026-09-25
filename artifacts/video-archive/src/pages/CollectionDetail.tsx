@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTrackedMutation } from "@/contexts/SyncStatusContext";
@@ -15,8 +15,10 @@ import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { setQueue, shuffleQueueItems, toQueueItem, type QueueItem } from "@/lib/play-queue";
+import { byPositionThenNewest, moveItem } from "@/lib/list-order";
 import { trackActivity } from "@/lib/rum";
-import { ArrowLeft, Film, Pencil, Check, X, Trash2, ListVideo, Play, Shuffle } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { ArrowLeft, Film, Pencil, Check, X, Trash2, ListVideo, Play, Shuffle, GripVertical } from "lucide-react";
 import { formatRelativeTime } from "@/lib/formatters";
 import { proxyUrl } from "@/lib/proxy-url";
 
@@ -53,6 +55,13 @@ export default function CollectionDetail() {
 
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState("");
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [editDesc, setEditDesc] = useState("");
+  // Optimistic drag order (recording ids). Null = render pure server order.
+  // Set on drop, cleared when the reorder mutation settles.
+  const [order, setOrder] = useState<string[] | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean } | null>(null);
 
   useEffect(() => {
     if (!loading && !user) setLocation("/login");
@@ -74,8 +83,9 @@ export default function CollectionDetail() {
     enabled: !!user && !!id,
   });
 
-  const renameCloud = useTrackedMutation({
-    mutationFn: (name: string) => userApi.updateCollection(id!, name),
+  const updateMeta = useTrackedMutation({
+    mutationFn: (payload: { name?: string; description?: string | null }) =>
+      userApi.updateCollection(id!, payload.name ?? cloudMeta?.name ?? "Collection", payload.description),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user", "collections"] });
     },
@@ -105,8 +115,85 @@ export default function CollectionDetail() {
 
   const handleRename = () => {
     if (!editName.trim()) return;
-    renameCloud.mutate(editName.trim());
+    updateMeta.mutate({ name: editName.trim() });
     setEditing(false);
+  };
+
+  const handleDescSave = () => {
+    updateMeta.mutate({ description: editDesc.trim() ? editDesc.trim() : null });
+    setEditingDesc(false);
+  };
+
+  // Server order (migration 013: position, then newest-first for unranked),
+  // overlaid with the optimistic drag order while a reorder is in flight.
+  type CloudItemWithId = CloudItem & { id: string };
+  const sortedItems = useMemo<CloudItemWithId[]>(() => {
+    // byPositionThenNewest keys on `id`; cloud items key on `recording_id`.
+    const wrapped: CloudItemWithId[] = cloudItems.map((it) => ({ ...it, id: it.recording_id }));
+    const sorted = wrapped.sort(byPositionThenNewest);
+    if (!order) return sorted;
+    const byId = new Map(sorted.map((it) => [it.recording_id, it]));
+    const arranged = order
+      .map((rid) => byId.get(rid))
+      .filter((it): it is CloudItemWithId => !!it);
+    const fresh = sorted.filter((it) => !order.includes(it.recording_id)); // added mid-drag
+    return [...arranged, ...fresh];
+  }, [cloudItems, order]);
+
+  // Persist a new order: optimistic UI first, server renumbers atomically.
+  const commitOrder = (ids: string[]) => {
+    setOrder(ids);
+    reorderCloud.mutate(ids);
+  };
+
+  const reorderCloud = useTrackedMutation({
+    mutationFn: (recording_ids: string[]) => userApi.reorderCollectionItems(id!, recording_ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "collections", id] });
+      setOrder(null);
+    },
+    onError: () => {
+      setOrder(null); // revert to server order
+    },
+  });
+
+  const handleDragStart = (recId: string) => (e: React.DragEvent) => {
+    setDragId(recId);
+    e.dataTransfer.effectAllowed = "move";
+    try {
+      e.dataTransfer.setData("text/plain", recId);
+    } catch {
+      /* some engines forbid setData — state above is what drives the drop */
+    }
+  };
+
+  const handleDragOver = (recId: string) => (e: React.DragEvent) => {
+    if (!dragId || dragId === recId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const after = e.clientY > rect.top + rect.height / 2;
+    setDropTarget((prev) => (prev?.id === recId && prev.after === after ? prev : { id: recId, after }));
+  };
+
+  const handleDropOn = (recId: string) => (e: React.DragEvent) => {
+    e.preventDefault();
+    const after = dropTarget?.id === recId ? dropTarget.after : false;
+    if (dragId && dragId !== recId) {
+      const base = sortedItems.map((it) => it.recording_id);
+      const next = moveItem(base, dragId, recId, after);
+      if (next !== base) {
+        commitOrder(next);
+        trackActivity("collection_reorder", { meta: { collection_id: id, count: next.length } });
+      }
+    }
+    setDragId(null);
+    setDropTarget(null);
+  };
+
+  const handleDragEnd = () => {
+    setDragId(null);
+    setDropTarget(null);
   };
 
   // Warm thumbnails, sprites, and animated previews for every recording in the
@@ -116,7 +203,7 @@ export default function CollectionDetail() {
   if (!user) return null;
 
   const notFound = !collectionsLoading && !cloudLoading && !cloudMeta;
-  const items = cloudItems;
+  const items = sortedItems;
   const collectionName = cloudMeta?.name ?? "Collection";
   const collectionDesc = cloudMeta?.description ?? undefined;
   const collectionCreatedAt = cloudMeta?.created_at;
@@ -247,8 +334,41 @@ export default function CollectionDetail() {
                 </button>
               </div>
             )}
-            {collectionDesc && (
-              <p className="text-sm text-muted-foreground mb-1">{collectionDesc}</p>
+            {editingDesc ? (
+              <div className="flex items-center gap-2 mb-1">
+                <input
+                  autoFocus
+                  type="text"
+                  value={editDesc}
+                  onChange={(e) => setEditDesc(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleDescSave();
+                    if (e.key === "Escape") setEditingDesc(false);
+                  }}
+                  maxLength={200}
+                  placeholder="Description (optional)"
+                  className="h-8 bg-background border border-primary/50 rounded-sm px-2.5 text-sm outline-none flex-1 max-w-sm"
+                />
+                <button onClick={handleDescSave} className="text-green-500 hover:text-green-400 transition-colors" title="Save description">
+                  <Check className="w-4 h-4" />
+                </button>
+                <button onClick={() => setEditingDesc(false)} className="text-muted-foreground hover:text-foreground transition-colors" title="Cancel">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => { setEditingDesc(true); setEditDesc(collectionDesc ?? ""); }}
+                className="group/desc flex items-center gap-1.5 mb-1 text-left min-w-0"
+                title="Edit description"
+              >
+                {collectionDesc ? (
+                  <p className="text-sm text-muted-foreground truncate">{collectionDesc}</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground/40 italic">Add a description…</p>
+                )}
+                <Pencil className="w-3 h-3 shrink-0 text-muted-foreground/0 group-hover/desc:text-muted-foreground transition-colors" />
+              </button>
             )}
             <p className="text-xs text-muted-foreground/60">
               {items.length} {items.length === 1 ? "video" : "videos"}
@@ -319,17 +439,47 @@ export default function CollectionDetail() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
             {items.map((item: CloudItem, i) => {
               const rec = parseCloudItem(item);
+              const isDragging = dragId === rec.id;
+              const dropHere = dropTarget?.id === rec.id ? dropTarget : null;
               return (
                 <Fragment key={rec.id}>
-                  <div className="relative group/card">
+                  <div
+                    className={cn("relative group/card", isDragging && "opacity-40")}
+                    draggable
+                    onDragStart={handleDragStart(rec.id)}
+                    onDragOver={handleDragOver(rec.id)}
+                    onDrop={handleDropOn(rec.id)}
+                    onDragEnd={handleDragEnd}
+                    onDragLeave={() => setDropTarget((prev) => (prev?.id === rec.id ? null : prev))}
+                  >
                     <VideoCard recording={toRecording(rec)} isWatched={recentlyWatched.has(rec.id)} />
-                    <button
-                      onClick={() => handleRemove(rec.id)}
-                      className="absolute top-2 left-2 z-10 w-6 h-6 flex items-center justify-center bg-black/30 backdrop-blur-sm ring-1 ring-white/10 text-white/60 hover:text-red-400 hover:bg-red-600/60 hover:ring-red-600/30 transition-all rounded opacity-0 group-hover/card:opacity-100"
-                      title="Remove from collection"
+                    {/* Playlist position — the order "Play all" follows. */}
+                    <div className="absolute top-2 left-2 z-10 flex items-center gap-1">
+                      <div className="w-6 h-6 rounded-lg border border-primary/40 text-primary text-[10px] font-bold flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                        {i + 1}
+                      </div>
+                      <button
+                        onClick={() => handleRemove(rec.id)}
+                        className="w-6 h-6 flex items-center justify-center bg-black/30 backdrop-blur-sm ring-1 ring-white/10 text-white/60 hover:text-red-400 hover:bg-red-600/60 hover:ring-red-600/30 transition-all rounded opacity-0 group-hover/card:opacity-100"
+                        title="Remove from collection"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <div
+                      className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center bg-black/30 backdrop-blur-sm ring-1 ring-white/10 text-white/60 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover/card:opacity-100 transition-all pointer-events-none"
+                      title="Drag to reorder"
                     >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
+                      <GripVertical className="w-3.5 h-3.5" />
+                    </div>
+                    {dropHere && (
+                      <div
+                        className={cn(
+                          "absolute z-20 left-1 right-1 h-0.5 bg-primary rounded-full pointer-events-none",
+                          dropHere.after ? "-bottom-1" : "-top-1",
+                        )}
+                      />
+                    )}
                   </div>
                   {isAdCard(items, i) && <AdGridCard />}
                 </Fragment>

@@ -660,8 +660,12 @@ router.get("/user/collections/:id/items", async (req, res) => {
 
     const { data: items, error } = await req.supabase!
       .from("user_collection_items")
-      .select("recording_id, metadata, added_at")
+      .select("recording_id, metadata, added_at, position")
       .eq("collection_id", req.params.id)
+      // Stable, user-controlled playlist order (migration 013): position is
+      // 0-based and dense for rows this codebase writes. NULLs (legacy rows
+      // pre-migration, or direct DB inserts) sort last, newest first.
+      .order("position", { ascending: true, nullsFirst: false })
       .order("added_at", { ascending: false });
 
     if (error) {
@@ -708,6 +712,56 @@ router.post("/user/collections/:id/items", async (req, res) => {
     res.status(201).json({ ok: true });
   } catch (err) {
     req.log.error({ err }, "POST /user/collections/:id/items unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Reorder a collection's items. Payload is the FULL ordered list of
+// recording ids — the DB RPC (migration 013) renumbers them atomically by
+// array index, so a client can never persist a torn order.
+router.put("/user/collections/:id/items/reorder", async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { recording_ids } = req.body as { recording_ids?: string[] };
+    if (!Array.isArray(recording_ids) || recording_ids.length === 0) {
+      res.status(400).json({ error: "recording_ids (non-empty array) required" });
+      return;
+    }
+    if (recording_ids.length > 1000) {
+      res.status(400).json({ error: "too many items" });
+      return;
+    }
+    if (recording_ids.some((id) => typeof id !== "string" || !id)) {
+      res.status(400).json({ error: "recording_ids must be non-empty strings" });
+      return;
+    }
+
+    // Ownership check first so a wrong collection id 403s instead of
+    // surfacing the RPC's internal error.
+    const { data: col, error: colError } = await req.supabase!
+      .from("user_collections")
+      .select("id")
+      .eq("id", req.params.id)
+      .eq("user_id", userId)
+      .single();
+    if (colError || !col) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    const { data, error } = await req.supabase!
+      .rpc("reorder_collection_items", {
+        p_collection_id: req.params.id,
+        p_recording_ids: recording_ids,
+      });
+    if (error) {
+      req.log.error({ err: error }, "Supabase error reordering collection items");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json({ ok: true, updated: data ?? 0 });
+  } catch (err) {
+    req.log.error({ err }, "PUT /user/collections/:id/items/reorder unexpected error");
     res.status(500).json({ error: "Internal server error" });
   }
 });

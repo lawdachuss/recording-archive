@@ -452,6 +452,7 @@ export default function Playlists() {
                         recording={rec}
                         isWatched={recentlyWatched.has(rec.id)}
                         fetchPriority={mix.id === "trending" && i < 6 ? "high" : undefined}
+                        showAdd
                       />
                     </div>
                   ))}

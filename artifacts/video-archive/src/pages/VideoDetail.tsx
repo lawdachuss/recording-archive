@@ -1273,7 +1273,7 @@ export default function VideoDetail() {
                   {recData.data
                     .filter((r) => r.id !== id)
                     .map((rec) => (
-                      <VideoCard key={rec.id} recording={rec} isWatched={recentlyWatched.has(rec.id)} />
+                      <VideoCard key={rec.id} recording={rec} isWatched={recentlyWatched.has(rec.id)} showAdd />
                     ))}
                 </div>
 
