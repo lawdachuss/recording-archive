@@ -164,27 +164,49 @@ export default function Browse() {
   // ─── Current-page media preload ───────────────────────────────────────
   // Sprites + thumbnails + reachable previews are the hover/grid media, so
   // warm ALL of them on this page during idle (dedup'd + bounded concurrency
-  // in preloadRecordingAssets) — hovering any card later is instant instead of
+  // in preloadRecordingMedia) — hovering any card later is instant instead of
   // waiting for a fresh fetch.
   usePreloadRecordings(recordings);
 
-  // ─── Continuous next-page media prefetch ───────────────────────────────
-  // Reuses the unified, connection-aware preload queue to warm the next page's
-  // thumbnails (first screen at high priority) + sprites/previews before the
-  // user scrolls, so navigating/hovering is instant. Data for the next page is
-  // still prefetched below via React Query.
+  const queryClient = useQueryClient();
+
+  // ─── Continuous next-page prefetch (data + media) ────────────────────
+  // fetchPage stores every page under the SAME query key/queryFn the page
+  // navigation hook uses (ensureQueryData), so:
+  //   - the 5-pages-ahead data download happens ONCE and is reused the moment
+  //     the user clicks into that page (previously a raw fetch threw the
+  //     response away, so navigation re-downloaded it — and page+1 was
+  //     fetched TWICE, once raw and once by prefetchQuery);
+  //   - in-flight fetches dedupe with the scroll-triggered prefetchQuery.
+  // Media (thumbnails + sprites + previews) warms through the unified,
+  // connection-aware preload queue ahead of the scroll.
   const fetchNextPrefetchPage = useCallback(
     async (page: number) => {
-      const res = await listRecordings({ ...recordingsParams, page });
-      return ((res as any)?.recordings ?? (res as any)?.data ?? []) as Array<{
+      const params = { ...recordingsParams, page };
+      const res = await queryClient.ensureQueryData({
+        queryKey: getListRecordingsQueryKey(params),
+        queryFn: ({ signal }) => listRecordings(params, { signal }),
+        staleTime: 5 * 60_000,
+      });
+      return (res?.data ?? []) as Array<{
         id: string | number;
         thumbnail_url?: string | null;
         sprite_url?: string | null;
         preview_url?: string | null;
       }>;
     },
-    [recordingsParams],
+    [recordingsParams, queryClient],
   );
+
+  // Filters/sort/search WITHOUT the page — the prefetch window resets when
+  // this changes so pages warmed for the old result set never count as warm
+  // for the new one (old bug: after any filter change, prefetch was dead
+  // until the user scrolled past the previous query's high-water mark).
+  const prefetchResetKey = useMemo(() => {
+    const { page: _page, ...filters } = recordingsParams;
+    return JSON.stringify(filters);
+  }, [recordingsParams]);
+
   const { sentinelRef: continuousSentinelRef } = useContinuousPrefetch({
     fetchPage: fetchNextPrefetchPage,
     currentPage: recordingsParams.page,
@@ -198,13 +220,13 @@ export default function Browse() {
     // Prime the next page's thumbnails as soon as this page's data arrives,
     // instead of only when the user scrolls near the bottom.
     startSignal: data,
+    resetKey: prefetchResetKey,
   });
 
   // ─── Next-page prefetch (data + previews) ─────────────────────────
   // When the user scrolls toward the bottom of the list, prefetch the next
   // page of recordings into the React Query cache and warm the preview clips
   // so navigating (or hovering) is instant.
-  const queryClient = useQueryClient();
   const prefetchedForRef = useRef("");
 
   const prefetchNextPage = useCallback(() => {

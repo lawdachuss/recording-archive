@@ -7,8 +7,8 @@
  * worker cache BEFORE the pointer reaches the card. This module provides:
  *   - preloadImage(url): one-off warm of a single image (dedup'd).
  *   - preloadImages(urls): batch warm (items are dedup'd against the module).
- *   - preloadRecordingAssets(recs): warm sprite + thumbnail + reachable
- *     preview for a list of recordings in one call.
+ *   - preloadRecordingMedia(recs): warm thumbnails + sprites + reachable
+ *     animated previews for a list of recordings in one call.
  *
  * Requests are made with new Image() so the request has destination "image"
  * and the service worker caches readable OK responses for repeat visits.
@@ -22,7 +22,12 @@
 
 import { preloadPreviewMedia } from "@/lib/preload-preview";
 import { proxyImageUrl, proxyUrl, proxySpriteUrl } from "@/lib/proxy-url";
-import { cacheImage, type CachePriority } from "@/lib/image-cache";
+import {
+  cacheImage,
+  canReserveHost,
+  isCacheableUrl,
+  type CachePriority,
+} from "@/lib/image-cache";
 import { isConnectionConstrained } from "@/lib/connection";
 import { buildPreviewFallbacks } from "@/lib/mirrors";
 
@@ -135,19 +140,34 @@ function warmHttpCache(url: string) {
 // Exception: wsrv.nl URLs are warmed via new Image() (HTTP cache only) because
 // wsrv has its own edge CDN and fetch() produces noisy 404s for broken catbox files.
 function startRequest(url: string, priority: CachePriority = 3) {
-  activeCount++;
   if (isWsrvUrl(url)) {
     // Warm browser HTTP cache only — no IDB fetch, no 404 console noise.
+    // Detached <img>: no lane accounting, no global slot — the scan loop
+    // keeps draining. (This branch used to call pump() recursively, growing
+    // the call stack once per wsrv item in a burst.)
     try { warmHttpCache(url); } catch { /* non-fatal */ }
-    activeCount--;
-    pump();
     return;
   }
+
+  activeCount++;
+
+  if (!isCacheableUrl(url)) {
+    // Cross-origin host without CORS (imgchest, iili.io, …): cacheImage
+    // skips these entirely (a fetch() would only raise console noise), which
+    // used to mean their sprites/thumbnails NEVER warmed — zero requests,
+    // hover cold. Warm the browser HTTP cache with a detached <img> instead:
+    // no CORS needed, and the hover later hits the HTTP cache for free.
+    try { warmHttpCache(url); } catch { /* non-fatal */ }
+    activeCount--;
+    return;
+  }
+
   cacheImage(url, priority)
     .then(() => {
       // Note: cacheImage resolving null is NOT a failure — null also means
       // "skipped" (already fresh within the revalidate window, oversized/
-      // corrupt body, or a deliberately non-cached cross-origin URL). Those
+      // corrupt body, a deliberately non-cached cross-origin URL, or a full
+      // host lane — the scan loop re-checks canReserveHost each tick). Those
       // must NOT be treated as failures or the URL is needlessly blacklisted
       // from re-warming for the cooldown period. Only a rejected promise is a
       // real failure worth a delayed retry.
@@ -179,14 +199,41 @@ function pump() {
     queueDirty = false;
   }
   const maxActive = getConcurrency();
-  while (queue.length > 0 && activeCount < maxActive) {
-    const item = queue.shift()!;
-    startRequest(item.url, item.priority);
+  // Scan-dispatch: an item whose HOST lane is saturated stays queued and the
+  // scan continues past it. The old shift-only loop head-of-line blocked: the
+  // first 16 items were often all catbox (2-slot lane), so all 16 global
+  // slots parked in ONE host's wait list and every other host's sprites /
+  // thumbnails froze behind it — the entire prefetch pipeline stalled on the
+  // slowest upstream. Skipped items are retried on the next tick (50ms) or
+  // whenever a request completes.
+  let i = 0;
+  while (i < queue.length && activeCount < maxActive) {
+    const item = queue[i];
+    if (canStartNow(item.url)) {
+      queue.splice(i, 1);
+      startRequest(item.url, item.priority);
+      // leave i in place — the next item shifted into this slot
+    } else {
+      i++;
+    }
   }
   // Re-pump after a short delay in case active slots freed up
   if (queue.length > 0 && pumpTimer === null) {
     pumpTimer = window.setTimeout(pump, 50);
   }
+}
+
+/**
+ * Whether an item may occupy a global queue slot right now. Peek of the
+ * image-cache host reservation: dispatch happens synchronously in the same
+ * tick as the peek, and cacheImage() takes the reservation on entry — so a
+ * slow host's lane (catbox: 2) can never swallow more than `cap` of our
+ * global slots waiting in line; everything else stays queued and the scan
+ * moves on to other hosts. wsrv warms via a detached <img> with no lane.
+ */
+function canStartNow(url: string): boolean {
+  if (isWsrvUrl(url)) return true;
+  return canReserveHost(url);
 }
 
 export interface PreloadOptions {
@@ -224,6 +271,10 @@ export function preloadImage(
       if (idx >= 0) {
         const [item] = queue.splice(idx, 1);
         if (immediate) item.immediate = true;
+        // A hotter request must also raise the queued item's priority —
+        // otherwise a sprite re-requested as a first-screen thumbnail still
+        // sat behind everything of equal/immediate class at its old rank.
+        if (priority > item.priority) item.priority = priority;
         queue.unshift(item);
         queueDirty = true;
         pump();
@@ -248,47 +299,6 @@ export function preloadImages(
 ): void {
   if (typeof window === "undefined") return;
   for (const url of urls) preloadImage(url, opts);
-}
-
-/**
- * Warm all hover media for a list of recordings: thumbnails (grid paint,
- * priority 3) first, then sprites (priority 2), and previews eagerly. Previews
- * use <link rel="preload" as="image"> for instant HTTP/2 priority so they're
- * cached before the user hovers.
- */
-export function preloadRecordingAssets(
-  recs: Array<{
-    sprite_url?: string | null;
-    thumbnail_url?: string | null;
-    preview_url?: string | null;
-    preview_mirrors?: Record<string, string> | null;
-    sprite_mirrors?: Record<string, string> | null;
-    thumbnail_mirrors?: Record<string, string> | null;
-  }>,
-  opts: PreloadOptions = {},
-): void {
-  const thumbs: (string | null | undefined)[] = [];
-  const sprites: (string | null | undefined)[] = [];
-  const previews: (string | null | undefined)[] = [];
-  for (const rec of recs) {
-    if (rec.thumbnail_url) thumbs.push(proxyImageUrl(rec.thumbnail_url));
-    if (rec.sprite_url) {
-      const proxied = proxySpriteUrl(rec.sprite_url);
-      if (isReachablePreviewUrl(proxied)) sprites.push(proxied);
-    }
-    // Check primary and mirrors for the best preloadable preview (preferring animated WebP)
-    const candidates = buildPreviewFallbacks(rec);
-    const best = candidates.find((u) => isPreviewPreloadable(u)) ?? (rec.preview_url && isPreviewPreloadable(rec.preview_url) ? rec.preview_url : null);
-    if (best && previews.length < 4) {
-      const proxied = proxyUrl(best);
-      if (proxied) previews.push(proxied);
-    }
-  }
-  preloadImages(thumbs, { ...opts, priority: 3 });
-  preloadImages(sprites, { ...opts, priority: 2 });
-  if (previews.length) {
-    previews.forEach((p) => preloadPreviewMedia(p));
-  }
 }
 
 /**
@@ -344,50 +354,6 @@ export function preloadRecordingMedia(
   for (const p of previews) preloadPreviewMedia(p);
 }
 
-/**
- * Warm only hover sprites for a list of recordings. Used for page-level
- * preloads where the DOM <img> tags already fetch thumbnails themselves —
- * preloading them again would double the requests and compete with grid paint.
- *
- * Preview media is deliberately NOT preloaded here. Previews are multi-MB
- * files; warming a whole page of them saturated the connection and slowed the
- * grid. Cards near the viewport preload their own preview via useHoverPreview,
- * which preload-preview.ts caps to a few concurrent downloads.
- *
- * Sprites on catbox hosts ride wsrv.nl's edge CDN full-size (proxySpriteUrl),
- * so they're now reachable AND fast to warm (~2-3s cold, globally-cached after
- * the first viewer) — the old ~16KB/s direct-download starvation is gone.
- * Catbox animated .webp previews are warmed directly into the HTTP + IDB
- * caches (catbox sends CORS for images) so hover is instant, not a progress
- * bar. Videos stay stream-on-demand at hover time.
- */
-export function preloadRecordingSprites(
-  recs: Array<{ sprite_url?: string | null; preview_url?: string | null }>,
-  opts: PreloadOptions = {},
-): void {
-  const sprites: (string | null | undefined)[] = [];
-  const previews: (string | null | undefined)[] = [];
-  for (const rec of recs) {
-    if (rec.sprite_url) {
-      const proxied = proxySpriteUrl(rec.sprite_url);
-      if (isReachablePreviewUrl(proxied)) sprites.push(proxied);
-    }
-    // Prefetch ANIMATED previews (.webp / .mp4_preview) alongside sprites so
-    // hover shows the full preview instantly. Videos (.mp4) are excluded —
-    // they're multi-MB and still stream on demand at hover time.
-    if (rec.preview_url && !opts.skipPreviews) {
-      const proxied = proxyUrl(rec.preview_url);
-      if (proxied && isPreviewPreloadable(proxied)) {
-        previews.push(proxied);
-      }
-    }
-  }
-  preloadImages(sprites, { ...opts, priority: 2 });
-  if (previews.length) {
-    for (const p of previews) preloadPreviewMedia(p);
-  }
-}
-
 /** True when a (proxied) preview URL points at an animated image, not a video. */
 export function isAnimatedPreviewUrl(url: string): boolean {
   try {
@@ -405,8 +371,3 @@ export function isAnimatedPreviewUrl(url: string): boolean {
     return false;
   }
 }
-
-/** @deprecated alias — use preloadImage */
-export const preloadSprite = preloadImage;
-/** @deprecated alias — use preloadImages */
-export const preloadSprites = preloadImages;

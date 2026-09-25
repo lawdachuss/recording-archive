@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useCallback, useRef, memo } from "react";
 import { Link } from "wouter";
-import type { Recording } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { getRecording, getGetRecordingQueryKey, type Recording } from "@workspace/api-client-react";
 import { formatBytes, formatRelativeTime, formatViewers, formatDuration } from "@/lib/formatters";
 import { Eye, HardDrive, Clock, CheckCircle, FolderPlus } from "lucide-react";
 import { OptimizedImage, ImageUnavailable } from "@/components/ui/optimized-image";
@@ -164,12 +165,25 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   // measured speed, or Data Saver toggle changes.
   const isSlowConnection = useConnectionConstrained();
 
-  // Warm the VideoDetail chunk on hover/focus — the dominant next navigation
-  // from any card. Reuses the live connection-quality check so slow links
-  // don't waste bandwidth on speculative downloads.
+  const queryClient = useQueryClient();
+
+  // Warm the VideoDetail chunk AND its data on hover/focus — the dominant
+  // next navigation from any card. The data prefetch writes into the SAME
+  // query key/queryFn VideoDetail reads (getGetRecordingQueryKey), so the
+  // next click lands on cached detail data instead of a network wait, and
+  // repeated hovers dedupe within the staleTime window. Reuses the live
+  // connection-quality check so slow links don't waste bandwidth on
+  // speculative downloads.
   const prefetchDetailChunk = useCallback(() => {
-    if (!isSlowConnection) prefetchRoute("/video");
-  }, [isSlowConnection]);
+    if (isSlowConnection) return;
+    prefetchRoute("/video");
+    void queryClient
+      .prefetchQuery({
+        queryKey: getGetRecordingQueryKey(recording.id),
+        queryFn: ({ signal }) => getRecording(recording.id, { signal }),
+      })
+      .catch(() => {});
+  }, [isSlowConnection, queryClient, recording.id]);
 
   const {
     isHovered,

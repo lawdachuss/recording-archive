@@ -17,7 +17,6 @@ const NotificationBell = lazy(() => import("@/components/NotificationBell").then
 const MobileMenu = lazy(() => import("@/components/nav/MobileMenu").then(m => ({ default: m.MobileMenu })));
 const RequestDialog = lazy(() => import("@/components/RequestDialog"));
 
-import { enqueuePrefetch, flushPrefetch } from "@/lib/query-client";
 import { prefetchRoute } from "@/lib/route-chunks";
 
 // Route chunk + data prefetching is centralized in lib/route-chunks.ts; the

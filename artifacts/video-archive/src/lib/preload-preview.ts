@@ -13,7 +13,7 @@
  * starved the grid's visible thumbnails. Excess requests wait FIFO for a slot.
  */
 
-import { cacheImage, isCached } from "@/lib/image-cache";
+import { cacheImage, isCached, canReserveHost } from "@/lib/image-cache";
 import { isConnectionConstrained } from "@/lib/connection";
 
 const preloadCache = new Map<string, HTMLVideoElement | HTMLImageElement | true>();
@@ -38,43 +38,76 @@ const imageKeys: string[] = [];
 // faster while still leaving connection headroom for the visible grid.
 const MAX_CONCURRENT_PRELOADS = 8;
 let activePreloads = 0;
-const preloadWaiters: Array<() => void> = [];
 
-/** Resolve a download slot once one frees up. Returns a release function. */
+interface PreloadWaiter {
+  tryRun: () => void;
+  cancel: () => void;
+}
+const preloadWaiters: PreloadWaiter[] = [];
+
+/**
+ * Resolve a download slot once one frees up. Returns a release function.
+ * `immediate` waiters queue at the FRONT so hover intent jumps ahead of the
+ * background prefetch backlog.
+ *
+ * Cancelled waiters are RESOLVED with a no-op release instead of being
+ * silently dropped: the old behaviour cleared the queue and left every
+ * pending promise unsettled forever, leaking the promise and hanging each
+ * caller that was waiting for a slot.
+ */
 function acquirePreloadSlot(immediate = false): Promise<() => void> {
   return new Promise((resolve) => {
-    const tryRun = () => {
-      if (activePreloads >= MAX_CONCURRENT_PRELOADS) {
-        if (immediate) {
-          preloadWaiters.unshift(tryRun);
-        } else {
-          preloadWaiters.push(tryRun);
-        }
-        return;
-      }
-      activePreloads++;
-      let released = false;
-      resolve(() => {
-        if (released) return;
-        released = true;
-        activePreloads--;
-        const next = preloadWaiters.shift();
-        if (next) next();
-      });
+    let settled = false;
+    const waiter: PreloadWaiter = {
+      tryRun: () => {
+        if (settled) return;
+        if (activePreloads >= MAX_CONCURRENT_PRELOADS) return; // stays queued
+        settled = true;
+        const idx = preloadWaiters.indexOf(waiter);
+        if (idx >= 0) preloadWaiters.splice(idx, 1);
+        activePreloads++;
+        let released = false;
+        resolve(() => {
+          if (released) return;
+          released = true;
+          activePreloads--;
+          const next = preloadWaiters.shift();
+          if (next) next.tryRun();
+        });
+      },
+      cancel: () => {
+        if (settled) return;
+        settled = true;
+        const idx = preloadWaiters.indexOf(waiter);
+        if (idx >= 0) preloadWaiters.splice(idx, 1);
+        resolve(() => {}); // no-op release — the download never starts
+      },
     };
-    tryRun();
+    if (immediate) preloadWaiters.unshift(waiter);
+    else preloadWaiters.push(waiter);
+    waiter.tryRun(); // take a slot right away when one is free
   });
 }
+
+// ─── Host-lane gate for preview warming ────────────────────────────────
+// Waiting for a slow host's lane happens OUTSIDE the 8 preview slots: the
+// old code queued inside the lane while HOLDING a slot, so one throttled
+// upstream (catbox, 2 lanes shared with visible <img>s) starved every other
+// preview warm behind it.
+const HOST_RETRY_DELAY_MS = 300;
+const HOST_RETRY_MAX = 20; // ~6s of patient waiting, then proceed anyway
 
 /**
  * Cancel all pending (queued but not yet started) preview preloads.
  * Call this on route navigation to stop speculative downloads from the
  * previous page from consuming connection slots that the new page needs.
- * Already-in-progress downloads are unaffected (they're bounded by
- * MAX_CONCURRENT_PRELOADS and will complete normally).
+ * Each cancelled waiter's promise resolves with a no-op release so callers
+ * don't hang. Already-in-progress downloads are unaffected (they're bounded
+ * by MAX_CONCURRENT_PRELOADS and will complete normally).
  */
 export function cancelPendingPreviews(): void {
-  preloadWaiters.length = 0;
+  const waiters = preloadWaiters.splice(0, preloadWaiters.length);
+  for (const w of waiters) w.cancel();
 }
 
 /**
@@ -195,7 +228,7 @@ function evictOldestImage(): void {
   preloadCache.delete(oldestKey);
 }
 
-export function preloadVideo(url: string): void {
+export function preloadVideo(url: string, immediate = false): void {
   if (preloadCache.has(url)) return;
   // Don't preload on slow/constrained connections — the bandwidth is needed
   // for the actual page content, not speculative hover previews.
@@ -216,8 +249,11 @@ export function preloadVideo(url: string): void {
     }
 
     // Cap concurrent speculative downloads (see global gate above) so a
-    // page-full of previews can't saturate the connection.
-    void acquirePreloadSlot().then((release) => {
+    // page-full of previews can't saturate the connection. `immediate` (hover
+    // intent) queues at the FRONT — otherwise a hover had to wait behind up
+    // to MAX_CONCURRENT_PRELOADS background page-warm downloads before the
+    // preview even started fetching.
+    void acquirePreloadSlot(immediate).then((release) => {
       // Re-check: another caller may have warmed this URL while we waited.
       if (preloadCache.has(url)) {
         release();
@@ -256,7 +292,12 @@ export function preloadVideo(url: string): void {
  * Directly downloads as Blob and persists to IDB so hover gets an instant 0ms blob hit.
  * Falls back to <img> warming for non-CORS hosts.
  */
-export function preloadAnimatedImage(url: string, cors = false, immediate = false): void {
+export function preloadAnimatedImage(
+  url: string,
+  cors = false,
+  immediate = false,
+  hostAttempt = 0,
+): void {
   if (preloadCache.has(url)) return;
   // On slow connections, skip speculative background preloading
   if (!immediate && isConnectionConstrained()) return;
@@ -268,6 +309,17 @@ export function preloadAnimatedImage(url: string, cors = false, immediate = fals
       return;
     }
     if (preloadCache.has(url)) return;
+
+    // Host lane saturated → retry WITHOUT taking a preview slot. The old code
+    // queued inside the slow host's lane WHILE HOLDING one of only 8 slots,
+    // so a throttled upstream starved every other preview warm behind it.
+    if (!canReserveHost(url) && hostAttempt < HOST_RETRY_MAX) {
+      window.setTimeout(
+        () => preloadAnimatedImage(url, cors, immediate, hostAttempt + 1),
+        HOST_RETRY_DELAY_MS,
+      );
+      return;
+    }
 
     // Cap concurrent speculative downloads with priority jumping for immediate requests.
     void acquirePreloadSlot(immediate).then(async (release) => {
@@ -328,6 +380,6 @@ export function preloadPreviewMedia(url: string | null | undefined, immediate = 
     preloadAnimatedImage(upstream, true, immediate);
     return;
   }
-  if (isVideoUrl(url)) preloadVideo(url);
+  if (isVideoUrl(url)) preloadVideo(url, immediate);
   else if (isAnimatedImageUrl(url)) preloadAnimatedImage(upstream || url, false, immediate);
 }

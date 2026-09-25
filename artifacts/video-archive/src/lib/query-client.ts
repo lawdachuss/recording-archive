@@ -1,17 +1,18 @@
 /**
- * query-client.ts — enhanced QueryClient with persistence, network-aware
- * stale times, and a prefetch manager.
+ * query-client.ts — enhanced QueryClient with persistence and network-aware
+ * stale times.
  *
  * Persists the React Query cache to localStorage so in-flight and cached
  * data survives full page reloads (not just soft navigations).
  *
  * Network-aware stale times:
- *   - Slow connection (effectiveType ~"2g" / "slow-2g") → staleTime 30m
+ *   - Slow connection (saveData / 2g-class / < 1 Mbps) → staleTime 30m
  *   - Fast connection → per-query configured value
  */
 
 import { QueryClient, onlineManager, keepPreviousData } from "@tanstack/react-query";
 import { cacheGetSync, cacheSetLocal, cacheGetLocal, cacheDelete } from "./cache";
+import { isConnectionConstrained } from "./connection";
 
 const PERSIST_KEY = "vault-rq-cache";
 const PERSIST_TTL = 2 * 60 * 60_000; // persist cache snapshot for 2h — instant restore on reloads
@@ -42,15 +43,12 @@ function isSensitiveKey(queryKey: readonly unknown[]): boolean {
 
 type ConnectionSpeed = "slow" | "fast";
 
+// Single source of truth: lib/connection.ts reads saveData / effectiveType /
+// downlink. This used to duplicate a weaker check that only looked at
+// effectiveType, so query prefetching disagreed with the preload queue about
+// what counts as a constrained link (saveData and < 1 Mbps were ignored).
 function getConnectionSpeed(): ConnectionSpeed {
-  try {
-    const conn = (navigator as any).connection;
-    if (conn) {
-      const et = conn.effectiveType as string;
-      if (et === "slow-2g" || et === "2g") return "slow";
-    }
-  } catch {}
-  return "fast";
+  return isConnectionConstrained() ? "slow" : "fast";
 }
 
 function getStaleTime(base: number): number {
@@ -133,37 +131,6 @@ function applyCache(queryClient: QueryClient, persisted: PersistedCache) {
   }
 }
 
-// ─── Prefetch manager ─────────────────────────────────────────────
-
-type PrefetchFn = () => Promise<unknown>;
-
-interface PrefetchQueue {
-  fns: Array<{ priority: number; fn: PrefetchFn }>;
-}
-
-const prefetchQueues = new Map<string, PrefetchQueue>();
-
-export function enqueuePrefetch(group: string, priority: number, fn: PrefetchFn) {
-  let q = prefetchQueues.get(group);
-  if (!q) {
-    q = { fns: [] };
-    prefetchQueues.set(group, q);
-  }
-  q.fns.push({ priority, fn });
-}
-
-export function flushPrefetch(group: string) {
-  const q = prefetchQueues.get(group);
-  if (!q) return;
-  q.fns.sort((a, b) => b.priority - a.priority); // highest first
-  // Execute with a small stagger to avoid network contention.
-  // Catch errors to prevent unhandled promise rejections from failed prefetches.
-  q.fns.forEach(({ fn }, i) => {
-    setTimeout(() => fn().catch(() => {}), i * 80);
-  });
-  q.fns = [];
-}
-
 // ─── Factory ──────────────────────────────────────────────────────
 
 let globalClient: QueryClient | null = null;
@@ -229,123 +196,6 @@ export const QUERY_PRESETS = {
     gcTime: 120 * 60_000,
   }),
 } as const;
-
-// ─── Viewport-Aware Intelligent Prefetch ─────────────────────────
-
-interface ViewportPrefetchEntry {
-  url: string;
-  priority: number; // 1-10, higher = more important
-  estimatedSize: number; // bytes
-  enqueuedAt: number;
-  element?: HTMLElement; // optional DOM element for proximity calc
-}
-
-const viewportPrefetchQueue: ViewportPrefetchEntry[] = [];
-const MAX_CONCURRENT_VIEWPORT_PREFETCHES = 4;
-let activeViewportPrefetches = 0;
-
-/**
- * Get the distance from an element to the viewport center.
- * Returns 0 if the element is in the viewport, Infinity if not found.
- */
-function getDistanceToViewport(element?: HTMLElement): number {
-  if (!element || typeof window === "undefined") return Infinity;
-  const rect = element.getBoundingClientRect();
-  const viewportCenter = window.innerHeight / 2;
-  const elementCenter = rect.top + rect.height / 2;
-  return Math.abs(viewportCenter - elementCenter);
-}
-
-/**
- * Enqueue a URL for viewport-aware prefetching. The priority is dynamically
- * adjusted based on the element's proximity to the viewport.
- *
- * @param url - The URL to prefetch
-n * @param basePriority - Base priority (1-10)
- * @param estimatedSize - Estimated response size in bytes
- * @param element - Optional DOM element for proximity-based priority boost
- */
-export function enqueueViewportPrefetch(
-  url: string,
-  basePriority: number,
-  estimatedSize: number,
-  element?: HTMLElement,
-): void {
-  // Don't prefetch on slow connections
-  if (getConnectionSpeed() === "slow") return;
-
-  // Deduplicate
-  if (viewportPrefetchQueue.some((e) => e.url === url)) return;
-
-  const entry: ViewportPrefetchEntry = {
-    url,
-    priority: basePriority,
-    estimatedSize,
-    enqueuedAt: Date.now(),
-    element,
-  };
-
-  viewportPrefetchQueue.push(entry);
-  processViewportPrefetchQueue();
-}
-
-/**
- * Process the viewport prefetch queue, prioritizing items closest
- * to the viewport and deprioritizing items that have been waiting too long.
- * Uses activeViewportPrefetches as the sole concurrency gate — the old boolean
- * viewportPrefetchActive was reset too early within the loop, allowing
- * concurrent runs and duplicate prefetches.
- */
-function processViewportPrefetchQueue(): void {
-  if (activeViewportPrefetches >= MAX_CONCURRENT_VIEWPORT_PREFETCHES) return;
-  if (viewportPrefetchQueue.length === 0) return;
-
-  // Sort by dynamic priority: base priority + proximity boost - age penalty
-  const now = Date.now();
-  viewportPrefetchQueue.sort((a, b) => {
-    const distA = getDistanceToViewport(a.element);
-    const distB = getDistanceToViewport(b.element);
-
-    // Proximity boost: items in/near viewport get +5 priority
-    const boostA = distA < window.innerHeight ? 5 : distA < window.innerHeight * 2 ? 2 : 0;
-    const boostB = distB < window.innerHeight ? 5 : distB < window.innerHeight * 2 ? 2 : 0;
-
-    // Age penalty: items waiting >5s lose 1 priority per second
-    const ageA = Math.min(5, (now - a.enqueuedAt) / 1000);
-    const ageB = Math.min(5, (now - b.enqueuedAt) / 1000);
-
-    const scoreA = a.priority + boostA - ageA;
-    const scoreB = b.priority + boostB - ageB;
-
-    return scoreB - scoreA; // higher score = higher priority
-  });
-
-  // Start prefetches up to concurrency limit
-  while (
-    viewportPrefetchQueue.length > 0 &&
-    activeViewportPrefetches < MAX_CONCURRENT_VIEWPORT_PREFETCHES
-  ) {
-    const entry = viewportPrefetchQueue.shift()!;
-    activeViewportPrefetches++;
-
-    // Fire-and-forget prefetch with dedup
-    const img = new Image();
-    img.src = entry.url;
-    img.onload = img.onerror = () => {
-      activeViewportPrefetches--;
-      // Continue draining the queue once a slot opens up.
-      processViewportPrefetchQueue();
-    };
-  }
-}
-
-/**
- * Clear the viewport prefetch queue (e.g., on navigation).
- */
-export function clearViewportPrefetchQueue(): void {
-  viewportPrefetchQueue.length = 0;
-  activeViewportPrefetches = 0;
-}
 
 // ─── Stale-While-Revalidate Helper ───────────────────────────────
 

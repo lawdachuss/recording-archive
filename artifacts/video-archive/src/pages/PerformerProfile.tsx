@@ -76,7 +76,11 @@ export default function PerformerProfile() {
     setPage(1);
   }, [username]);
 
-  usePreloadRecordings(pagedRecordings);
+  // Warm the media of ALL loaded recordings (capped at MAX_WARM_ITEMS
+  // inside the hook), not just the visible client-side page — pages 2+ of
+  // this performer are a slice of data we already have in memory, so their
+  // thumbnails/sprites should be just as instant as page 1's.
+  usePreloadRecordings(allRecordings);
 
   const follow = useTrackedMutation({
     mutationFn: () => userApi.addFollow(username!),

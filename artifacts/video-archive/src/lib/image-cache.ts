@@ -366,6 +366,70 @@ function hostOf(url: string): string {
   try { return new URL(url).hostname; } catch { return "other"; }
 }
 
+// ─── Synchronous per-host reservation ─────────────────────────────────
+// cacheImage callers (preload queue, preview slots, <img> cache-writes) all
+// used to enter the host wait-list and burn whatever slot they were holding
+// (a global queue slot / one of the 8 preview slots) while standing in line
+// behind the slowest upstream. Reserving synchronously at cacheImage entry
+// means "host is full" is known IMMEDIATELY — callers can skip/retry instead
+// of holding a slot hostage.
+const hostReserved = new Map<string, number>();
+
+/**
+ * True when `cacheImage(url)` would start working right now (peek, no take).
+ * Both budgets must be free:
+ *   1. the synchronous reservation (cacheImage callers), AND
+ *   2. the async host semaphore (covers foreign holders — OptimizedImage's
+ *      <img> admission lane), which must have room AND no queue, because
+ *      entering now would burn whatever slot the caller is holding just to
+ *      stand in line (the old behaviour — global queue slots and preview
+ *      slots held hostage behind catbox's 2-lane lane, freezing every other
+ *      host's warming).
+ */
+export function canReserveHost(url: string): boolean {
+  const host = hostOf(url);
+  if ((hostReserved.get(host) ?? 0) >= hostConcurrency(host)) return false;
+  const sem = hostSemaphores.get(host);
+  if (!sem) return true;
+  if (sem.running >= hostConcurrency(host)) return false;
+  return sem.waiters.length === 0 && sem.imgWaiters.length === 0;
+}
+
+/** Synchronously take a host-lane slot; null when the lane is full. */
+function reserveHostSlot(url: string): (() => void) | null {
+  const host = hostOf(url);
+  const cur = hostReserved.get(host) ?? 0;
+  if (cur >= hostConcurrency(host)) return null;
+  hostReserved.set(host, cur + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const n = (hostReserved.get(host) ?? 1) - 1;
+    if (n > 0) hostReserved.set(host, n); else hostReserved.delete(host);
+  };
+}
+
+/**
+ * True when `cacheImage()` would actually fetch this URL (same-origin, or a
+ * cross-origin host that sends CORS headers). Cross-origin hosts WITHOUT CORS
+ * (imgchest etc.) are skipped by cacheImage on purpose — a fetch() there only
+ * produces console noise. The preload queue uses this to fall back to a
+ * detached `<img>` warm instead of silently dropping the URL (the old
+ * behaviour: imgchest sprites/thumbnails NEVER warmed — zero requests).
+ */
+export function isCacheableUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.origin === window.location.origin) return true;
+    if (isNoCorsHost(parsed.hostname)) return false;
+    return isCorsFetchable(url);
+  } catch {
+    return true;
+  }
+}
+
+
 // ─── IDB handle ─────────────────────────────────────────────────────────────
 
 /** Remove any IDB entries with 0-byte blobs (from cached failed fetches). */
@@ -745,9 +809,19 @@ export async function cacheImage(
   const existing = inflight.get(url);
   if (existing) { trackHit("dedup", url); return existing; }
 
-  const promise = _cacheImageInner(url, priority);
+  // Synchronous per-host budget. On a full lane return null ("skipped") —
+  // callers that raced a full lane must NOT burn a queue/preview slot waiting
+  // inside the host's async wait-list; probes use canReserveHost() before
+  // dispatching. Same-tick peek → reserve is race-free (JS runs to completion
+  // between canReserveHost and this line in the preload scan loop).
+  const release = reserveHostSlot(url);
+  if (!release) return null;
+
+  const promise = _cacheImageInner(url, priority).finally(() => {
+    release();
+    inflight.delete(url);
+  });
   inflight.set(url, promise);
-  promise.finally(() => inflight.delete(url));
   return promise;
 }
 
@@ -1223,60 +1297,6 @@ export async function getCacheBudget(): Promise<CacheBudget & {
 export function setCacheBudget(budget: Partial<CacheBudget>): void {
   currentBudget = { ...currentBudget, ...budget };
   currentBudget.targetBytes = currentBudget.maxTotalBytes * 0.8;
-}
-
-/**
- * Typical size (bytes) used when estimating how much a preload of this
- * priority will consume. Priorities map to media type: previews (1) are
- * multi-hundred-KB to multi-MB, sprites (2) are ~200-400KB, thumbnails (3)
- * are tiny (~30KB). This lets budget gating allocate fairly instead of
- * assuming everything is a 30KB thumbnail.
- */
-const PRIORITY_ESTIMATE_BYTES: Record<CachePriority, number> = {
-  1: 500_000,  // preview — large
-  2: 200_000,  // sprite — medium
-  3: 30_000,   // thumbnail — small
-};
-
-/**
- * Preload images with budget awareness. Checks if adding these images
- * would exceed the budget and evicts old entries if needed. The estimated
- * cost of each item scales with its priority (previews are far larger than
- * thumbnails), so budget gating doesn't over- or under-allocate.
- *
- * @returns Number of images successfully cached
- */
-export async function preloadWithBudget(
-  urls: string[],
-  priority: CachePriority = 2,
-): Promise<number> {
-  const budget = await getCacheBudget();
-  
-  // If we're already over budget, trigger eviction first
-  if (budget.needsEviction) {
-    await evictIfNeeded();
-  }
-  
-  // Check budget again after eviction
-  const afterEviction = await getCacheBudget();
-  if (afterEviction.usagePercent > 90) {
-    // Still over 90% — skip preloading to prevent OOM
-    return 0;
-  }
-  
-  // Estimate total size using priority-appropriate per-item cost.
-  const estPerItem = PRIORITY_ESTIMATE_BYTES[priority];
-  const estimatedSize = urls.length * estPerItem;
-  const remainingBudget = afterEviction.maxTotalBytes - afterEviction.totalBytesUsed;
-  
-  if (estimatedSize > remainingBudget) {
-    // Only preload what fits in the remaining budget.
-    const maxUrls = Math.max(0, Math.floor(remainingBudget / estPerItem));
-    urls = urls.slice(0, maxUrls);
-  }
-  
-  // Batch-cache with concurrency control
-  return cacheImages(urls, 4);
 }
 
 /**
