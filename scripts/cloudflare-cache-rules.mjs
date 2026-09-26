@@ -39,13 +39,20 @@ const DRY_RUN = process.argv.includes('--dry-run');
 
 const RULE_MEDIA = {
   description: 'cache /api/media at the edge (respect origin TTL)',
+  // URI *path*, not URI Full. The dashboard's expression builder defaults to
+  // `(http.request.uri.full_uri wildcard r"...")`, which can never match a real
+  // request like https://chuglii.in/api/media?url=... — the path form is exact.
   expression: '(http.request.uri.path eq "/api/media")',
   action: 'set_cache_settings',
   action_parameters: {
-    eligible_for_cache: true,
+    // NB: the field is `cache`, NOT `eligible_for_cache` — the Rulesets API
+    // rejects the latter with "unknown field". `cache: true` is the API shape
+    // behind the dashboard's "Eligible for cache" option. `cache_key_settings`
+    // is likewise rejected here; the full URI (query string included) is the
+    // default cache key, which is what we want — `?url=` and `&w=` must vary.
+    cache: true,
     edge_ttl: { mode: 'respect_origin' },
     browser_ttl: { mode: 'respect_origin' },
-    cache_key_settings: { cache_key: [{ key: 'uri', value: '' }] },
   },
 };
 
@@ -140,11 +147,16 @@ async function main() {
       }),
     });
   }
-  log(`ruleset : ${entry.id} (${entry.name}, ${entry.rules?.length ?? 0} existing rules)\n`);
+  // The ?phase= list does NOT expand `rules` (it comes back null), so fetch the
+  // ruleset detail before deciding create-vs-update — otherwise every run would
+  // try to POST a duplicate.
+  const detail = await cf(`/zones/${zid}/rulesets/${entry.id}`);
+  const existingRules = detail?.rules ?? [];
+  log(`ruleset : ${entry.id} (${entry.name}, ${existingRules.length} existing rules)\n`);
 
   let changed = 0;
   for (const rule of [RULE_MEDIA, RULE_SW]) {
-    const existing = (entry.rules || []).find((r) => r.description === rule.description);
+    const existing = existingRules.find((r) => r.description === rule.description);
     if (existing) {
       log(`updating: ${rule.description}`);
       await cf(`/zones/${zid}/rulesets/${entry.id}/rules/${existing.id}`, {
