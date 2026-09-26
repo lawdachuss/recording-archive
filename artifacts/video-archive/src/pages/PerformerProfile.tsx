@@ -159,6 +159,7 @@ export default function PerformerProfile() {
                   <OptimizedImage
                     src={latestThumbnail}
                     alt={profile?.username ?? ""}
+                    width="avatar"
                     className="w-full h-full object-cover object-top"
                     containerClassName="w-full h-full"
                     fallback={

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef, memo } from "react";
 import { cn } from "@/lib/utils";
-import { isConnectionConstrained } from "@/lib/connection";
+import { isConnectionConstrained, resolveImageWidth, type ThumbnailTier } from "@/lib/connection";
 import { proxyImageUrl, isHttp2ResetHost, extractOriginalFromWsrv, markWsrvFailedForHost } from "@/lib/proxy-url";
 import { acquireHostConcurrency, cacheImage } from "@/lib/image-cache";
 
@@ -13,6 +13,13 @@ interface OptimizedImageProps {
   fetchPriority?: "high" | "low" | "auto";
   loading?: "eager" | "lazy";
   noShimmer?: boolean;
+  /**
+   * Requested proxy width — a named tier (see THUMBNAIL_WIDTH) or explicit
+   * pixels. Defaults to the "card" tier. Set this to match how large the image
+   * is actually rendered: asking a 82px performer circle for 1200px costs ~14x
+   * the bytes for no visible gain.
+   */
+  width?: ThumbnailTier | number;
   /** Called after the internal retry also fails — lets the parent advance to a mirror URL. */
   onError?: () => void;
 }
@@ -107,14 +114,16 @@ export const OptimizedImage = memo(function OptimizedImage({
   fetchPriority,
   loading,
   noShimmer = false,
+  width,
   onError: onErrorProp,
 }: OptimizedImageProps) {
   // Route the image through the media proxy with the adaptive-size + webp
   // transform unless it's local / already resized. The server compresses the
-  // upstream to the measured tier width (400/800/1200) so thumbnails download
-  // at a fraction of the full-res bytes — the biggest first-paint win on slow
-  // links. Idempotent: if `src` is already a resized proxy URL it's kept as-is.
-  const resolvedSrc = proxyImageUrl(src) ?? src;
+  // upstream to the requested width (and converts to webp) so thumbnails
+  // download at a fraction of the full-res bytes. Idempotent: if `src` is
+  // already a resized proxy URL it's kept as-is.
+  const requestedWidth = resolveImageWidth(width);
+  const resolvedSrc = proxyImageUrl(src, { width: requestedWidth }) ?? src;
   // When the proxy URL is wsrv.nl, remember the original so we can fall back
   // to loading directly if wsrv.nl is down (returns 404).
   const directSrc = extractOriginalFromWsrv(resolvedSrc);

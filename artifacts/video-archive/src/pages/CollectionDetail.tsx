@@ -285,6 +285,7 @@ export default function CollectionDetail() {
               <OptimizedImage
                 src={previewThumbnail}
                 alt={collectionName}
+                width="avatar"
                 className="w-full h-full object-cover"
                 containerClassName="w-16 h-16"
                 fallback={

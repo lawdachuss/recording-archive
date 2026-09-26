@@ -101,6 +101,7 @@ export function UpNextOverlay({ next, durationSeconds, onPlayNow }: UpNextOverla
             <OptimizedImage
               src={thumb}
               alt=""
+              width="thumb"
               className="w-28 h-16 object-cover rounded-[3px]"
               containerClassName="w-28 h-16 rounded-[3px] shrink-0"
               fallback={

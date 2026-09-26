@@ -7,14 +7,19 @@ const IMAGE_MAX_ENTRIES = 10000;
 const API_TTL = 5 * 60_000; // 5 minutes — API data changes more often than images
 
 // Tiered TTLs — different asset types have different staleness tolerances.
-// Thumbnails change when a recording is re-encoded (rare) → long TTL.
-// Sprites are immutable per URL → very long TTL.
-// Preview clips may be re-generated → medium TTL.
+// These deliberately match the origin's own contract: /api/media responds with
+// `Cache-Control: public, max-age=86400, immutable` because the filenames are
+// content-addressed per recording and never change. The old 30-minute
+// THUMBNAIL TTL meant every thumbnail revalidated against the origin twice an
+// hour, and since Cloudflare serves /api/media as DYNAMIC each revalidation was
+// a full round trip to the (US-East) function — pure added origin load for
+// bytes that cannot have changed. Previews stay short because they ARE
+// re-generated when a recording is re-encoded.
 const TTL = {
-  THUMBNAIL: 30 * 60_000,    // 30 minutes — grid thumbnails
-  SPRITE: 6 * 60 * 60_000,   // 6 hours — sprite sheets (immutable per URL)
-  PREVIEW: 60 * 60_000,      // 1 hour — preview clips
-  DEFAULT: 30 * 60_000,      // 30 minutes fallback
+  THUMBNAIL: 24 * 60 * 60_000, // 24 hours — matches origin `immutable`
+  SPRITE: 24 * 60 * 60_000,    // 24 hours — sprite sheets (immutable per URL)
+  PREVIEW: 60 * 60_000,        // 1 hour — preview clips (can be re-generated)
+  DEFAULT: 24 * 60 * 60_000,   // 24 hours fallback
 };
 
 const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|webp|gif|avif|svg)(\?|$)/i;
@@ -57,7 +62,17 @@ self.addEventListener("activate", (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((key) => key.startsWith("vault-img-") || key.startsWith("vault-images-"))
+          .filter(
+            (key) =>
+              (key.startsWith("vault-img-") || key.startsWith("vault-images-")) &&
+              // Never purge the cache this worker is currently USING. The name
+              // is versioned ("vault-images-v7"), so it matches the
+              // "vault-images-" prefix too — without this guard every SW
+              // version bump wiped all 10k live thumbnail entries, and since
+              // install/activate call skipWaiting() + clients.claim() the
+              // wipe landed on the very first page load after each deploy.
+              key !== IMAGE_CACHE,
+          )
           .map((key) => caches.delete(key)),
       ),
     ).then(() => self.clients.claim()),

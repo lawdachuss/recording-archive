@@ -62,6 +62,16 @@ export interface ContinuousPrefetchOptions {
 const FAR_EAGER_THUMB_CAP = 16;
 
 /**
+ * Sprite sheets eagerly warmed per speculative lookahead page. Sheets are the
+ * largest media in the catalog (~130 KB each even after the proxy resize), so
+ * these stay small: enough that arriving at the next page usually finds the
+ * first hover targets warm, without spending megabytes on pages that may
+ * never be opened.
+ */
+const NEAR_SPRITE_LIMIT = 4;
+const FAR_SPRITE_LIMIT = 2;
+
+/**
  * Continuous, scroll-aware background prefetch.
  *
  * Watches a sentinel element (returned as `sentinelRef` — place it at the end
@@ -182,13 +192,21 @@ export function useContinuousPrefetch({
           // re-enqueues the eager thumbs as background (deduped by URL) and
           // keeps them non-immediate, so sprites ride the immediate queue in
           // front of the remaining thumbnail tail.
+          //
+          // Sprite warming is deliberately CAPPED and NON-immediate here. Every
+          // page this hook touches is strictly AFTER the current one
+          // (planPages returns (startPage, startPage + prefetchAhead]), so
+          // nothing here serves a visible card — the visible grid's sheets are
+          // warmed on demand by useHoverPreview's viewport observer. A sheet is
+          // ~130 KB, so pulling all 24 "immediate" spent megabytes on pages the
+          // user might never open and jumped the queue ahead of real work.
           if (near) {
-            preloadRecordingMedia(recs, { immediate: true });
+            preloadRecordingMedia(recs, { immediate: false, spriteLimit: NEAR_SPRITE_LIMIT });
           } else {
-            // Far lookahead: thumbnail + sprite warming only — previews are
-            // skipped to avoid hundreds of speculative webp downloads for
+            // Far lookahead: thumbnail + a token sprite warm only — previews
+            // are skipped to avoid hundreds of speculative webp downloads for
             // pages several scrolls away.
-            preloadRecordingMedia(recs, { skipPreviews: true });
+            preloadRecordingMedia(recs, { skipPreviews: true, spriteLimit: FAR_SPRITE_LIMIT });
           }
 
           markWarmed(win, target);

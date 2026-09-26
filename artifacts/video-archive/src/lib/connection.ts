@@ -52,10 +52,48 @@ export function getConnectionQuality(): ConnectionQuality {
 }
 
 /**
- * Width (px) to request from the image proxy for thumbnails. Full quality.
+ * Thumbnail request widths (px), one per *rendered* size.
+ *
+ * These used to be a single hardcoded 1200 for every image, which shipped
+ * ~94% wasted bytes per thumbnail (Lighthouse image-delivery-insight on
+ * production: "82 KiB wasted of 87 KiB") and made a 40-card grid a
+ * multi-megabyte download. Each tier below is the element's CSS size at
+ * roughly 2x DPR, rounded up:
+ *
+ *   avatar — 72/82px performer circles
+ *   thumb  — 112-150px cells (related-video rail, dense performer grids)
+ *   card   — ~300px grid card thumbnails (lg:grid-cols-4)
+ *   hero   — full-bleed detail-page art
  */
-export function getAdaptiveImageWidth(): number {
-  return 1200;
+export const THUMBNAIL_WIDTH = {
+  avatar: 200,
+  thumb: 320,
+  card: 640,
+  hero: 1200,
+} as const;
+
+export type ThumbnailTier = keyof typeof THUMBNAIL_WIDTH;
+
+/**
+ * Width to request from the media proxy for a given tier. Constrained links
+ * (Data Saver / 2g / <1 Mbps) get half the pixels, floored at the proxy's own
+ * 200px minimum clamp.
+ */
+export function getAdaptiveImageWidth(tier: ThumbnailTier = "card"): number {
+  const width = THUMBNAIL_WIDTH[tier];
+  if (isConnectionConstrained()) return Math.max(200, Math.round(width / 2));
+  return width;
+}
+
+/**
+ * Resolve an explicit `width` override — either a tier name or explicit
+ * pixels — down to a concrete width. Numbers pass through so callers can size
+ * to a one-off container the tiers don't cover.
+ */
+export function resolveImageWidth(width: ThumbnailTier | number | undefined): number | undefined {
+  if (width === undefined) return undefined;
+  if (typeof width === "number") return Math.round(width);
+  return getAdaptiveImageWidth(width);
 }
 
 /**

@@ -55,10 +55,14 @@ const SORT_LABELS: Record<ListRecordingsSort, string> = {
   popular: "Most viewed",
 };
 
-// Slow/constrained links get a lighter browsing grid (12 items vs 40) so the
+// Slow/constrained links get a lighter browsing grid (12 items vs 24) so the
 // first page of thumbnails doesn't saturate the connection. Evaluated once at
 // module load so pagination state stays consistent for the whole session.
-const ITEMS_PER_PAGE = isConnectionConstrained() ? 12 : 40;
+// 40 was well past the point of diminishing returns: every card is a separate
+// /api/media request, and on a cold cache those serialize behind a ~1.5-2.7s
+// origin fetch each (measured against production), so the 25th card was still
+// arriving long after the user had scrolled past the 20th.
+const ITEMS_PER_PAGE = isConnectionConstrained() ? 12 : 24;
 
 function parseTagList(raw: string): string[] {
   return raw

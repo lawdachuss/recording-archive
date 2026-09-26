@@ -783,6 +783,7 @@ export default function VideoDetail() {
                         alt={video.username}
                         className="w-full h-full object-cover"
                         containerClassName="w-full h-full"
+                        width="hero"
                         fetchPriority="high"
                         loading="eager"
                         fallback={
@@ -838,6 +839,7 @@ export default function VideoDetail() {
                     alt={video.filename}
                     className="w-full h-full object-contain"
                     containerClassName="w-full h-full"
+                    width="hero"
                     fallback={
                       <div className="w-full h-full flex items-center justify-center">
                         <Clapperboard className="w-12 h-12 text-muted-foreground/20" />
@@ -1191,6 +1193,7 @@ export default function VideoDetail() {
                             src={proxyUrl(rec.thumbnail_url)!}
                             alt={rec.username}
                             fetchPriority={i < 10 ? "high" : undefined}
+                            width="thumb"
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                             containerClassName="w-full h-full"
                             fallback={

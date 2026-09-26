@@ -49,18 +49,22 @@ function isNoProxyHost(hostname: string): boolean {
 /**
  * Edge-resize proxy for hosts our own server can't reach but wsrv.nl CAN.
  * wsrv.nl pulls the upstream from its own edge and re-serves it from a shared
- * Cloudflare CDN — verified working for files.catbox.moe (which 502s through
- * the /api/media server proxy because catbox blocks datacenter IPs). Routing
- * catbox raster thumbnails through wsrv gives server-side resize + webp plus a
- * global edge cache (~90-110ms repeat hits instead of 8s+ cold direct loads).
+ * Cloudflare CDN. NOTE (probed 2026-09-25): wsrv CANNOT reach catbox — its
+ * edge resolvers consistently fail DNS for files.catbox.moe / catbox.moe
+ * (100% 404 "origin is unresolvable (DNS)", both wsrv.nl and
+ * images.weserv.nl, resize + passthrough alike), so re-filling WSRV_HOSTS
+ * with catbox family routes ~90% of catalog raster media into dead 404s.
+ * Only litter.catbox.moe resolves from wsrv's side, and the catalog has no
+ * litter URLs. Re-investigate only if catbox's DNS starts answering wsrv.
  */
 const WSRV_BASE = "https://wsrv.nl/";
-// Disabled (reverted after live testing): serial curl probes return 200 fast,
-// but a real page load BURSTS ~26 eager thumbnails + IDB warms at wsrv at
-// once — wsrv rate-limits that with HTML error pages and Chrome's ORB blocks
-// them (ERR_BLOCKED_BY_ORB, ~45% of requests), leaving thumbnails stuck
-// forever. Direct catbox + the HTTP/2 connection-death retry backoff in
-// OptimizedImage/image-cache is the stable path (0 failures, steady loads).
+// Kept EMPTY — do not refill without re-probing wsrv's reachability first
+// (see the WSRV_BASE note above). The earlier live-testing regression
+// (2026-09-23) was mass wsrv 404s on catbox URLs rendering as HTML error
+// bodies that Chrome's ORB blocks (ERR_BLOCKED_BY_ORB, ~45% of requests) and
+// thumbnails stuck forever; the root cause is DNS, not rate limiting. The
+// stable path is direct catbox + the HTTP/2 connection-death retry backoff
+// in OptimizedImage/image-cache (0 failures, steady loads).
 const WSRV_HOSTS: string[] = [];
 
 const STATIC_RASTER_RE = /\.(jpe?g|png)$/i;
@@ -285,17 +289,41 @@ export function proxyImageUrl(
 
 
 /**
- * Proxy URL for SPRITE SHEETS. Native dimensions are always preserved:
- *  - pixhost (and other proxied hosts): same-origin /api/media proxy.
+ * Sprite sheet request width (px). Sheets are served through the media proxy
+ * with a resize + webp conversion, which is a ~70% byte saving (measured:
+ * 314 KB full-res JPEG → 92 KB webp) because sheets are inherently huge — a
+ * 4×4 grid of 16:9 frames is 2560×1440 or larger.
+ *
+ * 1920 keeps each frame at 480×270, comfortably above the ~300px card width,
+ * and 1920×1080 is an entry in SpriteSlideshow's KNOWN_LAYOUTS, so grid
+ * detection still resolves for any host that relies on auto-detection. The
+ * media proxy's `withoutEnlargement` means smaller sheets (1280×720,
+ * 1600×900) pass through untouched and keep their own known layouts.
+ */
+const SPRITE_WIDTH = 1920;
+
+/**
+ * Proxy URL for SPRITE SHEETS.
+ *  - pixhost (and other proxied hosts): same-origin /api/media proxy, resized
+ *    to SPRITE_WIDTH + webp.
  *  - catbox family: full-size wsrv.nl passthrough — catbox is unproxiable
- *    (502) and throttles direct downloads to ~16KB/s, but wsrv can reach it,
- *    preserves the sheet's intrinsic dimensions (so grid auto-detection from
- *    naturalWidth/Height keeps working) and sends ACAO:* so preloads can
- *    persist the sheet to the IDB blob cache.
+ *    (502) and throttles direct downloads, so its sheets keep native
+ *    dimensions. wsrv sends ACAO:* so preloads can still persist them to IDB.
+ *
+ * Native dimensions are no longer required for grid detection: getSpriteGrid()
+ * already returns a static 4×4 for pixhost.to (which serves every reachable
+ * sheet), and SpriteSlideshow skips detectLayout() entirely when explicit
+ * cols/rows are supplied.
  */
 export function proxySpriteUrl(url: string | null | undefined): string | null {
   if (!url) return null;
   const wsrv = wsrvPassthroughUrl(url);
   if (wsrv) return wsrv;
-  return proxyUrl(url);
+  const base = proxyUrl(url);
+  if (!base) return null;
+  // Direct loads (NO_PROXY_HOSTS / relative / our own API) go to the upstream
+  // untouched — don't bolt transform params onto a URL the proxy never sees.
+  if (base === url) return base;
+  const sep = base.includes("?") ? "&" : "?";
+  return `${base}${sep}w=${SPRITE_WIDTH}&fmt=webp`;
 }

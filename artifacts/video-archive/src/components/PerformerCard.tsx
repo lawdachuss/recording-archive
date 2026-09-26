@@ -154,6 +154,7 @@ function CircleCard({ performer, fetchPriority }: { performer: Performer; fetchP
                 src={imageUrl}
                 alt={performer.username}
                 fetchPriority={fetchPriority}
+                width="avatar"
                 className="w-full h-full object-cover object-top group-hover:scale-110"
                 containerClassName="w-full h-full"
                 onError={onImageError}
@@ -214,6 +215,7 @@ const SquareCard = memo(function SquareCard({ performer, fetchPriority }: { perf
               src={imageUrl}
               alt={performer.username}
               fetchPriority={fetchPriority}
+              width="thumb"
               className="object-cover object-top"
               containerClassName="absolute inset-0 w-full h-full"
               fallback={<ImageUnavailable initials={initial} />}

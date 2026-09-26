@@ -78,6 +78,7 @@ export function QueueBar({ queue, index }: QueueBarProps) {
             <OptimizedImage
               src={nextThumb}
               alt=""
+              width="avatar"
               className="w-16 h-9 object-cover rounded-[3px]"
               containerClassName="w-16 h-9 rounded-[3px] shrink-0"
               fallback={

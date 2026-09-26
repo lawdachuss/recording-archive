@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useCallback, useRef, memo } from "react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
-import { getRecording, getGetRecordingQueryKey, type Recording } from "@workspace/api-client-react";
+import { getRecording, getGetRecordingQueryKey, listRelatedRecordings, getListRelatedRecordingsQueryKey, type Recording } from "@workspace/api-client-react";
 import { formatBytes, formatRelativeTime, formatViewers, formatDuration } from "@/lib/formatters";
 import { Eye, HardDrive, Clock, CheckCircle, FolderPlus } from "lucide-react";
 import { OptimizedImage, ImageUnavailable } from "@/components/ui/optimized-image";
@@ -16,6 +16,7 @@ import { getSpriteGrid } from "@/lib/sprite-grid";
 import { openAddToCollection } from "@/components/AddToCollectionDialog";
 import { buildPreviewFallbacks, buildThumbnailFallbacks, buildSpriteFallbacks } from "@/lib/mirrors";
 import { prefetchRoute } from "@/lib/route-chunks";
+import { preloadRecordingMedia } from "@/lib/preload-sprite";
 import { dlog } from "@/lib/debug";
 
 /**
@@ -174,13 +175,32 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   // repeated hovers dedupe within the staleTime window. Reuses the live
   // connection-quality check so slow links don't waste bandwidth on
   // speculative downloads.
-  const prefetchDetailChunk = useCallback(() => {
+  //
+  // Also warm the related-recordings shelf the detail page renders: its data
+  // query (SAME queryKey VideoDetail's hook uses — limit 12) plus the shelf
+  // media via the same preloadRecordingMedia call the shelf mounts with, so
+  // clicking through opens a fully warm page (no related-data wait, sprites
+  // already in IDB/HTTP cache). Media warming dedupes per-URL in the preload
+  // queue, so repeat hovers / the shelf's own warm never double-fetch.
+  const prefetchDetailPage = useCallback(() => {
     if (isSlowConnection) return;
     prefetchRoute("/video");
     void queryClient
       .prefetchQuery({
         queryKey: getGetRecordingQueryKey(recording.id),
         queryFn: ({ signal }) => getRecording(recording.id, { signal }),
+      })
+      .catch(() => {});
+    // ensureQueryData (not prefetchQuery): prefetchQuery resolves void, but we
+    // need the related list BACK to warm its media. Same cache write, honours
+    // the global 5-min staleTime so repeat hovers never refetch.
+    void queryClient
+      .ensureQueryData({
+        queryKey: getListRelatedRecordingsQueryKey({ id: recording.id, limit: 12 }),
+        queryFn: ({ signal }) => listRelatedRecordings({ id: recording.id, limit: 12 }, { signal }),
+      })
+      .then((related) => {
+        if (related && related.length > 0) preloadRecordingMedia(related, { immediate: true });
       })
       .catch(() => {});
   }, [isSlowConnection, queryClient, recording.id]);
@@ -200,11 +220,11 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     ...hoverHandlers,
     onMouseEnter: (e: React.MouseEvent) => {
       hoverHandlers.onMouseEnter?.(e);
-      prefetchDetailChunk();
+      prefetchDetailPage();
     },
     onFocus: (e: React.FocusEvent) => {
       hoverHandlers.onFocus?.(e);
-      prefetchDetailChunk();
+      prefetchDetailPage();
     },
   };
 
@@ -498,6 +518,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
                 src={staticImage!}
                 alt={recording.username}
                 fetchPriority={fetchPriority}
+                width="card"
                 className="opacity-100"
                 containerClassName="absolute inset-0 w-full h-full"
                 fallback={<ImageUnavailable initials={initials} />}

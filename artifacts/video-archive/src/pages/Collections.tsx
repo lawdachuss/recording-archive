@@ -194,6 +194,7 @@ export default function Collections() {
                     <OptimizedImage
                       src={col.thumbnail}
                       alt={col.name}
+                      width="avatar"
                       className="w-full h-full object-cover"
                       containerClassName="w-20 h-14"
                       fallback={

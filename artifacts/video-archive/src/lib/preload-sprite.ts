@@ -243,6 +243,14 @@ export interface PreloadOptions {
   immediate?: boolean;
   /** Skip animated preview warming (used for far lookahead pages). */
   skipPreviews?: boolean;
+  /**
+   * Cap how many sprite sheets this call warms. Undefined = no cap (the
+   * current-page shelf, where every card really is hoverable). Lookahead
+   * passes a small number: a sheet is ~130 KB, so eagerly pulling all 24 for
+   * a page the user may never reach spent megabytes of origin bandwidth on
+   * speculation and starved the visible grid.
+   */
+  spriteLimit?: number;
 }
 
 /**
@@ -330,9 +338,10 @@ export function preloadRecordingMedia(
   const thumbs: (string | null | undefined)[] = [];
   const sprites: (string | null | undefined)[] = [];
   const previews: (string | null | undefined)[] = [];
+  const spriteLimit = opts.spriteLimit;
   for (const rec of recs) {
     if (rec.thumbnail_url) thumbs.push(proxyImageUrl(rec.thumbnail_url));
-    if (rec.sprite_url) {
+    if (rec.sprite_url && (spriteLimit === undefined || sprites.length < spriteLimit)) {
       const proxied = proxySpriteUrl(rec.sprite_url);
       if (isReachablePreviewUrl(proxied)) sprites.push(proxied);
     }
