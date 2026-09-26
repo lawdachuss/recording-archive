@@ -27,7 +27,8 @@ const CATALOG_HOSTS = [
 ];
 
 const transformed = (u: string) => /[?&]w=\d+/.test(u);
-const passthrough = (u: string) => !/\/api\/media/.test(u) && !/wsrv\.nl|weserv/.test(u);
+const viaWsrv = (u: string) => /wsrv\.nl|weserv/.test(u);
+const viaProxy = (u: string) => /\/api\/media/.test(u);
 
 describe("proxySpriteUrl", () => {
   it("resizes + webp-converts pixhost sheets", () => {
@@ -39,11 +40,15 @@ describe("proxySpriteUrl", () => {
     }
   });
 
-  it("leaves auto-detect hosts at native dimensions", () => {
+  it("never forces a width on auto-detect hosts (dims must stay native)", () => {
+    // A sheet on an auto-detect host may travel through wsrv's PASSTHROUGH
+    // (no transform params) because that preserves intrinsic size — verified
+    // 2026-09-26: files.catbox.moe/uzfi6z.jpg is 2560x1440 both directly and
+    // via images.weserv.nl, and 2560x1440 is a KNOWN_LAYOUTS entry (4x4). What
+    // it must never get is a `w=` param, which would make every grid look 4x4.
     for (const url of CATALOG_HOSTS.filter((u) => !u.includes("pixhost.to"))) {
       const out = proxySpriteUrl(url)!;
-      expect(transformed(out)).toBe(false);
-      expect(passthrough(out)).toBe(true);
+      expect(transformed(out), `forced width on auto-detect host: ${url}`).toBe(false);
     }
   });
 
@@ -62,9 +67,19 @@ describe("proxySpriteUrl", () => {
     }
   });
 
-  it("keeps wsrv out of the sprite path (DNS-dead for catbox)", () => {
-    for (const url of CATALOG_HOSTS) {
-      expect(proxySpriteUrl(url) ?? "").not.toMatch(/wsrv\.nl|weserv/);
+  it("routes unproxiable catbox sheets through wsrv passthrough, not a resize", () => {
+    // catbox blocks datacenter IPs, so /api/media hangs and Cloudflare 502s.
+    // wsrv CAN reach it, but only the no-transform passthrough is safe here.
+    const out = proxySpriteUrl("https://files.catbox.moe/abc123.jpg")!;
+    expect(viaWsrv(out)).toBe(true);
+    expect(viaProxy(out)).toBe(false);
+    expect(out).not.toMatch(/[?&]w=/);
+    expect(out).not.toMatch(/output=/);
+  });
+
+  it("never routes pixhost through wsrv (wsrv 400s on pixhost)", () => {
+    for (const url of CATALOG_HOSTS.filter((u) => u.includes("pixhost.to"))) {
+      expect(viaWsrv(proxySpriteUrl(url) ?? "")).toBe(false);
     }
   });
 

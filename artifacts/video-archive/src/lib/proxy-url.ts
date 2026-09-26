@@ -1,5 +1,6 @@
 import { getApiBaseUrl } from "./api-base";
 import { getAdaptiveImageWidth } from "./connection";
+import { getSpriteGrid } from "./sprite-grid";
 
 const PROXY_PATH = "/api/media";
 
@@ -37,9 +38,14 @@ const NO_PROXY_HOSTS: string[] = [
   // Loading directly avoids the server proxy 502 for expired URLs.
   "iili.io",
   "freeimage.host",
-  // imgchest.com: returns 502 when proxied through /api/media (server can't
-  // reach it) and 403 when loaded directly. Loading directly avoids the 502.
-  "imgchest.com",
+  // NOTE: imgchest.com was removed from this list on 2026-09-26. The old note
+  // claimed it "returns 403 when loaded directly" — re-probed against
+  // production and that is no longer true: cdn.imgchest.com answers 200 to a
+  // direct fetch AND 200 through /api/media. Proxied is strictly better
+  // (webp + resize + Cloudflare edge cache), so keeping it here was forfeiting
+  // all three for no reason. Measured on files/e4287d56269e.jpg:
+  //   direct          200 image/jpeg  76,691B  1,944ms
+  //   /api/media      200 image/webp  27,230B    483ms
 ];
 
 function isNoProxyHost(hostname: string): boolean {
@@ -58,14 +64,33 @@ function isNoProxyHost(hostname: string): boolean {
  * litter URLs. Re-investigate only if catbox's DNS starts answering wsrv.
  */
 const WSRV_BASE = "https://wsrv.nl/";
-// Kept EMPTY — do not refill without re-probing wsrv's reachability first
-// (see the WSRV_BASE note above). The earlier live-testing regression
-// (2026-09-23) was mass wsrv 404s on catbox URLs rendering as HTML error
-// bodies that Chrome's ORB blocks (ERR_BLOCKED_BY_ORB, ~45% of requests) and
-// thumbnails stuck forever; the root cause is DNS, not rate limiting. The
-// stable path is direct catbox + the HTTP/2 connection-death retry backoff
-// in OptimizedImage/image-cache (0 failures, steady loads).
-const WSRV_HOSTS: string[] = [];
+/**
+ * Hosts whose static raster media we route through wsrv.nl's edge, because our
+ * own server proxy cannot reach them (catbox blocks datacenter IPs -> the
+ * function hangs until it times out and Cloudflare returns a 502).
+ *
+ * RE-ENABLED 2026-09-26. The entry was previously empty: a 2026-09-25 probe
+ * found wsrv's edge could not resolve files.catbox.moe / catbox.moe (100% 404
+ * "origin is unresolvable (DNS)"), which mass-404'd the catalog and left
+ * thumbnails stuck behind Chrome's ORB. Re-probed today, both wsrv.nl and
+ * images.weserv.nl resolve and serve catbox fine (13/14 sampled thumbs 200 +
+ * valid image magic). The single failure, files.catbox.moe/e4krdb.jpg, is a
+ * DEAD UPSTREAM FILE - catbox itself answers 404 for it directly, so it is not
+ * a wsrv problem and nothing can rescue it.
+ *
+ * Safety net: OptimizedImage keeps `directSrc = extractOriginalFromWsrv(...)`
+ * and switches to the untouched catbox URL on the first error, so a wsrv miss
+ * degrades to the previous direct-load behaviour instead of a blank tile.
+ *
+ * Do NOT add pixhost here: wsrv answers 400 for img2/img3.pixhost.to. Pixhost
+ * is reachable from the server proxy, so it already gets resize + webp + our
+ * own Cloudflare edge cache via /api/media, which is strictly better.
+ */
+const WSRV_HOSTS: string[] = [
+  "catbox.moe",
+  "litter.catbox.moe",
+  "files.catbox.moe",
+];
 
 const STATIC_RASTER_RE = /\.(jpe?g|png)$/i;
 
@@ -257,7 +282,10 @@ export function proxyImageUrl(
   // proxy URL with width/format params appended — keeping it idempotent.
   let upstream = url;
   try {
-    const parsed = new URL(url);
+    // Resolve against the API base so a RELATIVE proxy url ("/api/media?url=…",
+    // what proxyImageUrl returns when no VITE_API_URL is set) parses instead of
+    // throwing — without this the function was not idempotent and returned null.
+    const parsed = new URL(url, getApiBaseUrl() || "http://relative.invalid");
     if (parsed.pathname.startsWith(PROXY_PATH)) {
       const inner = parsed.searchParams.get("url");
       if (inner) upstream = inner;
@@ -324,6 +352,13 @@ export function proxySpriteUrl(url: string | null | undefined): string | null {
   // Direct loads (NO_PROXY_HOSTS / relative / our own API) go to the upstream
   // untouched — don't bolt transform params onto a URL the proxy never sees.
   if (base === url) return base;
+  // Only force a width when the grid is statically known. SpriteSlideshow
+  // otherwise infers the grid from the loaded image's intrinsic size, so a
+  // forced width would make every sheet look 4x4 and garble any real grid that
+  // isn't. This is the same invariant enforced by sprite-transform.test.ts, but
+  // enforced here too so a new host can't reach production without a
+  // getSpriteGrid() entry.
+  if (!getSpriteGrid(url)) return base;
   const sep = base.includes("?") ? "&" : "?";
   return `${base}${sep}w=${SPRITE_WIDTH}&fmt=webp`;
 }
