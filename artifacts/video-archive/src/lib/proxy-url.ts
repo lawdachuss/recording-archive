@@ -53,15 +53,8 @@ function isNoProxyHost(hostname: string): boolean {
 }
 
 /**
- * Edge-resize proxy for hosts our own server can't reach but wsrv.nl CAN.
- * wsrv.nl pulls the upstream from its own edge and re-serves it from a shared
- * Cloudflare CDN. NOTE (probed 2026-09-25): wsrv CANNOT reach catbox — its
- * edge resolvers consistently fail DNS for files.catbox.moe / catbox.moe
- * (100% 404 "origin is unresolvable (DNS)", both wsrv.nl and
- * images.weserv.nl, resize + passthrough alike), so re-filling WSRV_HOSTS
- * with catbox family routes ~90% of catalog raster media into dead 404s.
- * Only litter.catbox.moe resolves from wsrv's side, and the catalog has no
- * litter URLs. Re-investigate only if catbox's DNS starts answering wsrv.
+ * Edge-resize proxy for hosts our own server can't reach but an external
+ * resizer can. See WSRV_HOSTS below for why that list is currently empty.
  */
 const WSRV_BASE = "https://wsrv.nl/";
 /**
@@ -69,28 +62,42 @@ const WSRV_BASE = "https://wsrv.nl/";
  * own server proxy cannot reach them (catbox blocks datacenter IPs -> the
  * function hangs until it times out and Cloudflare returns a 502).
  *
- * RE-ENABLED 2026-09-26. The entry was previously empty: a 2026-09-25 probe
- * found wsrv's edge could not resolve files.catbox.moe / catbox.moe (100% 404
- * "origin is unresolvable (DNS)"), which mass-404'd the catalog and left
- * thumbnails stuck behind Chrome's ORB. Re-probed today, both wsrv.nl and
- * images.weserv.nl resolve and serve catbox fine (13/14 sampled thumbs 200 +
- * valid image magic). The single failure, files.catbox.moe/e4krdb.jpg, is a
- * DEAD UPSTREAM FILE - catbox itself answers 404 for it directly, so it is not
- * a wsrv problem and nothing can rescue it.
+ * INTENTIONALLY EMPTY. Keep it that way until catbox's DNS answers wsrv
+ * *reproducibly*.
  *
- * Safety net: OptimizedImage keeps `directSrc = extractOriginalFromWsrv(...)`
- * and switches to the untouched catbox URL on the first error, so a wsrv miss
- * degrades to the previous direct-load behaviour instead of a blank tile.
+ * History, because this has now been tried twice and reverted twice:
+ *
+ *  - 2026-09-25: probe found wsrv could not resolve files.catbox.moe at all
+ *    (100% 404). Left empty. Correct.
+ *  - 2026-09-26: re-probed, saw 13/14 thumbs return 200 with valid image magic,
+ *    and re-enabled catbox here. WRONG. That single probe was a false positive:
+ *    wsrv's resolution of catbox is intermittent, not recovered. Hours later the
+ *    console showed mass 404s, and re-testing the *same* five URLs that had
+ *    just returned 200 gave 0/5. wsrv's own error body is the tell:
+ *        {"status":"error","code":404,
+ *         "message":"The hostname of the origin is unresolvable (DNS)"}
+ *    i.e. wsrv's upstream resolvers intermittently fail for this domain, and
+ *    the failure surfaces as a 404 rather than a 5xx so it is indistinguishable
+ *    from a dead file at the call site.
+ *  - Ruled out along the way: it is NOT Referer/hotlink protection. Four header
+ *    sets (none / Referer / Referer+Origin / full Sec-Fetch-*) all 404
+ *    identically, and all 200 during the earlier lucky window. It is NOT
+ *    ORB-blocked HTML either - the error body is 90 bytes of application/json.
+ *    The origin is fine throughout: files.catbox.moe answers 200 image/jpeg
+ *    directly for the same URLs.
+ *
+ * Consequence of leaving it empty: catbox raster loads direct, unresized, so it
+ * costs more bandwidth than it should. That is the deliberate trade - a correct
+ * 200 image at full size beats a 404 that also burns a wasted round trip before
+ * OptimizedImage's directSrc fallback. The bandwidth is now largely recovered a
+ * different way: /api/recordings serves the populated preview_images mirrors, so
+ * any catbox image that 404s or stalls has real alternates to fall back to.
  *
  * Do NOT add pixhost here: wsrv answers 400 for img2/img3.pixhost.to. Pixhost
  * is reachable from the server proxy, so it already gets resize + webp + our
  * own Cloudflare edge cache via /api/media, which is strictly better.
  */
-const WSRV_HOSTS: string[] = [
-  "catbox.moe",
-  "litter.catbox.moe",
-  "files.catbox.moe",
-];
+const WSRV_HOSTS: string[] = [];
 
 const STATIC_RASTER_RE = /\.(jpe?g|png)$/i;
 

@@ -67,14 +67,23 @@ describe("proxySpriteUrl", () => {
     }
   });
 
-  it("routes unproxiable catbox sheets through wsrv passthrough, not a resize", () => {
-    // catbox blocks datacenter IPs, so /api/media hangs and Cloudflare 502s.
-    // wsrv CAN reach it, but only the no-transform passthrough is safe here.
-    const out = proxySpriteUrl("https://files.catbox.moe/abc123.jpg")!;
-    expect(viaWsrv(out)).toBe(true);
-    expect(viaProxy(out)).toBe(false);
-    expect(out).not.toMatch(/[?&]w=/);
-    expect(out).not.toMatch(/output=/);
+  it("loads catbox sprite sheets DIRECT, never through wsrv", () => {
+    // catbox blocks datacenter IPs, so /api/media hangs and Cloudflare 502s -
+    // but wsrv is not a valid escape hatch either: its resolvers intermittently
+    // fail DNS for catbox and surface it as a 404, not a 5xx
+    // ({"message":"The hostname of the origin is unresolvable (DNS)"}).
+    // Verified 2026-09-26 that this is intermittent, not fixed, and not
+    // Referer-related. So catbox sprites load direct, untransformed.
+    for (const url of [
+      "https://files.catbox.moe/abc123.jpg",
+      "https://catbox.moe/abc123.jpg",
+      "https://litter.catbox.moe/abc123.jpg",
+    ]) {
+      const out = proxySpriteUrl(url)!;
+      expect(viaWsrv(out), `catbox sprite must not route via wsrv: ${url}`).toBe(false);
+      expect(viaProxy(out), `catbox sprite must not route via /api/media: ${url}`).toBe(false);
+      expect(out).toBe(url);
+    }
   });
 
   it("never routes pixhost through wsrv (wsrv 400s on pixhost)", () => {

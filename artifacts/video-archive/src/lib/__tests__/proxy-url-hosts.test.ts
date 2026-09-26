@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { proxyImageUrl, proxyUrl, extractOriginalFromWsrv } from "../proxy-url";
+import { proxyImageUrl, proxyUrl } from "../proxy-url";
 
 /**
  * Host routing measured against production on 2026-09-26 (1,776 catalog URLs):
@@ -22,27 +22,24 @@ describe("proxyImageUrl host routing", () => {
     expect(out).not.toMatch(/wsrv\.nl|weserv/);
   });
 
-  it("resizes catbox thumbnails through wsrv instead of loading them direct", () => {
-    // Direct catbox = full-resolution JPEG, no CDN (76KB-214KB, 1.4-3.5s).
-    // wsrv = webp at the requested width off a shared edge cache (~28KB).
-    const out = proxyImageUrl("https://files.catbox.moe/uzfi6z.jpg", { width: 640 })!;
-    expect(out).toMatch(/wsrv\.nl|weserv/);
-    expect(out).toContain("w=640");
-    expect(out).toContain("output=webp");
-    expect(out).not.toContain("/api/media");
-  });
-
-  it("keeps a recoverable direct URL for every wsrv thumbnail", () => {
-    // This is the safety net for the wsrv 404 / dead-upstream-file case:
-    // OptimizedImage switches to this on the first error instead of showing a
-    // blank tile. If this ever returns null the wsrv path becomes a hard fail.
+  it("loads catbox thumbnails DIRECT, never through wsrv", () => {
+    // wsrv's resolvers intermittently fail DNS for catbox and report it as a
+    // 404, not a 5xx, so a wsrv-routed catbox image is indistinguishable from a
+    // dead file at the call site. Verified 2026-09-26: URLs that returned 200
+    // with valid image magic on first probe returned 404
+    // {"message":"The hostname of the origin is unresolvable (DNS)"} hours
+    // later, and 0/5 on retest. Not Referer-related (4 header sets, all 404).
+    // Origin is healthy throughout (direct catbox = 200 image/jpeg), so the
+    // correct behaviour is to bypass wsrv and eat the extra bandwidth.
     for (const u of [
       "https://files.catbox.moe/uzfi6z.jpg",
       "https://catbox.moe/abc.jpg",
       "https://litter.catbox.moe/abc.jpg",
     ]) {
       const out = proxyImageUrl(u, { width: 640 })!;
-      expect(extractOriginalFromWsrv(out), `no direct fallback for ${u}`).toBe(u);
+      expect(out, `catbox must not route via wsrv: ${u}`).not.toMatch(/wsrv\.nl|weserv/);
+      expect(out, `catbox must not route via /api/media (it 502s): ${u}`).not.toContain("/api/media");
+      expect(out).toBe(u);
     }
   });
 
