@@ -31,7 +31,7 @@ import path from 'path';
 import process from 'process';
 
 const ROOT = process.cwd();
-const ZONE_NAME = 'chuglii.in';
+let ZONE_NAME = 'chuglii.in';
 const API = 'https://api.cloudflare.com/client/v4';
 const PHASE = 'http_request_cache_settings';
 
@@ -65,18 +65,38 @@ const RULE_SW = {
   },
 };
 
-function readToken() {
-  const file = path.join(ROOT, 'artifacts', 'api-server', '.env');
-  if (!fs.existsSync(file)) throw new Error(`missing ${file}`);
-  const line = fs
-    .readFileSync(file, 'utf8')
-    .split('\n')
-    .find((l) => /^CLOUDFLARE_API_TOKEN=/.test(l.trim()));
-  if (!line) throw new Error('CLOUDFLARE_API_TOKEN not found in artifacts/api-server/.env');
-  const raw = line.slice(line.indexOf('=') + 1).trim();
-  if (!raw || raw.length < 20) throw new Error('CLOUDFLARE_API_TOKEN looks empty/too short');
-  return raw;
+const TOKEN_ENV_FILES = [
+  '.env',
+  path.join('artifacts', 'video-archive', '.env'),
+  path.join('artifacts', 'api-server', '.env'),
+];
+
+function readEnvFile(rel) {
+  const file = path.join(ROOT, rel);
+  if (!fs.existsSync(file)) return {};
+  const out = {};
+  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    const i = t.indexOf('=');
+    if (i < 1) continue;
+    out[t.slice(0, i).trim()] = t.slice(i + 1).trim().replace(/^["']|["']$/g, '');
+  }
+  return out;
 }
+
+function readToken() {
+  for (const rel of TOKEN_ENV_FILES) {
+    const v = readEnvFile(rel).CLOUDFLARE_API_TOKEN;
+    if (v && v.length >= 20) {
+      return { token: v, from: rel };
+    }
+  }
+  throw new Error(
+    `CLOUDFLARE_API_TOKEN (>=20 chars) not found in any of:\n  ${TOKEN_ENV_FILES.join('\n  ')}`
+  );
+}
+
 
 let token = null;
 async function cf(pathname, init = {}) {
@@ -120,16 +140,28 @@ async function main() {
     return;
   }
 
-  token = readToken();
-  log('token loaded from artifacts/api-server/.env (not printed)\n');
+  const { token: tok, from } = readToken();
+  token = tok;
+  log(`token loaded from ${from} (not printed)`);
 
-  const zones = await cf(`/zones?name=${ZONE_NAME}`);
-  if (!zones?.length) throw new Error(`zone ${ZONE_NAME} not visible to this token (wrong scope or account?)`);
-  const zone = zones[0];
-  const zid = zone.id;
-  log(`zone id : ${zid}`);
-  log(`plan    : ${zone.plan?.name ?? 'unknown'}`);
-  log(`status  : ${zone.status}\n`);
+  // Prefer the zone id from env: it is stable and saves an API call.
+  let zid = null;
+  for (const rel of TOKEN_ENV_FILES) {
+    const v = readEnvFile(rel).CLOUDFLARE_ZONE_ID;
+    if (v) { zid = v; ZONE_NAME = readEnvFile(rel).CLOUDFLARE_ZONE_NAME || ZONE_NAME; log(`zone from ${rel}`); break; }
+  }
+
+  if (!zid) {
+    const zones = await cf(`/zones?name=${ZONE_NAME}`);
+    if (!zones?.length) throw new Error(`zone ${ZONE_NAME} not visible to this token (wrong scope or account?)`);
+    zid = zones[0].id;
+    log(`zone id : ${zid}  (resolved via API)`);
+    log(`plan    : ${zones[0].plan?.name ?? 'unknown'}`);
+    log(`status  : ${zones[0].status}\n`);
+  } else {
+    log(`zone id : ${zid}\n`);
+  }
+
 
   const rulesets = await cf(`/zones/${zid}/rulesets?phase=${PHASE}`);
   let entry = rulesets.find((r) => r.phase === PHASE && (r.kind === 'entry' || r.kind === 'zone'));
