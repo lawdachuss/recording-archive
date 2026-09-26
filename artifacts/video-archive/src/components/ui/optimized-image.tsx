@@ -225,29 +225,40 @@ export const OptimizedImage = memo(function OptimizedImage({
       return;
     }
     let cancelled = false;
-    acquireHostConcurrency(host)
-      .then((release) => {
-        if (cancelled) {
-          release();
-          return;
-        }
-        slotReleaseRef.current = release;
-        setSlotHeld(true);
-        // Watchdog: a hung stream must not hold one of the host's only two
-        // slots forever — after 30s free it (the request itself keeps running;
-        // the normal load/error path still releases idempotently).
-        slotWatchdogRef.current = window.setTimeout(() => {
-          const rel = slotReleaseRef.current;
-          slotReleaseRef.current = null;
-          rel?.();
-        }, 30_000);
-      })
+    // Timeout: if slot not acquired within 2s, fail open so the image isn't
+    // stuck forever (e.g. headless Chrome where IntersectionObserver timing
+    // may delay inView, or a saturated catbox lane). Better a few HTTP2 resets
+    // than a permanently blank tile.
+    const ACQUIRE_TIMEOUT_MS = 2000;
+    let timeoutId: number;
+    const acquirePromise = acquireHostConcurrency(host).then((release) => {
+      window.clearTimeout(timeoutId);
+      if (cancelled) {
+        release();
+        return;
+      }
+      slotReleaseRef.current = release;
+      setSlotHeld(true);
+      // Watchdog: a hung stream must not hold one of the host's only two
+      // slots forever — after 30s free it (the request itself keeps running;
+      // the normal load/error path still releases idempotently).
+      slotWatchdogRef.current = window.setTimeout(() => {
+        const rel = slotReleaseRef.current;
+        slotReleaseRef.current = null;
+        rel?.();
+      }, 30_000);
+    });
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = window.setTimeout(() => reject(new Error("slot acquire timeout")), ACQUIRE_TIMEOUT_MS);
+    });
+    Promise.race([acquirePromise, timeoutPromise])
       .catch(() => {
         // Fail open: better an uncapped load than a permanently hidden image.
         if (!cancelled) setSlotHeld(true);
       });
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
       releaseSlot();
       setSlotHeld(false);
     };
@@ -314,7 +325,12 @@ export const OptimizedImage = memo(function OptimizedImage({
     return fallback ?? <DefaultFallback />;
   }
 
-  const actualSrc = inView && (!flakyH2 || slotHeld) ? (attempt >= 1 && directSrc ? directSrc : resolvedSrc) : undefined;
+  // For ALL flaky hosts (catbox family, direct or wsrv-proxied): wait for both
+  // inView AND a host slot. For non-flaky hosts (our /api/media, pixhost, imgchest):
+  // render immediately. This prevents the thundering-herd on catbox without
+  // delaying cached proxied loads.
+  const shouldRenderSrc = flakyH2 ? (inView && slotHeld) : true;
+  const actualSrc = shouldRenderSrc ? (attempt >= 1 && directSrc ? directSrc : resolvedSrc) : undefined;
   const corsMode = actualSrc ? canLoadInCorsMode(actualSrc) : false;
 
   return (
