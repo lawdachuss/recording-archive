@@ -72,6 +72,20 @@ const NEAR_SPRITE_LIMIT = 4;
 const FAR_SPRITE_LIMIT = 2;
 
 /**
+ * Defer speculative work until the browser reports it is idle, following the
+ * same requestIdleCallback + timeout fallback used by catalog-warmer (Safari
+ * <16 has no requestIdleCallback). The timeout is a backstop so warming still
+ * happens on a permanently-busy main thread rather than never.
+ */
+function scheduleIdle(work: () => void, timeout = 500): void {
+  if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(() => work(), { timeout });
+  } else {
+    setTimeout(work, 200);
+  }
+}
+
+/**
  * Continuous, scroll-aware background prefetch.
  *
  * Watches a sentinel element (returned as `sentinelRef` — place it at the end
@@ -174,42 +188,62 @@ export function useContinuousPrefetch({
             continue;
           }
 
-          // The very next page: eagerly warm ALL its thumbnails so navigation
-          // lands on a painted grid. Later pages eager only one screen — the
-          // rest of their thumbs warm in the background behind the sprites.
-          const eagerCount = idx === 0 ? recs.length : Math.min(eagerThumbs, FAR_EAGER_THUMB_CAP);
-          recs.slice(0, eagerCount).forEach((rec) => {
-            if (rec.thumbnail_url) {
-              preloadImage(proxyImageUrl(rec.thumbnail_url), { priority: 3, immediate: true });
+          // Page DATA is warm from here on: mark it immediately so no trigger
+          // refetches it and scrolling to this page only ever waits on bytes.
+          markWarmed(win, target);
+
+          // Media warming waits for an idle browser.
+          //
+          // prefetchFrom runs on mount AND again whenever fresh data arrives
+          // (startSignal), and with prefetchAhead=1 the single planned page is
+          // always idx===0 — so `eagerCount` was recs.length, i.e. ALL 24 of the
+          // next page's thumbnails, fired at the exact moment the current page's
+          // own 24 were still painting.
+          //
+          // Visible <img> elements are NOT actually starved: cacheImage's
+          // element-admission lane is served ahead of the warmer queue. But both
+          // draw on the SAME per-host budget (canReserveHost is capped by
+          // hostConcurrency, 16 for pixhost), so 24 speculative requests still
+          // consume slots and force the visible grid to wait on warmer turnover —
+          // roughly a cold miss (~1.4s) per deferred card. Deferring the whole
+          // speculative batch to idle means first paint gets the lane to itself,
+          // while the look-ahead page DATA stays instant either way.
+          scheduleIdle(() => {
+            // The very next page: eagerly warm ALL its thumbnails so navigation
+            // lands on a painted grid. Later pages eager only one screen — the
+            // rest of their thumbs warm in the background behind the sprites.
+            const eagerCount = idx === 0 ? recs.length : Math.min(eagerThumbs, FAR_EAGER_THUMB_CAP);
+            recs.slice(0, eagerCount).forEach((rec) => {
+              if (rec.thumbnail_url) {
+                preloadImage(proxyImageUrl(rec.thumbnail_url), { priority: 3, immediate: true });
+              }
+            });
+
+            // Warm sprites (+ animated previews on near pages) for the WHOLE
+            // page. The old `recs.slice(eagerThumbs)` was ALWAYS EMPTY whenever
+            // eagerThumbs >= page size (Browse passes ITEMS_PER_PAGE), so
+            // lookahead pages silently got thumbnails only — no sprites, no
+            // previews — and hover on pages 2-6 was cold. preloadRecordingMedia
+            // re-enqueues the eager thumbs as background (deduped by URL) and
+            // keeps them non-immediate, so sprites ride the immediate queue in
+            // front of the remaining thumbnail tail.
+            //
+            // Sprite warming is deliberately CAPPED and NON-immediate. Every page
+            // this hook touches is strictly AFTER the current one (planPages
+            // returns (startPage, startPage + prefetchAhead]), so nothing here
+            // serves a visible card — the visible grid's sheets are warmed on
+            // demand by useHoverPreview's viewport observer. A sheet is ~130 KB,
+            // so pulling all 24 "immediate" spent megabytes on pages the user
+            // might never open and jumped the queue ahead of real work.
+            if (near) {
+              preloadRecordingMedia(recs, { immediate: false, spriteLimit: NEAR_SPRITE_LIMIT });
+            } else {
+              // Far lookahead: thumbnail + a token sprite warm only — previews
+              // are skipped to avoid hundreds of speculative webp downloads for
+              // pages several scrolls away.
+              preloadRecordingMedia(recs, { skipPreviews: true, spriteLimit: FAR_SPRITE_LIMIT });
             }
           });
-
-          // Warm sprites (+ animated previews on near pages) for the WHOLE
-          // page. The old `recs.slice(eagerThumbs)` was ALWAYS EMPTY whenever
-          // eagerThumbs >= page size (Browse passes ITEMS_PER_PAGE), so
-          // lookahead pages silently got thumbnails only — no sprites, no
-          // previews — and hover on pages 2-6 was cold. preloadRecordingMedia
-          // re-enqueues the eager thumbs as background (deduped by URL) and
-          // keeps them non-immediate, so sprites ride the immediate queue in
-          // front of the remaining thumbnail tail.
-          //
-          // Sprite warming is deliberately CAPPED and NON-immediate here. Every
-          // page this hook touches is strictly AFTER the current one
-          // (planPages returns (startPage, startPage + prefetchAhead]), so
-          // nothing here serves a visible card — the visible grid's sheets are
-          // warmed on demand by useHoverPreview's viewport observer. A sheet is
-          // ~130 KB, so pulling all 24 "immediate" spent megabytes on pages the
-          // user might never open and jumped the queue ahead of real work.
-          if (near) {
-            preloadRecordingMedia(recs, { immediate: false, spriteLimit: NEAR_SPRITE_LIMIT });
-          } else {
-            // Far lookahead: thumbnail + a token sprite warm only — previews
-            // are skipped to avoid hundreds of speculative webp downloads for
-            // pages several scrolls away.
-            preloadRecordingMedia(recs, { skipPreviews: true, spriteLimit: FAR_SPRITE_LIMIT });
-          }
-
-          markWarmed(win, target);
         }
       } catch (err: unknown) {
         // Ignore AbortError — that's an expected cancellation, not a real error.
