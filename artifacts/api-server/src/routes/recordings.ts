@@ -20,40 +20,133 @@ const RELATED_COLS = "id,username,timestamp,room_title,tags,viewers,resolution,f
 const POOL_COLS = "id,username,tags,gender,timestamp,viewers,thumbnail_url,sprite_url,preview_url";
 
 // ─── Mirror enrichment ─────────────────────────────────────────────────────
-// The recordings_with_links view doesn't include mirror columns, but the
-// base recordings table does. Fetch mirrors separately and merge them in.
+// Mirrors are written to `preview_images` by the upload pipeline, but the
+// `recordings_with_links` view has no mirror columns and the base `recordings`
+// table is only sparsely populated. Measured 2026-09-26 over the full tables:
+//
+//   recordings        30,385 rows   thumbnail_mirrors     171 (0.6%)
+//                                   sprite_mirrors       125 (0.4%)
+//                                   preview_mirrors      923 (3.0%)
+//   preview_images   30,414 rows   thumbnail_mirrors 19,401 (63.8%)
+//                                   sprite_mirrors   19,202 (63.1%)
+//                                   preview_mirrors  20,089 (66.1%)
+//
+// So reading mirrors only from `recordings` stranded ~15,355 recordings' worth
+// of fallback URLs and left the frontend with nothing to fall back to. Read
+// BOTH tables and merge per host.
+//
+// `preview_images` is exactly 1:1 with `recordings` (30,140 distinct
+// recording_id over 30,140 non-null rows, zero multi-row), so no de-dup is
+// needed, but the merge is written defensively anyway. 274 preview_images rows
+// have a null recording_id and are skipped by the `in` filter.
 const MIRROR_COLS = "id,thumbnail_mirrors,sprite_mirrors,preview_mirrors";
-const MIRROR_COLS_SINGLE = "thumbnail_mirrors,sprite_mirrors,preview_mirrors";
+const PREVIEW_MIRROR_COLS = "recording_id,thumbnail_mirrors,sprite_mirrors,preview_mirrors";
+const MIRROR_KEYS = ["thumbnail_mirrors", "sprite_mirrors", "preview_mirrors"] as const;
 
-async function fetchMirrors(ids: string[]): Promise<Map<string, { thumbnail_mirrors: any; sprite_mirrors: any; preview_mirrors: any }>> {
-  const mirrorMap = new Map();
+/**
+ * A mirror payload is only useful if it has at least one non-empty host URL.
+ * The pipeline writes a fair number of literal `{}` objects (14,264 of them),
+ * which are truthy — so a naive `if (mirrors)` check treats them as real mirror
+ * data and the frontend ends up with an empty fallback chain that looks
+ * populated. Treat them as absent.
+ */
+function nonEmptyMirrorMap(value: unknown): Record<string, string> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const entries = Object.entries(value as Record<string, unknown>).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0,
+  );
+  return entries.length ? Object.fromEntries(entries) : null;
+}
+
+/**
+ * Merge two mirror payloads for the same recording, host by host. `preferred`
+ * (the `recordings` table) wins per-host; the `fallback` (preview_images) only
+ * contributes hosts the preferred payload is missing, so merging can only ever
+ * widen the fallback chain, never reorder or replace a canonical URL.
+ */
+function mergeMirrorMaps(
+  preferred: unknown,
+  fallback: unknown,
+): Record<string, string> | null {
+  const a = nonEmptyMirrorMap(preferred);
+  const b = nonEmptyMirrorMap(fallback);
+  if (!a) return b;
+  if (!b) return a;
+  return { ...b, ...a };
+}
+
+/**
+ * Fetch mirror payloads for the given recording ids from BOTH `recordings`
+ * (sparse but canonical) and `preview_images` (the populated one), merged per
+ * host. Returns a map keyed by recording id.
+ */
+async function fetchMirrors(
+  ids: string[],
+): Promise<Map<string, Record<string, Record<string, string> | null>>> {
+  const mirrorMap = new Map<string, Record<string, Record<string, string> | null>>();
   if (ids.length === 0) return mirrorMap;
-  // Batch in chunks of 100 to avoid PostgREST IN-clause limits
+
+  // Best row wins per column, so a later source only fills gaps.
+  const apply = (id: string, key: string, value: unknown) => {
+    if (!id) return;
+    let entry = mirrorMap.get(id);
+    if (!entry) mirrorMap.set(id, (entry = {}));
+    entry[key] = mergeMirrorMaps(entry[key], value);
+  };
+
+  // Batch in chunks of 100 to stay well under PostgREST limits on both the
+  // `in` list and the response row cap.
   for (let i = 0; i < ids.length; i += 100) {
     const chunk = ids.slice(i, i + 100);
-    const { data } = await supabase.from("recordings").select(MIRROR_COLS).in("id", chunk);
-    if (data) for (const row of data) mirrorMap.set(row.id, row);
+    if (chunk.length === 0) continue;
+
+    const [rec, prev] = await Promise.all([
+      supabase.from("recordings").select(MIRROR_COLS).in("id", chunk),
+      supabase
+        .from("preview_images")
+        .select(PREVIEW_MIRROR_COLS)
+        .in("recording_id", chunk),
+    ]);
+
+    for (const row of rec.data ?? [])
+      for (const key of MIRROR_KEYS) apply(row.id, key, row[key]);
+
+    for (const row of prev.data ?? [])
+      for (const key of MIRROR_KEYS) apply(row.recording_id, key, row[key]);
   }
   return mirrorMap;
 }
 
-/** Enrich an array of recordings with mirror data from the base table */
+/** Enrich an array of recordings with mirror data from both mirror sources */
 async function enrichWithMirrors(rows: any[]): Promise<any[]> {
   const ids = rows.map(r => r.id).filter(Boolean);
   const mirrorMap = await fetchMirrors(ids);
   return rows.map(r => {
     const mirrors = mirrorMap.get(r.id);
     if (!mirrors) return r;
-    return { ...r, ...mirrors };
+    // Don't overwrite an existing mirror field with null/empty: a row that
+    // already carries mirrors inline keeps them.
+    const merged = { ...r };
+    for (const key of MIRROR_KEYS) {
+      const value = mirrors[key];
+      if (value && Object.keys(value).length) merged[key] = value;
+    }
+    return merged;
   });
 }
 
-/** Enrich a single recording object with mirror data */
+/** Enrich a single recording object with mirror data from both sources */
 async function enrichSingleWithMirrors(row: any): Promise<any> {
   if (!row?.id) return row;
-  const { data } = await supabase.from("recordings").select(MIRROR_COLS_SINGLE).eq("id", row.id).single();
-  if (!data) return row;
-  return { ...row, ...data };
+  const mirrorMap = await fetchMirrors([row.id]);
+  const mirrors = mirrorMap.get(row.id);
+  if (!mirrors) return row;
+  const merged = { ...row };
+  for (const key of MIRROR_KEYS) {
+    const value = mirrors[key];
+    if (value && Object.keys(value).length) merged[key] = value;
+  }
+  return merged;
 }
 
 // ─── LIST RECORDINGS ────────────────────────────────────────────────────────

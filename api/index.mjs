@@ -69206,14 +69206,42 @@ var LIST_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewe
 var RELATED_COLS = "id,username,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,preview_url";
 var POOL_COLS = "id,username,tags,gender,timestamp,viewers,thumbnail_url,sprite_url,preview_url";
 var MIRROR_COLS = "id,thumbnail_mirrors,sprite_mirrors,preview_mirrors";
-var MIRROR_COLS_SINGLE = "thumbnail_mirrors,sprite_mirrors,preview_mirrors";
+var PREVIEW_MIRROR_COLS = "recording_id,thumbnail_mirrors,sprite_mirrors,preview_mirrors";
+var MIRROR_KEYS = ["thumbnail_mirrors", "sprite_mirrors", "preview_mirrors"];
+function nonEmptyMirrorMap(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const entries = Object.entries(value).filter(
+    (entry) => typeof entry[1] === "string" && entry[1].length > 0
+  );
+  return entries.length ? Object.fromEntries(entries) : null;
+}
+function mergeMirrorMaps(preferred, fallback) {
+  const a = nonEmptyMirrorMap(preferred);
+  const b = nonEmptyMirrorMap(fallback);
+  if (!a) return b;
+  if (!b) return a;
+  return { ...b, ...a };
+}
 async function fetchMirrors(ids) {
   const mirrorMap = /* @__PURE__ */ new Map();
   if (ids.length === 0) return mirrorMap;
+  const apply = (id, key, value) => {
+    if (!id) return;
+    let entry = mirrorMap.get(id);
+    if (!entry) mirrorMap.set(id, entry = {});
+    entry[key] = mergeMirrorMaps(entry[key], value);
+  };
   for (let i = 0; i < ids.length; i += 100) {
     const chunk = ids.slice(i, i + 100);
-    const { data } = await supabaseProxy.from("recordings").select(MIRROR_COLS).in("id", chunk);
-    if (data) for (const row of data) mirrorMap.set(row.id, row);
+    if (chunk.length === 0) continue;
+    const [rec, prev] = await Promise.all([
+      supabaseProxy.from("recordings").select(MIRROR_COLS).in("id", chunk),
+      supabaseProxy.from("preview_images").select(PREVIEW_MIRROR_COLS).in("recording_id", chunk)
+    ]);
+    for (const row of rec.data ?? [])
+      for (const key of MIRROR_KEYS) apply(row.id, key, row[key]);
+    for (const row of prev.data ?? [])
+      for (const key of MIRROR_KEYS) apply(row.recording_id, key, row[key]);
   }
   return mirrorMap;
 }
@@ -69223,14 +69251,25 @@ async function enrichWithMirrors(rows) {
   return rows.map((r) => {
     const mirrors = mirrorMap.get(r.id);
     if (!mirrors) return r;
-    return { ...r, ...mirrors };
+    const merged = { ...r };
+    for (const key of MIRROR_KEYS) {
+      const value = mirrors[key];
+      if (value && Object.keys(value).length) merged[key] = value;
+    }
+    return merged;
   });
 }
 async function enrichSingleWithMirrors(row) {
   if (!row?.id) return row;
-  const { data } = await supabaseProxy.from("recordings").select(MIRROR_COLS_SINGLE).eq("id", row.id).single();
-  if (!data) return row;
-  return { ...row, ...data };
+  const mirrorMap = await fetchMirrors([row.id]);
+  const mirrors = mirrorMap.get(row.id);
+  if (!mirrors) return row;
+  const merged = { ...row };
+  for (const key of MIRROR_KEYS) {
+    const value = mirrors[key];
+    if (value && Object.keys(value).length) merged[key] = value;
+  }
+  return merged;
 }
 router2.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["recordings", "search"] }), async (req, res) => {
   try {
