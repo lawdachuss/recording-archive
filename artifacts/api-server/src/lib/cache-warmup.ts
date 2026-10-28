@@ -14,7 +14,6 @@ const WARMUP_ROUTES: { path: string; priority: number }[] = [
   { path: "/api/recordings?limit=12&sort=popular", priority: 1 },
 
   // Tier 2 — browse/discovery
-  { path: "/api/performers?sort=count&limit=24", priority: 2 },
   { path: "/api/performers?sort=name&limit=24", priority: 2 },
 
   // Tier 3 — Redis-backed quick lists (served from ZSETs once warm)
@@ -62,17 +61,16 @@ interface WarmupResult {
  * On Vercel there is no listening port, so the cron-triggered warm
  * (routes/cache-warm.ts) passes the public origin instead.
  *
- * It runs entirely in the background — errors are logged but
- * never crash the server. purgeOnFailure defaults to true for the
- * boot warmup (a partial warm after a cold start is worse than none
- * until real traffic fills it); recurring crons pass false so a
- * flaky Redis/tunnel can never wipe the whole cache.
+ * It runs entirely in the background — errors are logged but never crash the
+ * server. Cache warmup is additive and non-destructive by default: a transient
+ * timeout on one route must not erase entries already warmed or existing valid
+ * cache data. Callers may opt into purgeOnFailure only when explicitly needed.
  */
 export async function warmupCache(
   baseUrl: string,
   options?: { purgeOnFailure?: boolean },
 ): Promise<WarmupResult> {
-  const purgeOnFailure = options?.purgeOnFailure ?? true;
+  const purgeOnFailure = options?.purgeOnFailure ?? false;
 
   // Wait briefly for Redis to connect (lazyConnect is enabled)
   // If Redis doesn't connect within 5s, the warmup still fires — the
