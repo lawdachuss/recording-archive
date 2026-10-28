@@ -27,10 +27,10 @@ router.get(
       // Cold fallback — top by lifetime viewers is the closest DB-legal proxy
       // for "trending" until real plays accumulate in the ZSETs.
       const { data, error } = await supabase
-        .from("recordings_with_links")
+        .from("linked_recordings")
         .select("id,username,room_title,thumbnail_url,sprite_url,viewers")
-        .not("links", "is", "null")
-        .order("viewers", { ascending: false, nullsFirst: false })
+        
+        .order("viewers", { ascending: false, nullsFirst: false }).order("id", { ascending: false })
         .limit(limit);
       if (error) {
         res.status(500).json({ error: "Failed to fetch hot recordings" });
