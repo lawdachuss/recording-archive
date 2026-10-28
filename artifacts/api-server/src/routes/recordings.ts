@@ -163,14 +163,7 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     const normalizedPage = Math.max(1, page);
     const normalizedLimit = Math.min(Math.max(1, limit), 100);
 
-    // Query the base table and use the upload_links relationship as an
-    // existence filter. The recordings_with_links view builds a grouped JSON
-    // object for every recording; filtering that computed links column forces
-    // unnecessary aggregation on the hot catalog path even though LIST_COLS
-    // never returns links. !inner preserves the original "has at least one
-    // playable link" semantics without aggregating all hosts into JSON.
-    const listQueryCols = `${LIST_COLS},upload_links!inner(recording_id)`;
-    let query = supabase.from("recordings").select(listQueryCols, { count: "exact" });
+    let query = supabase.from("recordings_with_links").select(LIST_COLS, { count: "exact" }).not("links", "is", "null");
 
     if (search?.trim()) {
       const s = escapeLike(search.trim());
@@ -209,7 +202,7 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     if (error && typeof error === "object" && (error as any).code === "PGRST205") {
       req.log.warn("Schema cache miss (PGRST205), refreshing and retrying");
       await import("../lib/supabase.js").then((m) => (m as any).refreshSupabaseSchema());
-      const refreshed = supabase.from("recordings").select(listQueryCols, { count: "exact" });
+      const refreshed = supabase.from("recordings_with_links").select(LIST_COLS, { count: "exact" }).not("links", "is", "null");
       const ascending = sort === "oldest";
       const sortCol = sort === "largest" ? "filesize" : sort === "popular" ? "viewers" : "timestamp";
       const retryQuery = refreshed.order(sortCol, { ascending, nullsFirst: false }).range(offset, offset + normalizedLimit - 1);
@@ -225,13 +218,7 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
       return;
     }
 
-    // The embedded relation is only a filter; keep the public list payload
-    // unchanged and omit the tiny helper field before mirror enrichment.
-    const pageRows = (data ?? []).map((row: any) => {
-      const { upload_links: _uploadLinks, ...recording } = row;
-      return recording;
-    });
-    const enriched = await enrichWithMirrors(pageRows);
+    const enriched = await enrichWithMirrors(data ?? []);
 
     res.json({
       data: enriched,
