@@ -19,7 +19,7 @@
 // arrays, so callers fall back to their existing DB path.
 
 import { logger } from "./logger.js";
-import { getRedis, isRedisConnected } from "./redis.js";
+import { getFeatureRedis, isRedisConnected } from "./redis.js";
 
 export const HOT_PREFIX = "hot:";
 
@@ -51,10 +51,10 @@ export interface HotBumpMeta {
   image_url?: string | null;
 }
 
-type RedisClient = ReturnType<typeof getRedis> & Record<string, any>;
+type RedisClient = ReturnType<typeof getFeatureRedis> & Record<string, any>;
 
 function client(): RedisClient | null {
-  const redis = getRedis();
+  const redis = getFeatureRedis();
   return redis && isRedisConnected() ? (redis as RedisClient) : null;
 }
 
