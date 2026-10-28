@@ -1,12 +1,18 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "NODE_OPTIONS=--max-old-space-size=5632 pnpm run typecheck:libs && pnpm --filter @workspace/video-archive run typecheck && NODE_OPTIONS=--max-old-space-size=5632 pnpm --filter @workspace/api-server run vercel-build && cd artifacts/video-archive && NODE_OPTIONS=--max-old-space-size=5632 pnpm exec vite build",
+  "buildCommand": "export NODE_OPTIONS=--max-old-space-size=5632; pnpm run typecheck:libs && pnpm --filter @workspace/video-archive run typecheck && pnpm --filter @workspace/api-server run vercel-build && cd artifacts/video-archive && pnpm exec vite build",
   "outputDirectory": "artifacts/video-archive/dist",
   "framework": "vite",
   "installCommand": "pnpm install --ignore-scripts",
   "functions": {
-    "api/index.mjs": { "memory": 1024, "maxDuration": 60 },
-    "api/media.mjs": { "memory": 2048, "maxDuration": 60 }
+    "api/index.mjs": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "api/media.mjs": {
+      "memory": 2048,
+      "maxDuration": 60
+    }
   },
   "crons": [
     {
@@ -18,26 +24,47 @@
     {
       "source": "/assets/(.*)",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
       ]
     },
     {
       "source": "/sw.js",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
       ]
     },
     {
       "source": "/index.html",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
       ]
     }
   ],
   "rewrites": [
-    { "source": "/api/media", "destination": "/api/media" },
-    { "source": "/api/(.*)", "destination": "/api/index" },
-    { "source": "/assets/(.*)", "destination": "/assets/$1" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/api/media",
+      "destination": "/api/media"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/assets/(.*)",
+      "destination": "/assets/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ]
 }
