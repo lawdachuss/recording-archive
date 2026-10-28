@@ -87,6 +87,10 @@ async function redisIncrement(
   key: string,
   windowSeconds: number = WINDOW_SECONDS,
 ): Promise<{ count: number; resetAt: number } | null> {
+  // Avoid a remote Redis bridge round-trip on every API request in Vercel.
+  // This limiter degrades to its existing per-instance memory buckets there;
+  // deploy a provider-level WAF/rate-limit rule for globally coordinated limits.
+  if (process.env.VERCEL_CACHE_LOCAL_ONLY === "1") return null;
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return null;
 
