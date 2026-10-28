@@ -57,6 +57,127 @@ router.get("/user/resolve-username", async (req, res) => {
 
 router.use("/user", requireAuth);
 
+// ─── Public Playlists / Collections ─────────────────────────────────────────
+
+router.get("/playlists", async (req, res) => {
+  try {
+    const { data: cols, error } = await supabase
+      .from("user_collections")
+      .select("id, user_id, name, description, created_at, updated_at")
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    if (error) {
+      req.log?.error?.({ err: error }, "Supabase error fetching public playlists");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+
+    const userIds = Array.from(new Set((cols ?? []).map((c) => c.user_id)));
+    const { data: profiles } = userIds.length > 0
+      ? await supabase
+          .from("user_profiles")
+          .select("user_id, display_name, avatar_url, username")
+          .in("user_id", userIds)
+      : { data: [] };
+
+    const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, p]));
+
+    const enriched = await Promise.all(
+      (cols ?? []).map(async (col) => {
+        const { data: items, count } = await supabase
+          .from("user_collection_items")
+          .select("recording_id, metadata, added_at, position", { count: "exact", head: false })
+          .eq("collection_id", col.id)
+          .order("position", { ascending: true, nullsFirst: false })
+          .order("added_at", { ascending: false })
+          .limit(4);
+
+        const profile = profileMap.get(col.user_id);
+        return {
+          ...col,
+          item_count: count ?? items?.length ?? 0,
+          items: items ?? [],
+          author: profile
+            ? {
+                display_name: profile.display_name,
+                avatar_url: profile.avatar_url,
+                username: profile.username,
+              }
+            : null,
+        };
+      })
+    );
+
+    res.json(enriched);
+  } catch (err) {
+    req.log?.error?.({ err }, "GET /playlists unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/playlists/:id", async (req, res) => {
+  try {
+    const { data: col, error } = await supabase
+      .from("user_collections")
+      .select("id, user_id, name, description, created_at, updated_at")
+      .eq("id", req.params.id)
+      .maybeSingle();
+
+    if (error || !col) {
+      res.status(404).json({ error: "Playlist not found" });
+      return;
+    }
+
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("user_id, display_name, avatar_url, username")
+      .eq("user_id", col.user_id)
+      .maybeSingle();
+
+    const { count } = await supabase
+      .from("user_collection_items")
+      .select("recording_id", { count: "exact", head: true })
+      .eq("collection_id", col.id);
+
+    res.json({
+      ...col,
+      item_count: count ?? 0,
+      author: profile
+        ? {
+            display_name: profile.display_name,
+            avatar_url: profile.avatar_url,
+            username: profile.username,
+          }
+        : null,
+    });
+  } catch (err) {
+    req.log?.error?.({ err }, "GET /playlists/:id unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/playlists/:id/items", async (req, res) => {
+  try {
+    const { data: items, error } = await supabase
+      .from("user_collection_items")
+      .select("recording_id, metadata, added_at, position")
+      .eq("collection_id", req.params.id)
+      .order("position", { ascending: true, nullsFirst: false })
+      .order("added_at", { ascending: false });
+
+    if (error) {
+      req.log?.error?.({ err: error }, "Supabase error fetching playlist items");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json(items ?? []);
+  } catch (err) {
+    req.log?.error?.({ err }, "GET /playlists/:id/items unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ─── Profile ─────────────────────────────────────────────────────────────────
 
 router.get("/user/profile", async (req, res) => {
