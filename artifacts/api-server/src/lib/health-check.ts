@@ -80,6 +80,11 @@ export async function runHealthCheck(port: number): Promise<HealthCheckResult> {
       clearTimeout(timeout);
 
       const ok = expectOk(response.status);
+      if (ok) {
+        // These checks validate status only; consume successful JSON responses
+        // to release the fetch stream and connection promptly.
+        await response.arrayBuffer();
+      }
       const durationMs = Date.now() - checkStart;
 
       // Log each endpoint individually
