@@ -102,7 +102,11 @@ function createHttpRedis(url: string, key: string) {
         try {
           payload = await res.json();
         } catch {
-          if (res.status >= 500) openHttpCircuit();
+          // A 200 response with an empty or malformed body is not a usable
+          // Redis reply. Treat it as a bridge failure too; otherwise every
+          // media miss retries the broken bridge and adds its timeout to the
+          // upstream image fetch (multi-second thumbnail stalls in production).
+          openHttpCircuit();
           throw new Error(`Redis HTTP bridge returned ${res.status} with an unreadable response`);
         }
 
