@@ -212,7 +212,7 @@ export function useContinuousPrefetch({
             // The very next page: eagerly warm ALL its thumbnails so navigation
             // lands on a painted grid. Later pages eager only one screen — the
             // rest of their thumbs warm in the background behind the sprites.
-            const eagerCount = idx === 0 ? recs.length : Math.min(eagerThumbs, FAR_EAGER_THUMB_CAP);
+            const eagerCount = Math.min(eagerThumbs, idx === 0 ? recs.length : FAR_EAGER_THUMB_CAP);
             recs.slice(0, eagerCount).forEach((rec) => {
               if (rec.thumbnail_url) {
                 preloadImage(proxyImageUrl(rec.thumbnail_url), { priority: 3, immediate: true });
@@ -236,12 +236,12 @@ export function useContinuousPrefetch({
             // so pulling all 24 "immediate" spent megabytes on pages the user
             // might never open and jumped the queue ahead of real work.
             if (near) {
-              preloadRecordingMedia(recs, { immediate: false, spriteLimit: NEAR_SPRITE_LIMIT });
+              preloadRecordingMedia(recs, { immediate: false, spriteLimit: NEAR_SPRITE_LIMIT, skipThumbnails: true, skipPreviews: true });
             } else {
               // Far lookahead: thumbnail + a token sprite warm only — previews
               // are skipped to avoid hundreds of speculative webp downloads for
               // pages several scrolls away.
-              preloadRecordingMedia(recs, { skipPreviews: true, spriteLimit: FAR_SPRITE_LIMIT });
+              preloadRecordingMedia(recs, { skipPreviews: true, skipThumbnails: true, spriteLimit: FAR_SPRITE_LIMIT });
             }
           });
         }
