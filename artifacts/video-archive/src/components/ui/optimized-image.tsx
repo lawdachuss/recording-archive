@@ -344,7 +344,7 @@ export const OptimizedImage = memo(function OptimizedImage({
         src={actualSrc}
         alt={alt}
         referrerPolicy="no-referrer"
-        loading={loading ?? "lazy"}
+        loading={loading ?? (fetchPriority === "high" ? "eager" : "lazy")}
         decoding="async"
         fetchPriority={fetchPriority}
         onLoad={onLoad}
