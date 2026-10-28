@@ -59,6 +59,8 @@ export interface RecordingListResponse {
   total: number;
   page: number;
   limit: number;
+  totalPages?: number;
+  totalIsEstimate?: boolean;
 }
 
 export interface Performer {

@@ -158,6 +158,9 @@ export async function buildSuggestionSnapshot(): Promise<{
       tags,
       recordings,
     };
+    // Keep the just-built snapshot available to this warm process even if the
+    // shared Redis backend is temporarily unavailable.
+    snapshotMemo = { at: Date.now(), value: snapshot };
     const counts = { performers: performers.length, tags: tags.length, recordings: recordings.length };
 
     if (redis) {
@@ -195,10 +198,14 @@ let snapshotMemo: { at: number; value: SuggestionSnapshot | null } = {
   at: 0,
   value: null,
 };
-const MEMO_TTL_MS = 30_000;
+const MEMO_TTL_MS = 60_000;
+const MISSING_MEMO_TTL_MS = 3_000;
 
 export async function getSuggestionSnapshot(): Promise<SuggestionSnapshot | null> {
-  if (snapshotMemo.value && Date.now() - snapshotMemo.at < MEMO_TTL_MS) {
+  // Cache misses briefly too. Without a negative memo, every unique keystroke
+  // performs another Redis GET while the shared snapshot is absent/unreachable.
+  const memoTtl = snapshotMemo.value ? MEMO_TTL_MS : MISSING_MEMO_TTL_MS;
+  if (Date.now() - snapshotMemo.at < memoTtl) {
     return snapshotMemo.value;
   }
   const redis = client();

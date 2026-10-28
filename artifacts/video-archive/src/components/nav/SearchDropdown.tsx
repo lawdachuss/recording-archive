@@ -49,24 +49,55 @@ export function SearchDropdown({ open, onOpenChange }: SearchDropdownProps) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
-  // Debounce: wait 250ms after the user stops typing
+  // Short debounce keeps the UI responsive without issuing a request per keystroke.
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 250);
+    const timer = setTimeout(() => setDebouncedSearch(search), 200);
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Fetch live predictions
+  // React Query cancels the previous request when the query key changes. The API
+  // client forwards that abort signal so old prefixes don't waste connections.
   const { data: predictionsData, isLoading: predictionsLoading } =
-    useSearchSuggestions(debouncedSearch);
-  const predictions = predictionsData?.suggestions ?? [];
+    useSearchSuggestions(debouncedSearch, { enabled: open });
+  const serverPredictions = predictionsData?.suggestions ?? [];
 
-  // Trending data for empty-state suggestions (only fetch when search is open)
-  // These are shared with Home/tags pages so they hit the same React Query cache.
-  const { data: trendingTags } = useListTags();
+  // Load tags only while the search UI is open. Use the already cached tag list
+  // as a cheap local fallback so tag matches remain available while the server's
+  // Redis suggestion snapshot is rebuilding or temporarily unavailable.
+  const { data: trendingTags } = useListTags({ enabled: open, staleTime: 15 * 60_000 });
+  const showTrendingPerformers = open && search.trim().length === 0;
   const { data: trendingPerformers } = useListPerformers(
-    open ? { limit: 5, sort: "count" } : undefined,
-    open ? { staleTime: 3 * 60_000 } : undefined,
+    showTrendingPerformers ? { limit: 5, sort: "count" } : undefined,
+    { staleTime: 3 * 60_000, enabled: showTrendingPerformers },
   );
+
+  const normalizedSearch = search.trim().toLowerCase();
+  const predictions = useMemo(() => {
+    if (!open || normalizedSearch.length < 2) return serverPredictions;
+
+    const existingTags = new Set(
+      serverPredictions
+        .filter((item) => item.type === "tag")
+        .map((item) => item.label.toLowerCase()),
+    );
+    const tagSlots = Math.max(0, 4 - existingTags.size);
+    if (tagSlots === 0 || !trendingTags?.length) return serverPredictions;
+
+    const localTagSuggestions: SearchSuggestion[] = trendingTags
+      .filter((tag) => tag.tag.toLowerCase().includes(normalizedSearch))
+      .filter((tag) => !existingTags.has(tag.tag.toLowerCase()))
+      .slice(0, tagSlots)
+      .map((tag) => ({
+        type: "tag",
+        label: tag.tag,
+        subtitle: "Tag",
+        href: `/browse?tags=${encodeURIComponent(tag.tag)}`,
+      }));
+
+    return localTagSuggestions.length
+      ? [...serverPredictions, ...localTagSuggestions]
+      : serverPredictions;
+  }, [open, normalizedSearch, serverPredictions, trendingTags]);
 
   // Reset selected index when results change
   useEffect(() => {
@@ -256,7 +287,9 @@ export function SearchDropdown({ open, onOpenChange }: SearchDropdownProps) {
           {showSuggestions &&
             (search.trim().length >= 2
               ? renderPredictions({
-                  predictionsLoading,
+                  // If locally cached tags already match, show them immediately
+                  // while the server is still resolving performer/recording matches.
+                  predictionsLoading: predictionsLoading && predictions.length === 0,
                   predictions,
                   debouncedSearch,
                   search,

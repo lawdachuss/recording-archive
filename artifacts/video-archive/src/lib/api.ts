@@ -85,6 +85,7 @@ export interface ListRecordingsResponse {
   page: number;
   limit: number;
   totalPages: number;
+  totalIsEstimate?: boolean;
 }
 
 import { resolveApiPath } from "./api-base";
@@ -123,6 +124,14 @@ async function fetchApiUncached<T>(
   options?: RequestInit,
 ): Promise<T> {
   const controller = new AbortController();
+  const externalSignal = options?.signal;
+  const forwardAbort = () => controller.abort(externalSignal?.reason);
+  if (externalSignal?.aborted) {
+    forwardAbort();
+  } else {
+    externalSignal?.addEventListener("abort", forwardAbort, { once: true });
+  }
+  // Always enforce our own timeout, even when React Query supplies a signal.
   const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
   try {
@@ -136,12 +145,13 @@ async function fetchApiUncached<T>(
       ...options,
       method,
       headers,
-      signal: options?.signal ?? controller.signal,
+      signal: controller.signal,
     });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   } finally {
     clearTimeout(timer);
+    externalSignal?.removeEventListener("abort", forwardAbort);
   }
 }
 
@@ -184,7 +194,7 @@ export function useListPerformers(
     gender?: string;
     sort?: "count" | "name";
   },
-  queryOptions?: Partial<{ staleTime: number }>,
+  queryOptions?: Partial<{ staleTime: number; enabled: boolean }>,
 ) {
   const searchParams = new URLSearchParams();
   if (params?.page) searchParams.set("page", params.page.toString());
@@ -195,7 +205,9 @@ export function useListPerformers(
 
   return useQuery({
     queryKey: ["performers", searchParams.toString()],
-    queryFn: () => fetchApi<PerformersResponse>(`/api/performers?${searchParams}`),
+    queryFn: ({ signal }) =>
+      fetchApi<PerformersResponse>(`/api/performers?${searchParams}`, { signal }),
+    enabled: queryOptions?.enabled ?? true,
     placeholderData: keepPreviousData,
     ...QUERY_PRESETS.page(3 * 60_000),
     staleTime: queryOptions?.staleTime,
@@ -230,11 +242,13 @@ export function useListRecordings(
   });
 }
 
-export function useListTags() {
+export function useListTags(queryOptions?: { enabled?: boolean; staleTime?: number }) {
   return useQuery({
     queryKey: ["tags"],
-    queryFn: () => fetchApi<TagCount[]>(`/api/tags`),
+    queryFn: ({ signal }) => fetchApi<TagCount[]>(`/api/tags`, { signal }),
+    enabled: queryOptions?.enabled ?? true,
     ...QUERY_PRESETS.page(),
+    ...(queryOptions?.staleTime !== undefined ? { staleTime: queryOptions.staleTime } : {}),
   });
 }
 
@@ -265,12 +279,26 @@ export interface SearchSuggestionsResponse {
  * Fetch search suggestions as the user types.
  * Debounce is handled by the caller (typically ~250ms).
  */
-export function useSearchSuggestions(query: string) {
+export function useSearchSuggestions(
+  query: string,
+  queryOptions?: { enabled?: boolean },
+) {
+  // Server matching is case-insensitive and trims whitespace, so normalize
+  // both the query key and URL to share cache entries for equivalent input.
+  const normalizedQuery = query.trim().toLowerCase();
+
   return useQuery({
-    queryKey: ["search", "suggestions", query],
-    queryFn: () => fetchApi<SearchSuggestionsResponse>(`/api/search?q=${encodeURIComponent(query)}`),
-    enabled: query.trim().length >= 2,
+    queryKey: ["search", "suggestions", normalizedQuery],
+    queryFn: ({ signal }) =>
+      fetchApi<SearchSuggestionsResponse>(
+        `/api/search?q=${encodeURIComponent(normalizedQuery)}`,
+        { signal },
+      ),
+    enabled: (queryOptions?.enabled ?? true) && normalizedQuery.length >= 2,
     ...QUERY_PRESETS.search(),
+    gcTime: 5 * 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 }
 

@@ -30,7 +30,6 @@ function escapeLike(input: string): string {
   return input.replace(/[\\%_]/g, "\\$&");
 }
 
-const MAX_TAG_SCAN_PAGES = 20; // cap full-table tag scan (20 pages × 1 000 rows)
 
 router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search", "recordings", "performers", "tags"] }), async (req, res) => {
   const q = String(req.query.q ?? "").trim();
@@ -52,31 +51,51 @@ router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search"
     return;
   }
 
-  // Snapshot missing (fresh Redis / not yet synced): kick off a background
-  // rebuild so the NEXT typed search benefits, then fall back to the live DB
-  // path below.
-  maybeBuildSuggestionSnapshot().catch((err) =>
-    logger.error({ err, query: q }, "Background suggestion build kicked off with error"),
-  );
+  // Snapshot missing (fresh Redis / not yet synced): do not start a full-table
+  // snapshot rebuild from a user-facing Vercel request. The daily cache-warm
+  // cron owns that expensive maintenance job. On long-lived non-Vercel servers,
+  // a single background rebuild is still useful.
+  if (!process.env.VERCEL && !process.env.VERCEL_ENV && !process.env.VERCEL_URL) {
+    maybeBuildSuggestionSnapshot().catch((err) =>
+      logger.error({ err, query: q }, "Background suggestion build kicked off with error"),
+    );
+  }
 
   const safeQ = escapeLike(q);
   const suggestions: SearchSuggestion[] = [];
 
   try {
-    // 1. Performer suggestions (username matches, up to 4)
-    // Use Supabase client — reads from supabase.chuglii.in (current data)
-    const { data: performers } = await supabase
-      .from("recordings_with_links")
-      .select("username, thumbnail_url, sprite_url, preview_url, links")
-      .not("links", "is", "null")
-      .ilike("username", `%${safeQ}%`)
-      .order("timestamp", { ascending: false })
-      .limit(4);
+    // Keep the fallback bounded and concurrent. The previous path executed
+    // these searches serially and then paged through up to 20,000 recording
+    // rows to find substring matches in tag arrays on every unique prefix.
+    // That scan was unindexed, request-driven, and could exhaust the function
+    // timeout. Tag suggestions are supplied client-side from the cached /tags
+    // list when the Redis snapshot is temporarily unavailable.
+    const [performerResult, recordingResult] = await Promise.all([
+      supabase
+        .from("recordings_with_links")
+        .select("username, thumbnail_url, sprite_url, preview_url, links")
+        .not("links", "is", "null")
+        .ilike("username", `%${safeQ}%`)
+        .order("timestamp", { ascending: false })
+        .limit(16),
+      supabase
+        .from("recordings_with_links")
+        .select("id, username, room_title, filename, thumbnail_url, links")
+        .not("links", "is", "null")
+        .or(
+          `username.ilike.%${safeQ}%,room_title.ilike.%${safeQ}%,filename.ilike.%${safeQ}%`,
+        )
+        .order("timestamp", { ascending: false })
+        .limit(4),
+    ]);
 
-    if (performers) {
+    if (performerResult.error) {
+      logger.warn({ err: performerResult.error, query: q }, "Fallback performer suggestions failed");
+    } else {
       const seen = new Set<string>();
-      for (const p of performers) {
-        if (seen.has(p.username)) continue;
+      for (const p of performerResult.data ?? []) {
+        if (!p.username || seen.has(p.username)) continue;
         seen.add(p.username);
         const image = p.thumbnail_url || p.sprite_url || p.preview_url;
         suggestions.push({
@@ -86,22 +105,14 @@ router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search"
           image_url: image,
           href: `/performers/${encodeURIComponent(p.username)}`,
         });
+        if (seen.size >= 4) break;
       }
     }
 
-    // 2. Recording suggestions (username, title, or filename matches, up to 4)
-    const { data: recordings } = await supabase
-      .from("recordings_with_links")
-      .select("id, username, room_title, filename, thumbnail_url, links")
-      .not("links", "is", "null")
-      .or(
-        `username.ilike.%${safeQ}%,room_title.ilike.%${safeQ}%,filename.ilike.%${safeQ}%`,
-      )
-      .order("timestamp", { ascending: false })
-      .limit(4);
-
-    if (recordings) {
-      for (const r of recordings) {
+    if (recordingResult.error) {
+      logger.warn({ err: recordingResult.error, query: q }, "Fallback recording suggestions failed");
+    } else {
+      for (const r of recordingResult.data ?? []) {
         const title = r.room_title || r.filename;
         suggestions.push({
           type: "recording",
@@ -112,61 +123,10 @@ router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search"
         });
       }
     }
-
-    // 3. Tag suggestions — scan tag arrays from Supabase REST (PostgREST can't
-    //    substring-match inside arrays). Stop once 4 distinct matches are found.
-    {
-      try {
-        const lowerQ = q.toLowerCase();
-        const seenTags = new Set<string>();
-        const matchedTags: string[] = [];
-        const PAGE_SIZE = 1000;
-
-        for (let start = 0; ; start += PAGE_SIZE) {
-          // Boundary: don't scan the whole table for a query that matches
-          // nothing (resource-exhaustion guard on low-selectivity terms).
-          const pageIndex = start / PAGE_SIZE;
-          if (pageIndex >= MAX_TAG_SCAN_PAGES) break;
-          const { data, error } = await supabase
-            .from("recordings_with_links")
-            .select("tags")
-            .not("links", "is", "null")
-            .not("tags", "is", "null")
-            .range(start, start + PAGE_SIZE - 1);
-
-          if (error) break;
-          if (!data || data.length === 0) break;
-
-          for (const r of data) {
-            for (const tag of r.tags ?? []) {
-              if (!tag || seenTags.has(tag)) continue;
-              seenTags.add(tag);
-              if (tag.toLowerCase().includes(lowerQ)) {
-                matchedTags.push(tag);
-                if (matchedTags.length >= 4) break;
-              }
-            }
-            if (matchedTags.length >= 4) break;
-          }
-          if (matchedTags.length >= 4) break;
-          if (data.length < PAGE_SIZE) break;
-        }
-
-        for (const tag of matchedTags) {
-          suggestions.push({
-            type: "tag",
-            label: tag,
-            subtitle: "Tag",
-            href: `/browse?tags=${encodeURIComponent(tag)}`,
-          });
-        }
-      } catch {
-        // Non-critical — tag suggestions are a nice-to-have
-      }
-    }
   } catch (err) {
-    logger.error({ err, query: q }, "Search error");
+    logger.error({ err, query: q }, "Search fallback error");
   }
+
 
   res.json({ suggestions, query: q });
 });
