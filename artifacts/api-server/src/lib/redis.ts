@@ -179,7 +179,7 @@ function createHttpRedis(url: string, key: string) {
             // Older bridge builds wrap the reply in HTTP 500; preserve the real
             // message and avoid tripping the circuit breaker for that case.
             const isExistingGroup =
-              /^BUSYGROUP\\b/i.test(detail) || /^BUSYGROUP\\b/i.test(message);
+              /^BUSYGROUP\b/i.test(detail) || /^BUSYGROUP\b/i.test(message);
             if (res.status >= 500 && !isExistingGroup) openHttpCircuit();
             throw new Error(
               detail && message && detail !== message
