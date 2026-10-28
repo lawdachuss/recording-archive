@@ -46,13 +46,13 @@ async function fetchStatsViaRpc(): Promise<SiteStats | null> {
 
 async function fetchStatsLegacy(): Promise<SiteStats> {
   // PostgREST can't run SQL aggregates, so stream the needed columns of the
-  // recordings_with_links view (rows that actually have a link) and compute
+  // linked_recordings view (rows that actually have a link) and compute
   // all stats in JS. The result is cached for 2 minutes.
   const { data, error } = await fetchAll((start, end) =>
     supabase
-      .from("recordings_with_links")
+      .from("linked_recordings")
       .select("username,timestamp,filesize,tags")
-      .not("links", "is", "null")
+      
       .range(start, end),
   );
 
