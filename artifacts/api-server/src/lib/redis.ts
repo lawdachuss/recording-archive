@@ -88,6 +88,7 @@ function createHttpRedis(url: string, key: string) {
 
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+      let receivedResponse = false;
       try {
         const res = await fetch(url, {
           method: "POST",
@@ -95,6 +96,7 @@ function createHttpRedis(url: string, key: string) {
           body: JSON.stringify(body),
           signal: controller.signal,
         });
+        receivedResponse = true;
 
         let payload: any;
         try {
@@ -118,10 +120,10 @@ function createHttpRedis(url: string, key: string) {
         httpCircuitOpenUntil = 0;
         return payload;
       } catch (err) {
-        if (
-          !(err instanceof Error && err.message.startsWith("Redis HTTP bridge error ")) &&
-          !(err instanceof Error && err.message.startsWith("Redis unavailable "))
-        ) {
+        // Open the circuit only for network/connectivity failures. A 4xx
+        // response means the bridge was reached; keep surfacing its auth or
+        // request error instead of suppressing all Redis traffic for cooldown.
+        if (!receivedResponse) {
           openHttpCircuit();
           logger.error(
             { err: { message: (err as any)?.message } },
