@@ -312,6 +312,93 @@ $$;
 REVOKE ALL ON FUNCTION public.get_reaction_counts(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_reaction_counts(text) TO anon, authenticated, service_role;
 
+-- Return a sorted comment page, like counts, caller-session state and total
+-- in one round trip. Pagination happens in Postgres so a request for page 1
+-- does not transfer every comment and every like into the serverless function.
+CREATE OR REPLACE FUNCTION public.get_comment_feed(
+  p_recording_id text,
+  p_sort text DEFAULT 'new',
+  p_offset integer DEFAULT 0,
+  p_limit integer DEFAULT NULL,
+  p_session_id text DEFAULT NULL
+)
+RETURNS TABLE (
+  id integer,
+  recording_id text,
+  parent_id integer,
+  author text,
+  content text,
+  deleted boolean,
+  created_at timestamptz,
+  likes bigint,
+  user_liked boolean,
+  total bigint
+)
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog, public
+AS $$
+  WITH target_comments AS MATERIALIZED (
+    SELECT
+      c.id,
+      c.recording_id,
+      c.parent_id,
+      c.author,
+      c.content,
+      c.deleted,
+      c.created_at
+    FROM public.comments AS c
+    WHERE c.recording_id = p_recording_id
+  ),
+  comment_totals AS (
+    SELECT count(*)::bigint AS total
+    FROM target_comments
+  ),
+  comment_likes AS (
+    SELECT
+      cl.comment_id,
+      count(*)::bigint AS like_count,
+      coalesce(bool_or(cl.session_id = p_session_id), false) AS user_liked
+    FROM public.comment_likes AS cl
+    JOIN target_comments AS tc ON tc.id = cl.comment_id
+    GROUP BY cl.comment_id
+  ),
+  ranked AS (
+    SELECT
+      tc.*,
+      coalesce(cl.like_count, 0)::bigint AS likes,
+      coalesce(cl.user_liked, false) AS user_liked,
+      totals.total
+    FROM target_comments AS tc
+    CROSS JOIN comment_totals AS totals
+    LEFT JOIN comment_likes AS cl ON cl.comment_id = tc.id
+  )
+  SELECT
+    ranked.id,
+    ranked.recording_id,
+    ranked.parent_id,
+    ranked.author,
+    ranked.content,
+    ranked.deleted,
+    ranked.created_at,
+    ranked.likes,
+    ranked.user_liked,
+    ranked.total
+  FROM ranked
+  ORDER BY
+    (ranked.parent_id IS NOT NULL) ASC,
+    CASE WHEN p_sort = 'top' THEN ranked.likes END DESC NULLS LAST,
+    CASE WHEN p_sort = 'old' THEN ranked.created_at END ASC NULLS LAST,
+    CASE WHEN p_sort IS DISTINCT FROM 'old' THEN ranked.created_at END DESC NULLS LAST,
+    ranked.id ASC
+  OFFSET greatest(coalesce(p_offset, 0), 0)
+  LIMIT p_limit;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_comment_feed(text, text, integer, integer, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_comment_feed(text, text, integer, integer, text)
+  TO anon, authenticated, service_role;
+
 CREATE OR REPLACE FUNCTION public.get_comment_like_stats(
   p_comment_ids integer[],
   p_session_id text DEFAULT NULL
