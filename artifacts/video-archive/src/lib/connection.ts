@@ -6,12 +6,10 @@
  * NOT measured thumbnail latency (the latency approach misfired because
  * thumbnail round-trips reflect server/proxy latency, not user bandwidth).
  *
- * On normal broadband all helpers report "fast": full-size thumbnails, whole
- * page + 5-page lookahead preloading, hover previews enabled. On metered or
- * genuinely slow links (saveData, 2g, or <1 Mbps) the app backs off: it still
- * preloads the current page's sprites (the cheap hover win) but skips the
- * multi-page lookahead, the idle catalog warmer, and background preview
- * downloads.
+ * On normal broadband the app lazily loads thumbnails, warms a small sprite set
+ * near the viewport, and keeps just one page of lookahead. On metered or slow
+ * links (saveData, 2g, or <1 Mbps) it narrows that work further and avoids
+ * speculative media downloads.
  */
 
 export type ConnectionQuality = "fast" | "medium" | "slow";
