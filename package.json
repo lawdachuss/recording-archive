@@ -6,6 +6,8 @@
   "scripts": {
     "preinstall": "node -e \"var f=require('fs');['package-lock.json','yarn.lock'].filter(function(p){return f.existsSync(p)}).forEach(function(p){f.unlinkSync(p)});var ua=process.env.npm_config_user_agent;if(!ua||!ua.startsWith('pnpm/')){console.error('Use pnpm instead');process.exit(1)}\"",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "dev": "node ./render-start.mjs",
+    "start": "node ./render-start.mjs",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
