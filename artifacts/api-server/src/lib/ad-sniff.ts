@@ -49,10 +49,10 @@ export function slotDims(slot: string): AdDims | null {
 /** Sized <img> — matches the frontend's image branch of bareUrlToMarkup. */
 function sizedImg(url: string, { width, height }: AdDims): string {
   const safe = url.replace(/"/g, "&quot;");
-  return (
+  const img =
     `<img src="${safe}" alt="Advertisement" width="${width}" height="${height}" ` +
-    `style="display:block;max-width:100%;height:auto;margin:0 auto;" />`
-  );
+    `style="display:block;max-width:100%;height:auto;margin:0 auto;" />`;
+  return `<a href="${safe}" target="_blank" rel="sponsored noopener nofollow" style="display:block;max-width:100%;text-decoration:none;">${img}</a>`;
 }
 
 /** Slot-sized embed — the networks' own iframe shape (margin attrs, frameborder, scrolling=no). */

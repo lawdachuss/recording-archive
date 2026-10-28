@@ -72,14 +72,21 @@ export function AdGridCard() {
         role="complementary"
         aria-label="Advertisement"
         onClick={(e) => {
-          // Creative contains a link → open the AD in a new tab. No link
-          // (bare <img> creative) → nothing: this cell isn't a video, so
-          // there is no card navigation to fall through to.
+          // Creative contains a link → open the AD in a new tab.
           const link = (e.target as HTMLElement).closest("a");
           if (link instanceof HTMLAnchorElement && link.href) {
             e.stopPropagation();
             e.preventDefault();
             window.open(link.href, "_blank", "noopener,noreferrer");
+            return;
+          }
+          // Fallback for bare img elements or other media without a parent <a> tag
+          const targetEl = e.target as HTMLElement;
+          const img = targetEl.tagName.toLowerCase() === "img" ? (targetEl as HTMLImageElement) : targetEl.querySelector("img");
+          if (img && img.src) {
+            e.stopPropagation();
+            e.preventDefault();
+            window.open(img.src, "_blank", "noopener,noreferrer");
           }
         }}
       >

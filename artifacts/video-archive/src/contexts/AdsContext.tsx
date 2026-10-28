@@ -299,7 +299,6 @@ export function AdsProvider({ children }: { children: ReactNode }) {
         if (
           r.slot === "direct-link" &&
           r.enabled &&
-          r.kind === "url" &&
           /^https?:\/\/\S+$/i.test(r.content.trim())
         ) {
           pool.push(r.content.trim());
