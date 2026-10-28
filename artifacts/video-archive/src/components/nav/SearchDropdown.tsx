@@ -315,7 +315,7 @@ function renderPredictions({
 }: PredictionsProps) {
   if (predictionsLoading) {
     return (
-      <div className="absolute top-full left-0 right-0 mt-1.5 glass-dropdown rounded-lg z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className="absolute top-full right-0 mt-1.5 w-[calc(100vw-2rem)] sm:w-full min-w-[280px] sm:min-w-[320px] glass-dropdown rounded-lg z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         <div className="px-4 py-3 text-xs text-muted-foreground/50 flex items-center gap-2">
           <div className="w-3 h-3 rounded-full border border-muted-foreground/30 border-t-transparent animate-spin" />
           Searching…
@@ -326,7 +326,7 @@ function renderPredictions({
 
   if (predictions.length === 0 && debouncedSearch.length >= 2) {
     return (
-      <div className="absolute top-full left-0 right-0 mt-1.5 glass-dropdown rounded-lg z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className="absolute top-full right-0 mt-1.5 w-[calc(100vw-2rem)] sm:w-full min-w-[280px] sm:min-w-[320px] glass-dropdown rounded-lg z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         <div className="px-4 py-3 text-xs text-muted-foreground/50">
           No results for "{debouncedSearch}"
         </div>
@@ -378,7 +378,7 @@ function renderPredictions({
   return (
     <div
       ref={suggestionsRef}
-      className="absolute top-full left-0 right-0 mt-1.5 glass-dropdown rounded-lg z-50 max-h-[70vh] overflow-y-auto overflow-x-hidden animate-in fade-in zoom-in-95 duration-150"
+      className="absolute top-full right-0 mt-1.5 w-[calc(100vw-2rem)] sm:w-full min-w-[280px] sm:min-w-[320px] glass-dropdown rounded-lg z-50 max-h-[70vh] overflow-y-auto overflow-x-hidden animate-in fade-in zoom-in-95 duration-150"
     >
       {groups.map((group) => (
         <div key={group.type}>
@@ -472,7 +472,7 @@ function renderRecentSearches({
 }: RecentSearchesProps) {
   if (searches.length > 0) {
     return (
-      <div className="absolute top-full left-0 right-0 mt-1.5 glass-dropdown rounded-lg z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className="absolute top-full right-0 mt-1.5 w-[calc(100vw-2rem)] sm:w-full min-w-[280px] sm:min-w-[320px] glass-dropdown rounded-lg z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         <div className="flex items-center justify-between px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/40 font-semibold bg-secondary dark:bg-white/[0.06]">
           <div className="flex items-center gap-1.5">
             <Clock className="w-3 h-3" />
@@ -520,7 +520,7 @@ function renderRecentSearches({
 
   // Trending suggestions when no recent searches
   return (
-    <div className="absolute top-full left-0 right-0 mt-1.5 glass-dropdown rounded-lg z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+    <div className="absolute top-full right-0 mt-1.5 w-[calc(100vw-2rem)] sm:w-full min-w-[280px] sm:min-w-[320px] glass-dropdown rounded-lg z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
       <div className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/40 font-semibold bg-secondary dark:bg-white/[0.06]">
         <TrendingUp className="w-3 h-3" />
         Trending
