@@ -312,6 +312,112 @@ $$;
 REVOKE ALL ON FUNCTION public.get_reaction_counts(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_reaction_counts(text) TO anon, authenticated, service_role;
 
+-- Safe parsing preserves the old API's "skip malformed metadata" behavior
+-- while allowing watch-history statistics to aggregate entirely in Postgres.
+CREATE OR REPLACE FUNCTION public.try_parse_jsonb(p_text text)
+RETURNS jsonb
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = pg_catalog
+AS $$
+BEGIN
+  IF p_text IS NULL OR btrim(p_text) = '' THEN
+    RETURN NULL;
+  END IF;
+  RETURN p_text::jsonb;
+EXCEPTION WHEN OTHERS THEN
+  RETURN NULL;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.try_parse_jsonb(text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.try_parse_jsonb(text) TO authenticated, service_role;
+
+-- One result row for all watch-history stats, avoiding an unbounded transfer to
+-- the serverless API. RLS remains in force because this is SECURITY INVOKER.
+CREATE OR REPLACE FUNCTION public.get_user_history_stats(p_user_id text)
+RETURNS TABLE (
+  total_watch_ms double precision,
+  total_videos bigint,
+  completed_videos bigint,
+  avg_progress integer,
+  top_performers jsonb,
+  day_buckets jsonb,
+  hour_buckets jsonb
+)
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = pg_catalog, public
+AS $$
+  WITH user_items AS MATERIALIZED (
+    SELECT
+      coalesce(h.progress, 0) AS progress,
+      coalesce(h.total_watch_ms, 0)::double precision AS watch_ms,
+      public.try_parse_jsonb(h.metadata) AS metadata_json,
+      h.watched_at
+    FROM public.watch_history AS h
+    WHERE h.user_id = p_user_id
+  ),
+  summary AS (
+    SELECT
+      coalesce(sum(watch_ms), 0)::double precision AS total_watch_ms,
+      count(*)::bigint AS total_videos,
+      count(*) FILTER (WHERE progress >= 100)::bigint AS completed_videos,
+      coalesce(round(avg(progress)), 0)::integer AS avg_progress
+    FROM user_items
+  ),
+  performer_stats AS (
+    SELECT
+      coalesce(metadata_json ->> 'username', 'unknown') AS username,
+      count(*)::bigint AS video_count,
+      coalesce(sum(watch_ms), 0)::double precision AS watch_ms
+    FROM user_items
+    GROUP BY coalesce(metadata_json ->> 'username', 'unknown')
+    ORDER BY video_count DESC, username ASC
+    LIMIT 10
+  ),
+  day_stats AS (
+    SELECT
+      extract(dow FROM watched_at AT TIME ZONE 'UTC')::integer AS bucket,
+      sum(watch_ms)::double precision AS watch_ms
+    FROM user_items
+    WHERE watched_at >= now() - interval '30 days'
+    GROUP BY 1
+  ),
+  hour_stats AS (
+    SELECT
+      extract(hour FROM watched_at AT TIME ZONE 'UTC')::integer AS bucket,
+      sum(watch_ms)::double precision AS watch_ms
+    FROM user_items
+    WHERE watched_at >= now() - interval '30 days'
+    GROUP BY 1
+  )
+  SELECT
+    s.total_watch_ms,
+    s.total_videos,
+    s.completed_videos,
+    s.avg_progress,
+    coalesce(
+      (SELECT jsonb_agg(jsonb_build_object(
+        'username', p.username,
+        'count', p.video_count,
+        'watchMs', p.watch_ms
+      ) ORDER BY p.video_count DESC, p.username ASC) FROM performer_stats AS p),
+      '[]'::jsonb
+    ) AS top_performers,
+    (SELECT jsonb_agg(coalesce(d.watch_ms, 0) ORDER BY days.n)
+     FROM generate_series(0, 6) AS days(n)
+     LEFT JOIN day_stats AS d ON d.bucket = days.n) AS day_buckets,
+    (SELECT jsonb_agg(coalesce(h.watch_ms, 0) ORDER BY hours.n)
+     FROM generate_series(0, 23) AS hours(n)
+     LEFT JOIN hour_stats AS h ON h.bucket = hours.n) AS hour_buckets
+  FROM summary AS s;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_user_history_stats(text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_user_history_stats(text) TO authenticated, service_role;
+
 -- Return a sorted comment page, like counts, caller-session state and total
 -- in one round trip. Pagination happens in Postgres so a request for page 1
 -- does not transfer every comment and every like into the serverless function.
