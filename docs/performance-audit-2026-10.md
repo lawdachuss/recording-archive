@@ -57,7 +57,7 @@ Most are ordinary B-tree indexes; the existing trigram search indexes from migra
 deleted. Additional indexes increase storage and write cost; check usage stats after
 a representative workload before adding more.
 
-### 3. Move dashboard aggregation into Postgres
+### 3. Move dashboard and interaction aggregation into Postgres
 
 The new `get_admin_stats()` RPC returns a single row with user, recording, performer
 and request-status totals. The admin route calls it first; if the new RPC is absent
@@ -67,7 +67,11 @@ credential configured, the normal dashboard request avoids fetching every reques
 row and every linked recording username into a serverless function.
 
 The existing stats/tag/performer RPCs are also redirected to `linked_recordings`.
-Their response columns are kept unchanged.
+Their response columns are kept unchanged. New `get_reaction_counts()` and
+`get_comment_like_stats()` RPCs calculate interaction counts in Postgres and send
+back compact aggregate rows instead of transferring each reaction or comment-like
+row to the API. The existing API aggregation path is kept as a compatibility
+fallback until migration 020 exists.
 
 ### 4. Make feed ordering stable
 
