@@ -11,6 +11,8 @@ on:
       - "pnpm-workspace.yaml"
       - "tsconfig*.json"
       - "vercel.json"
+      - "supabase/migrations/**"
+      - "docs/performance-audit-2026-10.md"
       - ".github/workflows/api-quality.yml"
   workflow_dispatch:
 
