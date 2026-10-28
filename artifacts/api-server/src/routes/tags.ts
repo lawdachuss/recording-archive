@@ -8,7 +8,7 @@ const router = Router();
  * Tag counts via the get_tag_counts() Postgres RPC (see
  * supabase/migrations/001_aggregate_rpcs.sql) — aggregation happens in the
  * database and the payload is tiny, instead of streaming every row of
- * recordings_with_links through PostgREST and counting in JS.
+ * linked_recordings through PostgREST and counting in JS.
  *
  * If the RPC isn't applied yet (404 from PostgREST), falls back to the
  * legacy fetchAll path so a deploy is never blocked on the migration.
@@ -39,9 +39,9 @@ async function fetchTagCountsLegacy(): Promise<TagCount[]> {
   // that have a link and count occurrences in JS.
   const { data, error } = await fetchAll((start, end) =>
     supabase
-      .from("recordings_with_links")
+      .from("linked_recordings")
       .select("tags")
-      .not("links", "is", "null")
+      
       .not("tags", "is", "null")
       .range(start, end),
   );
