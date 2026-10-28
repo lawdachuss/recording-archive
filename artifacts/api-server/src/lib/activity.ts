@@ -1,4 +1,4 @@
-import { getRedis, isRedisConnected } from "./redis.js";
+import { getFeatureRedis, isRedisConnected } from "./redis.js";
 import { supabase } from "./supabase.js";
 import { logger } from "./logger.js";
 
@@ -44,7 +44,7 @@ export interface ActivityMetric {
  */
 export async function pushActivityBatch(metrics: ActivityMetric[]): Promise<void> {
   if (metrics.length === 0) return;
-  const redis = getRedis();
+  const redis = getFeatureRedis();
   if (!redis || !isRedisConnected()) return;
 
   try {
@@ -58,7 +58,7 @@ export async function pushActivityBatch(metrics: ActivityMetric[]): Promise<void
 
 // ─── Consumer-group flush ────────────────────────────────────────
 
-async function ensureGroup(redis: NonNullable<ReturnType<typeof getRedis>>): Promise<void> {
+async function ensureGroup(redis: NonNullable<ReturnType<typeof getFeatureRedis>>): Promise<void> {
   try {
     await redis.xgroup("CREATE", STREAM_KEY, GROUP_NAME, "0", "MKSTREAM");
   } catch (err) {
@@ -120,7 +120,7 @@ function parseEntries(raw: unknown): StreamEntry[] {
  * processed. Safe to call concurrently from many serverless instances.
  */
 export async function flushActivity(): Promise<number> {
-  const redis = getRedis();
+  const redis = getFeatureRedis();
   if (!redis || !isRedisConnected()) return 0;
 
   try {
