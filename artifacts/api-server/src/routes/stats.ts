@@ -50,9 +50,9 @@ async function fetchStatsLegacy(): Promise<SiteStats> {
   // all stats in JS. The result is cached for 2 minutes.
   const { data, error } = await fetchAll((start, end) =>
     supabase
-      .from("linked_recordings")
+      .from("recordings_with_links")
       .select("username,timestamp,filesize,tags")
-      
+      .not("links", "is", "null")
       .range(start, end),
   );
 
