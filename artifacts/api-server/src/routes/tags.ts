@@ -39,9 +39,9 @@ async function fetchTagCountsLegacy(): Promise<TagCount[]> {
   // that have a link and count occurrences in JS.
   const { data, error } = await fetchAll((start, end) =>
     supabase
-      .from("linked_recordings")
+      .from("recordings_with_links")
       .select("tags")
-      
+      .not("links", "is", "null")
       .not("tags", "is", "null")
       .range(start, end),
   );
