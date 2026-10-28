@@ -62,6 +62,7 @@ router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search"
   }
 
   const safeQ = escapeLike(q);
+  const suggestions: SearchSuggestion[] = [];
 
   try {
     // Keep the fallback bounded and concurrent. The previous path executed
