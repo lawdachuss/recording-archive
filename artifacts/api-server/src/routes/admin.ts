@@ -351,7 +351,7 @@ router.delete("/admin/users/:id", ...admin, async (req: Request, res: Response) 
 // ─── Cache Management ─────────────────────────────────────────────────────────
 
 router.get("/admin/cache/status", ...admin, async (_req: Request, res: Response) => {
-  const redis = getRedis();
+  const redis = getFeatureRedis();
   const status = getRedisStatus();
   const connected = isRedisConnected();
 
@@ -417,7 +417,7 @@ router.post("/admin/cache/purge", ...admin, async (_req: Request, res: Response)
 });
 
 router.delete("/admin/cache/flush", ...admin, async (_req: Request, res: Response) => {
-  const redis = getRedis();
+  const redis = getFeatureRedis();
 
   try {
     const memoryResult = await purgeAllCache();
