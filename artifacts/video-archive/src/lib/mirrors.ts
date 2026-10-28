@@ -86,41 +86,71 @@ export function getBestUrl(
 /**
  * Build all fallback URLs for VideoCard preview (handles both image and video previews)
  */
+/**
+ * Catbox assets are substantially slower when loaded directly from browsers and
+ * cannot be reliably fetched by the server proxy. If a recording has a usable
+ * alternate, try every non-Catbox host before Catbox rather than letting the
+ * primary Catbox URL monopolize the request while a faster mirror sits idle.
+ * Preserve the relative priority within both groups.
+ */
+function preferNonCatboxFirst(urls: string[]): string[] {
+  const fastOrProxyable: string[] = [];
+  const catbox: string[] = [];
+  for (const url of urls) {
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      if (host === "catbox.moe" || host.endsWith(".catbox.moe") || host.endsWith(".litterbox.catbox.com")) {
+        catbox.push(url);
+      } else {
+        fastOrProxyable.push(url);
+      }
+    } catch {
+      fastOrProxyable.push(url);
+    }
+  }
+  return fastOrProxyable.length > 0 ? [...fastOrProxyable, ...catbox] : urls;
+}
+
 export function buildPreviewFallbacks(recording: {
   preview_url?: string | null;
   preview_mirrors?: Record<string, string> | null;
 }): string[] {
-  return buildUrlFallbacks({
+  const urls = buildUrlFallbacks({
     primaryUrl: recording.preview_url,
     mirrors: recording.preview_mirrors,
     preferAnimated: true,
   });
+  // Keep animated previews ahead of static thumbnails, but prefer an alternate
+  // animated host over a throttled Catbox animated file when one exists.
+  const animated = urls.filter((url) => !isStaticThumbnail(url));
+  const staticUrls = urls.filter((url) => isStaticThumbnail(url));
+  return [...preferNonCatboxFirst(animated), ...preferNonCatboxFirst(staticUrls)];
 }
 
 /**
- * Build all fallback URLs for sprite
+ * Build all fallback URLs for sprite.
  */
 export function buildSpriteFallbacks(recording: {
   sprite_url?: string | null;
   sprite_mirrors?: Record<string, string> | null;
 }): string[] {
-  return buildUrlFallbacks({
+  return preferNonCatboxFirst(buildUrlFallbacks({
     primaryUrl: recording.sprite_url,
     mirrors: recording.sprite_mirrors,
     preferAnimated: false,
-  });
+  }));
 }
 
 /**
- * Build all fallback URLs for thumbnail
+ * Build all fallback URLs for thumbnail.
  */
 export function buildThumbnailFallbacks(recording: {
   thumbnail_url?: string | null;
   thumbnail_mirrors?: Record<string, string> | null;
 }): string[] {
-  return buildUrlFallbacks({
+  return preferNonCatboxFirst(buildUrlFallbacks({
     primaryUrl: recording.thumbnail_url,
     mirrors: recording.thumbnail_mirrors,
     preferAnimated: false,
-  });
+  }));
 }
