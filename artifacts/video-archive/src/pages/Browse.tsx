@@ -467,7 +467,7 @@ export default function Browse() {
                   <select
                     value={sort}
                     onChange={(e) => pushFilters({ sort: e.target.value })}
-                    className="h-8 appearance-none bg-secondary border border-border/60 hover:border-border rounded pl-3 pr-7 text-xs text-foreground outline-none transition-colors cursor-pointer"
+                    className="h-8 appearance-none bg-secondary border border-border/60 hover:border-border rounded pl-3 pr-7 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-colors cursor-pointer"
                     aria-label="Sort recordings"
                   >
                     {Object.entries(SORT_LABELS).map(([val, label]) => (
