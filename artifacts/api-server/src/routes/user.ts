@@ -820,10 +820,44 @@ router.post("/user/collections/:id/items", async (req, res) => {
       return;
     }
 
+    const item = { collection_id: req.params.id, recording_id, metadata: metadata ?? null };
     const { error } = await req.supabase!.from("user_collection_items").upsert(
-      { collection_id: req.params.id, recording_id, metadata: metadata ?? null },
+      item,
       { onConflict: "collection_id, recording_id", ignoreDuplicates: true },
     );
+
+    // Older production schemas may not yet have migration 014's unique constraint.
+    // Keep collection adds functional until the idempotent database migration is applied.
+    if (error && (error as { code?: string }).code === "42P10") {
+      req.log.warn(
+        { collectionId: req.params.id, recordingId: recording_id },
+        "Collection-item conflict constraint missing; using compatibility insert path",
+      );
+      const { data: existing, error: lookupError } = await req.supabase!
+        .from("user_collection_items")
+        .select("id")
+        .eq("collection_id", req.params.id)
+        .eq("recording_id", recording_id)
+        .limit(1)
+        .maybeSingle();
+      if (lookupError) {
+        req.log.error({ err: lookupError }, "Supabase error checking existing collection item");
+        res.status(500).json({ error: "Internal server error" });
+        return;
+      }
+      if (existing) {
+        res.status(200).json({ ok: true, alreadyExists: true });
+        return;
+      }
+      const { error: insertError } = await req.supabase!.from("user_collection_items").insert(item);
+      if (insertError) {
+        req.log.error({ err: insertError }, "Supabase error inserting collection item via fallback");
+        res.status(500).json({ error: "Internal server error" });
+        return;
+      }
+      res.status(201).json({ ok: true });
+      return;
+    }
 
     if (error) {
       req.log.error({ err: error }, "Supabase error adding collection item");
