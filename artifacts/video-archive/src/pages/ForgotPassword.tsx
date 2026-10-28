@@ -81,10 +81,11 @@ export default function ForgotPassword() {
             )}
 
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <label htmlFor="reset-email" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Email
               </label>
               <input
+                id="reset-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
