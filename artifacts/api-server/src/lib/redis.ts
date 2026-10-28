@@ -28,48 +28,111 @@ let httpMode = false;
 // never changes and the endpoint itself answers 503 + Retry-After while the
 // stack is between sessions, so callers fail fast and fall back to Postgres.
 
-const HTTP_TIMEOUT_MS = Number.parseInt(process.env.REDIS_HTTP_TIMEOUT_MS ?? "", 10) || 15_000;
+// Keep bursty cache traffic from opening hundreds of concurrent HTTPS
+// connections to the self-hosted edge function on a small Render instance.
+const HTTP_TIMEOUT_MS =
+  Number.parseInt(process.env.REDIS_HTTP_TIMEOUT_MS ?? "", 10) || 5_000;
+const HTTP_MAX_CONCURRENCY =
+  Math.max(1, Number.parseInt(process.env.REDIS_HTTP_MAX_CONCURRENCY ?? "", 10) || 8);
+const HTTP_MAX_QUEUE =
+  Math.max(1, Number.parseInt(process.env.REDIS_HTTP_MAX_QUEUE ?? "", 10) || 64);
+const HTTP_FAILURE_COOLDOWN_MS =
+  Math.max(500, Number.parseInt(process.env.REDIS_HTTP_FAILURE_COOLDOWN_MS ?? "", 10) || 3_000);
+
+let httpInFlight = 0;
+let httpCircuitOpenUntil = 0;
+const httpWaiters: Array<() => void> = [];
+
+async function withHttpSlot<T>(work: () => Promise<T>): Promise<T> {
+  if (httpInFlight >= HTTP_MAX_CONCURRENCY) {
+    if (httpWaiters.length >= HTTP_MAX_QUEUE) {
+      throw new Error("Redis HTTP bridge queue is full");
+    }
+    await new Promise<void>((resolve) => httpWaiters.push(resolve));
+  } else {
+    httpInFlight++;
+  }
+
+  try {
+    return await work();
+  } finally {
+    const next = httpWaiters.shift();
+    if (next) {
+      // Hand this slot directly to the next waiter without changing the
+      // in-flight count.
+      next();
+    } else {
+      httpInFlight--;
+    }
+  }
+}
+
+function openHttpCircuit(): void {
+  isConnected = false;
+  httpCircuitOpenUntil = Date.now() + HTTP_FAILURE_COOLDOWN_MS;
+}
 
 function createHttpRedis(url: string, key: string) {
   const post = async (body: unknown): Promise<any> => {
-    let res: Response;
-    try {
+    if (Date.now() < httpCircuitOpenUntil) {
+      isConnected = false;
+      throw new Error("Redis HTTP bridge is cooling down after a connection failure");
+    }
+
+    return withHttpSlot(async () => {
+      // Another request may have opened the circuit while this one waited.
+      if (Date.now() < httpCircuitOpenUntil) {
+        isConnected = false;
+        throw new Error("Redis HTTP bridge is cooling down after a connection failure");
+      }
+
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
       try {
-        res = await fetch(url, {
+        const res = await fetch(url, {
           method: "POST",
           headers: { "content-type": "application/json", apikey: key },
           body: JSON.stringify(body),
           signal: controller.signal,
         });
+
+        let payload: any;
+        try {
+          payload = await res.json();
+        } catch {
+          if (res.status >= 500) openHttpCircuit();
+          throw new Error(`Redis HTTP bridge returned ${res.status} with an unreadable response`);
+        }
+
+        if (res.status === 503) {
+          // The self-hosted stack may be between sessions; fail open to the DB.
+          openHttpCircuit();
+          throw new Error("Redis unavailable (HTTP bridge 503)");
+        }
+        if (!res.ok || !payload?.ok) {
+          if (res.status >= 500) openHttpCircuit();
+          throw new Error(payload?.error ?? `Redis HTTP bridge error ${res.status}`);
+        }
+
+        isConnected = true;
+        httpCircuitOpenUntil = 0;
+        return payload;
+      } catch (err) {
+        if (
+          !(err instanceof Error && err.message.startsWith("Redis HTTP bridge error ")) &&
+          !(err instanceof Error && err.message.startsWith("Redis unavailable "))
+        ) {
+          openHttpCircuit();
+          logger.error(
+            { err: { message: (err as any)?.message } },
+            "Redis HTTP bridge unreachable",
+          );
+        }
+        throw err;
       } finally {
         clearTimeout(timer);
       }
-    } catch (err) {
-      isConnected = false;
-      logger.error({ err: { message: (err as any)?.message } }, "Redis HTTP bridge unreachable");
-      throw err;
-    }
-
-    let payload: any = null;
-    try {
-      payload = await res.json();
-    } catch {
-      isConnected = false;
-      throw new Error(`Redis HTTP bridge returned ${res.status}`);
-    }
-
-    if (res.status === 503) {
-      // Session gap — same contract as the bridge: fail fast, degrade to DB.
-      isConnected = false;
-      throw new Error("Redis unavailable (HTTP bridge 503)");
-    }
-    if (!res.ok || !payload?.ok) {
-      throw new Error(payload?.error ?? `Redis HTTP bridge error ${res.status}`);
-    }
-    isConnected = true;
-    return payload;
+    });
   };
 
   const command = async (cmd: string, args: unknown[] = []): Promise<any> => {
