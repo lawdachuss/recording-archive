@@ -214,13 +214,12 @@ export default function Browse() {
   const { sentinelRef: continuousSentinelRef } = useContinuousPrefetch({
     fetchPage: fetchNextPrefetchPage,
     currentPage: recordingsParams.page,
-    // Warm 5 pages ahead so scrolling/hovering is instant everywhere in the
-    // next several screens. The very next page's thumbnails are warmed eager
-    // in full; near pages (within previewDepth) get full media (thumbs +
-    // sprites + animated previews); far ones get thumbs + sprites only.
-    prefetchAhead: 5,
-    previewDepth: 2,
-    eagerThumbs: ITEMS_PER_PAGE,
+    // Keep just one page of data ahead and warm a small thumbnail strip when idle.
+    // Viewport observers handle nearby sprites; full previews are fetched on hover,
+    // avoiding hundreds of speculative requests during normal browsing.
+    prefetchAhead: 1,
+    previewDepth: 1,
+    eagerThumbs: Math.min(8, ITEMS_PER_PAGE),
     // Prime the next page's thumbnails as soon as this page's data arrives,
     // instead of only when the user scrolls near the bottom.
     startSignal: data,
@@ -774,7 +773,7 @@ export default function Browse() {
                     <Fragment key={rec.id}>
                       <VideoCard
                         recording={rec}
-                        fetchPriority={i < 10 ? "high" : undefined}
+                        fetchPriority={i < 4 ? "high" : undefined}
                         isWatched={recentlyWatched.has(rec.id)}
                         showAdd
                       />
