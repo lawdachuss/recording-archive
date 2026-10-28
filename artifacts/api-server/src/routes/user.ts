@@ -482,6 +482,45 @@ router.get("/user/history/stats", async (req, res) => {
   try {
     const userId = req.user!.id;
 
+    // Fast path: aggregate this user's history in Postgres rather than
+    // transferring an unbounded set of rows to the serverless API.
+    const { data: aggregate, error: aggregateError } = await req.supabase!.rpc(
+      "get_user_history_stats",
+      { p_user_id: userId },
+    );
+    const statsRow = Array.isArray(aggregate)
+      ? aggregate[0] as Record<string, unknown> | undefined
+      : undefined;
+
+    if (!aggregateError && statsRow) {
+      res.json({
+        totalWatchMs: Number(statsRow.total_watch_ms ?? 0),
+        totalVideos: Number(statsRow.total_videos ?? 0),
+        completedVideos: Number(statsRow.completed_videos ?? 0),
+        avgProgress: Number(statsRow.avg_progress ?? 0),
+        topPerformers: statsRow.top_performers ?? [],
+        dayBuckets: statsRow.day_buckets ?? [0, 0, 0, 0, 0, 0, 0],
+        hourBuckets: statsRow.hour_buckets ?? Array(24).fill(0),
+      });
+      return;
+    }
+
+    if (aggregateError) {
+      const code = (aggregateError as { code?: string }).code;
+      const message = (aggregateError as { message?: string }).message ?? "";
+      const canFallback =
+        code === "PGRST202" ||
+        code === "42501" ||
+        /function.*not.*found|Could not find the function|permission denied/i.test(message);
+      if (!canFallback) {
+        req.log.error({ err: aggregateError }, "Supabase error aggregating watch history stats");
+        res.status(500).json({ error: "Internal server error" });
+        return;
+      }
+      req.log.warn({ code }, "get_user_history_stats RPC unavailable; using compatibility fallback");
+    }
+
+    // Compatibility fallback for databases before migration 020.
     const { data, error } = await req.supabase!
       .from("watch_history")
       .select("recording_id, progress, total_watch_ms, metadata, watched_at")
