@@ -75,8 +75,11 @@ The existing stats/tag/performer RPCs are also redirected to `linked_recordings`
 Their response columns are kept unchanged. New `get_reaction_counts()` and
 `get_comment_like_stats()` RPCs calculate interaction counts in Postgres and send
 back compact aggregate rows instead of transferring each reaction or comment-like
-row to the API. The existing API aggregation path is kept as a compatibility
-fallback until migration 020 exists.
+row to the API. `get_comment_feed()` sorts and paginates explicitly paged comment
+requests in Postgres, returning the page's like counts, caller-session state and
+total count in one round trip. The legacy `fetchAll()` path remains for unpaginated
+comment requests and pre-migration deployments. The existing API aggregation paths
+also remain as compatibility fallbacks until migration 020 exists.
 
 ### 4. Make feed ordering stable
 
