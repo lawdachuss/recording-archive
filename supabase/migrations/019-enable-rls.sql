@@ -42,7 +42,7 @@ BEGIN
       EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I',
         'user_owns_rows', t.relname);
       EXECUTE format(
-        'CREATE POLICY user_owns_rows ON public.%I FOR ALL TO authenticated USING (user_id = (SELECT auth.uid())) WITH CHECK (user_id = (SELECT auth.uid()))',
+        'CREATE POLICY user_owns_rows ON public.%I FOR ALL TO authenticated USING (user_id::text = (SELECT auth.uid())::text) WITH CHECK (user_id::text = (SELECT auth.uid())::text)',
         t.relname
       );
     END IF;
