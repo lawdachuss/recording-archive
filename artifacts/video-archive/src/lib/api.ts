@@ -239,11 +239,13 @@ export function useListRecordings(
   });
 }
 
-export function useListTags() {
+export function useListTags(queryOptions?: { enabled?: boolean; staleTime?: number }) {
   return useQuery({
     queryKey: ["tags"],
     queryFn: () => fetchApi<TagCount[]>(`/api/tags`),
+    enabled: queryOptions?.enabled ?? true,
     ...QUERY_PRESETS.page(),
+    ...(queryOptions?.staleTime !== undefined ? { staleTime: queryOptions.staleTime } : {}),
   });
 }
 
