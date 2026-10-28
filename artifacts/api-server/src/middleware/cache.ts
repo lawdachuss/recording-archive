@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
-import { getRedis, isRedisConnected, redisPublish, redisSubscribe, type PubSubSubscription } from "../lib/redis.js";
+import { getRedis, isRedisConnected, onRedisReconnect, redisPublish, redisSubscribe, type PubSubSubscription } from "../lib/redis.js";
 import { logger } from "../lib/logger.js";
 
 const CACHE_PREFIX = "api:v2";
@@ -191,6 +191,8 @@ const CACHEABLE_QUERY_PARAMS = new Set([
   "fmt",
   "format",
   "offset",
+  "exclude",
+  "filter",
 ]);
 
 function normalizeOriginalUrl(originalUrl: string): string {
@@ -585,6 +587,17 @@ export function cache(options: number | CacheOptions) {
       }
     });
 
+    res.once("close", () => {
+      if (resolveInflight) {
+        resolveInflight();
+        resolveInflight = null;
+      }
+
+      if (inflightReqMap.get(inflightKey) === inflightPromise) {
+        inflightReqMap.delete(inflightKey);
+      }
+    });
+
     next();
   };
 }
@@ -650,6 +663,11 @@ export function initInvalidationPubSub(): boolean {
     }
   });
   _invalidationSub = sub;
+  onRedisReconnect(() => {
+    purgeLocalCache().catch((err) =>
+      logger.error({ err }, "Local cache purge on Redis reconnect failed")
+    );
+  });
   if (sub.active) {
     logger.info("Cache invalidation pub/sub listener initialized");
   } else {

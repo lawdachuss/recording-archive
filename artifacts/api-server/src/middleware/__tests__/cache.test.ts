@@ -85,6 +85,7 @@ vi.mock("../../lib/redis.js", () => ({
   getRedis: vi.fn(() => mockRedisConnected ? mockRedis : null),
   isRedisConnected: vi.fn(() => mockRedisConnected),
   getRedisStatus: vi.fn(() => mockRedisConnected ? "ready" : "none"),
+  onRedisReconnect: vi.fn((cb: any) => { return () => {}; }),
   redisPublish: vi.fn(async () => 0),
   redisSubscribe: vi.fn(async () => () => {}),
 }));
@@ -135,7 +136,7 @@ function makeReq(overrides: Partial<Request> = {}): Request {
   } as unknown as Request;
 }
 
-function makeRes(): Response & { _body: any; _statusCode: number; _headers: Record<string, string>; _finished: boolean } {
+function makeRes(): Response & { _body: any; _statusCode: number; _headers: Record<string, string>; _finished: boolean; _listeners: Record<string, Function[]> } {
   const res = {
     _body: null as any,
     _statusCode: 200,
@@ -170,7 +171,16 @@ function makeRes(): Response & { _body: any; _statusCode: number; _headers: Reco
       this._finished = true;
       return this;
     }),
-    once: vi.fn(),
+    _listeners: {} as Record<string, Function[]>,
+    once: vi.fn(function (this: any, event: string, cb: Function) {
+      if (!this._listeners[event]) this._listeners[event] = [];
+      this._listeners[event].push(cb);
+      return this;
+    }),
+    emit: vi.fn(function (this: any, event: string, ...args: any[]) {
+      const cbs = this._listeners[event] || [];
+      cbs.forEach((cb: Function) => cb(...args));
+    }),
   } as any;
   return res;
 }
@@ -1085,6 +1095,35 @@ describe("cache middleware", () => {
       // 404 should be cached
       const stats = cacheModule.getCacheStats();
       expect(stats.memoryEntries).toBe(1);
+    });
+
+    it("preserves exclude and filter in cache key normalization", async () => {
+      const middleware = cacheModule.cache({ ttlSeconds: 60 });
+      const req1 = makeReq({ originalUrl: "/api/recordings/related?id=123&exclude=456&filter=hd" });
+      const res1 = makeRes();
+      const next1 = makeNext();
+
+      await middleware(req1, res1, next1);
+      res1.json({ related: [1, 2] });
+
+      const req2 = makeReq({ originalUrl: "/api/recordings/related?id=123&exclude=789&filter=hd" });
+      const res2 = makeRes();
+      const next2 = makeNext();
+
+      await middleware(req2, res2, next2);
+      expect(next2).toHaveBeenCalled();
+    });
+
+    it("cleans up inflight map on res close event", async () => {
+      const middleware = cacheModule.cache({ ttlSeconds: 60 });
+      const req = makeReq({ originalUrl: "/api/aborted-request" });
+      const res = makeRes();
+      const next = makeNext();
+
+      await middleware(req, res, next);
+      expect(res._listeners["close"]).toBeDefined();
+      expect(res._listeners["close"].length).toBeGreaterThan(0);
+      res.emit("close");
     });
   });
 });
