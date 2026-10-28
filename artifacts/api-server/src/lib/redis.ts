@@ -137,9 +137,69 @@ function createHttpRedis(url: string, key: string) {
     });
   };
 
+  const MAX_HTTP_ARGS = 32;
+  const MAX_HTTP_PIPELINE_OPS = 256;
+
+  const executeBatch = async (
+    commands: Array<{ cmd: string; args: unknown[] }>,
+  ): Promise<any[]> => {
+    const results: any[] = [];
+    for (let i = 0; i < commands.length; i += MAX_HTTP_PIPELINE_OPS) {
+      const payload = await post({
+        pipeline: commands.slice(i, i + MAX_HTTP_PIPELINE_OPS),
+      });
+      for (const [err, result] of payload.results ?? []) {
+        if (err) throw new Error(`Redis HTTP pipeline command failed: ${String(err)}`);
+        results.push(result);
+      }
+    }
+    return results;
+  };
+
+  const chunks = <T,>(values: T[], size: number): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < values.length; i += size) out.push(values.slice(i, i + size));
+    return out;
+  };
+
   const command = async (cmd: string, args: unknown[] = []): Promise<any> => {
-    const payload = await post({ cmd, args });
-    return payload.result;
+    if (args.length <= MAX_HTTP_ARGS) {
+      const payload = await post({ cmd, args });
+      return payload.result;
+    }
+
+    // The self-hosted bridge limits each command to 32 arguments. Redis
+    // operations with a variadic tail can be split without changing meaning.
+    // Use HTTP pipelines to keep this to one request for up to 256 chunks.
+    const canonical = cmd.toUpperCase();
+    if (canonical === "DEL" || canonical === "SADD" || canonical === "ZREM") {
+      const [key, ...values] = args;
+      const tailChunks = chunks(values, MAX_HTTP_ARGS - 1);
+      const replies = await executeBatch(
+        tailChunks.map((tail) => ({ cmd, args: [key, ...tail] })),
+      );
+      return replies.reduce((total, value) => total + Number(value ?? 0), 0);
+    }
+
+    if (canonical === "HMGET") {
+      const [key, ...fields] = args;
+      const fieldChunks = chunks(fields, MAX_HTTP_ARGS - 1);
+      const replies = await executeBatch(
+        fieldChunks.map((tail) => ({ cmd, args: [key, ...tail] })),
+      );
+      return replies.flat();
+    }
+
+    if (canonical === "XACK") {
+      const [stream, group, ...ids] = args;
+      const idChunks = chunks(ids, MAX_HTTP_ARGS - 2);
+      const replies = await executeBatch(
+        idChunks.map((tail) => ({ cmd, args: [stream, group, ...tail] })),
+      );
+      return replies.reduce((total, value) => total + Number(value ?? 0), 0);
+    }
+
+    throw new Error(`Redis HTTP bridge command ${cmd} exceeds the ${MAX_HTTP_ARGS}-argument limit`);
   };
 
   const normalizeKeys = (args: unknown[]): unknown[] =>
