@@ -266,6 +266,12 @@
     @apply hidden;
   }
 
+  /* Keep keyboard focus visible when bespoke controls remove browser outlines. */
+  :where(a, button, input, select, textarea, [role="switch"], [role="button"]):focus-visible:not([class*="focus-visible:ring"]):not([data-no-focus-ring]) {
+    outline: 2px solid hsl(var(--primary) / 0.9);
+    outline-offset: 2px;
+  }
+
   [contenteditable][data-placeholder]:empty::before {
     content: attr(data-placeholder);
     color: hsl(var(--muted-foreground));
