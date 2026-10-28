@@ -287,7 +287,9 @@ export function SearchDropdown({ open, onOpenChange }: SearchDropdownProps) {
           {showSuggestions &&
             (search.trim().length >= 2
               ? renderPredictions({
-                  predictionsLoading,
+                  // If locally cached tags already match, show them immediately
+                  // while the server is still resolving performer/recording matches.
+                  predictionsLoading: predictionsLoading && predictions.length === 0,
                   predictions,
                   debouncedSearch,
                   search,
