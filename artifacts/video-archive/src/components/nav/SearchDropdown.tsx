@@ -65,9 +65,10 @@ export function SearchDropdown({ open, onOpenChange }: SearchDropdownProps) {
   // as a cheap local fallback so tag matches remain available while the server's
   // Redis suggestion snapshot is rebuilding or temporarily unavailable.
   const { data: trendingTags } = useListTags({ enabled: open, staleTime: 15 * 60_000 });
+  const showTrendingPerformers = open && search.trim().length === 0;
   const { data: trendingPerformers } = useListPerformers(
-    open ? { limit: 5, sort: "count" } : undefined,
-    open ? { staleTime: 3 * 60_000 } : undefined,
+    showTrendingPerformers ? { limit: 5, sort: "count" } : undefined,
+    { staleTime: 3 * 60_000, enabled: showTrendingPerformers },
   );
 
   const normalizedSearch = search.trim().toLowerCase();
