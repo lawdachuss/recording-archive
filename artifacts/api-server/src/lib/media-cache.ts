@@ -56,6 +56,7 @@ const FAIL_KEY = `${MEDIA_REDIS_PREFIX}fail:v1:`;
 // on Vercel, the edge CDN plus the proxy's per-instance cache are the byte cache.
 // The regular JSON/API cache continues using Redis.
 function shouldUseSharedMediaCache(): boolean {
+  if (process.env.VERCEL_CACHE_LOCAL_ONLY === "1") return false;
   return !(process.env.VERCEL === "1" ||
     Boolean(process.env.VERCEL_URL) ||
     process.env.VERCEL_ENV === "production" ||
