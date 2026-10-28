@@ -5,27 +5,18 @@ import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import { mockupPreviewPlugin } from "./mockupPreviewPlugin";
 
-const rawPort = process.env.PORT;
-
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
-
+// Render only assigns PORT to the running service, not during the build.
+// Keep Vite's config loadable in build environments and allow local defaults.
+const rawPort = process.env.PORT || "3000";
 const port = Number(rawPort);
 
-if (Number.isNaN(port) || port <= 0) {
+if (!Number.isInteger(port) || port <= 0 || port > 65535) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-const basePath = process.env.BASE_PATH;
-
-if (!basePath) {
-  throw new Error(
-    "BASE_PATH environment variable is required but was not provided.",
-  );
-}
+// BASE_PATH is optional for a root-hosted Render service.
+const rawBasePath = process.env.BASE_PATH || "/";
+const basePath = rawBasePath.startsWith("/") ? rawBasePath : "/";
 
 export default defineConfig({
   base: basePath,
