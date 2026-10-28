@@ -39,6 +39,29 @@ export interface CloudItem {
   total_watch_ms?: number;
 }
 
+export interface PublicPlaylistAuthor {
+  display_name?: string | null;
+  avatar_url?: string | null;
+  username?: string | null;
+}
+
+export interface PublicPlaylistCardItem {
+  recording_id: string;
+  metadata?: string | null;
+}
+
+export interface PublicPlaylist {
+  id: string;
+  user_id: string;
+  name: string;
+  description?: string | null;
+  item_count: number;
+  created_at: string;
+  updated_at: string;
+  items?: PublicPlaylistCardItem[];
+  author?: PublicPlaylistAuthor | null;
+}
+
 export interface CloudCollection {
   id: string;
   name: string;
@@ -152,6 +175,11 @@ export function cloudItemToRecording(r: ReturnType<typeof parseCloudItem>) {
 }
 
 export const userApi = {
+  getPublicPlaylists: () => apiFetch<PublicPlaylist[]>("/api/playlists"),
+  getPublicPlaylist: (id: string) => apiFetch<PublicPlaylist>(`/api/playlists/${id}`),
+  getPublicPlaylistItems: (id: string) => apiFetch<CloudItem[]>(`/api/playlists/${id}/items`),
+
+
   getProfile: () => apiFetch<UserProfile>("/api/user/profile"),
   updateProfile: (data: Partial<UserProfile>) =>
     apiFetch<UserProfile>("/api/user/profile", {

@@ -11,7 +11,7 @@ import { useCachedMediaSrc } from "@/hooks/use-cached-media-src";
 import { useConnectionConstrained } from "@/hooks/use-connection-quality";
 import { SpriteSlideshow } from "@/components/SpriteSlideshow";
 import { cn } from "@/lib/utils";
-import { proxyUrl, proxySpriteUrl, catboxProxyUrl, markWsrvFailedForHost } from "@/lib/proxy-url";
+import { proxyUrl, proxyImageUrl, proxySpriteUrl, catboxProxyUrl, markWsrvFailedForHost } from "@/lib/proxy-url";
 import { getSpriteGrid } from "@/lib/sprite-grid";
 import { openAddToCollection } from "@/components/AddToCollectionDialog";
 import { buildPreviewFallbacks, buildThumbnailFallbacks, buildSpriteFallbacks } from "@/lib/mirrors";
@@ -143,7 +143,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   const [thumbnailIndex, setThumbnailIndex] = useState(0);
   const [spriteIndex, setSpriteIndex] = useState(0);
 
-  const thumbnailUrl = useMemo(() => thumbnailFallbacks[thumbnailIndex] ? proxyUrl(thumbnailFallbacks[thumbnailIndex]) : null, [thumbnailFallbacks, thumbnailIndex]);
+  const thumbnailUrl = useMemo(() => thumbnailFallbacks[thumbnailIndex] ? proxyImageUrl(thumbnailFallbacks[thumbnailIndex]) : null, [thumbnailFallbacks, thumbnailIndex]);
   // Use .webp preview if available (including mirrors); null means no animated preview exists.
   const previewUrl = useMemo(() => {
     if (webpFallbacks.length === 0) return null;
@@ -200,7 +200,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
         queryFn: ({ signal }) => listRelatedRecordings({ id: recording.id, limit: 12 }, { signal }),
       })
       .then((related) => {
-        if (related && related.length > 0) preloadRecordingMedia(related, { immediate: true });
+        if (related && related.length > 0) preloadRecordingMedia(related, { immediate: true, spriteLimit: 4, skipThumbnails: true, skipPreviews: true });
       })
       .catch(() => {});
   }, [isSlowConnection, queryClient, recording.id]);

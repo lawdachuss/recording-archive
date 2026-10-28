@@ -212,36 +212,25 @@ export function useContinuousPrefetch({
             // The very next page: eagerly warm ALL its thumbnails so navigation
             // lands on a painted grid. Later pages eager only one screen — the
             // rest of their thumbs warm in the background behind the sprites.
-            const eagerCount = idx === 0 ? recs.length : Math.min(eagerThumbs, FAR_EAGER_THUMB_CAP);
+            const eagerCount = Math.min(eagerThumbs, idx === 0 ? recs.length : FAR_EAGER_THUMB_CAP);
             recs.slice(0, eagerCount).forEach((rec) => {
               if (rec.thumbnail_url) {
                 preloadImage(proxyImageUrl(rec.thumbnail_url), { priority: 3, immediate: true });
               }
             });
 
-            // Warm sprites (+ animated previews on near pages) for the WHOLE
-            // page. The old `recs.slice(eagerThumbs)` was ALWAYS EMPTY whenever
-            // eagerThumbs >= page size (Browse passes ITEMS_PER_PAGE), so
-            // lookahead pages silently got thumbnails only — no sprites, no
-            // previews — and hover on pages 2-6 was cold. preloadRecordingMedia
-            // re-enqueues the eager thumbs as background (deduped by URL) and
-            // keeps them non-immediate, so sprites ride the immediate queue in
-            // front of the remaining thumbnail tail.
-            //
-            // Sprite warming is deliberately CAPPED and NON-immediate. Every page
-            // this hook touches is strictly AFTER the current one (planPages
-            // returns (startPage, startPage + prefetchAhead]), so nothing here
-            // serves a visible card — the visible grid's sheets are warmed on
-            // demand by useHoverPreview's viewport observer. A sheet is ~130 KB,
-            // so pulling all 24 "immediate" spent megabytes on pages the user
-            // might never open and jumped the queue ahead of real work.
+            // The thumbnail strip above is deliberately bounded (8 on Browse). Warm a
+            // few sprite sheets in the background for the next page, but don't
+            // download thumbnails a second time or fetch animated previews for
+            // cards the user may never open. The viewport observer warms sprites
+            // near visible cards; full previews start on actual hover intent.
             if (near) {
-              preloadRecordingMedia(recs, { immediate: false, spriteLimit: NEAR_SPRITE_LIMIT });
+              preloadRecordingMedia(recs, { immediate: false, spriteLimit: NEAR_SPRITE_LIMIT, skipThumbnails: true, skipPreviews: true });
             } else {
               // Far lookahead: thumbnail + a token sprite warm only — previews
               // are skipped to avoid hundreds of speculative webp downloads for
               // pages several scrolls away.
-              preloadRecordingMedia(recs, { skipPreviews: true, spriteLimit: FAR_SPRITE_LIMIT });
+              preloadRecordingMedia(recs, { skipPreviews: true, skipThumbnails: true, spriteLimit: FAR_SPRITE_LIMIT });
             }
           });
         }

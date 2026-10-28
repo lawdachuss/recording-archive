@@ -47,7 +47,7 @@ const server = app.listen(port, host, () => {
     // Warm popular responses before probing the same database-backed routes.
     // Running both at once doubles cold-start query load and can cause false
     // health-check timeouts on a small Render instance.
-    warmupCache(`http://127.0.0.1:${port}`)
+    warmupCache(`http://127.0.0.1:${port}`, { purgeOnFailure: false })
       .catch((err) => {
         logger.error({ err }, "Cache warmup failed unexpectedly");
       })

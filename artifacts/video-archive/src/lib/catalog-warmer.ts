@@ -7,15 +7,10 @@
  * videos a few seconds after page load, saturating the connection and slowing
  * the grid for minutes.
  *
- * - Sprites, thumbnails, and ANIMATED previews are warmed — all small files
- *   that make grid paint + hover instant-on-repeat. Real VIDEO previews
- *   (.mp4/.webm, multi-MB) are NOT warmed; warming hundreds saturates the
- *   connection. Previews load on demand: cards near the viewport preload
- *   their own preview via useHoverPreview, and the global cap in
- *   preload-preview.ts bounds those speculative downloads.
- * - Only MAX_PAGES × PAGE_SIZE recordings are warmed (100) — the catalog's
- *   first page, i.e. the hot set. Deeper recordings warm on demand when
- *   scrolled to.
+ * - Only a small set of sprite sheets is warmed. Visible thumbnails load
+ *   through native lazy images; animated previews start on hover intent.
+ * - This warmup fetches one compact metadata page, then warms at most eight
+ *   sprite sheets. Deeper media is fetched on demand near the viewport.
  * - The warmup also does NOT start right after page load: App schedules it
  *   ~20s in via idle callback, so it never competes with first paint or the
  *   user's first few scrolls.
@@ -31,9 +26,9 @@ import { isConnectionConstrained } from "@/lib/connection";
 // ─── Config ────────────────────────────────────────────────────────────────
 const WARM_MARKER = "catalog.warmUntil";
 const WARM_REINTERVAL_MS = 6 * 60 * 60 * 1000; // re-warm at most every 6h
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 24;
 const MAX_PAGES = 1; // 100 recordings — the catalog's first page only
-const PARALLEL_FETCHES = 3; // fetch 3 pages concurrently
+const PARALLEL_FETCHES = 1; // this warmer intentionally fetches one compact page
 
 // ─── Progress state (reactive) ─────────────────────────────────────────────
 export interface WarmProgress {
@@ -164,19 +159,17 @@ export async function startCatalogWarmup(): Promise<void> {
       pagesLoaded += 1;
       recordingsProcessed += data.length;
 
-      // Warm all small card media for this batch: thumbnails, sprites, and
-      // animated (.webp / .mp4_preview) previews. Everything routes through
-      // preloadRecordingMedia → the same single paced queue used by the page
-      // warmer and hover preloads, which dedups URLs per session and keeps the
-      // host semaphores + concurrency caps — so warming the hot set can never
-      // burst any upstream. Real video previews are deliberately excluded
-      // (multi-MB) — those stay on-demand at hover time.
-      for (const rec of data) {
+      // Warm only a few sprite sheets after idle. Do not download thumbnails
+      // that native lazy images already own, or animated previews for users who
+      // may never hover these cards. The shared queue still deduplicates URLs.
+      for (const rec of data.slice(0, 12)) {
         if (rec.sprite_url) spritesLoaded += 1;
-        if (rec.thumbnail_url) thumbnailsLoaded += 1;
-        if (rec.preview_url) previewsLoaded += 1;
       }
-      preloadRecordingMedia(data, {});
+      preloadRecordingMedia(data.slice(0, 12), {
+        spriteLimit: 8,
+        skipThumbnails: true,
+        skipPreviews: true,
+      });
     }
 
     updateProgress({

@@ -11,7 +11,13 @@ function tryImportRedis(): any {
   }
 }
 
-const redisUrl = process.env.REDIS_URL;
+// Vercel serverless functions fan out across many short-lived instances.
+// VERCEL_CACHE_LOCAL_ONLY disables shared *response/media caches*, which are
+// better served by Vercel/Cloudflare's CDN and per-instance cache. Keep the
+// HTTPS Redis bridge available for feature state such as buffered view counts
+// and activity streams; do not use the ephemeral bore.pub TCP URL on Vercel.
+const vercelLocalCacheMode = process.env.VERCEL_CACHE_LOCAL_ONLY === "1";
+const redisUrl = vercelLocalCacheMode ? undefined : process.env.REDIS_URL;
 const httpUrl = process.env.REDIS_HTTP_URL;
 
 let client: any = null;
@@ -28,57 +34,269 @@ let httpMode = false;
 // never changes and the endpoint itself answers 503 + Retry-After while the
 // stack is between sessions, so callers fail fast and fall back to Postgres.
 
-const HTTP_TIMEOUT_MS = Number.parseInt(process.env.REDIS_HTTP_TIMEOUT_MS ?? "", 10) || 15_000;
+// Keep bursty cache traffic from opening hundreds of concurrent HTTPS
+// connections to the self-hosted edge function on a small Render instance.
+const HTTP_TIMEOUT_MS =
+  Number.parseInt(process.env.REDIS_HTTP_TIMEOUT_MS ?? "", 10) || 2_500;
+const HTTP_MAX_CONCURRENCY =
+  Math.max(1, Number.parseInt(process.env.REDIS_HTTP_MAX_CONCURRENCY ?? "", 10) || 8);
+const HTTP_MAX_QUEUE =
+  Math.max(1, Number.parseInt(process.env.REDIS_HTTP_MAX_QUEUE ?? "", 10) || 64);
+const HTTP_FAILURE_COOLDOWN_MS =
+  Math.max(500, Number.parseInt(process.env.REDIS_HTTP_FAILURE_COOLDOWN_MS ?? "", 10) || 15_000);
+
+let httpInFlight = 0;
+let httpCircuitOpenUntil = 0;
+let httpHalfOpenInFlight = false;
+type HttpWaiter = {
+  signal: AbortSignal;
+  resolve: () => void;
+  reject: (error: Error) => void;
+  onAbort: () => void;
+};
+const httpWaiters: HttpWaiter[] = [];
+
+async function withHttpSlot<T>(signal: AbortSignal, work: () => Promise<T>): Promise<T> {
+  if (signal.aborted) throw new Error("Redis HTTP bridge request timed out before acquiring a slot");
+
+  if (httpInFlight >= HTTP_MAX_CONCURRENCY) {
+    if (httpWaiters.length >= HTTP_MAX_QUEUE) {
+      throw new Error("Redis HTTP bridge queue is full");
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const waiter = {} as HttpWaiter;
+      waiter.signal = signal;
+      waiter.resolve = () => {
+        signal.removeEventListener("abort", waiter.onAbort);
+        resolve();
+      };
+      waiter.reject = (error) => {
+        signal.removeEventListener("abort", waiter.onAbort);
+        reject(error);
+      };
+      waiter.onAbort = () => {
+        const index = httpWaiters.indexOf(waiter);
+        if (index >= 0) httpWaiters.splice(index, 1);
+        waiter.reject(new Error("Redis HTTP bridge queue wait timed out"));
+      };
+      httpWaiters.push(waiter);
+      signal.addEventListener("abort", waiter.onAbort, { once: true });
+      if (signal.aborted) waiter.onAbort();
+    });
+  } else {
+    httpInFlight++;
+  }
+
+  try {
+    if (signal.aborted) throw new Error("Redis HTTP bridge request timed out while queued");
+    return await work();
+  } finally {
+    const next = httpWaiters.shift();
+    if (next) {
+      // Transfer the slot directly; the in-flight count remains unchanged.
+      next.resolve();
+    } else {
+      httpInFlight--;
+    }
+  }
+}
+
+function openHttpCircuit(): void {
+  isConnected = false;
+  httpCircuitOpenUntil = Date.now() + HTTP_FAILURE_COOLDOWN_MS;
+  httpHalfOpenInFlight = false;
+}
 
 function createHttpRedis(url: string, key: string) {
   const post = async (body: unknown): Promise<any> => {
-    let res: Response;
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
-      try {
-        res = await fetch(url, {
-          method: "POST",
-          headers: { "content-type": "application/json", apikey: key },
-          body: JSON.stringify(body),
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timer);
+    if (Date.now() < httpCircuitOpenUntil) {
+      isConnected = false;
+      throw new Error("Redis HTTP bridge is cooling down after a connection failure");
+    }
+
+    // After a failure, allow only one request to probe the bridge once the
+    // cooldown expires. This prevents every concurrent cold start from
+    // stampeding the same unhealthy endpoint.
+    const isHalfOpenProbe = httpCircuitOpenUntil > 0;
+    if (isHalfOpenProbe) {
+      if (httpHalfOpenInFlight) {
+        throw new Error("Redis HTTP bridge recovery probe is already in flight");
       }
-    } catch (err) {
-      isConnected = false;
-      logger.error({ err: { message: (err as any)?.message } }, "Redis HTTP bridge unreachable");
-      throw err;
+      httpHalfOpenInFlight = true;
     }
 
-    let payload: any = null;
+    const controller = new AbortController();
+    // Start the deadline before waiting for a concurrency slot so a queued
+    // Redis operation cannot outlive the API request that initiated it.
+    const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
     try {
-      payload = await res.json();
-    } catch {
-      isConnected = false;
-      throw new Error(`Redis HTTP bridge returned ${res.status}`);
-    }
+      return await withHttpSlot(controller.signal, async () => {
+        if (Date.now() < httpCircuitOpenUntil) {
+          isConnected = false;
+          throw new Error("Redis HTTP bridge is cooling down after a connection failure");
+        }
 
-    if (res.status === 503) {
-      // Session gap — same contract as the bridge: fail fast, degrade to DB.
-      isConnected = false;
-      throw new Error("Redis unavailable (HTTP bridge 503)");
+        let receivedResponse = false;
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json", apikey: key },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+          });
+          receivedResponse = true;
+
+          let payload: any;
+          try {
+            payload = await res.json();
+          } catch {
+            openHttpCircuit();
+            throw new Error(`Redis HTTP bridge returned ${res.status} with an unreadable response`);
+          }
+
+          if (res.status === 503) {
+            openHttpCircuit();
+            throw new Error("Redis unavailable (HTTP bridge 503)");
+          }
+          if (!res.ok || !payload?.ok) {
+            if (res.status >= 500) openHttpCircuit();
+            throw new Error(payload?.error ?? `Redis HTTP bridge error ${res.status}`);
+          }
+
+          isConnected = true;
+          httpCircuitOpenUntil = 0;
+          return payload;
+        } catch (err) {
+          if (!receivedResponse) {
+            openHttpCircuit();
+            logger.error(
+              { err: { message: (err as any)?.message }, timeoutMs: HTTP_TIMEOUT_MS },
+              "Redis HTTP bridge unreachable",
+            );
+          }
+          throw err;
+        }
+      });
+    } finally {
+      clearTimeout(timer);
+      if (isHalfOpenProbe) httpHalfOpenInFlight = false;
     }
-    if (!res.ok || !payload?.ok) {
-      throw new Error(payload?.error ?? `Redis HTTP bridge error ${res.status}`);
+  };
+  const MAX_HTTP_ARGS = 32;
+  const MAX_HTTP_PIPELINE_OPS = 256;
+
+  const executeBatch = async (
+    commands: Array<{ cmd: string; args: unknown[] }>,
+  ): Promise<any[]> => {
+    const results: any[] = [];
+    for (let i = 0; i < commands.length; i += MAX_HTTP_PIPELINE_OPS) {
+      const payload = await post({
+        pipeline: commands.slice(i, i + MAX_HTTP_PIPELINE_OPS),
+      });
+      for (const [err, result] of payload.results ?? []) {
+        if (err) throw new Error(`Redis HTTP pipeline command failed: ${String(err)}`);
+        results.push(result);
+      }
     }
-    isConnected = true;
-    return payload;
+    return results;
+  };
+
+  const chunks = <T,>(values: T[], size: number): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < values.length; i += size) out.push(values.slice(i, i + size));
+    return out;
   };
 
   const command = async (cmd: string, args: unknown[] = []): Promise<any> => {
-    const payload = await post({ cmd, args });
-    return payload.result;
+    if (args.length <= MAX_HTTP_ARGS) {
+      const payload = await post({ cmd, args });
+      return payload.result;
+    }
+
+    // The self-hosted bridge limits each command to 32 arguments. Redis
+    // operations with a variadic tail can be split without changing meaning.
+    // Use HTTP pipelines to keep this to one request for up to 256 chunks.
+    const canonical = cmd.toUpperCase();
+    if (canonical === "DEL" || canonical === "SADD" || canonical === "ZREM") {
+      const [key, ...values] = args;
+      const tailChunks = chunks(values, MAX_HTTP_ARGS - 1);
+      const replies = await executeBatch(
+        tailChunks.map((tail) => ({ cmd, args: [key, ...tail] })),
+      );
+      return replies.reduce((total, value) => total + Number(value ?? 0), 0);
+    }
+
+    if (canonical === "HMGET") {
+      const [key, ...fields] = args;
+      const fieldChunks = chunks(fields, MAX_HTTP_ARGS - 1);
+      const replies = await executeBatch(
+        fieldChunks.map((tail) => ({ cmd, args: [key, ...tail] })),
+      );
+      return replies.flat();
+    }
+
+    if (canonical === "XACK") {
+      const [stream, group, ...ids] = args;
+      const idChunks = chunks(ids, MAX_HTTP_ARGS - 2);
+      const replies = await executeBatch(
+        idChunks.map((tail) => ({ cmd, args: [stream, group, ...tail] })),
+      );
+      return replies.reduce((total, value) => total + Number(value ?? 0), 0);
+    }
+
+    throw new Error(`Redis HTTP bridge command ${cmd} exceeds the ${MAX_HTTP_ARGS}-argument limit`);
   };
 
   const normalizeKeys = (args: unknown[]): unknown[] =>
     args.length === 1 && Array.isArray(args[0]) ? (args[0] as unknown[]) : args;
+
+  const healthCheck = async (): Promise<void> => {
+    const healthUrl = url.includes("?") ? `${url}&health=true` : `${url}?health=true`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+    try {
+      const res = await withHttpSlot(controller.signal, () =>
+        fetch(healthUrl, {
+          method: "GET",
+          headers: { apikey: key },
+          signal: controller.signal,
+        }),
+      );
+      const payload = await res.json() as {
+        ok?: boolean;
+        ping?: string;
+        latency_ms?: number;
+        keys?: number;
+        reconnects?: number;
+      };
+
+      if (!res.ok || payload.ok !== true || payload.ping !== "PONG") {
+        isConnected = false;
+        if (res.status >= 500 || res.status === 503) openHttpCircuit();
+        logger.error(
+          { status: res.status, redisStatus: payload.ping ?? "unknown" },
+          "Redis HTTP bridge health check failed",
+        );
+        return;
+      }
+
+      isConnected = true;
+      httpCircuitOpenUntil = 0;
+      logger.info(
+        { latencyMs: payload.latency_ms, keys: payload.keys, reconnects: payload.reconnects },
+        "Redis HTTP bridge health check passed",
+      );
+    } catch (err) {
+      openHttpCircuit();
+      logger.error(
+        { err: { message: (err as any)?.message } },
+        "Redis HTTP bridge health check failed",
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  };
 
   const pipeline = () => {
     const ops: Array<{ cmd: string; args: unknown[] }> = [];
@@ -88,6 +306,7 @@ function createHttpRedis(url: string, key: string) {
     };
     const outer = {
       sadd: (k: string, v: string) => push("sadd", [k, v]),
+      incr: (k: string) => push("incr", [k]),
       zincrby: (k: string, inc: number, m: string) => push("zincrby", [k, inc, m]),
       hset: (k: string, f: string, v: string) => push("hset", [k, f, v]),
       expire: (k: string, s: number) => push("expire", [k, s]),
@@ -109,6 +328,7 @@ function createHttpRedis(url: string, key: string) {
 
   return {
     status: "ready",
+    healthCheck,
     get: (k: string) => command("get", [k]),
     set: (k: string, v: string, ...rest: unknown[]) => command("set", [k, v, ...rest]),
     setex: (k: string, ttl: number, v: string) => command("setex", [k, ttl, v]),
@@ -153,6 +373,21 @@ if (httpUrl) {
   );
   isConnected = true;
   logger.info(`Redis over HTTPS bridge enabled (${httpUrl})`);
+  // A serverless instance is often created per request. Pinging Redis on
+  // every cold start multiplies bridge traffic precisely when a media grid
+  // creates a burst of requests. On Vercel the first real cache operation is
+  // the probe; health checks remain enabled for long-lived Render processes.
+  const isVercelRuntime =
+    process.env.VERCEL_CACHE_LOCAL_ONLY === "1" ||
+    process.env.VERCEL === "1" ||
+    Boolean(process.env.VERCEL_URL) ||
+    process.env.VERCEL_ENV === "production" ||
+    process.env.VERCEL_ENV === "preview";
+  if (!isVercelRuntime) {
+    void client.healthCheck().catch((err: unknown) => {
+      logger.error({ err: { message: (err as any)?.message } }, "Redis HTTP bridge health check failed");
+    });
+  }
 } else if (redisUrl) {
   const mod = tryImportRedis();
   if (!mod) {
@@ -223,15 +458,30 @@ if (httpUrl) {
       logger.error({ err: { message: (err as any).message } }, "Redis initial connection failed");
     });
   }
+} else if (vercelLocalCacheMode) {
+  logger.info("Redis bridge disabled by VERCEL_CACHE_LOCAL_ONLY; using local caches and database fallbacks");
 } else {
   logger.warn("REDIS_URL not set, caching disabled");
 }
 
+// Public-response/media caches and the per-request rate limiter must not
+// use the HTTPS bridge on Vercel: they are served by CDN/local caches instead.
+// Feature state (view counters, activity streams, hot rankings, suggestions)
+// can still use the shared self-hosted Redis bridge.
 export function getRedis(): typeof client {
+  return vercelLocalCacheMode ? null : client;
+}
+
+export function getFeatureRedis(): typeof client {
   return client;
 }
 
 export function isRedisConnected(): boolean {
+  // The HTTP bridge has no persistent socket whose "ready" event can recover
+  // after a transient timeout. Once the cooldown expires, let the next feature
+  // operation try again; otherwise the first failed request permanently
+  // disables Redis for the lifetime of that serverless instance.
+  if (httpMode) return Date.now() >= httpCircuitOpenUntil;
   return isConnected && client?.status === "ready";
 }
 
@@ -325,12 +575,17 @@ export function redisSubscribe(
   channel: string,
   handler: (message: string) => void,
 ): PubSubSubscription {
-  const sub = ensurePubSubClient();
   const noop: PubSubSubscription = {
     active: false,
     unsubscribe() { /* nothing to do */ },
   };
+
+  // The HTTPS bridge is request/response only; it has no socket to duplicate
+  // for Pub/Sub. Check this before ensurePubSubClient(), which needs ioredis'
+  // duplicate() method and is unavailable on the HTTP compatibility client.
   if (httpMode) return noop;
+
+  const sub = ensurePubSubClient();
   if (!sub) return noop;
 
   let disposed = false;

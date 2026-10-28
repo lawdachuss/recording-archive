@@ -23,7 +23,7 @@
 
 import { logger } from "./logger.js";
 import { supabase, fetchAll } from "./supabase.js";
-import { getRedis, isRedisConnected } from "./redis.js";
+import { getFeatureRedis, isRedisConnected } from "./redis.js";
 import { seedHotCache } from "./hot-cache.js";
 
 export const SUGGESTIONS_PREFIX = "sugg:v1:";
@@ -61,10 +61,10 @@ export interface SuggestionSnapshot {
   }>;
 }
 
-type RedisClient = ReturnType<typeof getRedis> & Record<string, any>;
+type RedisClient = ReturnType<typeof getFeatureRedis> & Record<string, any>;
 
 function client(): RedisClient | null {
-  const redis = getRedis();
+  const redis = getFeatureRedis();
   return redis && isRedisConnected() ? (redis as RedisClient) : null;
 }
 

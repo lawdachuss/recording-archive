@@ -8,6 +8,22 @@ const TAG_PREFIX = "tag:v2";
 const DEFAULT_STALE_SECONDS = 60;
 const DEFAULT_MEMORY_ENTRIES = 500;
 const INFLOW_TIMEOUT_MS = Number.parseInt(process.env.API_CACHE_INFLOW_TIMEOUT ?? "", 10) || 10_000;
+
+// Vercel's CDN already persists public GET responses across regions. The Redis
+// adapter on Vercel is an HTTPS/JSON bridge, not a native Redis connection;
+// probing it on every cold cache miss adds latency and stalls under burst traffic.
+// Keep shared Redis caching on long-lived Render instances, and use Vercel's
+// edge cache plus the local response cache on serverless deployments.
+function shouldUseSharedResponseCache(): boolean {
+  // The explicit flag makes production behavior independent of which Vercel
+  // system variables a function bundle receives. Keep Redis for Render, but
+  // use Vercel's edge + local cache for public responses on serverless.
+  if (process.env.VERCEL_CACHE_LOCAL_ONLY === "1") return false;
+  return process.env.VERCEL === "1" ||
+    Boolean(process.env.VERCEL_URL) ||
+    process.env.VERCEL_ENV === "production" ||
+    process.env.VERCEL_ENV === "preview";
+}
 const inflightRedisMap = new Map<string, Promise<unknown>>();
 const inflightReqMap = new Map<string, Promise<void>>();
 
@@ -344,6 +360,7 @@ function sendEntry(
 // ─── Redis Operations ─────────────────────────────────────────────
 
 async function readRedis(cacheKey: string): Promise<CacheEntry | null> {
+  if (!shouldUseSharedResponseCache()) return null;
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return null;
 
@@ -375,27 +392,30 @@ async function writeEntry(cacheKey: string, entry: CacheEntry, ttlSeconds: numbe
 
   setMemory(cacheKey, entry);
 
+  if (!shouldUseSharedResponseCache()) return;
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return;
 
   const redisTtl = Math.max(1, ttlSeconds + staleSeconds);
-  // Fire-and-forget: don't await Redis writes to avoid blocking the response.
-  // The memory cache is always populated synchronously, so subsequent requests
-  // get cache hits immediately while Redis catches up asynchronously.
-  redis.setex(cacheKey, redisTtl, JSON.stringify(entry)).catch((err: unknown) =>
-    logger.error({ err, cacheKey }, "Redis write error")
-  );
 
-  if (entry.tags.length > 0) {
-    const pipeline = redis.pipeline();
-    for (const tag of entry.tags) {
-      pipeline.sadd(`${TAG_PREFIX}:${tag}`, cacheKey);
-      pipeline.expire(`${TAG_PREFIX}:${tag}`, redisTtl);
-    }
-    pipeline.exec().catch((err: unknown) =>
-      logger.error({ err, cacheKey }, "Redis tag write error")
-    );
+  // Store the response and its tag index in the SAME HTTPS bridge request.
+  // Sending SETEX separately and then a second HTTP pipeline for the tags
+  // multiplied bridge traffic for every cached response under concurrent load.
+  const pipeline = redis.pipeline();
+  pipeline.setex(cacheKey, redisTtl, JSON.stringify(entry));
+  for (const tag of entry.tags) {
+    pipeline.sadd(`${TAG_PREFIX}:${tag}`, cacheKey);
+    pipeline.expire(`${TAG_PREFIX}:${tag}`, redisTtl);
   }
+
+  pipeline.exec().then((results) => {
+    const failed = results.find(([err]) => err !== null);
+    if (failed) {
+      logger.error({ err: failed[0], cacheKey }, "Redis cache pipeline command failed");
+    }
+  }).catch((err: unknown) => {
+    logger.error({ err, cacheKey }, "Redis cache pipeline write error");
+  });
 }
 
 async function readAny(cacheKey: string): Promise<CacheEntry | null> {
@@ -620,6 +640,7 @@ type InvalidationMessage =
   | { type: "purge" };
 
 function publishInvalidation(message: InvalidationMessage): void {
+  if (!shouldUseSharedResponseCache()) return;
   redisPublish(INVALIDATION_CHANNEL, JSON.stringify(message));
 }
 
@@ -633,6 +654,7 @@ let _invalidationSub: PubSubSubscription | null = null;
  * no durable subscription is possible (serverless), it quietly reports false.
  */
 export function initInvalidationPubSub(): boolean {
+  if (!shouldUseSharedResponseCache()) return false;
   if (_invalidationSub?.active) return true;
   const sub = redisSubscribe(INVALIDATION_CHANNEL, (raw: string) => {
     let msg: InvalidationMessage;
@@ -682,7 +704,7 @@ export function initInvalidationPubSub(): boolean {
  * invalidation a PEER initiated without re-broadcasting (which would loop).
  */
 async function invalidateTagsLocal(tags: string[]): Promise<void> {
-  const redis = getRedis();
+  const redis = shouldUseSharedResponseCache() ? getRedis() : null;
   const keysToDelete = new Set<string>();
   const epoch = stampEpoch();
 
@@ -724,7 +746,7 @@ async function invalidateKeyLocal(cacheKey: string): Promise<void> {
   rememberKeyInvalidation(normalizedKey);
   deleteMemory(normalizedKey);
 
-  const redis = getRedis();
+  const redis = shouldUseSharedResponseCache() ? getRedis() : null;
   if (!redis || !isRedisConnected()) return;
   await redis.del(normalizedKey);
 }
@@ -760,7 +782,7 @@ async function invalidatePatternLocal(pattern: string): Promise<number> {
     if (regexes.some((regex) => regex.test(key))) keysToDelete.add(key);
   }
 
-  const redis = getRedis();
+  const redis = shouldUseSharedResponseCache() ? getRedis() : null;
   if (redis && isRedisConnected()) {
     for (const candidate of candidates) {
       let cursor = "0";
@@ -815,7 +837,7 @@ export function invalidateOnSuccess(tags: string[]) {
 //   sugg:*                 — the search suggestion snapshot index
 
 async function purgeLocalCache(): Promise<{ deletedKeys: number; invalidatedTags: number }> {
-  const redis = getRedis();
+  const redis = shouldUseSharedResponseCache() ? getRedis() : null;
   const invalidatedTags = new Set(memoryTags.keys());
   let deletedKeys = memoryCache.size;
 
