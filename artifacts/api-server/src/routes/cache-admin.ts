@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { getRedis, isRedisConnected, getRedisStatus } from "../lib/redis.js";
+import { getFeatureRedis, isRedisConnected, getRedisStatus } from "../lib/redis.js";
 import { getCacheStats, getCacheMetrics, resetCacheMetrics, invalidateTags, invalidatePattern, purgeAllCache } from "../middleware/cache.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { logger } from "../lib/logger.js";
@@ -14,7 +14,7 @@ const admin = requireRole("admin");
 
 // GET /api/cache/status — Check cache status
 router.get("/cache/status", ...admin, async (_req: Request, res: Response) => {
-  const redis = getRedis();
+  const redis = getFeatureRedis();
   const status = getRedisStatus();
   const connected = isRedisConnected();
 
