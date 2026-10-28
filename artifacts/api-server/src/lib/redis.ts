@@ -205,6 +205,53 @@ function createHttpRedis(url: string, key: string) {
   const normalizeKeys = (args: unknown[]): unknown[] =>
     args.length === 1 && Array.isArray(args[0]) ? (args[0] as unknown[]) : args;
 
+  const healthCheck = async (): Promise<void> => {
+    const healthUrl = url.includes("?") ? `${url}&health=true` : `${url}?health=true`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+    try {
+      const res = await withHttpSlot(() =>
+        fetch(healthUrl, {
+          method: "GET",
+          headers: { apikey: key },
+          signal: controller.signal,
+        }),
+      );
+      const payload = await res.json() as {
+        ok?: boolean;
+        ping?: string;
+        latency_ms?: number;
+        keys?: number;
+        reconnects?: number;
+      };
+
+      if (!res.ok || payload.ok !== true || payload.ping !== "PONG") {
+        isConnected = false;
+        if (res.status >= 500 || res.status === 503) openHttpCircuit();
+        logger.error(
+          { status: res.status, redisStatus: payload.ping ?? "unknown" },
+          "Redis HTTP bridge health check failed",
+        );
+        return;
+      }
+
+      isConnected = true;
+      httpCircuitOpenUntil = 0;
+      logger.info(
+        { latencyMs: payload.latency_ms, keys: payload.keys, reconnects: payload.reconnects },
+        "Redis HTTP bridge health check passed",
+      );
+    } catch (err) {
+      openHttpCircuit();
+      logger.error(
+        { err: { message: (err as any)?.message } },
+        "Redis HTTP bridge health check failed",
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
   const pipeline = () => {
     const ops: Array<{ cmd: string; args: unknown[] }> = [];
     const push = (cmd: string, args: unknown[]) => {
@@ -234,6 +281,7 @@ function createHttpRedis(url: string, key: string) {
 
   return {
     status: "ready",
+    healthCheck,
     get: (k: string) => command("get", [k]),
     set: (k: string, v: string, ...rest: unknown[]) => command("set", [k, v, ...rest]),
     setex: (k: string, ttl: number, v: string) => command("setex", [k, ttl, v]),
@@ -278,6 +326,12 @@ if (httpUrl) {
   );
   isConnected = true;
   logger.info(`Redis over HTTPS bridge enabled (${httpUrl})`);
+  // Probe the actual self-hosted Redis service, not just the HTTP/Kong route.
+  // The bridge health handler runs PING + DBSIZE against Redis and never logs
+  // the authentication token.
+  void client.healthCheck().catch((err: unknown) => {
+    logger.error({ err: { message: (err as any)?.message } }, "Redis HTTP bridge health check failed");
+  });
 } else if (redisUrl) {
   const mod = tryImportRedis();
   if (!mod) {
