@@ -507,9 +507,9 @@ async function fetchPerformers(): Promise<PerformerAgg[]> {
 
     const { data, error } = await fetchAll((start, end) =>
       supabase
-        .from("linked_recordings")
+        .from("recordings_with_links")
         .select("id,username,gender,timestamp,thumbnail_url,sprite_url")
-        
+        .not("links", "is", "null")
         .range(start, end),
     );
   if (error) throw error;
