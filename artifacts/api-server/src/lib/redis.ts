@@ -148,7 +148,7 @@ function createHttpRedis(url: string, key: string) {
           receivedResponse = true;
 
           const contentType = res.headers.get("content-type") ?? "";
-          if (!/\\bjson\\b/i.test(contentType)) {
+          if (!contentType.toLowerCase().includes("json")) {
             // Cloudflare tunnel failures often return an HTML 502/530 page.
             // Treat it as an upstream outage, not a malformed Redis payload.
             openHttpCircuit();
