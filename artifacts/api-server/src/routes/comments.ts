@@ -202,10 +202,10 @@ router.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comme
     const allRows = (data ?? []) as CommentRow[];
     const total = allRows.length;
 
-    // Default: return all comments (tree structure requires parent-reply grouping).
-    // Only paginate when both page and limit are explicitly passed.
-    const limit = hasPagination ? Math.min(100, Math.max(1, parseInt(rawLimit) || 50)) : total || 50;
-    const totalPages = hasPagination ? Math.ceil(total / limit) || 1 : 1;
+    // Compatibility fallback: if pagination was omitted, retain the historical
+    // behavior of returning all comments rather than using the fast-path limit.
+    const fallbackLimit = hasPagination ? limit : total || 50;
+    const totalPages = hasPagination ? Math.ceil(total / fallbackLimit) || 1 : 1;
 
     // Like counts (global — the "top" sort ranks by total likes across the
     // recording, not just within the page window).
@@ -234,15 +234,15 @@ router.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comme
       return 0;
     });
 
-    const fallbackOffset = (page - 1) * limit;
-    const windowRows = allRows.slice(fallbackOffset, fallbackOffset + limit).map((r) => ({
+    const fallbackOffset = (page - 1) * fallbackLimit;
+    const windowRows = allRows.slice(fallbackOffset, fallbackOffset + fallbackLimit).map((r) => ({
       ...r,
       likes: likeCounts.get(Number(r.id)) ?? 0,
     }));
 
     const tree = buildCommentTree(windowRows, likedSet);
     if (hasPagination) {
-      res.json({ data: tree, total, page, limit, totalPages });
+      res.json({ data: tree, total, page, limit: fallbackLimit, totalPages });
     } else {
       // Return flat array for backward compatibility with generated hook type
       res.json(tree);
