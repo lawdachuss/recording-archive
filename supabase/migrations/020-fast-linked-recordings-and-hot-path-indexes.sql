@@ -33,11 +33,14 @@ SELECT
   r.instance_id,
   r.created_at,
   r.updated_at,
-  jsonb_object_agg(ul.host, ul.url)::json AS links
-FROM public.upload_links AS ul
-JOIN public.recordings AS r ON r.id = ul.recording_id
-WHERE ul.host IS NOT NULL
-GROUP BY r.id;
+  link_data.link_map::json AS links
+FROM public.recordings AS r
+JOIN LATERAL (
+  SELECT jsonb_object_agg(ul.host, ul.url) AS link_map
+  FROM public.upload_links AS ul
+  WHERE ul.recording_id = r.id
+    AND ul.host IS NOT NULL
+) AS link_data ON link_data.link_map IS NOT NULL;
 
 GRANT SELECT ON public.linked_recordings TO anon, authenticated, service_role, postgres;
 
