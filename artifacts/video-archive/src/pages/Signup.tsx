@@ -106,10 +106,11 @@ export default function Signup() {
           )}
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            <label htmlFor="signup-username" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
               Username
             </label>
             <input
+              id="signup-username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}
@@ -123,10 +124,11 @@ export default function Signup() {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            <label htmlFor="signup-email" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
               Email
             </label>
             <input
+              id="signup-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -137,11 +139,12 @@ export default function Signup() {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            <label htmlFor="signup-password" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
               Password
             </label>
             <div className="relative">
               <input
+                id="signup-password"
                 type={showPw ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
