@@ -85,6 +85,7 @@ export interface ListRecordingsResponse {
   page: number;
   limit: number;
   totalPages: number;
+  totalIsEstimate?: boolean;
 }
 
 import { resolveApiPath } from "./api-base";
