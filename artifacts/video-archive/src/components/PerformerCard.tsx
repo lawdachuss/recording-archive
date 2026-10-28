@@ -138,7 +138,7 @@ function CircleCard({ performer, fetchPriority }: { performer: Performer; fetchP
   const initial = performer.username.charAt(0).toUpperCase();
   const { imageUrl, onImageError } = usePerformerImageCandidates(performer);
   return (
-    <Link href={`/performers/${performer.username}`} className="group block outline-none w-full circle-bloom-hover"
+    <Link href={`/performers/${performer.username}`} className="group block outline-none w-full circle-bloom-hover focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-sm"
       onMouseEnter={() => prefetchRoute("/performers")}
       onFocus={() => prefetchRoute("/performers")}
     >
