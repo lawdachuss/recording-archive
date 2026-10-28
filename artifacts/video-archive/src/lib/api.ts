@@ -123,6 +123,14 @@ async function fetchApiUncached<T>(
   options?: RequestInit,
 ): Promise<T> {
   const controller = new AbortController();
+  const externalSignal = options?.signal;
+  const forwardAbort = () => controller.abort(externalSignal?.reason);
+  if (externalSignal?.aborted) {
+    forwardAbort();
+  } else {
+    externalSignal?.addEventListener("abort", forwardAbort, { once: true });
+  }
+  // Always enforce our own timeout, even when React Query supplies a signal.
   const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
   try {
@@ -136,12 +144,13 @@ async function fetchApiUncached<T>(
       ...options,
       method,
       headers,
-      signal: options?.signal ?? controller.signal,
+      signal: controller.signal,
     });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   } finally {
     clearTimeout(timer);
+    externalSignal?.removeEventListener("abort", forwardAbort);
   }
 }
 
@@ -265,12 +274,26 @@ export interface SearchSuggestionsResponse {
  * Fetch search suggestions as the user types.
  * Debounce is handled by the caller (typically ~250ms).
  */
-export function useSearchSuggestions(query: string) {
+export function useSearchSuggestions(
+  query: string,
+  queryOptions?: { enabled?: boolean },
+) {
+  // Server matching is case-insensitive and trims whitespace, so normalize
+  // both the query key and URL to share cache entries for equivalent input.
+  const normalizedQuery = query.trim().toLowerCase();
+
   return useQuery({
-    queryKey: ["search", "suggestions", query],
-    queryFn: () => fetchApi<SearchSuggestionsResponse>(`/api/search?q=${encodeURIComponent(query)}`),
-    enabled: query.trim().length >= 2,
+    queryKey: ["search", "suggestions", normalizedQuery],
+    queryFn: ({ signal }) =>
+      fetchApi<SearchSuggestionsResponse>(
+        `/api/search?q=${encodeURIComponent(normalizedQuery)}`,
+        { signal },
+      ),
+    enabled: (queryOptions?.enabled ?? true) && normalizedQuery.length >= 2,
     ...QUERY_PRESETS.search(),
+    gcTime: 5 * 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 }
 
