@@ -1082,6 +1082,28 @@ router.get("/media", async (req, res) => {
     streamResponse(response, res, req.log);
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : String(err);
+    const upstreamStatus = /^upstream (\\d{3})$/.exec(errorMessage);
+    const statusCode = upstreamStatus ? Number(upstreamStatus[1]) : null;
+    const permanentImageFailure =
+      !isVideoRequest &&
+      statusCode !== null &&
+      statusCode >= 400 &&
+      statusCode < 500 &&
+      !isTransientStatus(statusCode);
+
+    if (!res.headersSent && permanentImageFailure) {
+      // A permanently missing/forbidden thumbnail is an expected mirror-chain
+      // miss, not a proxy gateway failure. Return 404 so the client advances to
+      // the next image mirror, and negative-cache it to avoid repeated fetches.
+      markCachedFailure(urlStr);
+      req.log.warn(
+        { url: urlStr, status: statusCode },
+        "Media proxy upstream image unavailable; allowing mirror fallback",
+      );
+      res.status(404).end();
+      return;
+    }
+
     req.log.error({ err, url: urlStr }, "Media proxy fetch error");
     if (!res.headersSent) {
       markCachedFailure(urlStr);
