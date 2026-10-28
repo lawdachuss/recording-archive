@@ -186,6 +186,7 @@ export default function Home() {
             <div className="flex items-center gap-1 bg-secondary dark:bg-white/[0.06] border border-border/50 rounded-lg p-0.5">
               <button
                 onClick={() => setTab("recent")}
+                aria-pressed={tab === "recent"}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
                   tab === "recent"
                     ? "border border-primary/60 text-primary"
@@ -197,6 +198,7 @@ export default function Home() {
               </button>
               <button
                 onClick={() => setTab("popular")}
+                aria-pressed={tab === "popular"}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
                   tab === "popular"
                     ? "border border-primary/60 text-primary"
@@ -218,7 +220,7 @@ export default function Home() {
 
           {loading ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-8">
-              {Array.from({ length: 24 }).map((_, i) => (
+              {Array.from({ length: pageSize }).map((_, i) => (
                 <VideoSkeleton key={i} />
               ))}
             </div>
@@ -226,7 +228,7 @@ export default function Home() {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-8 animate-fade-in-up">
               {recordings.map((rec, i) => (
                 <Fragment key={rec.id}>
-                  <VideoCard recording={rec} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} showAdd />
+                  <VideoCard recording={rec} fetchPriority={i < 4 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} showAdd />
                   {isAdCard(recordings, i) && <AdGridCard />}
                 </Fragment>
               ))}
@@ -283,7 +285,7 @@ export default function Home() {
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-8 animate-fade-in-up">
                 {recommendations.map((rec, i) => (
                   <div key={rec.id}>
-                    <VideoCard key={rec.id} recording={rec} fetchPriority={i < 10 ? "high" : undefined} isWatched={recentlyWatched.has(rec.id)} showAdd />
+                    <VideoCard key={rec.id} recording={rec} isWatched={recentlyWatched.has(rec.id)} showAdd />
                   </div>
                 ))}
               </div>
