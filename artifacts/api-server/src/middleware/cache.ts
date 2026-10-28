@@ -15,9 +15,10 @@ const INFLOW_TIMEOUT_MS = Number.parseInt(process.env.API_CACHE_INFLOW_TIMEOUT ?
 // Keep shared Redis caching on long-lived Render instances, and use Vercel's
 // edge cache plus the local response cache on serverless deployments.
 function shouldUseSharedResponseCache(): boolean {
-  // VERCEL_URL and VERCEL_ENV are also system-provided Vercel variables.
-  // Checking these prevents falling back to the Redis HTTPS bridge if a build
-  // adapter omits VERCEL=1 in a particular function runtime.
+  // The explicit flag makes production behavior independent of which Vercel
+  // system variables a function bundle receives. Keep Redis for Render, but
+  // use Vercel's edge + local cache for public responses on serverless.
+  if (process.env.VERCEL_CACHE_LOCAL_ONLY === "1") return false;
   return process.env.VERCEL === "1" ||
     Boolean(process.env.VERCEL_URL) ||
     process.env.VERCEL_ENV === "production" ||
