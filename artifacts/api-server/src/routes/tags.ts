@@ -35,8 +35,9 @@ async function fetchTagCountsViaRpc(): Promise<TagCount[] | null> {
 }
 
 async function fetchTagCountsLegacy(): Promise<TagCount[]> {
-  // PostgREST can't unnest arrays, so stream just the tags column of rows
-  // that have a link and count occurrences in JS.
+  // Compatibility fallback only: if the aggregate RPC is not deployed yet,
+  // stream the tags column from the legacy view and count in JS. Normal
+  // requests use get_tag_counts(), so this full scan is not the hot path.
   const { data, error } = await fetchAll((start, end) =>
     supabase
       .from("recordings_with_links")
