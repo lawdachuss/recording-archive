@@ -109,6 +109,9 @@ export async function warmupCache(
       } else {
         failedRoutes.push({ path, status: response.status });
       }
+      // Drain these small list responses so Undici can reuse the socket and
+      // discard the body instead of retaining unread response streams.
+      await response.arrayBuffer();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       failedRoutes.push({ path, status: 0 });
@@ -116,34 +119,9 @@ export async function warmupCache(
     }
   }
 
-  // If tier 3 (performer details) was queued, fetch the
-  // top 5 performers' profile pages to warm them too
-  try {
-    const perfResponse = await fetch(`${baseUrl}/api/performers?limit=5&sort=count`, {
-      headers: { Accept: "application/json" },
-    });
-    if (perfResponse.ok) {
-      const data = (await perfResponse.json()) as {
-        performers?: { username: string }[];
-      };
-      const topPerformers = data.performers ?? [];
-      const perfPromises = topPerformers.map(async (p) => {
-        total++;
-        try {
-          const res = await fetch(`${baseUrl}/api/performers/${encodeURIComponent(p.username)}`, {
-            headers: { Accept: "application/json" },
-          });
-          if (res.ok) succeeded++;
-          else failedRoutes.push({ path: `/api/performers/${p.username}`, status: res.status });
-        } catch {
-          failedRoutes.push({ path: `/api/performers/${p.username}`, status: 0 });
-        }
-      });
-      await Promise.allSettled(perfPromises);
-    }
-  } catch {
-    // Non-critical — this step is best-effort
-  }
+  // Profile endpoints can return every recording for a performer and populate
+  // large cache entries. Keep boot warmup limited to bounded list endpoints;
+  // profile pages are filled on demand when a user actually opens one.
 
   const durationMs = Date.now() - start;
 
