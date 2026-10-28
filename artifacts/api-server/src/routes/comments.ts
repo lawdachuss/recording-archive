@@ -135,10 +135,11 @@ router.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comme
     const limit = hasPagination ? Math.min(100, Math.max(1, parseInt(rawLimit) || 50)) : 0;
     const offset = hasPagination ? (page - 1) * limit : 0;
 
-    // Fast path: let Postgres sort and paginate before returning comment rows.
-    // This keeps the response contract but prevents page requests from shipping
-    // every comment and like for a recording to the serverless function.
-    const { data: feedData, error: feedError } = await supabase.rpc("get_comment_feed", {
+    if (hasPagination) {
+      // Fast path: let Postgres sort and paginate before returning comment rows.
+      // Unpaginated callers use fetchAll below so large results aren't capped
+      // by PostgREST's max-rows setting.
+      const { data: feedData, error: feedError } = await supabase.rpc("get_comment_feed", {
       p_recording_id: recording_id,
       p_sort: sort,
       p_offset: offset,
@@ -150,7 +151,21 @@ router.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comme
       const feedRows = (feedData ?? []) as unknown as Array<
         CommentRow & { user_liked?: boolean; total?: number | string }
       >;
-      const total = Number(feedRows[0]?.total ?? 0);
+      let total = Number(feedRows[0]?.total ?? 0);
+      if (feedRows.length === 0) {
+        // The total accompanies each returned row; fetch it separately only
+        // when the requested page is empty, including an out-of-range page.
+        const { count: totalCount, error: countError } = await supabase
+          .from("comments")
+          .select("id", { count: "exact", head: true })
+          .eq("recording_id", recording_id);
+        if (countError) {
+          req.log?.error?.({ err: countError, recording_id }, "Supabase error counting comments");
+          res.status(500).json({ error: "Failed to fetch comments" });
+          return;
+        }
+        total = totalCount ?? 0;
+      }
       const windowRows = feedRows.map(({ total: _total, user_liked: _userLiked, ...row }) => ({
         ...row,
         likes: Number(row.likes ?? 0),
@@ -182,7 +197,9 @@ router.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comme
       return;
     }
 
-    // Compatibility fallback for databases before migration 020.
+    }
+
+    // Compatibility path for unpaginated requests or databases before migration 020.
     // Fetch every comment for this recording (PostgREST caps rows at 1,000 per
     // request, so paginate), then preserve the historical tree/sort behavior.
     const { data, error } = await fetchAll((start, end) =>
