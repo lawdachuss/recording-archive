@@ -1,0 +1,66 @@
+name: API and frontend quality
+
+on:
+  pull_request:
+    paths:
+      - "artifacts/api-server/**"
+      - "artifacts/video-archive/**"
+      - "lib/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig*.json"
+      - "vercel.json"
+      - ".github/workflows/api-quality.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Typecheck, tests, and Vercel production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Typecheck shared libraries
+        run: pnpm run typecheck:libs
+
+      - name: Typecheck API
+        run: pnpm --filter @workspace/api-server run typecheck
+
+      - name: Typecheck frontend
+        run: pnpm --filter @workspace/video-archive run typecheck
+
+      - name: Test API
+        run: pnpm --filter @workspace/api-server run test
+
+      - name: Test frontend
+        run: pnpm --filter @workspace/video-archive run test
+
+      - name: Build Vercel serverless functions
+        run: pnpm --filter @workspace/api-server run vercel-build
+
+      - name: Build frontend for production
+        run: pnpm --filter @workspace/video-archive run build
