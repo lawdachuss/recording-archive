@@ -339,10 +339,17 @@ function createHttpRedis(url: string, key: string) {
       set: (k: string, v: string) => push("set", [k, v]),
       del: (keys: string | string[]) => push("del", [keys]),
       exec: async (): Promise<Array<[Error | null, any]>> => {
-        const payload = await post({ pipeline: ops });
+        // The Edge Function caps an HTTP pipeline at 256 operations. Large
+        // hot-cache/suggestion seeding pipelines must be split here; otherwise
+        // one oversized request rejects the whole batch and leaves the cache
+        // only partially seeded.
         const results: Array<[Error | null, any]> = [];
-        for (const [err, result] of payload.results ?? []) {
-          results.push([err ? new Error(String(err)) : null, err ? undefined : result]);
+        for (let i = 0; i < ops.length; i += MAX_HTTP_PIPELINE_OPS) {
+          const batch = ops.slice(i, i + MAX_HTTP_PIPELINE_OPS);
+          const payload = await post({ pipeline: batch });
+          for (const [err, result] of payload.results ?? []) {
+            results.push([err ? new Error(String(err)) : null, err ? undefined : result]);
+          }
         }
         return results;
       },
