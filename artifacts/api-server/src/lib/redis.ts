@@ -334,7 +334,12 @@ if (httpUrl) {
   // every cold start multiplies bridge traffic precisely when a media grid
   // creates a burst of requests. On Vercel the first real cache operation is
   // the probe; health checks remain enabled for long-lived Render processes.
-  if (process.env.VERCEL !== "1") {
+  const isVercelRuntime =
+    process.env.VERCEL === "1" ||
+    Boolean(process.env.VERCEL_URL) ||
+    process.env.VERCEL_ENV === "production" ||
+    process.env.VERCEL_ENV === "preview";
+  if (!isVercelRuntime) {
     void client.healthCheck().catch((err: unknown) => {
       logger.error({ err: { message: (err as any)?.message } }, "Redis HTTP bridge health check failed");
     });
