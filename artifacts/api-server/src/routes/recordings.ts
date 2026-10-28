@@ -163,26 +163,40 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     const normalizedPage = Math.max(1, page);
     const normalizedLimit = Math.min(Math.max(1, limit), 100);
 
-    let query = supabase.from("recordings_with_links").select(LIST_COLS, { count: "exact" }).not("links", "is", "null");
-
-    if (search?.trim()) {
-      const s = escapeLike(search.trim());
-      query = query.or(`username.ilike.%${s}%,room_title.ilike.%${s}%,filename.ilike.%${s}%`);
-    }
-    if (tags) {
-      const tagList = tags.split(",").map((t: string) => t.trim()).filter(Boolean);
-      if (tagList.length > 0) query = query.overlaps("tags", tagList);
-    }
-    if (gender) {
-      const genderMatch = resolveGenderBucket(gender);
-      if (genderMatch) query = query.in("gender", genderMatch);
-    }
-    if (username) query = query.eq("username", username);
-    if (resolution) query = query.eq("resolution", resolution);
-
+    // Estimate counts for text searches. Exact counts force Postgres to walk
+    // every matching row on broad substring terms, even though the UI only
+    // needs a useful page count. Unfiltered browsing keeps exact counts.
+    const countMode: "exact" | "estimated" = search?.trim() ? "estimated" : "exact";
     const ascending = sort === "oldest";
     const sortCol = sort === "largest" ? "filesize" : sort === "popular" ? "viewers" : "timestamp";
-    query = query.order(sortCol, { ascending, nullsFirst: false });
+
+    // Reuse the same filters for the schema-cache retry path as well; the old
+    // retry rebuilt only sort/page and could accidentally return unfiltered data.
+    const buildQuery = () => {
+      let next = supabase
+        .from("recordings_with_links")
+        .select(LIST_COLS, { count: countMode })
+        .not("links", "is", "null");
+
+      if (search?.trim()) {
+        const s = escapeLike(search.trim());
+        next = next.or(`username.ilike.%${s}%,room_title.ilike.%${s}%,filename.ilike.%${s}%`);
+      }
+      if (tags) {
+        const tagList = tags.split(",").map((t: string) => t.trim()).filter(Boolean);
+        if (tagList.length > 0) next = next.overlaps("tags", tagList);
+      }
+      if (gender) {
+        const genderMatch = resolveGenderBucket(gender);
+        if (genderMatch) next = next.in("gender", genderMatch);
+      }
+      if (username) next = next.eq("username", username);
+      if (resolution) next = next.eq("resolution", resolution);
+
+      return next.order(sortCol, { ascending, nullsFirst: false });
+    };
+
+    let query = buildQuery();
 
     const offset = (normalizedPage - 1) * normalizedLimit;
     let data: unknown[] | null = null;
@@ -202,10 +216,7 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     if (error && typeof error === "object" && (error as any).code === "PGRST205") {
       req.log.warn("Schema cache miss (PGRST205), refreshing and retrying");
       await import("../lib/supabase.js").then((m) => (m as any).refreshSupabaseSchema());
-      const refreshed = supabase.from("recordings_with_links").select(LIST_COLS, { count: "exact" }).not("links", "is", "null");
-      const ascending = sort === "oldest";
-      const sortCol = sort === "largest" ? "filesize" : sort === "popular" ? "viewers" : "timestamp";
-      const retryQuery = refreshed.order(sortCol, { ascending, nullsFirst: false }).range(offset, offset + normalizedLimit - 1);
+      const retryQuery = buildQuery().range(offset, offset + normalizedLimit - 1);
       const retryResult = await retryQuery;
       data = retryResult.data;
       error = retryResult.error;
@@ -223,6 +234,7 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     res.json({
       data: enriched,
       total: count ?? 0,
+      totalIsEstimate: Boolean(search?.trim()),
       page: normalizedPage,
       limit: normalizedLimit,
       totalPages: Math.ceil((count ?? 0) / normalizedLimit),
