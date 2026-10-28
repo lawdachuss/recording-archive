@@ -11,8 +11,13 @@ function tryImportRedis(): any {
   }
 }
 
-const redisUrl = process.env.REDIS_URL;
-const httpUrl = process.env.REDIS_HTTP_URL;
+// Vercel serverless functions fan out across many short-lived instances.
+// The self-hosted Redis HTTPS bridge has been timing out under that concurrency,
+// so production Vercel runs in local-cache / DB-fallback mode. Render does not
+// set VERCEL_CACHE_LOCAL_ONLY and continues to use the shared Redis bridge.
+const vercelLocalCacheMode = process.env.VERCEL_CACHE_LOCAL_ONLY === "1";
+const redisUrl = vercelLocalCacheMode ? undefined : process.env.REDIS_URL;
+const httpUrl = vercelLocalCacheMode ? undefined : process.env.REDIS_HTTP_URL;
 
 let client: any = null;
 let isConnected = false;
@@ -415,6 +420,8 @@ if (httpUrl) {
       logger.error({ err: { message: (err as any).message } }, "Redis initial connection failed");
     });
   }
+} else if (vercelLocalCacheMode) {
+  logger.info("Redis bridge disabled by VERCEL_CACHE_LOCAL_ONLY; using local caches and database fallbacks");
 } else {
   logger.warn("REDIS_URL not set, caching disabled");
 }
