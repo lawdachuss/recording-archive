@@ -12,12 +12,13 @@ function tryImportRedis(): any {
 }
 
 // Vercel serverless functions fan out across many short-lived instances.
-// The self-hosted Redis HTTPS bridge has been timing out under that concurrency,
-// so production Vercel runs in local-cache / DB-fallback mode. Render does not
-// set VERCEL_CACHE_LOCAL_ONLY and continues to use the shared Redis bridge.
+// VERCEL_CACHE_LOCAL_ONLY disables shared *response/media caches*, which are
+// better served by Vercel/Cloudflare's CDN and per-instance cache. Keep the
+// HTTPS Redis bridge available for feature state such as buffered view counts
+// and activity streams; do not use the ephemeral bore.pub TCP URL on Vercel.
 const vercelLocalCacheMode = process.env.VERCEL_CACHE_LOCAL_ONLY === "1";
 const redisUrl = vercelLocalCacheMode ? undefined : process.env.REDIS_URL;
-const httpUrl = vercelLocalCacheMode ? undefined : process.env.REDIS_HTTP_URL;
+const httpUrl = process.env.REDIS_HTTP_URL;
 
 let client: any = null;
 let isConnected = false;
@@ -431,6 +432,11 @@ export function getRedis(): typeof client {
 }
 
 export function isRedisConnected(): boolean {
+  // The HTTP bridge has no persistent socket whose "ready" event can recover
+  // after a transient timeout. Once the cooldown expires, let the next feature
+  // operation try again; otherwise the first failed request permanently
+  // disables Redis for the lifetime of that serverless instance.
+  if (httpMode) return Date.now() >= httpCircuitOpenUntil;
   return isConnected && client?.status === "ready";
 }
 
