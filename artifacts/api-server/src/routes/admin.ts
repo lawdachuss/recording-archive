@@ -131,8 +131,9 @@ router.get("/admin/stats", ...admin, async (_req: Request, res: Response) => {
     try {
       const { data, error } = await fetchAll((start, end) =>
         supabase
-          .from("linked_recordings")
+          .from("recordings_with_links")
           .select("username")
+          .not("links", "is", "null")
           .range(start, end),
       );
       if (error) throw error;
