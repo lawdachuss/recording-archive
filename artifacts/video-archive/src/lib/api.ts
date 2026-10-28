@@ -194,7 +194,7 @@ export function useListPerformers(
     gender?: string;
     sort?: "count" | "name";
   },
-  queryOptions?: Partial<{ staleTime: number }>,
+  queryOptions?: Partial<{ staleTime: number; enabled: boolean }>,
 ) {
   const searchParams = new URLSearchParams();
   if (params?.page) searchParams.set("page", params.page.toString());
@@ -205,7 +205,9 @@ export function useListPerformers(
 
   return useQuery({
     queryKey: ["performers", searchParams.toString()],
-    queryFn: () => fetchApi<PerformersResponse>(`/api/performers?${searchParams}`),
+    queryFn: ({ signal }) =>
+      fetchApi<PerformersResponse>(`/api/performers?${searchParams}`, { signal }),
+    enabled: queryOptions?.enabled ?? true,
     placeholderData: keepPreviousData,
     ...QUERY_PRESETS.page(3 * 60_000),
     staleTime: queryOptions?.staleTime,
@@ -243,7 +245,7 @@ export function useListRecordings(
 export function useListTags(queryOptions?: { enabled?: boolean; staleTime?: number }) {
   return useQuery({
     queryKey: ["tags"],
-    queryFn: () => fetchApi<TagCount[]>(`/api/tags`),
+    queryFn: ({ signal }) => fetchApi<TagCount[]>(`/api/tags`, { signal }),
     enabled: queryOptions?.enabled ?? true,
     ...QUERY_PRESETS.page(),
     ...(queryOptions?.staleTime !== undefined ? { staleTime: queryOptions.staleTime } : {}),
