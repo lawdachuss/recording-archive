@@ -194,8 +194,20 @@ if (httpUrl) {
     });
 
     client.on("ready", () => {
+      const isReconnect = hasWasConnected;
       isConnected = true;
+      hasWasConnected = true;
       logger.info("Redis ready");
+      if (isReconnect) {
+        logger.info("Redis reconnected — flushing stale local memory cache");
+        for (const listener of reconnectListeners) {
+          try {
+            listener();
+          } catch (err) {
+            logger.error({ err }, "Redis reconnect listener error");
+          }
+        }
+      }
     });
 
     client.on("close", () => {
@@ -236,6 +248,17 @@ export function getRedisStatus(): string {
 // invocation, and on self-hosted long-running servers it stays alive across
 // requests. When an invalidation lands here from another instance, the local
 // memory cache is dropped even though this instance never saw the write.
+
+
+let hasWasConnected = false;
+const reconnectListeners = new Set<() => void>();
+
+export function onRedisReconnect(listener: () => void): () => void {
+  reconnectListeners.add(listener);
+  return () => {
+    reconnectListeners.delete(listener);
+  };
+}
 
 let _pubSubClient: any = null;
 let _subscribeClient: any = null;
