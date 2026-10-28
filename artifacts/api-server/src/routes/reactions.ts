@@ -3,18 +3,38 @@ import { supabase, fetchAll } from "../lib/supabase.js";
 import { cache, invalidateOnSuccess } from "../middleware/cache.js";
 
 async function getReactionCounts(recordingId: string) {
-  const { data, error } = await fetchAll((start, end) =>
+  // The aggregate RPC returns one row regardless of how many users reacted,
+  // avoiding a potentially large transfer of individual reaction rows.
+  const { data, error } = await supabase.rpc("get_reaction_counts", {
+    p_recording_id: recordingId,
+  });
+  if (!error) {
+    const row = Array.isArray(data) ? data[0] : undefined;
+    return {
+      likes: Number(row?.likes ?? 0),
+      dislikes: Number(row?.dislikes ?? 0),
+    };
+  }
+
+  // Keep old deployments working until migration 020 is installed.
+  const code = (error as { code?: string }).code;
+  const message = (error as { message?: string }).message ?? "";
+  if (code !== "PGRST202" && !/function.*not.*found|Could not find the function/i.test(message)) {
+    throw error;
+  }
+
+  const { data: rows, error: fallbackError } = await fetchAll((start, end) =>
     supabase
       .from("reactions")
       .select("type")
       .eq("recording_id", recordingId)
       .range(start, end),
   );
-  if (error) throw error;
+  if (fallbackError) throw fallbackError;
 
   let likes = 0;
   let dislikes = 0;
-  for (const r of data ?? []) {
+  for (const r of rows ?? []) {
     if (r.type === "like") likes++;
     else if (r.type === "dislike") dislikes++;
   }
