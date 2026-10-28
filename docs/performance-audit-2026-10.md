@@ -49,8 +49,9 @@ The migration adds candidate indexes for:
 - performer, gender and resolution filters paired with timestamp sorting;
 - history, saves, watch-later and collection reads ordered by user and recency;
 - collection items ordered by playlist position;
-- request queues, comment feeds and comment likes;
-- unassigned worker channels separated by live/offline state.
+- request queues, comment feeds, comment likes and reaction counts.
+
+The worker claim-queue index is maintained in the companion `node-1` migration `20261029000000_optimize_channel_assignment_claims.sql` so schema ownership stays with the worker repository.
 
 Most are ordinary B-tree indexes; the existing trigram search indexes from migration
 017 remain in place. No existing index is dropped, and no application data is
@@ -93,16 +94,18 @@ inside CI; it does not deploy to production.
    production schema.
 2. Review migration 020 against the live schema, especially the types of
    `recordings.id`, `upload_links.recording_id`, `recordings.timestamp`,
-   `upload_links.host` and `upload_links.url`. Do not use the bootstrap file as
-   a substitute for inspecting a populated database.
+   `upload_links.host` and `upload_links.url`, and review the `node-1` claim-index
+   migration against the actual `channel_assignments` columns. Do not use the
+   bootstrap file as a substitute for inspecting a populated database.
 3. On a large or busy production database, plan index creation for a quiet period:
    ordinary `CREATE INDEX` can delay writes while it builds. For large tables, a
    DBA can copy the index statements, run their `CREATE INDEX CONCURRENTLY` variants
    one at a time outside a transaction, then apply the migration; its
    `IF NOT EXISTS` clauses will skip indexes already built. Do not mark the migration
    applied until the view and RPC definitions have also been installed.
-4. Apply the migration and confirm the new view and RPCs exist. Allow PostgREST's
-   schema cache notification/reload to complete.
+4. Apply migration 020 and the worker claim-index migration in their respective
+   repositories; confirm the new view/RPCs and index exist. Allow PostgREST's schema
+   cache notification/reload to complete.
 5. Deploy the API code only after the migration is available. A rolling deployment
    before the new view/RPC exists will create avoidable errors.
 6. Smoke-test catalog page 1 and a later page, search, performers, tags, stats, hot
@@ -166,8 +169,7 @@ WHERE schemaname = 'public'
     'requests_status_created_at_desc_idx',
     'comments_recording_created_at_desc_idx',
     'comment_likes_comment_session_idx',
-    'reactions_recording_type_idx',
-    'channel_assignments_unassigned_live_username_idx'
+    'reactions_recording_type_idx'
   )
 ORDER BY idx_scan ASC, indexrelname;
 ```
