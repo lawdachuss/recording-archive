@@ -37,7 +37,7 @@ let httpMode = false;
 // Keep bursty cache traffic from opening hundreds of concurrent HTTPS
 // connections to the self-hosted edge function on a small Render instance.
 const HTTP_TIMEOUT_MS =
-  Number.parseInt(process.env.REDIS_HTTP_TIMEOUT_MS ?? "", 10) || 1_000;
+  Number.parseInt(process.env.REDIS_HTTP_TIMEOUT_MS ?? "", 10) || 2_500;
 const HTTP_MAX_CONCURRENCY =
   Math.max(1, Number.parseInt(process.env.REDIS_HTTP_MAX_CONCURRENCY ?? "", 10) || 8);
 const HTTP_MAX_QUEUE =
