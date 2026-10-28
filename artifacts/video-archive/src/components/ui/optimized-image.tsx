@@ -188,7 +188,8 @@ export const OptimizedImage = memo(function OptimizedImage({
     return clearRetryTimer;
   }, [resolvedSrc, clearRetryTimer]);
 
-  // Below-fold lazy images wait for near-viewport intersection before fetching.
+  // Below-fold images use native lazy loading by default; constrained connections
+  // also gate flaky-host requests through IntersectionObserver before assigning src.
   useEffect(() => {
     if (isConnectionConstrained()) {
       const el = containerRef.current;
