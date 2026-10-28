@@ -3,7 +3,7 @@ import { supabase, fetchAll } from "../lib/supabase.js";
 import { notifyUser } from "../lib/notify.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { getCacheStats, getCacheMetrics, invalidateTags, invalidatePattern, purgeAllCache } from "../middleware/cache.js";
-import { getRedis, isRedisConnected, getRedisStatus } from "../lib/redis.js";
+import { getFeatureRedis, getRedis, isRedisConnected, getRedisStatus } from "../lib/redis.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
