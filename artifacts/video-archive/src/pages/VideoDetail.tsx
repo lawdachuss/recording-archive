@@ -1051,6 +1051,7 @@ export default function VideoDetail() {
                             <input
                               autoFocus
                               type="text"
+                              aria-label="New collection name"
                               placeholder="New collection…"
                               value={newColName}
                               onChange={(e) => setNewColName(e.target.value)}
