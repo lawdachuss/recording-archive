@@ -443,7 +443,7 @@ export default function Browse() {
                 </div>
                 {data && data.total != null && (
                   <p className="text-xs text-muted-foreground/70 ml-9.5">
-                    {data.total.toLocaleString()} recordings
+                    {(data.totalIsEstimate ?? false) ? "≈ " : ""}{data.total.toLocaleString()} recordings
                   </p>
                 )}
               </div>
