@@ -456,7 +456,23 @@ function newerRow(cur: RowLike | null, candidate: RowLike): RowLike {
   return candidate.timestamp > cur.timestamp ? candidate : cur;
 }
 
+const PERFORMER_AGGREGATION_CACHE_MS = 60_000;
+let performerAggregationCache: { value: PerformerAgg[]; expiresAt: number } | null = null;
+let performerAggregationInFlight: Promise<PerformerAgg[]> | null = null;
+
 async function fetchPerformers(): Promise<PerformerAgg[]> {
+  const now = Date.now();
+  if (performerAggregationCache && performerAggregationCache.expiresAt > now) {
+    return performerAggregationCache.value;
+  }
+  if (performerAggregationInFlight) {
+    return performerAggregationInFlight;
+  }
+
+  // All sort/page variants share one full-table aggregation. Without this
+  // short-lived cache, startup warmup can scan the recordings view several
+  // times concurrently and exceed the memory limit on a small Render instance.
+  const pending = (async (): Promise<PerformerAgg[]> => {
   const { data, error } = await fetchAll((start, end) =>
     supabase
       .from("recordings_with_links")
@@ -520,6 +536,21 @@ async function fetchPerformers(): Promise<PerformerAgg[]> {
     });
   }
   return performers;
+  })();
+  performerAggregationInFlight = pending;
+
+  try {
+    const performers = await pending;
+    performerAggregationCache = {
+      value: performers,
+      expiresAt: Date.now() + PERFORMER_AGGREGATION_CACHE_MS,
+    };
+    return performers;
+  } finally {
+    if (performerAggregationInFlight === pending) {
+      performerAggregationInFlight = null;
+    }
+  }
 }
 
 // ─── Mirror fallback chain for the card image ─────────────────────────────
@@ -570,7 +601,7 @@ router.get(
       const gender = (req.query.gender as string) || "";
       const sort = (req.query.sort as string) || "count";
 
-      let performers = await fetchPerformers();
+      let performers = [...(await fetchPerformers())];
 
       if (gender) {
         const genderMatch = resolveGenderBucket(gender);
