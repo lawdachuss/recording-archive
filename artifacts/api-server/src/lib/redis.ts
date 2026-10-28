@@ -172,8 +172,20 @@ function createHttpRedis(url: string, key: string) {
             throw new Error("Redis unavailable (HTTP bridge 503)");
           }
           if (!res.ok || !payload?.ok) {
-            if (res.status >= 500) openHttpCircuit();
-            throw new Error(payload?.error ?? `Redis HTTP bridge error ${res.status}`);
+            const detail = typeof payload?.details === "string" ? payload.details : "";
+            const message = typeof payload?.error === "string" ? payload.error : "";
+            // Redis command-level replies (especially BUSYGROUP when a stream
+            // consumer group already exists) do not mean the bridge is down.
+            // Older bridge builds wrap the reply in HTTP 500; preserve the real
+            // message and avoid tripping the circuit breaker for that case.
+            const isExistingGroup =
+              /^BUSYGROUP\b/i.test(detail) || /^BUSYGROUP\b/i.test(message);
+            if (res.status >= 500 && !isExistingGroup) openHttpCircuit();
+            throw new Error(
+              detail && message && detail !== message
+                ? `${message}: ${detail}`
+                : detail || message || `Redis HTTP bridge error ${res.status}`,
+            );
           }
 
           isConnected = true;
