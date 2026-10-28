@@ -96,10 +96,11 @@ inside CI; it does not deploy to production.
    `upload_links.host` and `upload_links.url`. Do not use the bootstrap file as
    a substitute for inspecting a populated database.
 3. On a large or busy production database, plan index creation for a quiet period:
-   ordinary `CREATE INDEX` can delay writes while it builds. For large tables, have
-   a DBA use equivalent `CREATE INDEX CONCURRENTLY` statements one at a time in
-   a session that is not inside a transaction, then record the migration as applied
-   using the team's established migration process. Do not blindly run both versions.
+   ordinary `CREATE INDEX` can delay writes while it builds. For large tables, a
+   DBA can copy the index statements, run their `CREATE INDEX CONCURRENTLY` variants
+   one at a time outside a transaction, then apply the migration; its
+   `IF NOT EXISTS` clauses will skip indexes already built. Do not mark the migration
+   applied until the view and RPC definitions have also been installed.
 4. Apply the migration and confirm the new view and RPCs exist. Allow PostgREST's
    schema cache notification/reload to complete.
 5. Deploy the API code only after the migration is available. A rolling deployment
@@ -157,9 +158,15 @@ WHERE schemaname = 'public'
     'watch_history_user_watched_at_desc_idx',
     'saved_videos_user_saved_at_desc_idx',
     'watch_later_user_added_at_asc_idx',
+    'user_collections_user_created_at_desc_idx',
+    'user_collections_created_at_desc_idx',
     'user_collection_items_collection_position_idx',
+    'user_profiles_created_at_desc_idx',
+    'requests_user_created_at_desc_idx',
     'requests_status_created_at_desc_idx',
     'comments_recording_created_at_desc_idx',
+    'comment_likes_comment_session_idx',
+    'reactions_recording_type_idx',
     'channel_assignments_unassigned_live_username_idx'
   )
 ORDER BY idx_scan ASC, indexrelname;
