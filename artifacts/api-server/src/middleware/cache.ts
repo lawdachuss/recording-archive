@@ -408,7 +408,7 @@ async function writeEntry(cacheKey: string, entry: CacheEntry, ttlSeconds: numbe
     pipeline.expire(`${TAG_PREFIX}:${tag}`, redisTtl);
   }
 
-  pipeline.exec().then((results) => {
+  pipeline.exec().then((results: Array<[Error | null, unknown]>) => {
     const failed = results.find(([err]) => err !== null);
     if (failed) {
       logger.error({ err: failed[0], cacheKey }, "Redis cache pipeline command failed");

@@ -119,7 +119,7 @@ async function redisIncrementPair(
     pipeline.incr(redisBurstKey);
     pipeline.expire(redisBurstKey, burstWindowSeconds + 5);
 
-    const replies = await pipeline.exec();
+    const replies: Array<[Error | null, unknown]> = await pipeline.exec();
     if (replies.length !== 4) throw new Error("Unexpected Redis rate-limit pipeline reply count");
     const failed = replies.find(([err]) => err !== null);
     if (failed) throw failed[0];
