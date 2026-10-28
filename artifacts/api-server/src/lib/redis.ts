@@ -147,12 +147,24 @@ function createHttpRedis(url: string, key: string) {
           });
           receivedResponse = true;
 
+          const contentType = res.headers.get("content-type") ?? "";
+          if (!contentType.toLowerCase().includes("json")) {
+            // Cloudflare tunnel failures often return an HTML 502/530 page.
+            // Treat it as an upstream outage, not a malformed Redis payload.
+            openHttpCircuit();
+            throw new Error(
+              `Redis HTTP bridge returned HTTP ${res.status} (${contentType || "unknown content type"}; expected JSON)`,
+            );
+          }
+
           let payload: any;
           try {
             payload = await res.json();
           } catch {
             openHttpCircuit();
-            throw new Error(`Redis HTTP bridge returned ${res.status} with an unreadable response`);
+            throw new Error(
+              `Redis HTTP bridge returned HTTP ${res.status} with invalid JSON (${contentType})`,
+            );
           }
 
           if (res.status === 503) {

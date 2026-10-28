@@ -1,5 +1,22 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+// Bound every PostgREST/Auth request. Without a request signal, a dead tunnel
+// or stalled upstream can hold a serverless invocation until Vercel's hard
+// function deadline. Keep this configurable for deployments with slower DBs.
+const SUPABASE_REQUEST_TIMEOUT_MS = (() => {
+  const configured = Number.parseInt(process.env.SUPABASE_REQUEST_TIMEOUT_MS ?? "", 10);
+  if (!Number.isFinite(configured) || configured < 1_000) return 12_000;
+  return Math.min(configured, 30_000);
+})();
+
+const supabaseFetch: typeof fetch = (input, init) => {
+  const timeoutSignal = AbortSignal.timeout(SUPABASE_REQUEST_TIMEOUT_MS);
+  const signal = init?.signal
+    ? AbortSignal.any([init.signal, timeoutSignal])
+    : timeoutSignal;
+  return fetch(input, { ...init, signal });
+};
+
 function normalizeUrl(url?: string): string {
   const trimmed = url?.trim();
   if (!trimmed) return "https://supabase.chuglii.in";
@@ -34,7 +51,9 @@ let _supabase: SupabaseClient | null = null;
 function getSupabaseSync(): SupabaseClient {
   if (_supabase) return _supabase;
   try {
-    _supabase = createClient(supabaseUrl, requireSupabaseKey());
+    _supabase = createClient(supabaseUrl, requireSupabaseKey(), {
+      global: { fetch: supabaseFetch },
+    });
     return _supabase;
   } catch (err) {
     throw new Error(`Supabase client creation failed: ${String(err)}`);
@@ -71,6 +90,7 @@ export function refreshSupabaseSchema(): SupabaseClient {
 export function createUserClient(token: string): SupabaseClient {
   return createClient(supabaseUrl, requireSupabaseKey(), {
     global: {
+      fetch: supabaseFetch,
       headers: { Authorization: `Bearer ${token}` },
     },
     auth: {
