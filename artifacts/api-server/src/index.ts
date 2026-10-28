@@ -20,13 +20,9 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
-  }
-
-  logger.info({ port }, "Server listening");
+const host = process.env.HOST || "0.0.0.0";
+const server = app.listen(port, host, () => {
+  logger.info({ host, port }, "Server listening");
 
     // Cross-instance cache invalidation: subscribe so writes handled by OTHER
     // instances (or a different serverless cold-warm lambda) clear our memory
@@ -62,4 +58,9 @@ app.listen(port, (err) => {
           logger.error({ err }, "Health check failed unexpectedly");
         });
       });
+});
+
+server.on("error", (err) => {
+  logger.error({ err, host, port }, "Error listening on port");
+  process.exit(1);
 });
