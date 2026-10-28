@@ -46,6 +46,12 @@ GRANT SELECT ON public.linked_recordings TO anon, authenticated, service_role, p
 CREATE INDEX IF NOT EXISTS recordings_timestamp_id_desc_idx
   ON public.recordings ("timestamp" DESC NULLS LAST, id DESC);
 
+CREATE INDEX IF NOT EXISTS recordings_timestamp_id_asc_idx
+  ON public.recordings ("timestamp" ASC NULLS LAST, id DESC);
+
+CREATE INDEX IF NOT EXISTS recordings_filesize_id_desc_idx
+  ON public.recordings (filesize DESC NULLS LAST, id DESC);
+
 CREATE INDEX IF NOT EXISTS recordings_username_timestamp_id_desc_idx
   ON public.recordings (username, "timestamp" DESC NULLS LAST, id DESC);
 
