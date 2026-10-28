@@ -19,10 +19,12 @@ function shouldUseSharedResponseCache(): boolean {
   // system variables a function bundle receives. Keep Redis for Render, but
   // use Vercel's edge + local cache for public responses on serverless.
   if (process.env.VERCEL_CACHE_LOCAL_ONLY === "1") return false;
-  return process.env.VERCEL === "1" ||
+  const isVercel =
+    process.env.VERCEL === "1" ||
     Boolean(process.env.VERCEL_URL) ||
     process.env.VERCEL_ENV === "production" ||
     process.env.VERCEL_ENV === "preview";
+  return !isVercel;
 }
 const inflightRedisMap = new Map<string, Promise<unknown>>();
 const inflightReqMap = new Map<string, Promise<void>>();

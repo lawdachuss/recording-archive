@@ -18,6 +18,7 @@ const pg = vi.hoisted(() => ({
 
 vi.mock("../redis.js", () => ({
   getRedis: vi.fn(() => null),
+  getFeatureRedis: vi.fn(() => null),
   isRedisConnected: vi.fn(() => false),
   redisPublish: vi.fn(async () => 0),
   redisSubscribe: vi.fn(async () => () => {}),
@@ -94,6 +95,7 @@ const waitMacrotask = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function useRedis() {
   vi.mocked(redis.getRedis).mockReturnValue(fakeRedis);
+  vi.mocked(redis.getFeatureRedis).mockReturnValue(fakeRedis);
   vi.mocked(redis.isRedisConnected).mockReturnValue(true);
 }
 
@@ -110,12 +112,14 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.mocked(redis.getRedis).mockReset();
+  vi.mocked(redis.getFeatureRedis).mockReset();
   vi.mocked(redis.isRedisConnected).mockReset();
 });
 
 describe("recordView", () => {
   it("returns null for the direct-PG fallback when Redis is down", async () => {
     vi.mocked(redis.getRedis).mockReturnValue(null);
+    vi.mocked(redis.getFeatureRedis).mockReturnValue(null);
     expect(await recordView("rec1")).toBeNull();
   });
 

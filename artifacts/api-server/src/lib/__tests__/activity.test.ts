@@ -11,6 +11,7 @@ import { pushActivityBatch, flushActivity } from "../activity.js";
 // vars. Mock the modules activity depends on.
 vi.mock("../redis.js", () => ({
   getRedis: vi.fn(() => null),
+  getFeatureRedis: vi.fn(() => null),
   isRedisConnected: vi.fn(() => false),
 }));
 
@@ -32,6 +33,7 @@ vi.mock("../logger.js", () => ({
 describe("activity pipeline (redis disconnected)", () => {
   beforeEach(() => {
     vi.mocked(redisModule.getRedis).mockReset().mockReturnValue(null);
+    vi.mocked(redisModule.getFeatureRedis).mockReset().mockReturnValue(null);
     vi.mocked(redisModule.isRedisConnected).mockReset().mockReturnValue(false);
   });
 
