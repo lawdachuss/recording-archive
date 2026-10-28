@@ -99,7 +99,7 @@ function preferNonCatboxFirst(urls: string[]): string[] {
   for (const url of urls) {
     try {
       const host = new URL(url).hostname.toLowerCase();
-      if (host === "catbox.moe" || host.endsWith(".catbox.moe") || host.endsWith(".litterbox.catbox.com")) {
+      if (host === "catbox.moe" || host.endsWith(".catbox.moe")) {
         catbox.push(url);
       } else {
         fastOrProxyable.push(url);
