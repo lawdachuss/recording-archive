@@ -73,13 +73,19 @@ row and every linked recording username into a serverless function.
 
 The existing stats/tag/performer RPCs are also redirected to `linked_recordings`.
 Their response columns are kept unchanged. New `get_reaction_counts()` and
-`get_comment_like_stats()` RPCs calculate interaction counts in Postgres and send
-back compact aggregate rows instead of transferring each reaction or comment-like
-row to the API. `get_comment_feed()` sorts and paginates explicitly paged comment
-requests in Postgres, returning the page's like counts, caller-session state and
-total count in one round trip. The legacy `fetchAll()` path remains for unpaginated
-comment requests and pre-migration deployments. The existing API aggregation paths
-also remain as compatibility fallbacks until migration 020 exists.
+`get_comment_like_stats()` RPCs aggregate interactions in Postgres instead of
+transferring each reaction or comment-like row to the API. `get_comment_feed()`
+sorts and paginates explicitly paged comment requests in Postgres, returning the
+page's like counts, caller-session state and total count. Unpaginated comment
+requests keep their previous `fetchAll()` behavior so PostgREST's max-row cap
+cannot silently truncate the response.
+
+The new `get_user_history_stats()` RPC also calculates watch totals, completion,
+average progress, top performers and day/hour buckets in Postgres, avoiding an
+unbounded watch-history transfer (and the existing REST query's default row cap).
+It uses a safe metadata parser and runs as security-invoker so the existing
+user-scoped RLS rules still apply. The API keeps a fallback for pre-migration
+deployments.
 
 ### 4. Make feed ordering stable
 
