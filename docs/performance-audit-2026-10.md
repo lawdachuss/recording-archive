@@ -186,6 +186,7 @@ WHERE schemaname = 'public'
     'recordings_gender_viewers_id_desc_idx',
     'recordings_resolution_timestamp_id_desc_idx',
     'watch_history_user_watched_at_desc_idx',
+    'watch_history_user_text_watched_at_desc_idx',
     'saved_videos_user_saved_at_desc_idx',
     'watch_later_user_added_at_asc_idx',
     'user_collections_user_created_at_desc_idx',
