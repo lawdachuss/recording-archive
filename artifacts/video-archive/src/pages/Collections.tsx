@@ -123,6 +123,7 @@ export default function Collections() {
               <input
                 autoFocus
                 type="text"
+                aria-label="Collection name"
                 placeholder="Collection name *"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
@@ -132,6 +133,7 @@ export default function Collections() {
               />
               <input
                 type="text"
+                aria-label="Collection description (optional)"
                 placeholder="Description (optional)"
                 value={newDesc}
                 onChange={(e) => setNewDesc(e.target.value)}
