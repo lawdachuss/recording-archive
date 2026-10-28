@@ -504,6 +504,7 @@ export default function Browse() {
                           <input
                             ref={saveInputRef}
                             type="text"
+                            aria-label="Preset name"
                             placeholder="Save current as…"
                             value={presetName}
                             onChange={(e) => setPresetName(e.target.value)}
@@ -676,6 +677,7 @@ export default function Browse() {
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground/50" />
                     <input
                       type="text"
+                      aria-label="Search tags"
                       placeholder="Search tags…"
                       value={tagSearch}
                       onChange={(e) => setTagSearch(e.target.value)}
