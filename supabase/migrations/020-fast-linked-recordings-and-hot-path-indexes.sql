@@ -105,12 +105,6 @@ CREATE INDEX IF NOT EXISTS comment_likes_comment_session_idx
 CREATE INDEX IF NOT EXISTS reactions_recording_type_idx
   ON public.reactions (recording_id, type);
 
--- Node fleet queue: restrict candidate scans to unassigned, unclaimed work.
--- Existing idx_channel_assignments_assigned_node remains useful for node load counts.
-CREATE INDEX IF NOT EXISTS channel_assignments_unassigned_live_username_idx
-  ON public.channel_assignments (is_live, username)
-  WHERE assigned_node IS NULL AND status = 'unassigned';
-
 -- The public endpoints now use linked_recordings, keeping the old view's
 -- backwards-compatible "all recordings, optionally with links" contract.
 CREATE OR REPLACE FUNCTION public.get_site_stats()
