@@ -74,6 +74,12 @@ CREATE INDEX IF NOT EXISTS recordings_resolution_timestamp_id_desc_idx
 CREATE INDEX IF NOT EXISTS watch_history_user_watched_at_desc_idx
   ON public.watch_history (user_id, watched_at DESC);
 
+-- The application may encounter older deployments where user_id was uuid
+-- rather than text. The expression index and text comparison below support
+-- either representation without uuid = text operator errors.
+CREATE INDEX IF NOT EXISTS watch_history_user_text_watched_at_desc_idx
+  ON public.watch_history ((user_id::text), watched_at DESC);
+
 CREATE INDEX IF NOT EXISTS saved_videos_user_saved_at_desc_idx
   ON public.saved_videos (user_id, saved_at DESC);
 
@@ -354,10 +360,10 @@ AS $$
     SELECT
       coalesce(h.progress, 0) AS progress,
       coalesce(h.total_watch_ms, 0)::double precision AS watch_ms,
-      public.try_parse_jsonb(h.metadata) AS metadata_json,
+      public.try_parse_jsonb(h.metadata::text) AS metadata_json,
       h.watched_at
     FROM public.watch_history AS h
-    WHERE h.user_id = p_user_id
+    WHERE h.user_id::text = p_user_id::text
   ),
   summary AS (
     SELECT
