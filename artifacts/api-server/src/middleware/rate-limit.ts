@@ -81,35 +81,64 @@ function memoryIncrement(key: string, windowSeconds: number = WINDOW_SECONDS): {
   return fresh;
 }
 
-// ─── Redis fixed window ───────────────────────────────────────────
+// ─── Redis fixed windows ───────────────────────────────────────────
 
-async function redisIncrement(
+// Each API request consumes both a sustained-window bucket and a burst bucket.
+// Send all four INCR/EXPIRE operations in one bridge call rather than making
+// separate HTTPS requests for each bucket. This materially reduces bridge
+// fan-out when Vercel scales out across many serverless instances.
+interface RateWindow {
+  count: number;
+  resetAt: number;
+}
+
+interface RedisRateWindows {
+  regular: RateWindow;
+  burst: RateWindow;
+}
+
+async function redisIncrementPair(
   key: string,
-  windowSeconds: number = WINDOW_SECONDS,
-): Promise<{ count: number; resetAt: number } | null> {
-  // Avoid a remote Redis bridge round-trip on every API request in Vercel.
-  // This limiter degrades to its existing per-instance memory buckets there;
-  // deploy a provider-level WAF/rate-limit rule for globally coordinated limits.
-  if (process.env.VERCEL_CACHE_LOCAL_ONLY === "1") return null;
+  windowSeconds: number,
+  burstKey: string,
+  burstWindowSeconds: number,
+): Promise<RedisRateWindows | null> {
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return null;
 
   try {
-    const window = Math.floor(Date.now() / (windowSeconds * 1000));
+    const now = Date.now();
+    const window = Math.floor(now / (windowSeconds * 1000));
+    const burstWindow = Math.floor(now / (burstWindowSeconds * 1000));
     const redisKey = `${KEY_PREFIX}:${key}:${window}`;
-    const resetAt = (window + 1) * windowSeconds * 1000;
+    const redisBurstKey = `${KEY_PREFIX}:${burstKey}:${burstWindow}`;
 
-    const count = await redis.incr(redisKey);
-    if (count === 1) {
-      redis.expire(redisKey, windowSeconds + 5).catch(() => {});
+    const pipeline = redis.pipeline();
+    pipeline.incr(redisKey);
+    pipeline.expire(redisKey, windowSeconds + 5);
+    pipeline.incr(redisBurstKey);
+    pipeline.expire(redisBurstKey, burstWindowSeconds + 5);
+
+    const replies = await pipeline.exec();
+    if (replies.length !== 4) throw new Error("Unexpected Redis rate-limit pipeline reply count");
+    const failed = replies.find(([err]) => err !== null);
+    if (failed) throw failed[0];
+
+    const regularCount = Number(replies[0][1]);
+    const burstCount = Number(replies[2][1]);
+    if (!Number.isFinite(regularCount) || !Number.isFinite(burstCount)) {
+      throw new Error("Redis returned a non-numeric rate-limit counter");
     }
-    return { count, resetAt };
+
+    return {
+      regular: { count: regularCount, resetAt: (window + 1) * windowSeconds * 1000 },
+      burst: { count: burstCount, resetAt: (burstWindow + 1) * burstWindowSeconds * 1000 },
+    };
   } catch (err) {
     logger.error({ err }, "Rate limiter Redis error (failing open)");
     return null;
   }
 }
-
 // ─── Identity helpers ─────────────────────────────────────────────
 
 export function clientIp(req: Request): string {
@@ -196,18 +225,18 @@ export function rateLimit(options: RateLimitOptions) {
 
     const keyPart = options.keyFn?.(req) ?? clientIp(req);
 
-    // Long (per-minute) window: bounds sustained traffic.
+    // Sustained and burst limits share one Redis HTTPS pipeline so one API
+    // request creates one bridge call instead of one call per counter/window.
     const key = `${options.bucket}:${keyPart}`;
-    const result =
-      (await redisIncrement(key)) ?? memoryIncrement(key);
-
-    // Short (5s) burst window: catches a scraper dumping a huge burst through
-    // in under a minute while a human browsing — even with prefetch firing — 
-    // stays far below it.
     const burstKey = `burst:${key}`;
-    const burstResult =
-      (await redisIncrement(burstKey, BURST_WINDOW_SECONDS)) ??
-      memoryIncrement(burstKey, BURST_WINDOW_SECONDS);
+    const sharedWindows = await redisIncrementPair(
+      key,
+      WINDOW_SECONDS,
+      burstKey,
+      BURST_WINDOW_SECONDS,
+    );
+    const result = sharedWindows?.regular ?? memoryIncrement(key);
+    const burstResult = sharedWindows?.burst ?? memoryIncrement(burstKey, BURST_WINDOW_SECONDS);
 
     // Whichever window trips first wins the 429. Send the tighter reset so
     // clients back off the shortest amount that actually clears the trip.
