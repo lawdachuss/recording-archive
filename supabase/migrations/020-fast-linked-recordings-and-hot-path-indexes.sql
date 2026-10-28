@@ -304,13 +304,13 @@ LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = pg_catalog, public
-AS $
+AS $$
   SELECT
     count(*) FILTER (WHERE r.type = 'like')::bigint AS likes,
     count(*) FILTER (WHERE r.type = 'dislike')::bigint AS dislikes
   FROM public.reactions AS r
   WHERE r.recording_id = p_recording_id;
-$;
+$$;
 
 REVOKE ALL ON FUNCTION public.get_reaction_counts(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_reaction_counts(text) TO anon, authenticated, service_role;
@@ -324,7 +324,7 @@ LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = pg_catalog, public
-AS $
+AS $$
   SELECT
     requested.comment_id,
     count(cl.comment_id)::bigint AS like_count,
@@ -333,7 +333,7 @@ AS $
   LEFT JOIN public.comment_likes AS cl
     ON cl.comment_id = requested.comment_id
   GROUP BY requested.comment_id;
-$;
+$$;
 
 REVOKE ALL ON FUNCTION public.get_comment_like_stats(integer[], text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_comment_like_stats(integer[], text) TO anon, authenticated, service_role;
