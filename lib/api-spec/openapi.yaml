@@ -454,10 +454,16 @@ components:
             $ref: "#/components/schemas/Recording"
         total:
           type: integer
+          description: Exact for normal browsing; may be planner-estimated for text search.
         page:
           type: integer
         limit:
           type: integer
+        totalPages:
+          type: integer
+        totalIsEstimate:
+          type: boolean
+          description: True when a text-search result uses an estimated total count.
 
     Performer:
       type: object
