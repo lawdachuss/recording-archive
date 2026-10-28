@@ -219,22 +219,11 @@ export function useContinuousPrefetch({
               }
             });
 
-            // Warm sprites (+ animated previews on near pages) for the WHOLE
-            // page. The old `recs.slice(eagerThumbs)` was ALWAYS EMPTY whenever
-            // eagerThumbs >= page size (Browse passes ITEMS_PER_PAGE), so
-            // lookahead pages silently got thumbnails only — no sprites, no
-            // previews — and hover on pages 2-6 was cold. preloadRecordingMedia
-            // re-enqueues the eager thumbs as background (deduped by URL) and
-            // keeps them non-immediate, so sprites ride the immediate queue in
-            // front of the remaining thumbnail tail.
-            //
-            // Sprite warming is deliberately CAPPED and NON-immediate. Every page
-            // this hook touches is strictly AFTER the current one (planPages
-            // returns (startPage, startPage + prefetchAhead]), so nothing here
-            // serves a visible card — the visible grid's sheets are warmed on
-            // demand by useHoverPreview's viewport observer. A sheet is ~130 KB,
-            // so pulling all 24 "immediate" spent megabytes on pages the user
-            // might never open and jumped the queue ahead of real work.
+            // The thumbnail strip above is deliberately bounded (8 on Browse). Warm a
+            // few sprite sheets in the background for the next page, but don't
+            // download thumbnails a second time or fetch animated previews for
+            // cards the user may never open. The viewport observer warms sprites
+            // near visible cards; full previews start on actual hover intent.
             if (near) {
               preloadRecordingMedia(recs, { immediate: false, spriteLimit: NEAR_SPRITE_LIMIT, skipThumbnails: true, skipPreviews: true });
             } else {
