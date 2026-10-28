@@ -128,9 +128,63 @@ router.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comme
       return;
     }
 
+    const rawPage = req.query.page as string | undefined;
+    const rawLimit = req.query.limit as string | undefined;
+    const hasPagination = rawPage !== undefined && rawLimit !== undefined;
+    const page = hasPagination ? Math.max(1, parseInt(rawPage) || 1) : 1;
+    const limit = hasPagination ? Math.min(100, Math.max(1, parseInt(rawLimit) || 50)) : 0;
+    const offset = hasPagination ? (page - 1) * limit : 0;
+
+    // Fast path: let Postgres sort and paginate before returning comment rows.
+    // This keeps the response contract but prevents page requests from shipping
+    // every comment and like for a recording to the serverless function.
+    const { data: feedData, error: feedError } = await supabase.rpc("get_comment_feed", {
+      p_recording_id: recording_id,
+      p_sort: sort,
+      p_offset: offset,
+      p_limit: hasPagination ? limit : null,
+      p_session_id: session_id ?? null,
+    });
+
+    if (!feedError) {
+      const feedRows = (feedData ?? []) as unknown as Array<
+        CommentRow & { user_liked?: boolean; total?: number | string }
+      >;
+      const total = Number(feedRows[0]?.total ?? 0);
+      const windowRows = feedRows.map(({ total: _total, user_liked: _userLiked, ...row }) => ({
+        ...row,
+        likes: Number(row.likes ?? 0),
+      }) as CommentRow);
+      const likedSet = session_id
+        ? new Set(feedRows.filter((row) => row.user_liked).map((row) => Number(row.id)))
+        : undefined;
+      const tree = buildCommentTree(windowRows, likedSet);
+
+      if (hasPagination) {
+        const totalPages = Math.ceil(total / limit) || 1;
+        res.json({ data: tree, total, page, limit, totalPages });
+      } else {
+        // Preserve the legacy flat-array response when page/limit are omitted.
+        res.json(tree);
+      }
+      return;
+    }
+
+    const feedErrorCode = (feedError as { code?: string }).code;
+    const feedErrorMessage = (feedError as { message?: string }).message ?? "";
+    const canUseLegacyPath =
+      feedErrorCode === "PGRST202" ||
+      feedErrorCode === "42501" ||
+      /function.*not.*found|Could not find the function|permission denied/i.test(feedErrorMessage);
+    if (!canUseLegacyPath) {
+      req.log?.error?.({ err: feedError, recording_id }, "Supabase error fetching paginated comment feed");
+      res.status(500).json({ error: "Failed to fetch comments" });
+      return;
+    }
+
+    // Compatibility fallback for databases before migration 020.
     // Fetch every comment for this recording (PostgREST caps rows at 1,000 per
-    // request, so paginate). Tree structure + like-based ordering need the full
-    // set before we can slice a page.
+    // request, so paginate), then preserve the historical tree/sort behavior.
     const { data, error } = await fetchAll((start, end) =>
       supabase
         .from("comments")
@@ -150,10 +204,6 @@ router.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comme
 
     // Default: return all comments (tree structure requires parent-reply grouping).
     // Only paginate when both page and limit are explicitly passed.
-    const rawPage = req.query.page as string | undefined;
-    const rawLimit = req.query.limit as string | undefined;
-    const hasPagination = rawPage !== undefined && rawLimit !== undefined;
-    const page = hasPagination ? Math.max(1, parseInt(rawPage) || 1) : 1;
     const limit = hasPagination ? Math.min(100, Math.max(1, parseInt(rawLimit) || 50)) : total || 50;
     const totalPages = hasPagination ? Math.ceil(total / limit) || 1 : 1;
 
@@ -184,8 +234,8 @@ router.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comme
       return 0;
     });
 
-    const offset = (page - 1) * limit;
-    const windowRows = allRows.slice(offset, offset + limit).map((r) => ({
+    const fallbackOffset = (page - 1) * limit;
+    const windowRows = allRows.slice(fallbackOffset, fallbackOffset + limit).map((r) => ({
       ...r,
       likes: likeCounts.get(Number(r.id)) ?? 0,
     }));
