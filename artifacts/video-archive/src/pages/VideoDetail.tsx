@@ -395,31 +395,45 @@ export default function VideoDetail() {
   const handleAddToCollection = async (colId: string) => {
     const meta = getVideoMeta();
     if (!meta || !user) return;
-    await userApi.addCollectionItem(colId, meta.id, recordingToMeta(meta));
-    // Analytics: recording added to an existing collection.
-    trackActivity("collection_item_add", { meta: { collection_id: colId, recording_id: meta.id } });
-    setAddedToCol(colId);
-    setTimeout(() => {
-      setCollectionOpen(false);
-      setAddedToCol(null);
-    }, 1200);
+    try {
+      await userApi.addCollectionItem(colId, meta.id, recordingToMeta(meta));
+      // Analytics: recording added to an existing collection.
+      trackActivity("collection_item_add", { meta: { collection_id: colId, recording_id: meta.id } });
+      queryClient.invalidateQueries({ queryKey: ["user", "collections"] });
+      queryClient.invalidateQueries({ queryKey: ["public-playlists"] });
+      queryClient.invalidateQueries({ queryKey: ["public-playlist-items", colId] });
+      setAddedToCol(colId);
+      setTimeout(() => {
+        setCollectionOpen(false);
+        setAddedToCol(null);
+      }, 1200);
+    } catch (err) {
+      console.error("Failed to add to collection:", err);
+    }
   };
 
   const handleCreateAndAdd = async () => {
     if (!newColName.trim() || !user) return;
     const meta = getVideoMeta();
     if (!meta) return;
-    const col = await userApi.createCollection(newColName.trim());
-    await userApi.addCollectionItem(col.id, meta.id, recordingToMeta(meta));
-    // Analytics: collection created (with a recording added in one action).
-    trackActivity("collection_create", { meta: { collection_id: col.id, recording_id: meta.id } });
-    setCloudCollections((prev) => [{ ...col, item_count: 1 }, ...prev]);
-    setAddedToCol(col.id);
-    setNewColName("");
-    setTimeout(() => {
-      setCollectionOpen(false);
-      setAddedToCol(null);
-    }, 1200);
+    try {
+      const col = await userApi.createCollection(newColName.trim());
+      await userApi.addCollectionItem(col.id, meta.id, recordingToMeta(meta));
+      // Analytics: collection created (with a recording added in one action).
+      trackActivity("collection_create", { meta: { collection_id: col.id, recording_id: meta.id } });
+      queryClient.invalidateQueries({ queryKey: ["user", "collections"] });
+      queryClient.invalidateQueries({ queryKey: ["public-playlists"] });
+      queryClient.invalidateQueries({ queryKey: ["public-playlist-items", col.id] });
+      setCloudCollections((prev) => [{ ...col, item_count: 1 }, ...prev]);
+      setAddedToCol(col.id);
+      setNewColName("");
+      setTimeout(() => {
+        setCollectionOpen(false);
+        setAddedToCol(null);
+      }, 1200);
+    } catch (err) {
+      console.error("Failed to create collection and add video:", err);
+    }
   };
 
   useEffect(() => {

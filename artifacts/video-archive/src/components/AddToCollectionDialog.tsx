@@ -67,14 +67,12 @@ export function AddToCollectionDialog() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open) {
-      setNewName("");
-      setAddingTo(null);
-      setAdded(null);
-      setWlAdded(false);
-      setError(null);
-    }
-  }, [open]);
+    setNewName("");
+    setAddingTo(null);
+    setAdded(null);
+    setWlAdded(false);
+    setError(null);
+  }, [open, target?.id]);
 
   useEffect(() => {
     if (!open) return;
@@ -93,7 +91,7 @@ export function AddToCollectionDialog() {
 
   const addToCollection = useCallback(
     async (colId: string) => {
-      if (!target) return;
+      if (!target || !target.id) return;
       setAddingTo(colId);
       setError(null);
       try {
@@ -105,6 +103,8 @@ export function AddToCollectionDialog() {
         trackActivity("collection_item_add", { meta: { collection_id: colId, recording_id: target.id } });
         setAdded(colId);
         queryClient.invalidateQueries({ queryKey: ["user", "collections"] });
+        queryClient.invalidateQueries({ queryKey: ["public-playlists"] });
+        queryClient.invalidateQueries({ queryKey: ["public-playlist-items", colId] });
       } catch {
         setError("Could not add — try again.");
       } finally {
@@ -131,7 +131,7 @@ export function AddToCollectionDialog() {
   }, [target, queryClient]);
 
   const createAndAdd = useCallback(async () => {
-    if (!target || !newName.trim()) return;
+    if (!target || !target.id || !newName.trim()) return;
     setAddingTo("__new");
     setError(null);
     try {
@@ -143,6 +143,8 @@ export function AddToCollectionDialog() {
       );
       trackActivity("collection_create", { meta: { collection_id: col.id, recording_id: target.id } });
       queryClient.invalidateQueries({ queryKey: ["user", "collections"] });
+      queryClient.invalidateQueries({ queryKey: ["public-playlists"] });
+      queryClient.invalidateQueries({ queryKey: ["public-playlist-items", col.id] });
       setAdded(col.id);
       setNewName("");
     } catch {

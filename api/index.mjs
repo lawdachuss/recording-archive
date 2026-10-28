@@ -68403,55 +68403,222 @@ function tryImportRedis() {
     return null;
   }
 }
-var redisUrl = process.env.REDIS_URL;
+var vercelLocalCacheMode = process.env.VERCEL_CACHE_LOCAL_ONLY === "1";
+var redisUrl = vercelLocalCacheMode ? void 0 : process.env.REDIS_URL;
 var httpUrl = process.env.REDIS_HTTP_URL;
 var client = null;
 var isConnected = false;
 var httpMode = false;
-var HTTP_TIMEOUT_MS = Number.parseInt(process.env.REDIS_HTTP_TIMEOUT_MS ?? "", 10) || 15e3;
+var HTTP_TIMEOUT_MS = Number.parseInt(process.env.REDIS_HTTP_TIMEOUT_MS ?? "", 10) || 2500;
+var HTTP_MAX_CONCURRENCY = Math.max(1, Number.parseInt(process.env.REDIS_HTTP_MAX_CONCURRENCY ?? "", 10) || 8);
+var HTTP_MAX_QUEUE = Math.max(1, Number.parseInt(process.env.REDIS_HTTP_MAX_QUEUE ?? "", 10) || 64);
+var HTTP_FAILURE_COOLDOWN_MS = Math.max(500, Number.parseInt(process.env.REDIS_HTTP_FAILURE_COOLDOWN_MS ?? "", 10) || 15e3);
+var httpInFlight = 0;
+var httpCircuitOpenUntil = 0;
+var httpHalfOpenInFlight = false;
+var httpWaiters = [];
+async function withHttpSlot(signal, work) {
+  if (signal.aborted) throw new Error("Redis HTTP bridge request timed out before acquiring a slot");
+  if (httpInFlight >= HTTP_MAX_CONCURRENCY) {
+    if (httpWaiters.length >= HTTP_MAX_QUEUE) {
+      throw new Error("Redis HTTP bridge queue is full");
+    }
+    await new Promise((resolve, reject) => {
+      const waiter = {};
+      waiter.signal = signal;
+      waiter.resolve = () => {
+        signal.removeEventListener("abort", waiter.onAbort);
+        resolve();
+      };
+      waiter.reject = (error) => {
+        signal.removeEventListener("abort", waiter.onAbort);
+        reject(error);
+      };
+      waiter.onAbort = () => {
+        const index = httpWaiters.indexOf(waiter);
+        if (index >= 0) httpWaiters.splice(index, 1);
+        waiter.reject(new Error("Redis HTTP bridge queue wait timed out"));
+      };
+      httpWaiters.push(waiter);
+      signal.addEventListener("abort", waiter.onAbort, { once: true });
+      if (signal.aborted) waiter.onAbort();
+    });
+  } else {
+    httpInFlight++;
+  }
+  try {
+    if (signal.aborted) throw new Error("Redis HTTP bridge request timed out while queued");
+    return await work();
+  } finally {
+    const next = httpWaiters.shift();
+    if (next) {
+      next.resolve();
+    } else {
+      httpInFlight--;
+    }
+  }
+}
+function openHttpCircuit() {
+  isConnected = false;
+  httpCircuitOpenUntil = Date.now() + HTTP_FAILURE_COOLDOWN_MS;
+  httpHalfOpenInFlight = false;
+}
 function createHttpRedis(url, key) {
   const post2 = async (body) => {
-    let res;
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
-      try {
-        res = await fetch(url, {
-          method: "POST",
-          headers: { "content-type": "application/json", apikey: key },
-          body: JSON.stringify(body),
-          signal: controller.signal
-        });
-      } finally {
-        clearTimeout(timer);
+    if (Date.now() < httpCircuitOpenUntil) {
+      isConnected = false;
+      throw new Error("Redis HTTP bridge is cooling down after a connection failure");
+    }
+    const isHalfOpenProbe = httpCircuitOpenUntil > 0;
+    if (isHalfOpenProbe) {
+      if (httpHalfOpenInFlight) {
+        throw new Error("Redis HTTP bridge recovery probe is already in flight");
       }
-    } catch (err) {
-      isConnected = false;
-      logger.error({ err: { message: err?.message } }, "Redis HTTP bridge unreachable");
-      throw err;
+      httpHalfOpenInFlight = true;
     }
-    let payload = null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
     try {
-      payload = await res.json();
-    } catch {
-      isConnected = false;
-      throw new Error(`Redis HTTP bridge returned ${res.status}`);
+      return await withHttpSlot(controller.signal, async () => {
+        if (Date.now() < httpCircuitOpenUntil) {
+          isConnected = false;
+          throw new Error("Redis HTTP bridge is cooling down after a connection failure");
+        }
+        let receivedResponse = false;
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json", apikey: key },
+            body: JSON.stringify(body),
+            signal: controller.signal
+          });
+          receivedResponse = true;
+          let payload;
+          try {
+            payload = await res.json();
+          } catch {
+            openHttpCircuit();
+            throw new Error(`Redis HTTP bridge returned ${res.status} with an unreadable response`);
+          }
+          if (res.status === 503) {
+            openHttpCircuit();
+            throw new Error("Redis unavailable (HTTP bridge 503)");
+          }
+          if (!res.ok || !payload?.ok) {
+            if (res.status >= 500) openHttpCircuit();
+            throw new Error(payload?.error ?? `Redis HTTP bridge error ${res.status}`);
+          }
+          isConnected = true;
+          httpCircuitOpenUntil = 0;
+          return payload;
+        } catch (err) {
+          if (!receivedResponse) {
+            openHttpCircuit();
+            logger.error(
+              { err: { message: err?.message }, timeoutMs: HTTP_TIMEOUT_MS },
+              "Redis HTTP bridge unreachable"
+            );
+          }
+          throw err;
+        }
+      });
+    } finally {
+      clearTimeout(timer);
+      if (isHalfOpenProbe) httpHalfOpenInFlight = false;
     }
-    if (res.status === 503) {
-      isConnected = false;
-      throw new Error("Redis unavailable (HTTP bridge 503)");
+  };
+  const MAX_HTTP_ARGS = 32;
+  const MAX_HTTP_PIPELINE_OPS = 256;
+  const executeBatch = async (commands) => {
+    const results = [];
+    for (let i = 0; i < commands.length; i += MAX_HTTP_PIPELINE_OPS) {
+      const payload = await post2({
+        pipeline: commands.slice(i, i + MAX_HTTP_PIPELINE_OPS)
+      });
+      for (const [err, result] of payload.results ?? []) {
+        if (err) throw new Error(`Redis HTTP pipeline command failed: ${String(err)}`);
+        results.push(result);
+      }
     }
-    if (!res.ok || !payload?.ok) {
-      throw new Error(payload?.error ?? `Redis HTTP bridge error ${res.status}`);
-    }
-    isConnected = true;
-    return payload;
+    return results;
+  };
+  const chunks = (values, size) => {
+    const out = [];
+    for (let i = 0; i < values.length; i += size) out.push(values.slice(i, i + size));
+    return out;
   };
   const command = async (cmd, args = []) => {
-    const payload = await post2({ cmd, args });
-    return payload.result;
+    if (args.length <= MAX_HTTP_ARGS) {
+      const payload = await post2({ cmd, args });
+      return payload.result;
+    }
+    const canonical = cmd.toUpperCase();
+    if (canonical === "DEL" || canonical === "SADD" || canonical === "ZREM") {
+      const [key2, ...values] = args;
+      const tailChunks = chunks(values, MAX_HTTP_ARGS - 1);
+      const replies = await executeBatch(
+        tailChunks.map((tail) => ({ cmd, args: [key2, ...tail] }))
+      );
+      return replies.reduce((total, value) => total + Number(value ?? 0), 0);
+    }
+    if (canonical === "HMGET") {
+      const [key2, ...fields] = args;
+      const fieldChunks = chunks(fields, MAX_HTTP_ARGS - 1);
+      const replies = await executeBatch(
+        fieldChunks.map((tail) => ({ cmd, args: [key2, ...tail] }))
+      );
+      return replies.flat();
+    }
+    if (canonical === "XACK") {
+      const [stream, group, ...ids] = args;
+      const idChunks = chunks(ids, MAX_HTTP_ARGS - 2);
+      const replies = await executeBatch(
+        idChunks.map((tail) => ({ cmd, args: [stream, group, ...tail] }))
+      );
+      return replies.reduce((total, value) => total + Number(value ?? 0), 0);
+    }
+    throw new Error(`Redis HTTP bridge command ${cmd} exceeds the ${MAX_HTTP_ARGS}-argument limit`);
   };
   const normalizeKeys = (args) => args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
+  const healthCheck = async () => {
+    const healthUrl = url.includes("?") ? `${url}&health=true` : `${url}?health=true`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+    try {
+      const res = await withHttpSlot(
+        controller.signal,
+        () => fetch(healthUrl, {
+          method: "GET",
+          headers: { apikey: key },
+          signal: controller.signal
+        })
+      );
+      const payload = await res.json();
+      if (!res.ok || payload.ok !== true || payload.ping !== "PONG") {
+        isConnected = false;
+        if (res.status >= 500 || res.status === 503) openHttpCircuit();
+        logger.error(
+          { status: res.status, redisStatus: payload.ping ?? "unknown" },
+          "Redis HTTP bridge health check failed"
+        );
+        return;
+      }
+      isConnected = true;
+      httpCircuitOpenUntil = 0;
+      logger.info(
+        { latencyMs: payload.latency_ms, keys: payload.keys, reconnects: payload.reconnects },
+        "Redis HTTP bridge health check passed"
+      );
+    } catch (err) {
+      openHttpCircuit();
+      logger.error(
+        { err: { message: err?.message } },
+        "Redis HTTP bridge health check failed"
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   const pipeline = () => {
     const ops = [];
     const push = (cmd, args) => {
@@ -68460,6 +68627,7 @@ function createHttpRedis(url, key) {
     };
     const outer = {
       sadd: (k, v) => push("sadd", [k, v]),
+      incr: (k) => push("incr", [k]),
       zincrby: (k, inc, m) => push("zincrby", [k, inc, m]),
       hset: (k, f, v) => push("hset", [k, f, v]),
       expire: (k, s) => push("expire", [k, s]),
@@ -68480,6 +68648,7 @@ function createHttpRedis(url, key) {
   };
   return {
     status: "ready",
+    healthCheck,
     get: (k) => command("get", [k]),
     set: (k, v, ...rest) => command("set", [k, v, ...rest]),
     setex: (k, ttl, v) => command("setex", [k, ttl, v]),
@@ -68520,6 +68689,12 @@ if (httpUrl) {
   );
   isConnected = true;
   logger.info(`Redis over HTTPS bridge enabled (${httpUrl})`);
+  const isVercelRuntime = process.env.VERCEL_CACHE_LOCAL_ONLY === "1" || process.env.VERCEL === "1" || Boolean(process.env.VERCEL_URL) || process.env.VERCEL_ENV === "production" || process.env.VERCEL_ENV === "preview";
+  if (!isVercelRuntime) {
+    void client.healthCheck().catch((err) => {
+      logger.error({ err: { message: err?.message } }, "Redis HTTP bridge health check failed");
+    });
+  }
 } else if (redisUrl) {
   const mod = tryImportRedis();
   if (!mod) {
@@ -68553,8 +68728,20 @@ if (httpUrl) {
       logger.info("Redis connecting\u2026");
     });
     client.on("ready", () => {
+      const isReconnect = hasWasConnected;
       isConnected = true;
+      hasWasConnected = true;
       logger.info("Redis ready");
+      if (isReconnect) {
+        logger.info("Redis reconnected \u2014 flushing stale local memory cache");
+        for (const listener of reconnectListeners) {
+          try {
+            listener();
+          } catch (err) {
+            logger.error({ err }, "Redis reconnect listener error");
+          }
+        }
+      }
     });
     client.on("close", () => {
       isConnected = false;
@@ -68567,19 +68754,27 @@ if (httpUrl) {
       logger.error({ err: { message: err.message } }, "Redis initial connection failed");
     });
   }
+} else if (vercelLocalCacheMode) {
+  logger.info("Redis bridge disabled by VERCEL_CACHE_LOCAL_ONLY; using local caches and database fallbacks");
 } else {
   logger.warn("REDIS_URL not set, caching disabled");
 }
 function getRedis() {
+  return vercelLocalCacheMode ? null : client;
+}
+function getFeatureRedis() {
   return client;
 }
 function isRedisConnected() {
+  if (httpMode) return Date.now() >= httpCircuitOpenUntil;
   return isConnected && client?.status === "ready";
 }
 function getRedisStatus() {
   if (httpMode) return "http";
   return client?.status ?? "none";
 }
+var hasWasConnected = false;
+var reconnectListeners = /* @__PURE__ */ new Set();
 var _pubSubClient = null;
 function redisPublish(channel, message) {
   if (httpMode) return false;
@@ -68602,6 +68797,10 @@ var TAG_PREFIX = "tag:v2";
 var DEFAULT_STALE_SECONDS = 60;
 var DEFAULT_MEMORY_ENTRIES = 500;
 var INFLOW_TIMEOUT_MS = Number.parseInt(process.env.API_CACHE_INFLOW_TIMEOUT ?? "", 10) || 1e4;
+function shouldUseSharedResponseCache() {
+  if (process.env.VERCEL_CACHE_LOCAL_ONLY === "1") return false;
+  return process.env.VERCEL === "1" || Boolean(process.env.VERCEL_URL) || process.env.VERCEL_ENV === "production" || process.env.VERCEL_ENV === "preview";
+}
 var inflightRedisMap = /* @__PURE__ */ new Map();
 var inflightReqMap = /* @__PURE__ */ new Map();
 var MAX_KEY_EPOCHS = 5e3;
@@ -68704,7 +68903,9 @@ var CACHEABLE_QUERY_PARAMS = /* @__PURE__ */ new Set([
   "w",
   "fmt",
   "format",
-  "offset"
+  "offset",
+  "exclude",
+  "filter"
 ]);
 function normalizeOriginalUrl(originalUrl) {
   const [pathname, rawQuery = ""] = originalUrl.split("?", 2);
@@ -68806,6 +69007,7 @@ function sendEntry(req, res, entry, source, staleSeconds) {
   res.status(entry.statusCode).type("json").send(entry.body);
 }
 async function readRedis(cacheKey) {
+  if (!shouldUseSharedResponseCache()) return null;
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return null;
   const raw = await dedupeRedis(`read:${cacheKey}`, () => redis.get(cacheKey));
@@ -68829,22 +69031,24 @@ async function readRedis(cacheKey) {
 async function writeEntry(cacheKey, entry, ttlSeconds, staleSeconds) {
   if (wasInvalidatedAfter(cacheKey, entry)) return;
   setMemory(cacheKey, entry);
+  if (!shouldUseSharedResponseCache()) return;
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return;
   const redisTtl = Math.max(1, ttlSeconds + staleSeconds);
-  redis.setex(cacheKey, redisTtl, JSON.stringify(entry)).catch(
-    (err) => logger.error({ err, cacheKey }, "Redis write error")
-  );
-  if (entry.tags.length > 0) {
-    const pipeline = redis.pipeline();
-    for (const tag of entry.tags) {
-      pipeline.sadd(`${TAG_PREFIX}:${tag}`, cacheKey);
-      pipeline.expire(`${TAG_PREFIX}:${tag}`, redisTtl);
-    }
-    pipeline.exec().catch(
-      (err) => logger.error({ err, cacheKey }, "Redis tag write error")
-    );
+  const pipeline = redis.pipeline();
+  pipeline.setex(cacheKey, redisTtl, JSON.stringify(entry));
+  for (const tag of entry.tags) {
+    pipeline.sadd(`${TAG_PREFIX}:${tag}`, cacheKey);
+    pipeline.expire(`${TAG_PREFIX}:${tag}`, redisTtl);
   }
+  pipeline.exec().then((results) => {
+    const failed = results.find(([err]) => err !== null);
+    if (failed) {
+      logger.error({ err: failed[0], cacheKey }, "Redis cache pipeline command failed");
+    }
+  }).catch((err) => {
+    logger.error({ err, cacheKey }, "Redis cache pipeline write error");
+  });
 }
 async function readAny(cacheKey) {
   const memoryEntry = getMemory(cacheKey);
@@ -68974,15 +69178,25 @@ function cache(options) {
         inflightReqMap.delete(inflightKey);
       }
     });
+    res.once("close", () => {
+      if (resolveInflight) {
+        resolveInflight();
+        resolveInflight = null;
+      }
+      if (inflightReqMap.get(inflightKey) === inflightPromise) {
+        inflightReqMap.delete(inflightKey);
+      }
+    });
     next();
   };
 }
 var INVALIDATION_CHANNEL = "chuglii:cache:invalidate:v1";
 function publishInvalidation(message) {
+  if (!shouldUseSharedResponseCache()) return;
   redisPublish(INVALIDATION_CHANNEL, JSON.stringify(message));
 }
 async function invalidateTagsLocal(tags) {
-  const redis = getRedis();
+  const redis = shouldUseSharedResponseCache() ? getRedis() : null;
   const keysToDelete = /* @__PURE__ */ new Set();
   const epoch = stampEpoch();
   for (const tag of tags) {
@@ -69012,7 +69226,7 @@ async function invalidateKeyLocal(cacheKey) {
   const normalizedKey = cacheKey.startsWith(CACHE_PREFIX) ? cacheKey : `${CACHE_PREFIX}:${normalizeOriginalUrl(cacheKey)}`;
   rememberKeyInvalidation(normalizedKey);
   deleteMemory(normalizedKey);
-  const redis = getRedis();
+  const redis = shouldUseSharedResponseCache() ? getRedis() : null;
   if (!redis || !isRedisConnected()) return;
   await redis.del(normalizedKey);
 }
@@ -69039,7 +69253,7 @@ async function invalidatePatternLocal(pattern) {
   for (const key of memoryCache.keys()) {
     if (regexes.some((regex) => regex.test(key))) keysToDelete.add(key);
   }
-  const redis = getRedis();
+  const redis = shouldUseSharedResponseCache() ? getRedis() : null;
   if (redis && isRedisConnected()) {
     for (const candidate of candidates) {
       let cursor = "0";
@@ -69077,7 +69291,7 @@ function invalidateOnSuccess(tags) {
   };
 }
 async function purgeLocalCache() {
-  const redis = getRedis();
+  const redis = shouldUseSharedResponseCache() ? getRedis() : null;
   const invalidatedTags = new Set(memoryTags.keys());
   let deletedKeys = memoryCache.size;
   purgeEpoch = stampEpoch();
@@ -69980,47 +70194,72 @@ function newerRow(cur, candidate) {
   if (!cur.timestamp) return candidate;
   return candidate.timestamp > cur.timestamp ? candidate : cur;
 }
+var PERFORMER_AGGREGATION_CACHE_MS = 6e4;
+var performerAggregationCache = null;
+var performerAggregationInFlight = null;
 async function fetchPerformers() {
-  const { data, error } = await fetchAll(
-    (start, end) => supabaseProxy.from("recordings_with_links").select("id,username,gender,timestamp,thumbnail_url,sprite_url").not("links", "is", "null").range(start, end)
-  );
-  if (error) throw error;
-  const byName = /* @__PURE__ */ new Map();
-  for (const r of data ?? []) {
-    if (!r.username) continue;
-    const row = r;
-    let agg = byName.get(r.username);
-    if (!agg) {
-      agg = { count: 0, gender: null, latestTs: null, thumbRow: null, proxiedThumbRow: null, latestRow: null };
-      byName.set(r.username, agg);
-    }
-    agg.count++;
-    if (row.gender && !agg.gender) agg.gender = row.gender;
-    if (row.timestamp && (!agg.latestTs || row.timestamp > agg.latestTs)) agg.latestTs = row.timestamp;
-    if (row.thumbnail_url) {
-      agg.thumbRow = newerRow(agg.thumbRow, row);
-      if (isProxiedThumbHost(row.thumbnail_url)) {
-        agg.proxiedThumbRow = newerRow(agg.proxiedThumbRow, row);
+  const now = Date.now();
+  if (performerAggregationCache && performerAggregationCache.expiresAt > now) {
+    return performerAggregationCache.value;
+  }
+  if (performerAggregationInFlight) {
+    return performerAggregationInFlight;
+  }
+  const pending = (async () => {
+    const { data, error } = await fetchAll(
+      (start, end) => supabaseProxy.from("recordings_with_links").select("id,username,gender,timestamp,thumbnail_url,sprite_url").not("links", "is", "null").range(start, end)
+    );
+    if (error) throw error;
+    const byName = /* @__PURE__ */ new Map();
+    for (const r of data ?? []) {
+      if (!r.username) continue;
+      const row = r;
+      let agg = byName.get(r.username);
+      if (!agg) {
+        agg = { count: 0, gender: null, latestTs: null, thumbRow: null, proxiedThumbRow: null, latestRow: null };
+        byName.set(r.username, agg);
       }
+      agg.count++;
+      if (row.gender && !agg.gender) agg.gender = row.gender;
+      if (row.timestamp && (!agg.latestTs || row.timestamp > agg.latestTs)) agg.latestTs = row.timestamp;
+      if (row.thumbnail_url) {
+        agg.thumbRow = newerRow(agg.thumbRow, row);
+        if (isProxiedThumbHost(row.thumbnail_url)) {
+          agg.proxiedThumbRow = newerRow(agg.proxiedThumbRow, row);
+        }
+      }
+      agg.latestRow = newerRow(agg.latestRow, row);
     }
-    agg.latestRow = newerRow(agg.latestRow, row);
+    const performers = [];
+    for (const [username, agg] of byName) {
+      const imgRow = agg.proxiedThumbRow ?? agg.thumbRow ?? agg.latestRow;
+      performers.push({
+        username,
+        recording_count: agg.count,
+        gender: agg.gender,
+        latest_timestamp: agg.latestTs,
+        latest_thumbnail: imgRow?.thumbnail_url ?? imgRow?.sprite_url ?? null,
+        // Keep the hover sprite on the same (preferred, proxied) row when it has
+        // one, so the avatar and its hover animation are both reachable.
+        sprite_url: imgRow?.sprite_url ?? agg.latestRow?.sprite_url ?? null,
+        pickId: imgRow?.id ?? null
+      });
+    }
+    return performers;
+  })();
+  performerAggregationInFlight = pending;
+  try {
+    const performers = await pending;
+    performerAggregationCache = {
+      value: performers,
+      expiresAt: Date.now() + PERFORMER_AGGREGATION_CACHE_MS
+    };
+    return performers;
+  } finally {
+    if (performerAggregationInFlight === pending) {
+      performerAggregationInFlight = null;
+    }
   }
-  const performers = [];
-  for (const [username, agg] of byName) {
-    const imgRow = agg.proxiedThumbRow ?? agg.thumbRow ?? agg.latestRow;
-    performers.push({
-      username,
-      recording_count: agg.count,
-      gender: agg.gender,
-      latest_timestamp: agg.latestTs,
-      latest_thumbnail: imgRow?.thumbnail_url ?? imgRow?.sprite_url ?? null,
-      // Keep the hover sprite on the same (preferred, proxied) row when it has
-      // one, so the avatar and its hover animation are both reachable.
-      sprite_url: imgRow?.sprite_url ?? agg.latestRow?.sprite_url ?? null,
-      pickId: imgRow?.id ?? null
-    });
-  }
-  return performers;
 }
 var MIRROR_HOST_PRIORITY = ["Pixhost", "Catbox", "ImgChest", "freeimage.host"];
 function buildFallbackImages(primary, mirrors, sprite) {
@@ -70056,7 +70295,7 @@ router3.get(
       const search = req.query.search || "";
       const gender = req.query.gender || "";
       const sort = req.query.sort || "count";
-      let performers = await fetchPerformers();
+      let performers = [...await fetchPerformers()];
       if (gender) {
         const genderMatch = resolveGenderBucket(gender);
         if (genderMatch) {
@@ -70873,6 +71112,76 @@ router9.get("/user/resolve-username", async (req, res) => {
   }
 });
 router9.use("/user", requireAuth);
+router9.get("/playlists", async (req, res) => {
+  try {
+    const { data: cols, error } = await supabaseProxy.from("user_collections").select("id, user_id, name, description, created_at, updated_at").order("created_at", { ascending: false }).limit(100);
+    if (error) {
+      req.log?.error?.({ err: error }, "Supabase error fetching public playlists");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    const userIds = Array.from(new Set((cols ?? []).map((c) => c.user_id)));
+    const { data: profiles } = userIds.length > 0 ? await supabaseProxy.from("user_profiles").select("user_id, display_name, avatar_url, username").in("user_id", userIds) : { data: [] };
+    const profileMap = new Map((profiles ?? []).map((p) => [p.user_id, p]));
+    const enriched = await Promise.all(
+      (cols ?? []).map(async (col) => {
+        const { data: items, count } = await supabaseProxy.from("user_collection_items").select("recording_id, metadata, added_at, position", { count: "exact", head: false }).eq("collection_id", col.id).order("position", { ascending: true, nullsFirst: false }).order("added_at", { ascending: false }).limit(4);
+        const profile = profileMap.get(col.user_id);
+        return {
+          ...col,
+          item_count: count ?? items?.length ?? 0,
+          items: items ?? [],
+          author: profile ? {
+            display_name: profile.display_name,
+            avatar_url: profile.avatar_url,
+            username: profile.username
+          } : null
+        };
+      })
+    );
+    res.json(enriched);
+  } catch (err) {
+    req.log?.error?.({ err }, "GET /playlists unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+router9.get("/playlists/:id", async (req, res) => {
+  try {
+    const { data: col, error } = await supabaseProxy.from("user_collections").select("id, user_id, name, description, created_at, updated_at").eq("id", req.params.id).maybeSingle();
+    if (error || !col) {
+      res.status(404).json({ error: "Playlist not found" });
+      return;
+    }
+    const { data: profile } = await supabaseProxy.from("user_profiles").select("user_id, display_name, avatar_url, username").eq("user_id", col.user_id).maybeSingle();
+    const { count } = await supabaseProxy.from("user_collection_items").select("recording_id", { count: "exact", head: true }).eq("collection_id", col.id);
+    res.json({
+      ...col,
+      item_count: count ?? 0,
+      author: profile ? {
+        display_name: profile.display_name,
+        avatar_url: profile.avatar_url,
+        username: profile.username
+      } : null
+    });
+  } catch (err) {
+    req.log?.error?.({ err }, "GET /playlists/:id unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+router9.get("/playlists/:id/items", async (req, res) => {
+  try {
+    const { data: items, error } = await supabaseProxy.from("user_collection_items").select("recording_id, metadata, added_at, position").eq("collection_id", req.params.id).order("position", { ascending: true, nullsFirst: false }).order("added_at", { ascending: false });
+    if (error) {
+      req.log?.error?.({ err: error }, "Supabase error fetching playlist items");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    res.json(items ?? []);
+  } catch (err) {
+    req.log?.error?.({ err }, "GET /playlists/:id/items unexpected error");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 router9.get("/user/profile", async (req, res) => {
   try {
     const userId = req.user.id;
@@ -71325,15 +71634,28 @@ router9.post("/user/collections/:id/items", async (req, res) => {
       res.status(404).json({ error: "Not found" });
       return;
     }
-    const { error } = await req.supabase.from("user_collection_items").upsert(
-      { collection_id: req.params.id, recording_id, metadata: metadata ?? null },
-      { onConflict: "collection_id, recording_id", ignoreDuplicates: true }
-    );
-    if (error) {
-      req.log.error({ err: error }, "Supabase error adding collection item");
+    const { data: existing, error: lookupError } = await req.supabase.from("user_collection_items").select("id").eq("collection_id", req.params.id).eq("recording_id", recording_id).limit(1).maybeSingle();
+    if (lookupError) {
+      req.log.error({ err: lookupError }, "Supabase error checking existing collection item");
       res.status(500).json({ error: "Internal server error" });
       return;
     }
+    if (existing) {
+      res.status(200).json({ ok: true, alreadyExists: true });
+      return;
+    }
+    const item = { collection_id: req.params.id, recording_id, metadata: metadata ?? null };
+    const { error: insertError } = await req.supabase.from("user_collection_items").insert(item);
+    if (insertError) {
+      if (insertError.code === "23505") {
+        res.status(200).json({ ok: true, alreadyExists: true });
+        return;
+      }
+      req.log.error({ err: insertError }, "Supabase error inserting collection item");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+    await req.supabase.from("user_collections").update({ updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", req.params.id);
     res.status(201).json({ ok: true });
   } catch (err) {
     req.log.error({ err }, "POST /user/collections/:id/items unexpected error");
@@ -71668,10 +71990,15 @@ var IMG_KEY = `${MEDIA_REDIS_PREFIX}img:v1:`;
 var TX_KEY = `${MEDIA_REDIS_PREFIX}tx:v1:`;
 var DNS_KEY = `${MEDIA_REDIS_PREFIX}dns:v1:`;
 var FAIL_KEY = `${MEDIA_REDIS_PREFIX}fail:v1:`;
+function shouldUseSharedMediaCache() {
+  if (process.env.VERCEL_CACHE_LOCAL_ONLY === "1") return false;
+  return !(process.env.VERCEL === "1" || Boolean(process.env.VERCEL_URL) || process.env.VERCEL_ENV === "production" || process.env.VERCEL_ENV === "preview");
+}
 function hashKey(prefix, value) {
   return `${prefix}${createHash2("sha1").update(value).digest("hex")}`;
 }
 async function getString(key) {
+  if (!shouldUseSharedMediaCache()) return null;
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return null;
   try {
@@ -71683,6 +72010,7 @@ async function getString(key) {
   }
 }
 async function setString(key, value, ttlSeconds) {
+  if (!shouldUseSharedMediaCache()) return;
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return;
   try {
@@ -71692,6 +72020,7 @@ async function setString(key, value, ttlSeconds) {
   }
 }
 async function deletePattern(pattern) {
+  if (!shouldUseSharedMediaCache()) return 0;
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return 0;
   let deleted = 0;
@@ -71782,8 +72111,9 @@ async function clearMediaRedisCache() {
   return deleted;
 }
 async function getMediaRedisStats() {
-  const redis = getRedis();
   const stats = {};
+  if (!shouldUseSharedMediaCache()) return stats;
+  const redis = getRedis();
   if (!redis || !isRedisConnected()) return stats;
   try {
     for (const [name, pattern] of [
@@ -71816,7 +72146,7 @@ var PERFS_META = `${HOT_PREFIX}perf:v1:meta`;
 var HOT_TTL_SECONDS = 60 * 60 * 24 * 30;
 var RECORDING_TITLE_CAP = 120;
 function client2() {
-  const redis = getRedis();
+  const redis = getFeatureRedis();
   return redis && isRedisConnected() ? redis : null;
 }
 async function bumpRecordingHot(recordingId, loadMeta) {
@@ -72001,7 +72331,7 @@ var CHANGED_SET = `${VIEWS_PREFIX}changed:v1`;
 var AUTO_FLUSH_THRESHOLD = 10;
 var FLUSH_CAP_PER_RUN = 500;
 function client3() {
-  const redis = getRedis();
+  const redis = getFeatureRedis();
   return redis && isRedisConnected() ? redis : null;
 }
 async function readPgViewers(id) {
@@ -72209,7 +72539,7 @@ var MAX_PERFORMERS = 1500;
 var MAX_TAGS = 1500;
 var MAX_RECORDINGS = 2e3;
 function client4() {
-  const redis = getRedis();
+  const redis = getFeatureRedis();
   return redis && isRedisConnected() ? redis : null;
 }
 async function buildSuggestionSnapshot() {
@@ -72413,7 +72743,7 @@ async function getSuggestionStats() {
 var router10 = (0, import_express10.Router)();
 var admin2 = requireRole("admin");
 router10.get("/cache/status", ...admin2, async (_req, res) => {
-  const redis = getRedis();
+  const redis = getFeatureRedis();
   const status = getRedisStatus();
   const connected = isRedisConnected();
   const [media, hot, views, suggestions] = await Promise.all([
@@ -72802,7 +73132,7 @@ router11.delete("/admin/users/:id", ...admin3, async (req, res) => {
   }
 });
 router11.get("/admin/cache/status", ...admin3, async (_req, res) => {
-  const redis = getRedis();
+  const redis = getFeatureRedis();
   const status = getRedisStatus();
   const connected = isRedisConnected();
   let info = { connected, status, memory: getCacheStats(), metrics: getCacheMetrics() };
@@ -72856,7 +73186,7 @@ router11.post("/admin/cache/purge", ...admin3, async (_req, res) => {
   }
 });
 router11.delete("/admin/cache/flush", ...admin3, async (_req, res) => {
-  const redis = getRedis();
+  const redis = getFeatureRedis();
   try {
     const memoryResult = await purgeAllCache();
     if (!redis || !isRedisConnected()) {
@@ -73698,7 +74028,6 @@ var WARMUP_ROUTES = [
   { path: "/api/recordings?limit=12&sort=newest", priority: 1 },
   { path: "/api/recordings?limit=12&sort=popular", priority: 1 },
   // Tier 2 — browse/discovery
-  { path: "/api/performers?sort=count&limit=24", priority: 2 },
   { path: "/api/performers?sort=name&limit=24", priority: 2 },
   // Tier 3 — Redis-backed quick lists (served from ZSETs once warm)
   { path: "/api/hot/recordings?limit=24", priority: 2 },
@@ -73715,7 +74044,7 @@ async function waitForRedis(timeoutMs) {
   return false;
 }
 async function warmupCache(baseUrl, options) {
-  const purgeOnFailure = options?.purgeOnFailure ?? true;
+  const purgeOnFailure = options?.purgeOnFailure ?? false;
   await waitForRedis(5e3);
   const start = Date.now();
   const failedRoutes = [];
@@ -73739,34 +74068,12 @@ async function warmupCache(baseUrl, options) {
       } else {
         failedRoutes.push({ path, status: response.status });
       }
+      await response.arrayBuffer();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       failedRoutes.push({ path, status: 0 });
       logger.error({ err: message, path }, "Cache warmup request failed");
     }
-  }
-  try {
-    const perfResponse = await fetch(`${baseUrl}/api/performers?limit=5&sort=count`, {
-      headers: { Accept: "application/json" }
-    });
-    if (perfResponse.ok) {
-      const data = await perfResponse.json();
-      const topPerformers = data.performers ?? [];
-      const perfPromises = topPerformers.map(async (p) => {
-        total++;
-        try {
-          const res = await fetch(`${baseUrl}/api/performers/${encodeURIComponent(p.username)}`, {
-            headers: { Accept: "application/json" }
-          });
-          if (res.ok) succeeded++;
-          else failedRoutes.push({ path: `/api/performers/${p.username}`, status: res.status });
-        } catch {
-          failedRoutes.push({ path: `/api/performers/${p.username}`, status: 0 });
-        }
-      });
-      await Promise.allSettled(perfPromises);
-    }
-  } catch {
   }
   const durationMs = Date.now() - start;
   if (failedRoutes.length > 0) {
@@ -73898,7 +74205,7 @@ var MAX_FLUSH_ENTRIES = 200;
 var STREAM_MAXLEN = 5e3;
 async function pushActivityBatch(metrics2) {
   if (metrics2.length === 0) return;
-  const redis = getRedis();
+  const redis = getFeatureRedis();
   if (!redis || !isRedisConnected()) return;
   try {
     await redis.xadd(STREAM_KEY, "*", "payload", JSON.stringify(metrics2));
@@ -73949,7 +74256,7 @@ function parseEntries(raw) {
   return parsed;
 }
 async function flushActivity() {
-  const redis = getRedis();
+  const redis = getFeatureRedis();
   if (!redis || !isRedisConnected()) return 0;
   try {
     await ensureGroup(redis);
@@ -74107,19 +74414,33 @@ function memoryIncrement(key, windowSeconds = WINDOW_SECONDS) {
   memoryWindows.set(key, fresh);
   return fresh;
 }
-async function redisIncrement(key, windowSeconds = WINDOW_SECONDS) {
+async function redisIncrementPair(key, windowSeconds, burstKey, burstWindowSeconds) {
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return null;
   try {
-    const window2 = Math.floor(Date.now() / (windowSeconds * 1e3));
+    const now = Date.now();
+    const window2 = Math.floor(now / (windowSeconds * 1e3));
+    const burstWindow = Math.floor(now / (burstWindowSeconds * 1e3));
     const redisKey = `${KEY_PREFIX}:${key}:${window2}`;
-    const resetAt = (window2 + 1) * windowSeconds * 1e3;
-    const count = await redis.incr(redisKey);
-    if (count === 1) {
-      redis.expire(redisKey, windowSeconds + 5).catch(() => {
-      });
+    const redisBurstKey = `${KEY_PREFIX}:${burstKey}:${burstWindow}`;
+    const pipeline = redis.pipeline();
+    pipeline.incr(redisKey);
+    pipeline.expire(redisKey, windowSeconds + 5);
+    pipeline.incr(redisBurstKey);
+    pipeline.expire(redisBurstKey, burstWindowSeconds + 5);
+    const replies = await pipeline.exec();
+    if (replies.length !== 4) throw new Error("Unexpected Redis rate-limit pipeline reply count");
+    const failed = replies.find(([err]) => err !== null);
+    if (failed) throw failed[0];
+    const regularCount = Number(replies[0][1]);
+    const burstCount = Number(replies[2][1]);
+    if (!Number.isFinite(regularCount) || !Number.isFinite(burstCount)) {
+      throw new Error("Redis returned a non-numeric rate-limit counter");
     }
-    return { count, resetAt };
+    return {
+      regular: { count: regularCount, resetAt: (window2 + 1) * windowSeconds * 1e3 },
+      burst: { count: burstCount, resetAt: (burstWindow + 1) * burstWindowSeconds * 1e3 }
+    };
   } catch (err) {
     logger.error({ err }, "Rate limiter Redis error (failing open)");
     return null;
@@ -74176,9 +74497,15 @@ function rateLimit(options) {
     }
     const keyPart = options.keyFn?.(req) ?? clientIp(req);
     const key = `${options.bucket}:${keyPart}`;
-    const result = await redisIncrement(key) ?? memoryIncrement(key);
     const burstKey = `burst:${key}`;
-    const burstResult = await redisIncrement(burstKey, BURST_WINDOW_SECONDS) ?? memoryIncrement(burstKey, BURST_WINDOW_SECONDS);
+    const sharedWindows = await redisIncrementPair(
+      key,
+      WINDOW_SECONDS,
+      burstKey,
+      BURST_WINDOW_SECONDS
+    );
+    const result = sharedWindows?.regular ?? memoryIncrement(key);
+    const burstResult = sharedWindows?.burst ?? memoryIncrement(burstKey, BURST_WINDOW_SECONDS);
     const trip = result.count > limit ? { limit, resetAt: result.resetAt, bucket: options.bucket, count: result.count } : burstResult.count > burstLimit ? { limit: burstLimit, resetAt: burstResult.resetAt, bucket: `${options.bucket}:burst`, count: burstResult.count } : null;
     if (trip) {
       sendLimited(res, trip.limit, trip.resetAt, trip.bucket);
@@ -74641,7 +74968,8 @@ function slotDims(slot) {
 }
 function sizedImg(url, { width, height }) {
   const safe = url.replace(/"/g, "&quot;");
-  return `<img src="${safe}" alt="Advertisement" width="${width}" height="${height}" style="display:block;max-width:100%;height:auto;margin:0 auto;" />`;
+  const img = `<img src="${safe}" alt="Advertisement" width="${width}" height="${height}" style="display:block;max-width:100%;height:auto;margin:0 auto;" />`;
+  return `<a href="${safe}" target="_blank" rel="sponsored noopener nofollow" style="display:block;max-width:100%;text-decoration:none;">${img}</a>`;
 }
 function iframeEmbed(url, { width, height }) {
   const safe = url.replace(/"/g, "&quot;");
