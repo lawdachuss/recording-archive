@@ -163,7 +163,13 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     const normalizedPage = Math.max(1, page);
     const normalizedLimit = Math.min(Math.max(1, limit), 100);
 
-    let query = supabase.from("recordings_with_links").select(LIST_COLS, { count: "exact" }).not("links", "is", "null");
+    // PostgREST embeds one-to-many relations as a nested JSON array, so this
+    // does not duplicate parent recording rows. The !inner filter becomes an
+    // EXISTS-style filter on upload_links, avoiding the recordings_with_links
+    // view's per-row jsonb_object_agg across every host when the list does not
+    // need the links JSON. Keep this small embed internal to the API response.
+    const listQueryCols = `${LIST_COLS},upload_links!inner(recording_id)`;
+    let query = supabase.from("recordings").select(listQueryCols, { count: "exact" });
 
     if (search?.trim()) {
       const s = escapeLike(search.trim());
@@ -202,7 +208,7 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     if (error && typeof error === "object" && (error as any).code === "PGRST205") {
       req.log.warn("Schema cache miss (PGRST205), refreshing and retrying");
       await import("../lib/supabase.js").then((m) => (m as any).refreshSupabaseSchema());
-      const refreshed = supabase.from("recordings_with_links").select(LIST_COLS, { count: "exact" }).not("links", "is", "null");
+      const refreshed = supabase.from("recordings").select(listQueryCols, { count: "exact" });
       const ascending = sort === "oldest";
       const sortCol = sort === "largest" ? "filesize" : sort === "popular" ? "viewers" : "timestamp";
       const retryQuery = refreshed.order(sortCol, { ascending, nullsFirst: false }).range(offset, offset + normalizedLimit - 1);
@@ -218,7 +224,12 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
       return;
     }
 
-    const enriched = await enrichWithMirrors(data ?? []);
+    // Drop the helper relation while preserving the public response shape.
+    const pageRows = (data ?? []).map((row: any) => {
+      const { upload_links: _uploadLinks, ...recording } = row;
+      return recording;
+    });
+    const enriched = await enrichWithMirrors(pageRows);
 
     res.json({
       data: enriched,
