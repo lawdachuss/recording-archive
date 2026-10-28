@@ -47,26 +47,55 @@ const HTTP_FAILURE_COOLDOWN_MS =
 
 let httpInFlight = 0;
 let httpCircuitOpenUntil = 0;
-const httpWaiters: Array<() => void> = [];
+let httpHalfOpenInFlight = false;
+type HttpWaiter = {
+  signal: AbortSignal;
+  resolve: () => void;
+  reject: (error: Error) => void;
+  onAbort: () => void;
+};
+const httpWaiters: HttpWaiter[] = [];
 
-async function withHttpSlot<T>(work: () => Promise<T>): Promise<T> {
+async function withHttpSlot<T>(signal: AbortSignal, work: () => Promise<T>): Promise<T> {
+  if (signal.aborted) throw new Error("Redis HTTP bridge request timed out before acquiring a slot");
+
   if (httpInFlight >= HTTP_MAX_CONCURRENCY) {
     if (httpWaiters.length >= HTTP_MAX_QUEUE) {
       throw new Error("Redis HTTP bridge queue is full");
     }
-    await new Promise<void>((resolve) => httpWaiters.push(resolve));
+
+    await new Promise<void>((resolve, reject) => {
+      const waiter = {} as HttpWaiter;
+      waiter.signal = signal;
+      waiter.resolve = () => {
+        signal.removeEventListener("abort", waiter.onAbort);
+        resolve();
+      };
+      waiter.reject = (error) => {
+        signal.removeEventListener("abort", waiter.onAbort);
+        reject(error);
+      };
+      waiter.onAbort = () => {
+        const index = httpWaiters.indexOf(waiter);
+        if (index >= 0) httpWaiters.splice(index, 1);
+        waiter.reject(new Error("Redis HTTP bridge queue wait timed out"));
+      };
+      httpWaiters.push(waiter);
+      signal.addEventListener("abort", waiter.onAbort, { once: true });
+      if (signal.aborted) waiter.onAbort();
+    });
   } else {
     httpInFlight++;
   }
 
   try {
+    if (signal.aborted) throw new Error("Redis HTTP bridge request timed out while queued");
     return await work();
   } finally {
     const next = httpWaiters.shift();
     if (next) {
-      // Hand this slot directly to the next waiter without changing the
-      // in-flight count.
-      next();
+      // Transfer the slot directly; the in-flight count remains unchanged.
+      next.resolve();
     } else {
       httpInFlight--;
     }
@@ -76,6 +105,7 @@ async function withHttpSlot<T>(work: () => Promise<T>): Promise<T> {
 function openHttpCircuit(): void {
   isConnected = false;
   httpCircuitOpenUntil = Date.now() + HTTP_FAILURE_COOLDOWN_MS;
+  httpHalfOpenInFlight = false;
 }
 
 function createHttpRedis(url: string, key: string) {
@@ -85,68 +115,74 @@ function createHttpRedis(url: string, key: string) {
       throw new Error("Redis HTTP bridge is cooling down after a connection failure");
     }
 
-    return withHttpSlot(async () => {
-      // Another request may have opened the circuit while this one waited.
-      if (Date.now() < httpCircuitOpenUntil) {
-        isConnected = false;
-        throw new Error("Redis HTTP bridge is cooling down after a connection failure");
+    // After a failure, allow only one request to probe the bridge once the
+    // cooldown expires. This prevents every concurrent cold start from
+    // stampeding the same unhealthy endpoint.
+    const isHalfOpenProbe = httpCircuitOpenUntil > 0;
+    if (isHalfOpenProbe) {
+      if (httpHalfOpenInFlight) {
+        throw new Error("Redis HTTP bridge recovery probe is already in flight");
       }
+      httpHalfOpenInFlight = true;
+    }
 
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
-      let receivedResponse = false;
-      try {
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "content-type": "application/json", apikey: key },
-          body: JSON.stringify(body),
-          signal: controller.signal,
-        });
-        receivedResponse = true;
+    const controller = new AbortController();
+    // Start the deadline before waiting for a concurrency slot so a queued
+    // Redis operation cannot outlive the API request that initiated it.
+    const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+    try {
+      return await withHttpSlot(controller.signal, async () => {
+        if (Date.now() < httpCircuitOpenUntil) {
+          isConnected = false;
+          throw new Error("Redis HTTP bridge is cooling down after a connection failure");
+        }
 
-        let payload: any;
+        let receivedResponse = false;
         try {
-          payload = await res.json();
-        } catch {
-          // A 200 response with an empty or malformed body is not a usable
-          // Redis reply. Treat it as a bridge failure too; otherwise every
-          // media miss retries the broken bridge and adds its timeout to the
-          // upstream image fetch (multi-second thumbnail stalls in production).
-          openHttpCircuit();
-          throw new Error(`Redis HTTP bridge returned ${res.status} with an unreadable response`);
-        }
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json", apikey: key },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+          });
+          receivedResponse = true;
 
-        if (res.status === 503) {
-          // The self-hosted stack may be between sessions; fail open to the DB.
-          openHttpCircuit();
-          throw new Error("Redis unavailable (HTTP bridge 503)");
-        }
-        if (!res.ok || !payload?.ok) {
-          if (res.status >= 500) openHttpCircuit();
-          throw new Error(payload?.error ?? `Redis HTTP bridge error ${res.status}`);
-        }
+          let payload: any;
+          try {
+            payload = await res.json();
+          } catch {
+            openHttpCircuit();
+            throw new Error(`Redis HTTP bridge returned ${res.status} with an unreadable response`);
+          }
 
-        isConnected = true;
-        httpCircuitOpenUntil = 0;
-        return payload;
-      } catch (err) {
-        // Open the circuit only for network/connectivity failures. A 4xx
-        // response means the bridge was reached; keep surfacing its auth or
-        // request error instead of suppressing all Redis traffic for cooldown.
-        if (!receivedResponse) {
-          openHttpCircuit();
-          logger.error(
-            { err: { message: (err as any)?.message } },
-            "Redis HTTP bridge unreachable",
-          );
+          if (res.status === 503) {
+            openHttpCircuit();
+            throw new Error("Redis unavailable (HTTP bridge 503)");
+          }
+          if (!res.ok || !payload?.ok) {
+            if (res.status >= 500) openHttpCircuit();
+            throw new Error(payload?.error ?? `Redis HTTP bridge error ${res.status}`);
+          }
+
+          isConnected = true;
+          httpCircuitOpenUntil = 0;
+          return payload;
+        } catch (err) {
+          if (!receivedResponse) {
+            openHttpCircuit();
+            logger.error(
+              { err: { message: (err as any)?.message }, timeoutMs: HTTP_TIMEOUT_MS },
+              "Redis HTTP bridge unreachable",
+            );
+          }
+          throw err;
         }
-        throw err;
-      } finally {
-        clearTimeout(timer);
-      }
-    });
+      });
+    } finally {
+      clearTimeout(timer);
+      if (isHalfOpenProbe) httpHalfOpenInFlight = false;
+    }
   };
-
   const MAX_HTTP_ARGS = 32;
   const MAX_HTTP_PIPELINE_OPS = 256;
 
