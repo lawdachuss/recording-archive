@@ -61,7 +61,7 @@ launch(
   "api-server",
   ["run", "start"],
   path.join(repoRoot, "artifacts", "api-server"),
-  { NODE_ENV: "production", PORT: apiPort },
+  { NODE_ENV: "production", PORT: apiPort, HOST: "127.0.0.1" },
 );
 
 launch(
