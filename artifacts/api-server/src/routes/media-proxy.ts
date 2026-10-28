@@ -1082,7 +1082,7 @@ router.get("/media", async (req, res) => {
     streamResponse(response, res, req.log);
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    const upstreamStatus = /^upstream (\\d{3})$/.exec(errorMessage);
+    const upstreamStatus = /^upstream (\d{3})$/.exec(errorMessage);
     const statusCode = upstreamStatus ? Number(upstreamStatus[1]) : null;
     const permanentImageFailure =
       !isVideoRequest &&
