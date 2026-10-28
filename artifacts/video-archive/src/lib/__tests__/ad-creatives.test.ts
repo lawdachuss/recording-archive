@@ -38,9 +38,12 @@ describe("isSelfContainedLine", () => {
 });
 
 describe("bareUrlToMarkup", () => {
-  it("turns an image URL into a sized <img>", () => {
+  it("turns an image URL into a sized <img> wrapped in a clickable anchor tag", () => {
     const html = bareUrlToMarkup("https://cdn.example.com/banner.gif?x=1", 728, 90);
     expect(html).not.toBeNull();
+    expect(html).toContain('<a href="https://cdn.example.com/banner.gif?x=1"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="sponsored noopener nofollow"');
     expect(html).toContain("<img");
     expect(html).toContain('src="https://cdn.example.com/banner.gif?x=1"');
     expect(html).toContain('width="728"');

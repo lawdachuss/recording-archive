@@ -58,14 +58,11 @@ export function bareUrlToMarkup(url: string, width: number, height: number): str
   if (!url) return null;
   const safe = url.replace(/"/g, "&quot;");
   if (IMAGE_EXT.test(url)) {
-    return (
+    const img =
       `<img src="${safe}" alt="Advertisement" width="${width}" height="${height}" ` +
       `style="display:block;max-width:100%;height:auto;margin:0 auto;" ` +
-      // Self-heal: <img> errors on an HTML response → replace with an iframe
-      // of the SAME URL (reuses this.src — no URL re-escaping in JS, and the
-      // single-quoted JS keeps this safe inside the double-quoted attribute).
-      `onerror="if(!this.dataset.fb){this.dataset.fb='1';var i=document.createElement('iframe');i.src=this.src;i.width=this.width;i.height=this.height;i.frameBorder='0';i.scrolling='no';i.style.cssText='display:block;border:0;margin:0 auto;max-width:100%';this.replaceWith(i)}" />`
-    );
+      `onerror="if(!this.dataset.fb){this.dataset.fb='1';var i=document.createElement('iframe');i.src=this.src;i.width=this.width;i.height=this.height;i.frameBorder='0';i.scrolling='no';i.style.cssText='display:block;border:0;margin:0 auto;max-width:100%';this.replaceWith(i)}" />`;
+    return `<a href="${safe}" target="_blank" rel="sponsored noopener nofollow" style="display:block;max-width:100%;text-decoration:none;">${img}</a>`;
   }
   return (
     `<a href="${safe}" target="_blank" rel="sponsored noopener nofollow" ` +
