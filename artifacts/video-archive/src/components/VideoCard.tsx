@@ -200,7 +200,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
         queryFn: ({ signal }) => listRelatedRecordings({ id: recording.id, limit: 12 }, { signal }),
       })
       .then((related) => {
-        if (related && related.length > 0) preloadRecordingMedia(related, { immediate: true });
+        if (related && related.length > 0) preloadRecordingMedia(related, { immediate: true, spriteLimit: 4, skipThumbnails: true, skipPreviews: true });
       })
       .catch(() => {});
   }, [isSlowConnection, queryClient, recording.id]);

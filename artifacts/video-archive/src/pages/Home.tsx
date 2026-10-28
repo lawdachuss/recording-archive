@@ -167,7 +167,7 @@ export default function Home() {
                       recording={rec}
                       isWatched
                       progress={item.progress}
-                      fetchPriority={i < 10 ? "high" : undefined}
+                      fetchPriority={i < 4 ? "high" : undefined}
                       showAdd
                     />
                   </div>

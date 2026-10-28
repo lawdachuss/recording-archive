@@ -31,13 +31,13 @@ let httpMode = false;
 // Keep bursty cache traffic from opening hundreds of concurrent HTTPS
 // connections to the self-hosted edge function on a small Render instance.
 const HTTP_TIMEOUT_MS =
-  Number.parseInt(process.env.REDIS_HTTP_TIMEOUT_MS ?? "", 10) || 5_000;
+  Number.parseInt(process.env.REDIS_HTTP_TIMEOUT_MS ?? "", 10) || 1_000;
 const HTTP_MAX_CONCURRENCY =
   Math.max(1, Number.parseInt(process.env.REDIS_HTTP_MAX_CONCURRENCY ?? "", 10) || 8);
 const HTTP_MAX_QUEUE =
   Math.max(1, Number.parseInt(process.env.REDIS_HTTP_MAX_QUEUE ?? "", 10) || 64);
 const HTTP_FAILURE_COOLDOWN_MS =
-  Math.max(500, Number.parseInt(process.env.REDIS_HTTP_FAILURE_COOLDOWN_MS ?? "", 10) || 3_000);
+  Math.max(500, Number.parseInt(process.env.REDIS_HTTP_FAILURE_COOLDOWN_MS ?? "", 10) || 15_000);
 
 let httpInFlight = 0;
 let httpCircuitOpenUntil = 0;
@@ -102,7 +102,11 @@ function createHttpRedis(url: string, key: string) {
         try {
           payload = await res.json();
         } catch {
-          if (res.status >= 500) openHttpCircuit();
+          // A 200 response with an empty or malformed body is not a usable
+          // Redis reply. Treat it as a bridge failure too; otherwise every
+          // media miss retries the broken bridge and adds its timeout to the
+          // upstream image fetch (multi-second thumbnail stalls in production).
+          openHttpCircuit();
           throw new Error(`Redis HTTP bridge returned ${res.status} with an unreadable response`);
         }
 
@@ -326,12 +330,21 @@ if (httpUrl) {
   );
   isConnected = true;
   logger.info(`Redis over HTTPS bridge enabled (${httpUrl})`);
-  // Probe the actual self-hosted Redis service, not just the HTTP/Kong route.
-  // The bridge health handler runs PING + DBSIZE against Redis and never logs
-  // the authentication token.
-  void client.healthCheck().catch((err: unknown) => {
-    logger.error({ err: { message: (err as any)?.message } }, "Redis HTTP bridge health check failed");
-  });
+  // A serverless instance is often created per request. Pinging Redis on
+  // every cold start multiplies bridge traffic precisely when a media grid
+  // creates a burst of requests. On Vercel the first real cache operation is
+  // the probe; health checks remain enabled for long-lived Render processes.
+  const isVercelRuntime =
+    process.env.VERCEL_CACHE_LOCAL_ONLY === "1" ||
+    process.env.VERCEL === "1" ||
+    Boolean(process.env.VERCEL_URL) ||
+    process.env.VERCEL_ENV === "production" ||
+    process.env.VERCEL_ENV === "preview";
+  if (!isVercelRuntime) {
+    void client.healthCheck().catch((err: unknown) => {
+      logger.error({ err: { message: (err as any)?.message } }, "Redis HTTP bridge health check failed");
+    });
+  }
 } else if (redisUrl) {
   const mod = tryImportRedis();
   if (!mod) {

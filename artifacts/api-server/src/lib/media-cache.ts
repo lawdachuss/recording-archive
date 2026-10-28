@@ -49,6 +49,21 @@ const FAIL_KEY = `${MEDIA_REDIS_PREFIX}fail:v1:`;
 
 // ─── Low-level helpers (fail-open) ─────────────────────────────────
 
+// The Vercel media endpoint is already served with long-lived edge CDN caching.
+// Moving binary image blobs through the shared Redis HTTPS/JSON bridge adds a
+// round trip, base64 expansion, and another failure point to cold media misses.
+// Keep shared media-byte/DNS/failure caching on long-lived Render processes;
+// on Vercel, the edge CDN plus the proxy's per-instance cache are the byte cache.
+// The regular JSON/API cache continues using Redis.
+function shouldUseSharedMediaCache(): boolean {
+  if (process.env.VERCEL_CACHE_LOCAL_ONLY === "1") return false;
+  return !(process.env.VERCEL === "1" ||
+    Boolean(process.env.VERCEL_URL) ||
+    process.env.VERCEL_ENV === "production" ||
+    process.env.VERCEL_ENV === "preview");
+}
+
+
 function hashKey(prefix: string, value: string): string {
   // URLs/keys can be long; hash keeps Redis keys bounded and avoids colon
   // collisions inside the value. Collisions are theoretically possible but
@@ -57,6 +72,7 @@ function hashKey(prefix: string, value: string): string {
 }
 
 async function getString(key: string): Promise<string | null> {
+  if (!shouldUseSharedMediaCache()) return null;
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return null;
   try {
@@ -69,6 +85,7 @@ async function getString(key: string): Promise<string | null> {
 }
 
 async function setString(key: string, value: string, ttlSeconds: number): Promise<void> {
+  if (!shouldUseSharedMediaCache()) return;
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return;
   try {
@@ -79,6 +96,7 @@ async function setString(key: string, value: string, ttlSeconds: number): Promis
 }
 
 async function deletePattern(pattern: string): Promise<number> {
+  if (!shouldUseSharedMediaCache()) return 0;
   const redis = getRedis();
   if (!redis || !isRedisConnected()) return 0;
   let deleted = 0;
@@ -185,8 +203,9 @@ export async function clearMediaRedisCache(): Promise<number> {
 
 /** Rough per-keyspace key counts for cache-admin status output. */
 export async function getMediaRedisStats(): Promise<Record<string, number>> {
-  const redis = getRedis();
   const stats: Record<string, number> = {};
+  if (!shouldUseSharedMediaCache()) return stats;
+  const redis = getRedis();
   if (!redis || !isRedisConnected()) return stats;
   try {
     for (const [name, pattern] of [
