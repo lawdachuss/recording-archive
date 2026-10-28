@@ -256,7 +256,7 @@ function createHttpRedis(url: string, key: string) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
     try {
-      const res = await withHttpSlot(() =>
+      const res = await withHttpSlot(controller.signal, () =>
         fetch(healthUrl, {
           method: "GET",
           headers: { apikey: key },
