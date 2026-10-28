@@ -427,7 +427,15 @@ if (httpUrl) {
   logger.warn("REDIS_URL not set, caching disabled");
 }
 
+// Public-response/media caches and the per-request rate limiter must not
+// use the HTTPS bridge on Vercel: they are served by CDN/local caches instead.
+// Feature state (view counters, activity streams, hot rankings, suggestions)
+// can still use the shared self-hosted Redis bridge.
 export function getRedis(): typeof client {
+  return vercelLocalCacheMode ? null : client;
+}
+
+export function getFeatureRedis(): typeof client {
   return client;
 }
 
