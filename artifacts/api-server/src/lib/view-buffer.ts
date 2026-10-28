@@ -24,7 +24,7 @@
 
 import { logger } from "./logger.js";
 import { supabase } from "./supabase.js";
-import { getRedis, isRedisConnected } from "./redis.js";
+import { getFeatureRedis, isRedisConnected } from "./redis.js";
 import { invalidateTags } from "../middleware/cache.js";
 import { bumpRecordingHot, type HotBumpMeta } from "./hot-cache.js";
 
@@ -36,10 +36,10 @@ const CHANGED_SET = `${VIEWS_PREFIX}changed:v1`;
 const AUTO_FLUSH_THRESHOLD = 10;
 const FLUSH_CAP_PER_RUN = 500;
 
-type RedisClient = ReturnType<typeof getRedis> & Record<string, any>;
+type RedisClient = ReturnType<typeof getFeatureRedis> & Record<string, any>;
 
 function client(): RedisClient | null {
-  const redis = getRedis();
+  const redis = getFeatureRedis();
   return redis && isRedisConnected() ? (redis as RedisClient) : null;
 }
 
