@@ -50,8 +50,9 @@ export interface SuggestionItem {
 
 export interface SuggestionSnapshot {
   builtAt: number;
-  performers: Array<{ label: string; image_url?: string | null }>;
+  performers: Array<{ label: string; lowerLabel?: string; image_url?: string | null }>;
   tags: string[];
+  lowerTags?: string[];
   recordings: Array<{
     id: string;
     username: string;
@@ -121,12 +122,19 @@ export async function buildSuggestionSnapshot(): Promise<{
     const performers = [...byPerformer.entries()]
       .sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]))
       .slice(0, MAX_PERFORMERS)
-      .map(([label, agg]) => ({ label, image_url: agg.image ?? null }));
+      .map(([label, agg]) => ({
+        label,
+        // Pre-compute lowercased label to avoid string allocations during search queries
+        lowerLabel: label.toLowerCase(),
+        image_url: agg.image ?? null,
+      }));
 
     const tags = [...tagCounts.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([tag]) => tag)
       .slice(0, MAX_TAGS);
+
+    const lowerTags = tags.map((t) => t.toLowerCase());
 
     // ── 2. Recent recordings (bounded, by recency) ─────────────────────
     let recordings: SuggestionSnapshot["recordings"] = [];
@@ -156,6 +164,7 @@ export async function buildSuggestionSnapshot(): Promise<{
       builtAt: Date.now(),
       performers,
       tags,
+      lowerTags,
       recordings,
     };
     const counts = { performers: performers.length, tags: tags.length, recordings: recordings.length };
@@ -213,6 +222,15 @@ export async function getSuggestionSnapshot(): Promise<SuggestionSnapshot | null
       logger.warn({ err }, "Suggestion snapshot read failed");
     }
   }
+  // Hydrate pre-lowercased helper fields on snapshot performers and tags if missing
+  if (snapshot) {
+    for (const p of snapshot.performers) {
+      if (!p.lowerLabel) p.lowerLabel = p.label.toLowerCase();
+    }
+    if (snapshot.tags && !snapshot.lowerTags) {
+      snapshot.lowerTags = snapshot.tags.map((t) => t.toLowerCase());
+    }
+  }
   snapshotMemo = { at: Date.now(), value: snapshot };
   return snapshot;
 }
@@ -258,8 +276,10 @@ export function matchSuggestions(rawQuery: string, snapshot: SuggestionSnapshot)
   let recCount = 0;
   let tagCount = 0;
 
+  // Performers loop: Use pre-lowercased `lowerLabel` to avoid up to 1,500 string allocations per search query
   for (const p of snapshot.performers) {
-    if (p.label.toLowerCase().includes(q)) {
+    const lower = p.lowerLabel ?? p.label.toLowerCase();
+    if (lower.includes(q)) {
       out.push({
         type: "performer",
         label: p.label,
@@ -284,8 +304,12 @@ export function matchSuggestions(rawQuery: string, snapshot: SuggestionSnapshot)
     }
   }
 
-  for (const tag of snapshot.tags) {
-    if (tag.toLowerCase().includes(q)) {
+  // Tags loop: Uses pre-lowercased `lowerTags` array so no `.toLowerCase()` is needed inside loop, preserving original display casing in `label`
+  const lowerTags = snapshot.lowerTags ?? snapshot.tags.map((t) => t.toLowerCase());
+  for (let i = 0; i < snapshot.tags.length; i++) {
+    const tagLower = lowerTags[i] ?? snapshot.tags[i].toLowerCase();
+    if (tagLower.includes(q)) {
+      const tag = snapshot.tags[i];
       out.push({
         type: "tag",
         label: tag,

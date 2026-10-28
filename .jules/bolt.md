@@ -1,0 +1,3 @@
+## 2025-05-18 - Pre-lowercased Memoization for Search Suggestions
+**Learning:** `matchSuggestions` iterates over up to 1,500 performers and 1,500 tags per search query. Calling `.toLowerCase()` inside linear search loops creates thousands of transient string allocations per search request. Pre-computing `lowerLabel` and `lowerTags` on suggestion snapshots during build and hydration eliminates GC pressure while keeping original display casing intact.
+**Action:** When performing in-memory searches on cached data structures, store pre-lowercased fields alongside original display strings during snapshot build/hydration.

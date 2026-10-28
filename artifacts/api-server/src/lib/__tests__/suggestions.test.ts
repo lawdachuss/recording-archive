@@ -42,6 +42,7 @@ const { demoRows, sampleSnapshot } = vi.hoisted(() => ({
 
 vi.mock("../redis.js", () => ({
   getRedis: vi.fn(() => null),
+  getFeatureRedis: vi.fn(() => null),
   isRedisConnected: vi.fn(() => false),
   redisPublish: vi.fn(async () => 0),
   redisSubscribe: vi.fn(async () => () => {}),
@@ -126,11 +127,13 @@ describe("buildSuggestionSnapshot", () => {
     store.zsets.clear();
     store.hashes.clear();
     vi.mocked(redis.getRedis).mockReturnValue(fakeRedis);
+    vi.mocked(redis.getFeatureRedis).mockReturnValue(fakeRedis);
     vi.mocked(redis.isRedisConnected).mockReturnValue(true);
   });
 
   afterEach(() => {
     vi.mocked(redis.getRedis).mockReset();
+    vi.mocked(redis.getFeatureRedis).mockReset();
     vi.mocked(redis.isRedisConnected).mockReset();
   });
 
@@ -149,6 +152,7 @@ describe("buildSuggestionSnapshot", () => {
 
   it("degrades without Redis: computes but persists nothing", async () => {
     vi.mocked(redis.getRedis).mockReturnValue(null);
+    vi.mocked(redis.getFeatureRedis).mockReturnValue(null);
     const result = await buildSuggestionSnapshot();
     expect(result.ok).toBe(true);
     expect(result.performers).toBe(1251);
@@ -163,11 +167,13 @@ describe("maybeBuildSuggestionSnapshot", () => {
     store.hashes.clear();
     vi.clearAllMocks();
     vi.mocked(redis.getRedis).mockReturnValue(fakeRedis);
+    vi.mocked(redis.getFeatureRedis).mockReturnValue(fakeRedis);
     vi.mocked(redis.isRedisConnected).mockReturnValue(true);
   });
 
   afterEach(() => {
     vi.mocked(redis.getRedis).mockReset();
+    vi.mocked(redis.getFeatureRedis).mockReset();
     vi.mocked(redis.isRedisConnected).mockReset();
   });
 

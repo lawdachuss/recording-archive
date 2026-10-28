@@ -97,8 +97,12 @@ vi.mock("../../lib/logger.js", () => ({
 // ─── Module under test (re-imported per test for fresh state) ─────
 
 let cacheModule: typeof import("../cache");
+const originalVercelEnv = process.env.VERCEL;
 
 beforeEach(async () => {
+  // Set VERCEL env so shouldUseSharedResponseCache returns true for Redis tests
+  process.env.VERCEL = "1";
+
   // Reset all mock state
   mockRedisStore.clear();
   mockRedisSets.clear();
@@ -112,6 +116,11 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  if (originalVercelEnv !== undefined) {
+    process.env.VERCEL = originalVercelEnv;
+  } else {
+    delete process.env.VERCEL;
+  }
   vi.restoreAllMocks();
 });
 
