@@ -335,6 +335,7 @@ if (httpUrl) {
   // creates a burst of requests. On Vercel the first real cache operation is
   // the probe; health checks remain enabled for long-lived Render processes.
   const isVercelRuntime =
+    process.env.VERCEL_CACHE_LOCAL_ONLY === "1" ||
     process.env.VERCEL === "1" ||
     Boolean(process.env.VERCEL_URL) ||
     process.env.VERCEL_ENV === "production" ||
