@@ -84,10 +84,22 @@ class GlobalErrorBoundary extends Component<{ children: ReactNode }, { hasError:
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    // Chunk load errors from stale deployments — auto-reload silently
-    if (error.name === "ChunkLoadError" || error.message?.includes("dynamically imported")) {
-      window.location.reload();
-      return;
+    // Coordinate with main.tsx and lazy-route.tsx: allow at most one automatic
+    // reload in this tab, then leave the recovery UI visible if the chunk still fails.
+    const message = error.message ?? "";
+    if (error.name === "ChunkLoadError" || /dynamically imported|failed to fetch dynamically/i.test(message)) {
+      try {
+        const reloadKey = "app_stale_chunk_reload";
+        const now = Date.now();
+        const lastReload = Number(sessionStorage.getItem(reloadKey) ?? 0);
+        if (!lastReload || now - lastReload > 10_000) {
+          sessionStorage.setItem(reloadKey, String(now));
+          window.location.reload();
+          return;
+        }
+      } catch {
+        // Storage can be disabled. Keep the in-app recovery UI available instead of looping.
+      }
     }
     console.error("[GlobalErrorBoundary]", error, info.componentStack);
   }

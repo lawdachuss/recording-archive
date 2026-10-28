@@ -1,4 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from "react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Link, useLocation } from "wouter";
 import { Menu, X, Film, Sun, Moon, Crown, Check } from "lucide-react";
 import { UserMenu } from "@/components/UserMenu";
@@ -96,106 +97,128 @@ export function AgeGate() {
 
   useEffect(() => {
     setMounted(true);
-    const hasAgreed = localStorage.getItem("age-gate-passed");
-    if (hasAgreed !== "true") setIsOpen(true);
+    try {
+      if (localStorage.getItem("age-gate-passed") !== "true") setIsOpen(true);
+    } catch {
+      // If storage is unavailable, require confirmation for this visit.
+      setIsOpen(true);
+    }
   }, []);
 
   if (!mounted || !isOpen) return null;
 
-  if (showTerms) {
-    return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/98 backdrop-blur-sm">
-        <div className="w-full max-w-lg mx-4 px-8 py-12">
-          <div className="text-xs uppercase tracking-[0.3em] text-muted-foreground mb-6 text-center">
-            Terms of Use
-          </div>
-          <div className="text-sm text-muted-foreground leading-relaxed space-y-4 max-h-[60vh] overflow-y-auto pr-2">
-            <p>
-              By accessing this site, you agree to the following terms and conditions. If you do not
-              agree with any part of these terms, you must not use this site.
-            </p>
-            <p>
-              <strong>Age Restriction.</strong> This site contains adult content intended for
-              individuals who are 18 years of age or older (21 in some jurisdictions). By entering,
-              you confirm that you meet the age requirement in your jurisdiction.
-            </p>
-            <p>
-              <strong>Personal Use.</strong> Content on this site is provided for personal,
-              non-commercial viewing only. You may not download, redistribute, or reproduce any
-              content without explicit permission.
-            </p>
-            <p>
-              <strong>User Conduct.</strong> You agree not to use the site for any unlawful purpose
-              or to violate any applicable laws. Harassment, abuse, or harmful behavior toward other
-              users will result in account termination.
-            </p>
-            <p>
-              <strong>Privacy.</strong> Your privacy is important to us. Please review our Privacy
-              Policy to understand how we collect and handle your data.
-            </p>
-            <p>
-              <strong>Disclaimer.</strong> All content is provided "as is" without warranty of any
-              kind. The site operators are not responsible for user-uploaded content or external
-              links.
-            </p>
-            <p>
-              <strong>Changes.</strong> These terms may be updated at any time. Continued use of the
-              site after changes constitutes acceptance of the new terms.
-            </p>
-          </div>
-          <div className="mt-8 text-center">
-            <button
-              className="h-10 px-6 border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
-              onClick={() => setShowTerms(false)}
-            >
-              Back
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/98 backdrop-blur-sm">
-      <div className="w-full max-w-sm px-8 py-12 text-center">
-        <div className="mb-8">
-          <div className="text-xs uppercase tracking-[0.3em] text-muted-foreground mb-6">
-            Age Verification Required
-          </div>
-          <div className="text-6xl font-black tracking-tighter text-foreground mb-2">18+</div>
-          <div className="w-8 h-px bg-primary mx-auto mb-6" />
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            This site contains adult material. By entering, you confirm you are 18 years of age or
-            older and agree to our{" "}
-            <button
-              onClick={() => setShowTerms(true)}
-              className="text-primary hover:underline inline cursor-pointer bg-transparent border-none p-0 text-sm"
-            >
-              Terms of Use
-            </button>
-            .
-          </p>
-        </div>
-        <div className="space-y-3">
-          <button
-            className="w-full h-12 border border-primary/30 text-primary text-sm font-semibold tracking-wide hover:border-primary/60 transition-colors"
-            onClick={() => {
-              markAgeGatePassed();
-              setIsOpen(false);
-            }}
-          >
-            I am 18 or older — Enter
-          </button>
-          <button
-            className="w-full h-12 border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
-            onClick={() => (window.location.href = "https://google.com")}
-          >
-            Exit
-          </button>
-        </div>
-      </div>
-    </div>
+    <DialogPrimitive.Root
+      open={isOpen}
+      onOpenChange={(open) => {
+        // Consent is explicit: Escape or an outside click must not bypass the age gate.
+        if (open) setIsOpen(true);
+      }}
+    >
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-[100] bg-black/98 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Content
+          className={`fixed left-1/2 top-1/2 z-[101] -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] ${showTerms ? "max-w-lg" : "max-w-sm"} max-h-[calc(100dvh-2rem)] overflow-y-auto bg-background border border-border/50 shadow-lg px-8 py-12 ${showTerms ? "" : "text-center"}`}
+          onEscapeKeyDown={(event) => event.preventDefault()}
+          onPointerDownOutside={(event) => event.preventDefault()}
+        >
+          {showTerms ? (
+            <>
+              <DialogPrimitive.Title className="text-xs uppercase tracking-[0.3em] text-muted-foreground mb-6 text-center">
+                Terms of Use
+              </DialogPrimitive.Title>
+              <DialogPrimitive.Description className="sr-only">
+                Terms and conditions for using the VAULT recording archive.
+              </DialogPrimitive.Description>
+              <div className="text-sm text-muted-foreground leading-relaxed space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                <p>
+                  By accessing this site, you agree to the following terms and conditions. If you do not
+                  agree with any part of these terms, you must not use this site.
+                </p>
+                <p>
+                  <strong>Age Restriction.</strong> This site contains adult content intended for
+                  individuals who are 18 years of age or older (21 in some jurisdictions). By entering,
+                  you confirm that you meet the age requirement in your jurisdiction.
+                </p>
+                <p>
+                  <strong>Personal Use.</strong> Content on this site is provided for personal,
+                  non-commercial viewing only. You may not download, redistribute, or reproduce any
+                  content without explicit permission.
+                </p>
+                <p>
+                  <strong>User Conduct.</strong> You agree not to use the site for any unlawful purpose
+                  or to violate any applicable laws. Harassment, abuse, or harmful behavior toward other
+                  users will result in account termination.
+                </p>
+                <p>
+                  <strong>Privacy.</strong> Your privacy is important to us. Please review our Privacy
+                  Policy to understand how we collect and handle your data.
+                </p>
+                <p>
+                  <strong>Disclaimer.</strong> All content is provided "as is" without warranty of any
+                  kind. The site operators are not responsible for user-uploaded content or external
+                  links.
+                </p>
+                <p>
+                  <strong>Changes.</strong> These terms may be updated at any time. Continued use of the
+                  site after changes constitutes acceptance of the new terms.
+                </p>
+              </div>
+              <div className="mt-8 text-center">
+                <button
+                  type="button"
+                  className="h-10 px-6 border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+                  onClick={() => setShowTerms(false)}
+                >
+                  Back
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="mb-8">
+                <DialogPrimitive.Title className="text-xs uppercase tracking-[0.3em] text-muted-foreground mb-6">
+                  Age Verification Required
+                </DialogPrimitive.Title>
+                <div className="text-6xl font-black tracking-tighter text-foreground mb-2">18+</div>
+                <div className="w-8 h-px bg-primary mx-auto mb-6" />
+                <DialogPrimitive.Description className="text-sm text-muted-foreground leading-relaxed">
+                  This site contains adult material. By entering, you confirm you are 18 years of age or
+                  older and agree to our{" "}
+                  <button
+                    type="button"
+                    onClick={() => setShowTerms(true)}
+                    className="text-primary hover:underline inline cursor-pointer bg-transparent border-none p-0 text-sm"
+                  >
+                    Terms of Use
+                  </button>
+                  .
+                </DialogPrimitive.Description>
+              </div>
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  className="w-full min-h-12 px-3 border border-primary/30 text-primary text-sm font-semibold tracking-wide hover:border-primary/60 transition-colors"
+                  onClick={() => {
+                    markAgeGatePassed();
+                    setIsOpen(false);
+                  }}
+                >
+                  I am 18 or older — Enter
+                </button>
+                <button
+                  type="button"
+                  className="w-full min-h-12 px-3 border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+                  onClick={() => (window.location.href = "https://google.com")}
+                >
+                  Exit
+                </button>
+              </div>
+            </>
+          )}
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }
 

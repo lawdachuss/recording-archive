@@ -1051,6 +1051,7 @@ export default function VideoDetail() {
                             <input
                               autoFocus
                               type="text"
+                              aria-label="New collection name"
                               placeholder="New collection…"
                               value={newColName}
                               onChange={(e) => setNewColName(e.target.value)}
@@ -1200,7 +1201,7 @@ export default function VideoDetail() {
                 {related
                   .filter((r) => r.id !== id && r.username === video?.username)
                   .map((rec, i) => (
-                    <Link key={rec.id} href={`/video/${rec.id}`} className="group flex gap-3 outline-none">
+                    <Link key={rec.id} href={`/video/${rec.id}`} className="group flex gap-3 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background">
                       <div className="w-28 aspect-video shrink-0 overflow-hidden bg-secondary rounded-[2px] relative">
                         {proxyUrl(rec.thumbnail_url) ? (
                           <OptimizedImage

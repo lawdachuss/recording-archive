@@ -184,10 +184,11 @@ export default function Settings() {
           </div>
           <form onSubmit={handleSaveProfile} className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <label htmlFor="settings-email" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Email
               </label>
               <input
+                id="settings-email"
                 type="email"
                 value={user.email ?? ""}
                 disabled
@@ -195,10 +196,11 @@ export default function Settings() {
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <label htmlFor="settings-display-name" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Display Name
               </label>
               <input
+                id="settings-display-name"
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
@@ -208,10 +210,11 @@ export default function Settings() {
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <label htmlFor="settings-avatar-url" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Avatar URL
               </label>
               <input
+                id="settings-avatar-url"
                 type="url"
                 value={avatarUrl}
                 onChange={(e) => setAvatarUrl(e.target.value)}
@@ -220,10 +223,11 @@ export default function Settings() {
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <label htmlFor="settings-bio" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Bio
               </label>
               <textarea
+                id="settings-bio"
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
                 maxLength={300}
@@ -308,6 +312,7 @@ export default function Settings() {
                 <button
                   type="button"
                   role="switch"
+                  aria-label="Toggle all notification types"
                   aria-checked={notifPrefs.every((p) => p.enabled)}
                   onClick={() => {
                     const allEnabled = notifPrefs.every((p) => p.enabled);
@@ -331,7 +336,7 @@ export default function Settings() {
                     });
                     setTimeout(() => setNotifPrefsMsg(null), 3000);
                   }}
-                  className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                  className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
                     notifPrefs.every((p) => p.enabled)
                       ? "bg-primary"
                       : "bg-border hover:bg-border/80"
@@ -395,7 +400,7 @@ export default function Settings() {
                         });
                         setTimeout(() => setNotifPrefsMsg(null), 3000);
                       }}
-                      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
                         pref.enabled
                           ? "bg-primary"
                           : "bg-border hover:bg-border/80"
@@ -450,13 +455,14 @@ export default function Settings() {
                 <button
                   type="button"
                   role="switch"
+                  aria-label="Notification sound"
                   aria-checked={soundOn}
                   onClick={() => {
                     const next = !soundOn;
                     setSoundOn(next);
                     saveSoundPreferences({ sound_enabled: next });
                   }}
-                  className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                  className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
                     soundOn ? "bg-primary" : "bg-border hover:bg-border/80"
                   }`}
                 >
@@ -482,13 +488,14 @@ export default function Settings() {
                 <button
                   type="button"
                   role="switch"
+                  aria-label="Vibration"
                   aria-checked={vibrateOn}
                   onClick={() => {
                     const next = !vibrateOn;
                     setVibrateOn(next);
                     saveSoundPreferences({ vibration_enabled: next });
                   }}
-                  className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                  className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
                     vibrateOn ? "bg-primary" : "bg-border hover:bg-border/80"
                   }`}
                 >
@@ -571,10 +578,11 @@ export default function Settings() {
           </div>
           <form onSubmit={handleChangePassword} className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <label htmlFor="settings-new-password" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 New Password
               </label>
               <input
+                id="settings-new-password"
                 type="password"
                 value={newPw}
                 onChange={(e) => setNewPw(e.target.value)}
@@ -583,10 +591,11 @@ export default function Settings() {
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <label htmlFor="settings-confirm-password" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Confirm New Password
               </label>
               <input
+                id="settings-confirm-password"
                 type="password"
                 value={confirmPw}
                 onChange={(e) => setConfirmPw(e.target.value)}

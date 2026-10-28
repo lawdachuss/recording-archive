@@ -239,6 +239,7 @@ export function SearchDropdown({ open, onOpenChange }: SearchDropdownProps) {
             ref={searchInputRef}
             autoFocus
             type="text"
+            aria-label="Search recordings, performers, and tags"
             placeholder="Search recordings, performers, tags..."
             value={search}
             onChange={(e) => {

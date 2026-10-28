@@ -223,12 +223,12 @@
   }
 
   html {
-    scroll-behavior: smooth !important;
+    scroll-behavior: smooth;
   }
 
-  @media (prefers-reduced-motion: no-preference) {
+  @media (prefers-reduced-motion: reduce) {
     html {
-      scroll-behavior: smooth !important;
+      scroll-behavior: auto !important;
     }
   }
 
@@ -264,6 +264,12 @@
 @layer utilities {
   input[type="search"]::-webkit-search-cancel-button {
     @apply hidden;
+  }
+
+  /* Keep keyboard focus visible when bespoke controls remove browser outlines. */
+  :where(a, button, input, select, textarea, [role="switch"], [role="button"]):focus-visible:not([class*="focus-visible:ring"]):not([data-no-focus-ring]) {
+    outline: 2px solid hsl(var(--primary) / 0.9);
+    outline-offset: 2px;
   }
 
   [contenteditable][data-placeholder]:empty::before {

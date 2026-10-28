@@ -96,10 +96,11 @@ export default function Login() {
           )}
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            <label htmlFor="login-identity" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
               Email or Username
             </label>
             <input
+              id="login-identity"
               type="text"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -112,11 +113,12 @@ export default function Login() {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            <label htmlFor="login-password" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
               Password
             </label>
             <div className="relative">
               <input
+                id="login-password"
                 type={showPw ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

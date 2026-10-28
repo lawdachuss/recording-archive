@@ -450,6 +450,7 @@ function Step2PerformerLookup({
           <input
             ref={inputRef}
             type="text"
+            aria-label="Performer username"
             value={username}
             onChange={(e) => onUsernameChange(e.target.value)}
             placeholder="e.g. sexysusan"
@@ -548,6 +549,7 @@ function Step3Confirm({
           Notes (optional)
         </label>
         <textarea
+          aria-label="Request notes (optional)"
           value={notes}
           onChange={(e) => onNotesChange(e.target.value)}
           placeholder="Any specific details about this request..."
@@ -557,10 +559,10 @@ function Step3Confirm({
       </div>
 
       <div className="space-y-2">
-        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+        <p id="request-priority-label" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           Priority
-        </label>
-        <div className="flex gap-2">
+        </p>
+        <div role="group" aria-labelledby="request-priority-label" className="flex gap-2">
           {(["low", "normal", "high"] as const).map((p) => (
             <button
               key={p}
