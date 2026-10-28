@@ -68,13 +68,36 @@ function buildCommentTree(rows: CommentRow[], likedSet?: Set<number>): CommentNo
   return roots;
 }
 
-/** Count likes per comment and track which sessions liked each comment. */
-async function fetchLikesForComments(commentIds: number[]) {
+/** Count likes per comment and track whether the supplied session liked it. */
+async function fetchLikesForComments(commentIds: number[], sessionId?: string) {
   const likeCounts = new Map<number, number>();
   const likedBySession = new Map<number, Set<string>>();
 
   for (let i = 0; i < commentIds.length; i += 1000) {
     const chunk = commentIds.slice(i, i + 1000);
+    const { data: aggregateRows, error: aggregateError } = await supabase.rpc(
+      "get_comment_like_stats",
+      { p_comment_ids: chunk, p_session_id: sessionId ?? null },
+    );
+
+    if (!aggregateError) {
+      for (const row of aggregateRows ?? []) {
+        const commentId = Number(row.comment_id);
+        likeCounts.set(commentId, Number(row.like_count ?? 0));
+        if (sessionId && row.user_liked) {
+          likedBySession.set(commentId, new Set([sessionId]));
+        }
+      }
+      continue;
+    }
+
+    // Compatibility path for databases where migration 020 is not installed.
+    const code = (aggregateError as { code?: string }).code;
+    const message = (aggregateError as { message?: string }).message ?? "";
+    if (code !== "PGRST202" && !/function.*not.*found|Could not find the function/i.test(message)) {
+      throw aggregateError;
+    }
+
     const { data, error } = await supabase
       .from("comment_likes")
       .select("comment_id, session_id")
@@ -137,7 +160,7 @@ router.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comme
     // Like counts (global — the "top" sort ranks by total likes across the
     // recording, not just within the page window).
     const commentIds = allRows.map((r) => Number(r.id));
-    const { likeCounts, likedBySession } = await fetchLikesForComments(commentIds);
+    const { likeCounts, likedBySession } = await fetchLikesForComments(commentIds, session_id);
 
     const likedSet: Set<number> | undefined = session_id
       ? new Set(commentIds.filter((id) => likedBySession.get(id)?.has(session_id)))
