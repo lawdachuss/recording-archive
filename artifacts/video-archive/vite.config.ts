@@ -126,7 +126,7 @@ export default defineConfig(async () => ({
     fs: { strict: true },
     proxy: {
       "/api": {
-        target: "http://localhost:8080",
+        target: "http://127.0.0.1:8080",
         changeOrigin: true,
       },
     },
@@ -135,5 +135,13 @@ export default defineConfig(async () => ({
     port,
     host: "0.0.0.0",
     allowedHosts: true,
+    // Vite preview does not inherit server.proxy. Keep the frontend's same-
+    // origin /api calls routed to the local API in production too.
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:8080",
+        changeOrigin: true,
+      },
+    },
   },
 }));
