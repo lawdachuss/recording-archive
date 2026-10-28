@@ -85,11 +85,21 @@ tie-breaker. This avoids rows with identical timestamps/viewer counts moving bet
 pages unpredictably, and lets the corresponding compound indexes satisfy the exact
 sort order when the planner chooses them.
 
-### 5. Keep build/test evidence visible
+### 5. Use shared response Redis on long-lived API hosts
+
+The cache runtime selector previously returned the Vercel condition rather than
+its inverse, which disabled shared response-cache invalidation on non-Vercel hosts
+despite the code comments promising shared Redis on Render. It now uses shared
+response Redis on long-lived/non-Vercel hosts and keeps Vercel's response cache
+local unless explicitly overridden. Feature state (buffered views, activity,
+hot rankings and suggestions) continues to use the separate feature Redis accessor.
+
+### 6. Keep build/test evidence visible
 
 The branch adds a GitHub Actions quality workflow to run workspace/API typechecks,
 API and SPA tests, Vercel serverless builds, and the frontend production build on a
-pull request. This tests the checked-in source and regenerates the function bundle
+pull request. It also aligns the workflow with current Node 24-compatible action
+releases. This tests the checked-in source and regenerates the function bundle
 inside CI; it does not deploy to production.
 
 ## Safe rollout sequence
