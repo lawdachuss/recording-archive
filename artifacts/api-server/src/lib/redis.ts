@@ -310,31 +310,67 @@ export function redisSubscribe(
   if (httpMode) return noop;
   if (!sub) return noop;
 
-  try {
-    sub.subscribe(channel, (err: unknown) => {
-      if (err) {
-        logger.error({ err, channel }, "Redis subscribe failed");
-      }
-    });
-    sub.on("message", (receivedChannel: string, message: string) => {
-      if (receivedChannel === channel) {
-        try {
-          handler(message);
-        } catch (err) {
-          logger.error({ err, channel }, "Redis pub/sub handler error");
+  let disposed = false;
+  let subscribed = false;
+
+  const onMessage = (receivedChannel: string, message: string) => {
+    if (receivedChannel !== channel || disposed) return;
+    try {
+      handler(message);
+    } catch (err) {
+      logger.error({ err, channel }, "Redis pub/sub handler error");
+    }
+  };
+
+  // ioredis is configured with enableOfflineQueue=false. SUBSCRIBE must not
+  // be sent until the duplicate socket is ready, or a cold start throws
+  // "Stream isn't writeable" and the invalidation listener silently stays off.
+  const subscribeWhenReady = () => {
+    if (disposed || sub.status !== "ready" || subscribed) return;
+    try {
+      sub.subscribe(channel, (err: unknown) => {
+        if (disposed) return;
+        if (err) {
+          subscribed = false;
+          logger.error({ err, channel }, "Redis subscribe failed");
+          return;
         }
-      }
-    });
-    return {
-      active: true,
-      unsubscribe() {
-        try {
+        subscribed = true;
+        logger.info({ channel }, "Redis pub/sub subscribed");
+      });
+    } catch (err) {
+      subscribed = false;
+      logger.error({ err, channel }, "Redis subscribe setup error");
+    }
+  };
+
+  const onClose = () => {
+    subscribed = false;
+  };
+
+  sub.on("message", onMessage);
+  sub.on("ready", subscribeWhenReady);
+  sub.on("close", onClose);
+  subscribeWhenReady();
+
+  return {
+    // True means the listener has been registered and will subscribe when
+    // Redis becomes ready; it does not imply that the socket is connected yet.
+    get active() {
+      return !disposed;
+    },
+    unsubscribe() {
+      if (disposed) return;
+      disposed = true;
+      sub.removeListener("ready", subscribeWhenReady);
+      sub.removeListener("close", onClose);
+      sub.removeListener("message", onMessage);
+      try {
+        if (subscribed && sub.status === "ready") {
           sub.unsubscribe(channel).catch(() => {});
-        } catch { /* already closed */ }
-      },
-    };
-  } catch (err) {
-    logger.error({ err, channel }, "Redis subscribe setup error");
-    return noop;
-  }
+        }
+      } catch { /* already closed */ }
+      subscribed = false;
+    },
+  };
 }
