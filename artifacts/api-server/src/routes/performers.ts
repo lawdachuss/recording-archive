@@ -456,6 +456,35 @@ function newerRow(cur: RowLike | null, candidate: RowLike): RowLike {
   return candidate.timestamp > cur.timestamp ? candidate : cur;
 }
 
+async function fetchPerformersViaRpc(): Promise<PerformerAgg[] | null> {
+  const { data, error } = await supabase.rpc("get_performer_stats");
+  if (error) {
+    const code = (error as { code?: string }).code;
+    const message = (error as { message?: string }).message ?? "";
+    // Compatibility while the database migration rolls out to self-hosted
+    // Supabase sessions. Real network/database failures still surface quickly.
+    if (
+      code === "PGRST202" ||
+      code === "42883" ||
+      /function.*(?:not found|does not exist)|Could not find the function/i.test(message)
+    ) {
+      logger.warn("get_performer_stats RPC unavailable — falling back to legacy aggregation");
+      return null;
+    }
+    throw error;
+  }
+
+  return (data ?? []).map((row: any) => ({
+    username: String(row.username ?? ""),
+    recording_count: Number(row.recording_count ?? 0),
+    gender: row.gender ?? null,
+    latest_timestamp: row.latest_timestamp ?? null,
+    latest_thumbnail: row.latest_thumbnail ?? null,
+    sprite_url: row.sprite_url ?? null,
+    pickId: row.pick_id ?? null,
+  }));
+}
+
 const PERFORMER_AGGREGATION_CACHE_MS = 60_000;
 let performerAggregationCache: { value: PerformerAgg[]; expiresAt: number } | null = null;
 let performerAggregationInFlight: Promise<PerformerAgg[]> | null = null;
@@ -469,17 +498,20 @@ async function fetchPerformers(): Promise<PerformerAgg[]> {
     return performerAggregationInFlight;
   }
 
-  // All sort/page variants share one full-table aggregation. Without this
-  // short-lived cache, startup warmup can scan the recordings view several
-  // times concurrently and exceed the memory limit on a small Render instance.
+  // Prefer the database-side aggregate so serverless instances don't
+  // transfer every recording row into JavaScript. Keep the paginated query as
+  // a safe compatibility fallback until the RPC migration is deployed.
   const pending = (async (): Promise<PerformerAgg[]> => {
-  const { data, error } = await fetchAll((start, end) =>
-    supabase
-      .from("recordings_with_links")
-      .select("id,username,gender,timestamp,thumbnail_url,sprite_url")
-      .not("links", "is", "null")
-      .range(start, end),
-  );
+    const aggregated = await fetchPerformersViaRpc();
+    if (aggregated !== null) return aggregated;
+
+    const { data, error } = await fetchAll((start, end) =>
+      supabase
+        .from("recordings_with_links")
+        .select("id,username,gender,timestamp,thumbnail_url,sprite_url")
+        .not("links", "is", "null")
+        .range(start, end),
+    );
   if (error) throw error;
 
   const byName = new Map<

@@ -990,6 +990,36 @@ describe("cache middleware", () => {
     });
   });
 
+  describe("stale-on-error fallback", () => {
+    it("serves the last successful public response when the origin returns 5xx", async () => {
+      const warmRes = makeRes();
+      const warmNext = makeNext();
+      const warmMiddleware = cacheModule.cache({ ttlSeconds: 1, staleSeconds: 120 });
+      await warmMiddleware(makeReq({ originalUrl: "/api/stale-on-error" }), warmRes, warmNext);
+      warmRes.json({ data: "last-good" });
+      warmRes.emit("finish");
+
+      // The cached entry is stale but still inside its 120-second stale window.
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+
+      const refreshRes = makeRes();
+      const refreshNext = makeNext();
+      const refreshMiddleware = cacheModule.cache({ ttlSeconds: 60, staleSeconds: 120 });
+      await refreshMiddleware(makeReq({ originalUrl: "/api/stale-on-error" }), refreshRes, refreshNext);
+      expect(refreshNext).toHaveBeenCalledOnce();
+
+      // Model a failing Supabase/Redis-tunnel request.
+      refreshRes.status(502).json({ error: "upstream unavailable" });
+
+      expect(refreshRes._statusCode).toBe(200);
+      expect(refreshRes._body).toEqual({ data: "last-good" });
+      expect(refreshRes._headers["X-Cache"]).toBe("STALE");
+      expect(refreshRes._headers["Warning"]).toContain("Response is stale");
+      expect(cacheModule.getCacheStats().memoryEntries).toBe(1);
+      refreshRes.emit("finish");
+    });
+  });
+
   describe("invalidation with Redis", () => {
     it("invalidates tags in both memory and Redis", async () => {
       // Write entry to memory

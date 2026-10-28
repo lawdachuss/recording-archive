@@ -545,6 +545,28 @@ export function cache(options: number | CacheOptions) {
     const originalJson = res.json.bind(res);
     res.json = function (body: unknown) {
       const statusCode = res.statusCode;
+
+      // A transient database/tunnel outage should not discard a successful
+      // public response while it is still inside its stale window. The normal
+      // path below only caches success responses, so this never persists 5xx.
+      if (
+        statusCode >= 500 &&
+        existing &&
+        existing.statusCode >= 200 &&
+        existing.statusCode < 300
+      ) {
+        logger.warn(
+          { cacheKey, statusCode, staleStatus: existing.statusCode },
+          "Origin failed — serving stale cached response",
+        );
+        if (resolveInflight) {
+          resolveInflight();
+          resolveInflight = null;
+        }
+        sendEntry(req, res, existing, "STALE", staleSeconds);
+        return res;
+      }
+
       let entryForResponse: CacheEntry | null = null;
 
       if (cacheStatuses.includes(statusCode)) {
