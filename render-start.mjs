@@ -1,13 +1,17 @@
 import { spawn } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 const publicPort = process.env.PORT || "3000";
 const apiPort = process.env.API_PORT || "8080";
 const children = [];
 let shuttingDown = false;
 
-function launch(name, args, env) {
-  const child = spawn(pnpm, args, {
+function launch(name, args, cwd, env) {
+  const command = process.platform === "win32" ? "npm.cmd" : "npm";
+  const child = spawn(command, args, {
+    cwd,
     env: { ...process.env, ...env },
     stdio: "inherit",
     shell: process.platform === "win32",
@@ -48,20 +52,22 @@ process.on("SIGTERM", () => stop(0));
 process.on("SIGINT", () => stop(0));
 
 console.log(
-  `[render-start] Starting API on 127.0.0.1:${apiPort} and frontend on port ${publicPort}.`,
+  `[render-start] Starting API on port ${apiPort} and frontend on port ${publicPort}.`,
 );
 
-// The API server is bundled during the root build. It listens only on the
-// internal port; the frontend's Vite preview server owns Render's public PORT.
+// Use npm scripts from each workspace package. npm is guaranteed to be
+// available because Render invokes this root script using npm run dev.
 launch(
   "api-server",
-  ["--filter", "@workspace/api-server", "run", "start"],
+  ["run", "start"],
+  path.join(repoRoot, "artifacts", "api-server"),
   { NODE_ENV: "production", PORT: apiPort },
 );
 
 launch(
   "video-archive",
-  ["--filter", "@workspace/video-archive", "run", "serve"],
+  ["run", "serve"],
+  path.join(repoRoot, "artifacts", "video-archive"),
   {
     NODE_ENV: "production",
     PORT: publicPort,
