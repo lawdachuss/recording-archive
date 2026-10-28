@@ -658,13 +658,48 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             </>
           )}
 
-          {/* Watched badge */}
-          {isWatched && (
-            <div className="absolute top-2 right-2 z-10 flex items-center gap-1 bg-black/40 backdrop-blur-sm ring-1 ring-white/10 px-1.5 py-0.5 rounded-[2px] pointer-events-none">
-              <CheckCircle className="w-2.5 h-2.5 text-green-400" />
-              <span className="text-[9px] font-semibold text-green-300/90 uppercase tracking-wider">Watched</span>
-            </div>
-          )}
+          {/* Top Right Badges and Buttons */}
+          <div className="absolute top-2 right-2 z-30 flex items-center gap-1.5 pointer-events-none">
+            {isWatched && (
+              <div className="flex items-center gap-1 bg-black/40 backdrop-blur-sm ring-1 ring-white/10 px-1.5 py-0.5 rounded-[2px]">
+                <CheckCircle className="w-2.5 h-2.5 text-green-400" />
+                <span className="text-[9px] font-semibold text-green-300/90 uppercase tracking-wider">Watched</span>
+              </div>
+            )}
+            {showAdd && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openAddToCollection({
+                    id: recording.id,
+                    username: recording.username,
+                    filename: recording.filename,
+                    room_title: recording.room_title,
+                    thumbnail_url: recording.thumbnail_url,
+                    preview_url: recording.preview_url,
+                    sprite_url: recording.sprite_url,
+                    resolution: recording.resolution,
+                    timestamp: recording.timestamp,
+                  });
+                }}
+                className="w-6 h-6 flex items-center justify-center bg-black/30 backdrop-blur-sm ring-1 ring-white/10 hover:bg-primary/70 hover:ring-primary/30 text-white rounded-[2px] opacity-0 group-hover:opacity-100 transition-all pointer-events-auto cursor-pointer"
+                aria-label="Add to collection"
+                title="Add to collection"
+              >
+                <FolderPlus className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {showRemove && onRemove && (
+              <button
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
+                className="w-6 h-6 flex items-center justify-center bg-black/30 backdrop-blur-sm ring-1 ring-white/10 hover:bg-red-600/70 hover:ring-red-600/30 text-white rounded-[2px] opacity-0 group-hover:opacity-100 transition-all text-[10px] font-bold pointer-events-auto cursor-pointer"
+                aria-label="Remove"
+              >
+                ✕
+              </button>
+            )}
+          </div>
 
           <div className="absolute top-2 left-2 flex items-center gap-1 pointer-events-none">
             {recording.resolution && (
@@ -705,40 +740,6 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               </span>
             ) : <span />}
           </div>
-
-          {showAdd && (
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                openAddToCollection({
-                  id: recording.id,
-                  username: recording.username,
-                  filename: recording.filename,
-                  room_title: recording.room_title,
-                  thumbnail_url: recording.thumbnail_url,
-                  preview_url: recording.preview_url,
-                  sprite_url: recording.sprite_url,
-                  resolution: recording.resolution,
-                  timestamp: recording.timestamp,
-                });
-              }}
-              className="absolute top-2 right-2 z-30 w-6 h-6 flex items-center justify-center bg-black/30 backdrop-blur-sm ring-1 ring-white/10 hover:bg-primary/70 hover:ring-primary/30 text-white rounded-[2px] opacity-0 group-hover:opacity-100 transition-all"
-              aria-label="Add to collection"
-              title="Add to collection"
-            >
-              <FolderPlus className="w-3.5 h-3.5" />
-            </button>
-          )}
-          {showRemove && onRemove && (
-            <button
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
-              className="absolute top-2 right-2 z-30 w-6 h-6 flex items-center justify-center bg-black/30 backdrop-blur-sm ring-1 ring-white/10 hover:bg-red-600/70 hover:ring-red-600/30 text-white rounded-[2px] opacity-0 group-hover:opacity-100 transition-all text-[10px] font-bold"
-              aria-label="Remove"
-            >
-              ✕
-            </button>
-          )}
         </div>
 
         <div className="px-0.5 space-y-1">
