@@ -31,10 +31,14 @@ do not infer a numeric speedup until production measurements confirm it.
 ### 1. Add a narrower playable-recording view
 
 Migration `020-fast-linked-recordings-and-hot-path-indexes.sql` adds
-`public.linked_recordings`, which starts from `upload_links` and joins only the
-recordings that have a host link, then aggregates their links. It preserves the
-existing `recordings_with_links` view for history/recommendation metadata lookups
-that intentionally do not require a playable link.
+`public.linked_recordings`, which uses an indexed `LATERAL` lookup to aggregate
+links for each candidate recording instead of grouping the entire recording/link
+join up front. It excludes recordings without a non-null host link and preserves
+the existing `recordings_with_links` view for history/recommendation metadata
+lookups that intentionally do not require a playable link. For timestamp-ordered
+pages, this shape should let PostgreSQL stop after the requested page when the
+planner can use the matching recording index; confirm that with `EXPLAIN (ANALYZE,
+BUFFERS)` in the target database before claiming a measured win.
 
 The public list, suggestions, performer, stats, tags, and hot-recording paths are
 updated to use the narrower view and no longer need a repeated
@@ -143,6 +147,10 @@ SELECT id, username, filename, "timestamp", viewers
 FROM public.linked_recordings
 ORDER BY "timestamp" DESC NULLS LAST, id DESC
 LIMIT 24;
+
+-- A useful plan will normally have a Limit above an ordered recording index
+-- scan and per-row link lookups, not a full-catalog GroupAggregate followed by
+-- a sort. The chosen plan depends on row counts, stats, and data distribution.
 
 -- Inspect newly added index usage after representative traffic has passed.
 SELECT indexrelname, idx_scan, idx_tup_read, idx_tup_fetch,
