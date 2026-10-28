@@ -36,7 +36,7 @@ async function getPlugins() {
 
 export default defineConfig(async () => ({
   base: basePath,
-  envPrefix: ["VITE_", "SUPABASE_"],
+  envPrefix: ["VITE_"],
   plugins: await getPlugins(),
   resolve: {
     alias: {
