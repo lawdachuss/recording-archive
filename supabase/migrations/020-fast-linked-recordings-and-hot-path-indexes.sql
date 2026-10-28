@@ -102,6 +102,9 @@ CREATE INDEX IF NOT EXISTS comments_recording_created_at_desc_idx
 CREATE INDEX IF NOT EXISTS comment_likes_comment_session_idx
   ON public.comment_likes (comment_id, session_id);
 
+CREATE INDEX IF NOT EXISTS reactions_recording_type_idx
+  ON public.reactions (recording_id, type);
+
 -- Node fleet queue: restrict candidate scans to unassigned, unclaimed work.
 -- Existing idx_channel_assignments_assigned_node remains useful for node load counts.
 CREATE INDEX IF NOT EXISTS channel_assignments_unassigned_live_username_idx
@@ -290,5 +293,49 @@ $$;
 
 REVOKE ALL ON FUNCTION public.get_admin_stats() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_admin_stats() TO service_role, postgres;
+
+-- Aggregate interaction reads in Postgres instead of returning every like
+-- row to a serverless function. Both functions preserve the existing API result
+-- shapes and have fallback implementations in the application code.
+
+CREATE OR REPLACE FUNCTION public.get_reaction_counts(p_recording_id text)
+RETURNS TABLE (likes bigint, dislikes bigint)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $
+  SELECT
+    count(*) FILTER (WHERE r.type = 'like')::bigint AS likes,
+    count(*) FILTER (WHERE r.type = 'dislike')::bigint AS dislikes
+  FROM public.reactions AS r
+  WHERE r.recording_id = p_recording_id;
+$;
+
+REVOKE ALL ON FUNCTION public.get_reaction_counts(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_reaction_counts(text) TO anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.get_comment_like_stats(
+  p_comment_ids integer[],
+  p_session_id text DEFAULT NULL
+)
+RETURNS TABLE (comment_id integer, like_count bigint, user_liked boolean)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $
+  SELECT
+    requested.comment_id,
+    count(cl.comment_id)::bigint AS like_count,
+    coalesce(bool_or(cl.session_id = p_session_id), false) AS user_liked
+  FROM unnest(coalesce(p_comment_ids, ARRAY[]::integer[])) AS requested(comment_id)
+  LEFT JOIN public.comment_likes AS cl
+    ON cl.comment_id = requested.comment_id
+  GROUP BY requested.comment_id;
+$;
+
+REVOKE ALL ON FUNCTION public.get_comment_like_stats(integer[], text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_comment_like_stats(integer[], text) TO anon, authenticated, service_role;
 
 NOTIFY pgrst, 'reload schema';
