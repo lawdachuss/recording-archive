@@ -48,13 +48,18 @@ app.listen(port, (err) => {
     }, 60_000);
     flushTimer.unref?.();
 
-    // Fire cache warmup in the background — never blocks the server
-    warmupCache(`http://127.0.0.1:${port}`).catch((err) => {
-      logger.error({ err }, "Cache warmup failed unexpectedly");
-    });
-
-    // Run startup health check — pings each major API endpoint
-    runHealthCheck(port).catch((err) => {
-      logger.error({ err }, "Health check failed unexpectedly");
-    });
+    // Warm popular responses before probing the same database-backed routes.
+    // Running both at once doubles cold-start query load and can cause false
+    // health-check timeouts on a small Render instance.
+    warmupCache(`http://127.0.0.1:${port}`)
+      .catch((err) => {
+        logger.error({ err }, "Cache warmup failed unexpectedly");
+      })
+      .finally(() => {
+        // Run the diagnostic health check after the cache has been warmed so
+        // it measures service health rather than competing with the warmup.
+        runHealthCheck(port).catch((err) => {
+          logger.error({ err }, "Health check failed unexpectedly");
+        });
+      });
 });
