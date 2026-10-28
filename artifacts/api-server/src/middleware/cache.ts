@@ -397,23 +397,25 @@ async function writeEntry(cacheKey: string, entry: CacheEntry, ttlSeconds: numbe
   if (!redis || !isRedisConnected()) return;
 
   const redisTtl = Math.max(1, ttlSeconds + staleSeconds);
-  // Fire-and-forget: don't await Redis writes to avoid blocking the response.
-  // The memory cache is always populated synchronously, so subsequent requests
-  // get cache hits immediately while Redis catches up asynchronously.
-  redis.setex(cacheKey, redisTtl, JSON.stringify(entry)).catch((err: unknown) =>
-    logger.error({ err, cacheKey }, "Redis write error")
-  );
 
-  if (entry.tags.length > 0) {
-    const pipeline = redis.pipeline();
-    for (const tag of entry.tags) {
-      pipeline.sadd(`${TAG_PREFIX}:${tag}`, cacheKey);
-      pipeline.expire(`${TAG_PREFIX}:${tag}`, redisTtl);
-    }
-    pipeline.exec().catch((err: unknown) =>
-      logger.error({ err, cacheKey }, "Redis tag write error")
-    );
+  // Store the response and its tag index in the SAME HTTPS bridge request.
+  // Sending SETEX separately and then a second HTTP pipeline for the tags
+  // multiplied bridge traffic for every cached response under concurrent load.
+  const pipeline = redis.pipeline();
+  pipeline.setex(cacheKey, redisTtl, JSON.stringify(entry));
+  for (const tag of entry.tags) {
+    pipeline.sadd(`${TAG_PREFIX}:${tag}`, cacheKey);
+    pipeline.expire(`${TAG_PREFIX}:${tag}`, redisTtl);
   }
+
+  pipeline.exec().then((results) => {
+    const failed = results.find(([err]) => err !== null);
+    if (failed) {
+      logger.error({ err: failed[0], cacheKey }, "Redis cache pipeline command failed");
+    }
+  }).catch((err: unknown) => {
+    logger.error({ err, cacheKey }, "Redis cache pipeline write error");
+  });
 }
 
 async function readAny(cacheKey: string): Promise<CacheEntry | null> {

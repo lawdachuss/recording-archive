@@ -306,6 +306,7 @@ function createHttpRedis(url: string, key: string) {
     };
     const outer = {
       sadd: (k: string, v: string) => push("sadd", [k, v]),
+      incr: (k: string) => push("incr", [k]),
       zincrby: (k: string, inc: number, m: string) => push("zincrby", [k, inc, m]),
       hset: (k: string, f: string, v: string) => push("hset", [k, f, v]),
       expire: (k: string, s: number) => push("expire", [k, s]),
