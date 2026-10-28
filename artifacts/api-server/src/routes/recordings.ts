@@ -383,14 +383,14 @@ router.get("/recordings/recommendations", async (req, res) => {
 
     if (isAuthenticated) {
       const POOL = Math.min(Math.max(page * limit * 4, limit * 10), MAX_POOL);
-      const { data } = await supabase.from("linked_recordings").select(POOL_COLS).order("timestamp", { ascending: false }).limit(POOL * 2);
+      const { data } = await supabase.from("linked_recordings").select(POOL_COLS).order("timestamp", { ascending: false }).order("id", { ascending: false }).limit(POOL * 2);
       addScored(data, 0);
       scored.sort((a: any, b: any) => b._score - a._score);
     } else {
       const POOL = Math.min(Math.max(page * limit * 4, limit * 10), MAX_POOL);
       const [newest, popular] = await Promise.all([
-        supabase.from("linked_recordings").select(POOL_COLS).order("timestamp", { ascending: false }).limit(POOL),
-        supabase.from("linked_recordings").select(POOL_COLS).order("viewers", { ascending: false, nullsFirst: false }).limit(POOL),
+        supabase.from("linked_recordings").select(POOL_COLS).order("timestamp", { ascending: false }).order("id", { ascending: false }).limit(POOL),
+        supabase.from("linked_recordings").select(POOL_COLS).order("viewers", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(POOL),
       ]);
       addScored(newest.data, 80);
       addScored(popular.data, 20);
@@ -512,7 +512,7 @@ router.get("/recordings/related", async (req, res) => {
     // 1. Same performer
     const { data: performerData } = await supabase
       .from("linked_recordings").select(RELATED_COLS)
-      .neq("id", id).eq("username", recording.username).order("timestamp", { ascending: false }).limit(limit);
+      .neq("id", id).eq("username", recording.username).order("timestamp", { ascending: false }).order("id", { ascending: false }).limit(limit);
 
     // 2. Tag-based
     let tagResults: any[] = [];
@@ -521,7 +521,7 @@ router.get("/recordings/related", async (req, res) => {
       const { data } = await supabase
         .from("linked_recordings").select(RELATED_COLS)
         .neq("id", id).neq("username", recording.username).overlaps("tags", recording.tags)
-        .order("timestamp", { ascending: false }).limit(limit * 3);
+        .order("timestamp", { ascending: false }).order("id", { ascending: false }).limit(limit * 3);
 
       tagResults = (data ?? []).map((r: any) => {
         let score = (r.tags ?? []).filter((t: string) => sourceTags.has(t)).length * 15;
@@ -544,13 +544,13 @@ router.get("/recordings/related", async (req, res) => {
 
     // 4. Gender fallback
     if (merged.length < limit && recording.gender) {
-      const { data } = await supabase.from("linked_recordings").select(RELATED_COLS).neq("id", id).neq("username", recording.username).eq("gender", recording.gender).order("viewers", { ascending: false, nullsFirst: false }).limit(limit * 2);
+      const { data } = await supabase.from("linked_recordings").select(RELATED_COLS).neq("id", id).neq("username", recording.username).eq("gender", recording.gender).order("viewers", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(limit * 2);
       for (const r of (data ?? [])) { if (merged.length >= limit) break; if (!seen.has(r.id)) { seen.add(r.id); merged.push(r); } }
     }
 
     // 5. Popular fallback
     if (merged.length < limit) {
-      const { data } = await supabase.from("linked_recordings").select(RELATED_COLS).neq("id", id).neq("username", recording.username).order("viewers", { ascending: false, nullsFirst: false }).limit(limit * 3);
+      const { data } = await supabase.from("linked_recordings").select(RELATED_COLS).neq("id", id).neq("username", recording.username).order("viewers", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(limit * 3);
       for (const r of (data ?? [])) { if (merged.length >= limit) break; if (!seen.has(r.id)) { seen.add(r.id); merged.push(r); } }
     }
 
