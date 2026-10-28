@@ -651,7 +651,7 @@ export function initInvalidationPubSub(): boolean {
   });
   _invalidationSub = sub;
   if (sub.active) {
-    logger.info("Cache invalidation pub/sub connected");
+    logger.info("Cache invalidation pub/sub listener initialized");
   } else {
     logger.warn("Cache invalidation pub/sub unavailable (Redis down or serverless)");
   }
