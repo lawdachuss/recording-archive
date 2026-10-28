@@ -325,12 +325,17 @@ export function redisSubscribe(
   channel: string,
   handler: (message: string) => void,
 ): PubSubSubscription {
-  const sub = ensurePubSubClient();
   const noop: PubSubSubscription = {
     active: false,
     unsubscribe() { /* nothing to do */ },
   };
+
+  // The HTTPS bridge is request/response only; it has no socket to duplicate
+  // for Pub/Sub. Check this before ensurePubSubClient(), which needs ioredis'
+  // duplicate() method and is unavailable on the HTTP compatibility client.
   if (httpMode) return noop;
+
+  const sub = ensurePubSubClient();
   if (!sub) return noop;
 
   let disposed = false;
