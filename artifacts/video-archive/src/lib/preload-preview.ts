@@ -239,51 +239,53 @@ export function preloadVideo(url: string, immediate = false): void {
   // re-fetched speculatively on every page load just to warm a cache that
   // already has them. Checked BEFORE taking a queue slot so cached URLs
   // never occupy one of the 3 concurrent downloads.
-  void isCached(url).then((cached) => {
-    if (cached) return;
-    if (preloadCache.has(url)) return; // someone warmed it while we checked
+  void isCached(url)
+    .then((cached) => {
+      if (cached) return;
+      if (preloadCache.has(url)) return; // someone warmed it while we checked
 
-    // Enforce memory limit — evict oldest video if we're at capacity
-    if (videoKeys.length >= MAX_VIDEO_ELEMENTS) {
-      evictOldestVideo();
-    }
-
-    // Cap concurrent speculative downloads (see global gate above) so a
-    // page-full of previews can't saturate the connection. `immediate` (hover
-    // intent) queues at the FRONT — otherwise a hover had to wait behind up
-    // to MAX_CONCURRENT_PRELOADS background page-warm downloads before the
-    // preview even started fetching.
-    void acquirePreloadSlot(immediate).then((release) => {
-      // Re-check: another caller may have warmed this URL while we waited.
-      if (preloadCache.has(url)) {
-        release();
-        return;
+      // Enforce memory limit — evict oldest video if we're at capacity
+      if (videoKeys.length >= MAX_VIDEO_ELEMENTS) {
+        evictOldestVideo();
       }
-      const v = document.createElement("video");
-      v.muted = true;
-      // Full download ("auto"), NOT metadata. preloadVideo is only called for
-      // cards already near the viewport (useHoverPreview's IO, gated by the
-      // global 3-concurrent cap), so fetching the full preview now makes the
-      // hover instant AND lets onloadeddata persist the whole file to the IDB
-      // blob cache for zero-network repeat hovers. Metadata-only left the actual
-      // bytes to re-fetch on every hover.
-      v.preload = "auto";
-      (v as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
-      v.src = url;
-      // Persist to IDB blob cache after load (fire-and-forget)
-      v.onloadeddata = () => { cacheImage(url, 1).catch(() => {}); };
-      // Drop failed videos so they don't pin memory or consume the video-element
-      // budget; a future hover can retry them.
-      v.onerror = () => {
-        preloadCache.delete(url);
-        const i = videoKeys.indexOf(url);
-        if (i >= 0) videoKeys.splice(i, 1);
-      };
-      releaseOnSettle(v, release);
-      preloadCache.set(url, v);
-      videoKeys.push(url);
-    });
-  });
+
+      // Cap concurrent speculative downloads (see global gate above) so a
+      // page-full of previews can't saturate the connection. `immediate` (hover
+      // intent) queues at the FRONT — otherwise a hover had to wait behind up
+      // to MAX_CONCURRENT_PRELOADS background page-warm downloads before the
+      // preview even started fetching.
+      void acquirePreloadSlot(immediate).then((release) => {
+        // Re-check: another caller may have warmed this URL while we waited.
+        if (preloadCache.has(url)) {
+          release();
+          return;
+        }
+        const v = document.createElement("video");
+        v.muted = true;
+        // Full download ("auto"), NOT metadata. preloadVideo is only called for
+        // cards already near the viewport (useHoverPreview's IO, gated by the
+        // global 3-concurrent cap), so fetching the full preview now makes the
+        // hover instant AND lets onloadeddata persist the whole file to the IDB
+        // blob cache for zero-network repeat hovers. Metadata-only left the actual
+        // bytes to re-fetch on every hover.
+        v.preload = "auto";
+        (v as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
+        v.src = url;
+        // Persist to IDB blob cache after load (fire-and-forget)
+        v.onloadeddata = () => { cacheImage(url, 1).catch(() => {}); };
+        // Drop failed videos so they don't pin memory or consume the video-element
+        // budget; a future hover can retry them.
+        v.onerror = () => {
+          preloadCache.delete(url);
+          const i = videoKeys.indexOf(url);
+          if (i >= 0) videoKeys.splice(i, 1);
+        };
+        releaseOnSettle(v, release);
+        preloadCache.set(url, v);
+        videoKeys.push(url);
+      }).catch(() => {});
+    })
+    .catch(() => {});
 }
 
 
@@ -303,66 +305,68 @@ export function preloadAnimatedImage(
   if (!immediate && isConnectionConstrained()) return;
 
   // Already in the IDB blob cache — don't re-download just to warm it.
-  void isCached(url).then((cached) => {
-    if (cached) {
-      preloadCache.set(url, true);
-      return;
-    }
-    if (preloadCache.has(url)) return;
+  void isCached(url)
+    .then((cached) => {
+      if (cached) {
+        preloadCache.set(url, true);
+        return;
+      }
+      if (preloadCache.has(url)) return;
 
-    // Host lane saturated → retry WITHOUT taking a preview slot. The old code
-    // queued inside the slow host's lane WHILE HOLDING one of only 8 slots,
-    // so a throttled upstream starved every other preview warm behind it.
-    if (!canReserveHost(url) && hostAttempt < HOST_RETRY_MAX) {
-      window.setTimeout(
-        () => preloadAnimatedImage(url, cors, immediate, hostAttempt + 1),
-        HOST_RETRY_DELAY_MS,
-      );
-      return;
-    }
-
-    // Cap concurrent speculative downloads with priority jumping for immediate requests.
-    void acquirePreloadSlot(immediate).then(async (release) => {
-      if (preloadCache.has(url)) {
-        release();
+      // Host lane saturated → retry WITHOUT taking a preview slot. The old code
+      // queued inside the slow host's lane WHILE HOLDING one of only 8 slots,
+      // so a throttled upstream starved every other preview warm behind it.
+      if (!canReserveHost(url) && hostAttempt < HOST_RETRY_MAX) {
+        window.setTimeout(
+          () => preloadAnimatedImage(url, cors, immediate, hostAttempt + 1),
+          HOST_RETRY_DELAY_MS,
+        );
         return;
       }
 
-      try {
-        // Direct fetch & cache into IDB: single network request, zero duplicate fetches,
-        // instant blob URL on hover.
-        const entry = await cacheImage(url, immediate ? 3 : 1);
-        if (entry) {
-          preloadCache.set(url, true);
+      // Cap concurrent speculative downloads with priority jumping for immediate requests.
+      void acquirePreloadSlot(immediate).then(async (release) => {
+        if (preloadCache.has(url)) {
           release();
           return;
         }
-      } catch {
-        // Non-CORS or network error — fall through to <img> preload
-      }
 
-      // Fallback for non-CORS hosts: load into an <img> to warm browser HTTP cache
-      if (imageKeys.length >= MAX_IMAGE_ELEMENTS) {
-        evictOldestImage();
-      }
-      const img = new Image();
-      img.referrerPolicy = "no-referrer";
-      img.decoding = "async";
-      if (cors) img.crossOrigin = "anonymous";
-      img.onload = () => {
+        try {
+          // Direct fetch & cache into IDB: single network request, zero duplicate fetches,
+          // instant blob URL on hover.
+          const entry = await cacheImage(url, immediate ? 3 : 1);
+          if (entry) {
+            preloadCache.set(url, true);
+            release();
+            return;
+          }
+        } catch {
+          // Non-CORS or network error — fall through to <img> preload
+        }
+
+        // Fallback for non-CORS hosts: load into an <img> to warm browser HTTP cache
+        if (imageKeys.length >= MAX_IMAGE_ELEMENTS) {
+          evictOldestImage();
+        }
+        const img = new Image();
+        img.referrerPolicy = "no-referrer";
+        img.decoding = "async";
+        if (cors) img.crossOrigin = "anonymous";
+        img.onload = () => {
+          preloadCache.set(url, img);
+        };
+        img.onerror = () => {
+          preloadCache.delete(url);
+          const i = imageKeys.indexOf(url);
+          if (i >= 0) imageKeys.splice(i, 1);
+        };
+        releaseOnSettle(img, release);
         preloadCache.set(url, img);
-      };
-      img.onerror = () => {
-        preloadCache.delete(url);
-        const i = imageKeys.indexOf(url);
-        if (i >= 0) imageKeys.splice(i, 1);
-      };
-      releaseOnSettle(img, release);
-      preloadCache.set(url, img);
-      imageKeys.push(url);
-      img.src = url;
-    });
-  });
+        imageKeys.push(url);
+        img.src = url;
+      }).catch(() => {});
+    })
+    .catch(() => {});
 }
 
 
