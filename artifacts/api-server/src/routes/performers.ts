@@ -246,13 +246,13 @@ router.get(
       // 1. Check local archive first
       try {
         const { data: archiveData } = await supabase
-          .from("recordings_with_links")
+          .from("linked_recordings")
           .select(
             "thumbnail_url, sprite_url, preview_url, timestamp, username",
           )
           .eq("username", username)
-          .not("links", "is", "null")
-          .order("timestamp", { ascending: false })
+          
+          .order("timestamp", { ascending: false }).order("id", { ascending: false })
           .limit(50);
 
         if (archiveData && archiveData.length > 0) {
@@ -720,11 +720,11 @@ router.get(
       const SELECT_COLS =
         "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at";
       const { data: validRecordings, error } = await supabase
-        .from("recordings_with_links")
+        .from("linked_recordings")
         .select(SELECT_COLS)
-        .not("links", "is", "null")
+        
         .eq("username", username)
-        .order("timestamp", { ascending: false });
+        .order("timestamp", { ascending: false }).order("id", { ascending: false });
 
       if (error) {
         req.log.error(

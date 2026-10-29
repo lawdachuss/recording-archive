@@ -10,6 +10,7 @@ import { pushActivityBatch, flushActivity } from "../activity.js";
 // the import itself must resolve — the workspace supabase client needs env
 // vars. Mock the modules activity depends on.
 vi.mock("../redis.js", () => ({
+  getFeatureRedis: vi.fn(() => null),
   getRedis: vi.fn(() => null),
   isRedisConnected: vi.fn(() => false),
 }));
@@ -31,7 +32,7 @@ vi.mock("../logger.js", () => ({
 
 describe("activity pipeline (redis disconnected)", () => {
   beforeEach(() => {
-    vi.mocked(redisModule.getRedis).mockReset().mockReturnValue(null);
+    vi.mocked(redisModule.getFeatureRedis).mockReset().mockReturnValue(null);
     vi.mocked(redisModule.isRedisConnected).mockReset().mockReturnValue(false);
   });
 
@@ -45,7 +46,7 @@ describe("activity pipeline (redis disconnected)", () => {
 
   it("pushActivityBatch ignores empty batches", async () => {
     const redis = { xadd: vi.fn() } as any;
-    vi.mocked(redisModule.getRedis).mockReturnValue(redis);
+    vi.mocked(redisModule.getFeatureRedis).mockReturnValue(redis);
     vi.mocked(redisModule.isRedisConnected).mockReturnValue(true);
     await pushActivityBatch([]);
     expect(redis.xadd).not.toHaveBeenCalled();

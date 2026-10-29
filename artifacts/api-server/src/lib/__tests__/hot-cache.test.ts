@@ -12,6 +12,7 @@ import {
 import * as redis from "../redis.js";
 
 vi.mock("../redis.js", () => ({
+  getFeatureRedis: vi.fn(() => null),
   getRedis: vi.fn(() => null),
   isRedisConnected: vi.fn(() => false),
   redisPublish: vi.fn(async () => 0),
@@ -21,7 +22,7 @@ vi.mock("../redis.js", () => ({
 const { redis: fakeRedis, store } = createMockRedis();
 
 function useRedis() {
-  vi.mocked(redis.getRedis).mockReturnValue(fakeRedis);
+  vi.mocked(redis.getFeatureRedis).mockReturnValue(fakeRedis);
   vi.mocked(redis.isRedisConnected).mockReturnValue(true);
 }
 
@@ -41,12 +42,12 @@ describe("hot cache", () => {
   });
 
   afterEach(() => {
-    vi.mocked(redis.getRedis).mockReset();
+    vi.mocked(redis.getFeatureRedis).mockReset();
     vi.mocked(redis.isRedisConnected).mockReset();
   });
 
   it("returns empty when Redis is unavailable", async () => {
-    vi.mocked(redis.getRedis).mockReturnValue(null);
+    vi.mocked(redis.getFeatureRedis).mockReturnValue(null);
     await bumpRecordingHot("rec1", loader);
     expect(await getHotRecordings(10)).toEqual([]);
     expect(await getHotPerformers(10)).toEqual([]);

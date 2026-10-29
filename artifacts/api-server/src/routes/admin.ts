@@ -54,6 +54,43 @@ async function fetchRoles(userIds: string[]) {
 // ─── Dashboard Stats ─────────────────────────────────────────────────────────
 
 router.get("/admin/stats", ...admin, async (_req: Request, res: Response) => {
+  // Fast path: one database RPC returns the dashboard's counts. If the
+  // migration is not applied yet or the key lacks service-role privileges,
+  // retain the compatibility fallback below.
+  const { data: aggregate, error: aggregateError } = await supabase.rpc("get_admin_stats");
+  const aggregateRow = Array.isArray(aggregate) && aggregate.length > 0
+    ? aggregate[0] as Record<string, unknown>
+    : null;
+  if (!aggregateError && aggregateRow) {
+    res.json({
+      users: Number(aggregateRow.users ?? 0),
+      recordings: Number(aggregateRow.recordings ?? 0),
+      performers: Number(aggregateRow.performers ?? 0),
+      requests: {
+        total: Number(aggregateRow.request_total ?? 0),
+        pending: Number(aggregateRow.request_pending ?? 0),
+        approved: Number(aggregateRow.request_approved ?? 0),
+        rejected: Number(aggregateRow.request_rejected ?? 0),
+        done: Number(aggregateRow.request_done ?? 0),
+      },
+    });
+    return;
+  }
+  if (aggregateError) {
+    const code = (aggregateError as { code?: string }).code;
+    const message = (aggregateError as { message?: string }).message ?? "";
+    const canFallback =
+      code === "PGRST202" ||
+      code === "42501" ||
+      /function.*not.*found|Could not find the function|permission denied/i.test(message);
+    if (!canFallback) {
+      _req.log?.error?.({ err: aggregateError }, "GET /admin/stats aggregate RPC failed");
+      res.status(500).json({ error: "Failed to fetch admin stats" });
+      return;
+    }
+    _req.log?.warn?.({ code }, "get_admin_stats RPC unavailable; using compatibility fallback");
+  }
+
   const safeCount = async (
     label: string,
     run: () => Promise<{ count: number | null; error: unknown }>,

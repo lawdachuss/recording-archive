@@ -68,13 +68,36 @@ function buildCommentTree(rows: CommentRow[], likedSet?: Set<number>): CommentNo
   return roots;
 }
 
-/** Count likes per comment and track which sessions liked each comment. */
-async function fetchLikesForComments(commentIds: number[]) {
+/** Count likes per comment and track whether the supplied session liked it. */
+async function fetchLikesForComments(commentIds: number[], sessionId?: string) {
   const likeCounts = new Map<number, number>();
   const likedBySession = new Map<number, Set<string>>();
 
   for (let i = 0; i < commentIds.length; i += 1000) {
     const chunk = commentIds.slice(i, i + 1000);
+    const { data: aggregateRows, error: aggregateError } = await supabase.rpc(
+      "get_comment_like_stats",
+      { p_comment_ids: chunk, p_session_id: sessionId ?? null },
+    );
+
+    if (!aggregateError) {
+      for (const row of aggregateRows ?? []) {
+        const commentId = Number(row.comment_id);
+        likeCounts.set(commentId, Number(row.like_count ?? 0));
+        if (sessionId && row.user_liked) {
+          likedBySession.set(commentId, new Set([sessionId]));
+        }
+      }
+      continue;
+    }
+
+    // Compatibility path for databases where migration 020 is not installed.
+    const code = (aggregateError as { code?: string }).code;
+    const message = (aggregateError as { message?: string }).message ?? "";
+    if (code !== "PGRST202" && !/function.*not.*found|Could not find the function/i.test(message)) {
+      throw aggregateError;
+    }
+
     const { data, error } = await supabase
       .from("comment_likes")
       .select("comment_id, session_id")
@@ -105,9 +128,80 @@ router.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comme
       return;
     }
 
+    const rawPage = req.query.page as string | undefined;
+    const rawLimit = req.query.limit as string | undefined;
+    const hasPagination = rawPage !== undefined && rawLimit !== undefined;
+    const page = hasPagination ? Math.max(1, parseInt(rawPage) || 1) : 1;
+    const limit = hasPagination ? Math.min(100, Math.max(1, parseInt(rawLimit) || 50)) : 0;
+    const offset = hasPagination ? (page - 1) * limit : 0;
+
+    if (hasPagination) {
+      // Fast path: let Postgres sort and paginate before returning comment rows.
+      // Unpaginated callers use fetchAll below so large results aren't capped
+      // by PostgREST's max-rows setting.
+      const { data: feedData, error: feedError } = await supabase.rpc("get_comment_feed", {
+      p_recording_id: recording_id,
+      p_sort: sort,
+      p_offset: offset,
+      p_limit: hasPagination ? limit : null,
+      p_session_id: session_id ?? null,
+    });
+
+    if (!feedError) {
+      const feedRows = (feedData ?? []) as unknown as Array<
+        CommentRow & { user_liked?: boolean; total?: number | string }
+      >;
+      let total = Number(feedRows[0]?.total ?? 0);
+      if (feedRows.length === 0) {
+        // The total accompanies each returned row; fetch it separately only
+        // when the requested page is empty, including an out-of-range page.
+        const { count: totalCount, error: countError } = await supabase
+          .from("comments")
+          .select("id", { count: "exact", head: true })
+          .eq("recording_id", recording_id);
+        if (countError) {
+          req.log?.error?.({ err: countError, recording_id }, "Supabase error counting comments");
+          res.status(500).json({ error: "Failed to fetch comments" });
+          return;
+        }
+        total = totalCount ?? 0;
+      }
+      const windowRows = feedRows.map(({ total: _total, user_liked: _userLiked, ...row }) => ({
+        ...row,
+        likes: Number(row.likes ?? 0),
+      }) as CommentRow);
+      const likedSet = session_id
+        ? new Set(feedRows.filter((row) => row.user_liked).map((row) => Number(row.id)))
+        : undefined;
+      const tree = buildCommentTree(windowRows, likedSet);
+
+      if (hasPagination) {
+        const totalPages = Math.ceil(total / limit) || 1;
+        res.json({ data: tree, total, page, limit, totalPages });
+      } else {
+        // Preserve the legacy flat-array response when page/limit are omitted.
+        res.json(tree);
+      }
+      return;
+    }
+
+    const feedErrorCode = (feedError as { code?: string }).code;
+    const feedErrorMessage = (feedError as { message?: string }).message ?? "";
+    const canUseLegacyPath =
+      feedErrorCode === "PGRST202" ||
+      feedErrorCode === "42501" ||
+      /function.*not.*found|Could not find the function|permission denied/i.test(feedErrorMessage);
+    if (!canUseLegacyPath) {
+      req.log?.error?.({ err: feedError, recording_id }, "Supabase error fetching paginated comment feed");
+      res.status(500).json({ error: "Failed to fetch comments" });
+      return;
+    }
+
+    }
+
+    // Compatibility path for unpaginated requests or databases before migration 020.
     // Fetch every comment for this recording (PostgREST caps rows at 1,000 per
-    // request, so paginate). Tree structure + like-based ordering need the full
-    // set before we can slice a page.
+    // request, so paginate), then preserve the historical tree/sort behavior.
     const { data, error } = await fetchAll((start, end) =>
       supabase
         .from("comments")
@@ -125,19 +219,15 @@ router.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comme
     const allRows = (data ?? []) as CommentRow[];
     const total = allRows.length;
 
-    // Default: return all comments (tree structure requires parent-reply grouping).
-    // Only paginate when both page and limit are explicitly passed.
-    const rawPage = req.query.page as string | undefined;
-    const rawLimit = req.query.limit as string | undefined;
-    const hasPagination = rawPage !== undefined && rawLimit !== undefined;
-    const page = hasPagination ? Math.max(1, parseInt(rawPage) || 1) : 1;
-    const limit = hasPagination ? Math.min(100, Math.max(1, parseInt(rawLimit) || 50)) : total || 50;
-    const totalPages = hasPagination ? Math.ceil(total / limit) || 1 : 1;
+    // Compatibility fallback: if pagination was omitted, retain the historical
+    // behavior of returning all comments rather than using the fast-path limit.
+    const fallbackLimit = hasPagination ? limit : total || 50;
+    const totalPages = hasPagination ? Math.ceil(total / fallbackLimit) || 1 : 1;
 
     // Like counts (global — the "top" sort ranks by total likes across the
     // recording, not just within the page window).
     const commentIds = allRows.map((r) => Number(r.id));
-    const { likeCounts, likedBySession } = await fetchLikesForComments(commentIds);
+    const { likeCounts, likedBySession } = await fetchLikesForComments(commentIds, session_id);
 
     const likedSet: Set<number> | undefined = session_id
       ? new Set(commentIds.filter((id) => likedBySession.get(id)?.has(session_id)))
@@ -161,15 +251,15 @@ router.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comme
       return 0;
     });
 
-    const offset = (page - 1) * limit;
-    const windowRows = allRows.slice(offset, offset + limit).map((r) => ({
+    const fallbackOffset = (page - 1) * fallbackLimit;
+    const windowRows = allRows.slice(fallbackOffset, fallbackOffset + fallbackLimit).map((r) => ({
       ...r,
       likes: likeCounts.get(Number(r.id)) ?? 0,
     }));
 
     const tree = buildCommentTree(windowRows, likedSet);
     if (hasPagination) {
-      res.json({ data: tree, total, page, limit, totalPages });
+      res.json({ data: tree, total, page, limit: fallbackLimit, totalPages });
     } else {
       // Return flat array for backward compatibility with generated hook type
       res.json(tree);

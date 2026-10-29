@@ -174,9 +174,9 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
     // retry rebuilt only sort/page and could accidentally return unfiltered data.
     const buildQuery = () => {
       let next = supabase
-        .from("recordings_with_links")
+        .from("linked_recordings")
         .select(LIST_COLS, { count: countMode })
-        .not("links", "is", "null");
+        ;
 
       if (search?.trim()) {
         const s = escapeLike(search.trim());
@@ -193,7 +193,7 @@ router.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["rec
       if (username) next = next.eq("username", username);
       if (resolution) next = next.eq("resolution", resolution);
 
-      return next.order(sortCol, { ascending, nullsFirst: false });
+      return next.order(sortCol, { ascending, nullsFirst: false }).order("id", { ascending: false });
     };
 
     let query = buildQuery();
@@ -383,14 +383,14 @@ router.get("/recordings/recommendations", async (req, res) => {
 
     if (isAuthenticated) {
       const POOL = Math.min(Math.max(page * limit * 4, limit * 10), MAX_POOL);
-      const { data } = await supabase.from("recordings_with_links").select(POOL_COLS).not("links", "is", "null").order("timestamp", { ascending: false }).limit(POOL * 2);
+      const { data } = await supabase.from("linked_recordings").select(POOL_COLS).order("timestamp", { ascending: false }).order("id", { ascending: false }).limit(POOL * 2);
       addScored(data, 0);
       scored.sort((a: any, b: any) => b._score - a._score);
     } else {
       const POOL = Math.min(Math.max(page * limit * 4, limit * 10), MAX_POOL);
       const [newest, popular] = await Promise.all([
-        supabase.from("recordings_with_links").select(POOL_COLS).not("links", "is", "null").order("timestamp", { ascending: false }).limit(POOL),
-        supabase.from("recordings_with_links").select(POOL_COLS).not("links", "is", "null").order("viewers", { ascending: false, nullsFirst: false }).limit(POOL),
+        supabase.from("linked_recordings").select(POOL_COLS).order("timestamp", { ascending: false }).order("id", { ascending: false }).limit(POOL),
+        supabase.from("linked_recordings").select(POOL_COLS).order("viewers", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(POOL),
       ]);
       addScored(newest.data, 80);
       addScored(popular.data, 20);
@@ -428,9 +428,9 @@ router.get("/recordings/random", async (req, res) => {
     // Fetch a pool of candidate IDs — randomize in JS (PostgREST doesn't support ORDER BY random())
     const POOL_SIZE = Math.max(200, excludeIds.size + 50);
     const { data: pool, error } = await supabase
-      .from("recordings_with_links")
+      .from("linked_recordings")
       .select("id")
-      .not("links", "is", "null")
+      
       .limit(POOL_SIZE);
 
     if (error) {
@@ -445,9 +445,9 @@ router.get("/recordings/random", async (req, res) => {
     if (candidates.length === 0) {
       // Fallback: try without exclusion
       const { data: fallback } = await supabase
-        .from("recordings_with_links")
+        .from("linked_recordings")
         .select("id")
-        .not("links", "is", "null")
+        
         .limit(1);
       if (fallback && fallback.length > 0) {
         res.json({ id: fallback[0].id });
@@ -479,7 +479,7 @@ router.get("/recordings/related", async (req, res) => {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) { res.json([]); return; }
 
     const { data: recording, error: recError } = await supabase
-      .from("recordings_with_links").select("username, tags, gender").not("links", "is", "null").eq("id", id).single();
+      .from("linked_recordings").select("username, tags, gender").eq("id", id).single();
     if (recError || !recording) { res.json([]); return; }
 
     let userTagFreq: Record<string, number> = {};
@@ -511,17 +511,17 @@ router.get("/recordings/related", async (req, res) => {
 
     // 1. Same performer
     const { data: performerData } = await supabase
-      .from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null")
-      .neq("id", id).eq("username", recording.username).order("timestamp", { ascending: false }).limit(limit);
+      .from("linked_recordings").select(RELATED_COLS)
+      .neq("id", id).eq("username", recording.username).order("timestamp", { ascending: false }).order("id", { ascending: false }).limit(limit);
 
     // 2. Tag-based
     let tagResults: any[] = [];
     if (recording.tags && recording.tags.length > 0) {
       const sourceTags = new Set(recording.tags);
       const { data } = await supabase
-        .from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null")
+        .from("linked_recordings").select(RELATED_COLS)
         .neq("id", id).neq("username", recording.username).overlaps("tags", recording.tags)
-        .order("timestamp", { ascending: false }).limit(limit * 3);
+        .order("timestamp", { ascending: false }).order("id", { ascending: false }).limit(limit * 3);
 
       tagResults = (data ?? []).map((r: any) => {
         let score = (r.tags ?? []).filter((t: string) => sourceTags.has(t)).length * 15;
@@ -544,13 +544,13 @@ router.get("/recordings/related", async (req, res) => {
 
     // 4. Gender fallback
     if (merged.length < limit && recording.gender) {
-      const { data } = await supabase.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).neq("username", recording.username).eq("gender", recording.gender).order("viewers", { ascending: false, nullsFirst: false }).limit(limit * 2);
+      const { data } = await supabase.from("linked_recordings").select(RELATED_COLS).neq("id", id).neq("username", recording.username).eq("gender", recording.gender).order("viewers", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(limit * 2);
       for (const r of (data ?? [])) { if (merged.length >= limit) break; if (!seen.has(r.id)) { seen.add(r.id); merged.push(r); } }
     }
 
     // 5. Popular fallback
     if (merged.length < limit) {
-      const { data } = await supabase.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).neq("username", recording.username).order("viewers", { ascending: false, nullsFirst: false }).limit(limit * 3);
+      const { data } = await supabase.from("linked_recordings").select(RELATED_COLS).neq("id", id).neq("username", recording.username).order("viewers", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(limit * 3);
       for (const r of (data ?? [])) { if (merged.length >= limit) break; if (!seen.has(r.id)) { seen.add(r.id); merged.push(r); } }
     }
 
@@ -573,7 +573,7 @@ router.get("/recordings/:id", cache({ ttlSeconds: 120, staleSeconds: 600, tags: 
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) { res.status(404).json({ error: "Recording not found" }); return; }
 
     const { data, error } = await supabase
-      .from("recordings_with_links").select("*").not("links", "is", "null").eq("id", id).single();
+      .from("linked_recordings").select("*").eq("id", id).single();
 
     if (error) {
       if (error.code === "PGRST116") { res.status(404).json({ error: "Recording not found" }); return; }

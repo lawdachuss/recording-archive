@@ -73,20 +73,20 @@ router.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search"
     // list when the Redis snapshot is temporarily unavailable.
     const [performerResult, recordingResult] = await Promise.all([
       supabase
-        .from("recordings_with_links")
+        .from("linked_recordings")
         .select("username, thumbnail_url, sprite_url, preview_url, links")
-        .not("links", "is", "null")
+        
         .ilike("username", `%${safeQ}%`)
-        .order("timestamp", { ascending: false })
+        .order("timestamp", { ascending: false }).order("id", { ascending: false })
         .limit(16),
       supabase
-        .from("recordings_with_links")
+        .from("linked_recordings")
         .select("id, username, room_title, filename, thumbnail_url, links")
-        .not("links", "is", "null")
+        
         .or(
           `username.ilike.%${safeQ}%,room_title.ilike.%${safeQ}%,filename.ilike.%${safeQ}%`,
         )
-        .order("timestamp", { ascending: false })
+        .order("timestamp", { ascending: false }).order("id", { ascending: false })
         .limit(4),
     ]);
 

@@ -12,17 +12,19 @@ const INFLOW_TIMEOUT_MS = Number.parseInt(process.env.API_CACHE_INFLOW_TIMEOUT ?
 // Vercel's CDN already persists public GET responses across regions. The Redis
 // adapter on Vercel is an HTTPS/JSON bridge, not a native Redis connection;
 // probing it on every cold cache miss adds latency and stalls under burst traffic.
-// Keep shared Redis caching on long-lived Render instances, and use Vercel's
-// edge cache plus the local response cache on serverless deployments.
+// Keep shared response caching on long-lived hosts (e.g. Render), and use
+// Vercel's edge cache plus local response cache for serverless requests.
 function shouldUseSharedResponseCache(): boolean {
-  // The explicit flag makes production behavior independent of which Vercel
-  // system variables a function bundle receives. Keep Redis for Render, but
-  // use Vercel's edge + local cache for public responses on serverless.
+  // This explicit flag can force local-only response caching in any environment.
   if (process.env.VERCEL_CACHE_LOCAL_ONLY === "1") return false;
-  return process.env.VERCEL === "1" ||
+
+  const isVercelRuntime =
+    process.env.VERCEL === "1" ||
     Boolean(process.env.VERCEL_URL) ||
     process.env.VERCEL_ENV === "production" ||
     process.env.VERCEL_ENV === "preview";
+
+  return !isVercelRuntime;
 }
 const inflightRedisMap = new Map<string, Promise<unknown>>();
 const inflightReqMap = new Map<string, Promise<void>>();
