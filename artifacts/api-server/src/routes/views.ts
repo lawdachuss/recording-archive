@@ -28,6 +28,12 @@ router.post("/recordings/:id/view", async (req, res) => {
     return;
   }
 
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(id)) {
+    res.status(400).json({ error: "Invalid recording id" });
+    return;
+  }
+
   // Coalesced (fast) path — no Postgres contact for the common case.
   const bufferedViewers = await recordView(id);
   if (bufferedViewers !== null) {
