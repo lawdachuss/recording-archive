@@ -334,7 +334,9 @@ router.get("/recordings/recommendations", async (req, res) => {
             }
           }
         }
-      } catch { /* auth failed silently */ }
+      } catch (err) {
+        req.log?.debug?.({ err }, "Optional auth user lookup for recommendations failed");
+      }
     }
 
     const logWeight = (n: number) => Math.log10(n + 1);
@@ -421,8 +423,13 @@ router.get("/recordings/random", async (req, res) => {
   try {
     // Parse exclude list — comma-separated recording IDs to skip
     const excludeRaw = typeof req.query.exclude === "string" ? req.query.exclude : "";
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const excludeIds = new Set(
-      excludeRaw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 100),
+      excludeRaw
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => uuidRegex.test(s))
+        .slice(0, 100),
     );
 
     // Fetch a pool of candidate IDs — randomize in JS (PostgREST doesn't support ORDER BY random())
@@ -506,7 +513,9 @@ router.get("/recordings/related", async (req, res) => {
             }
           }
         }
-      } catch { /* silent */ }
+      } catch (err) {
+        req.log?.debug?.({ err }, "Optional auth user lookup for related recordings failed");
+      }
     }
 
     // 1. Same performer
