@@ -7,9 +7,7 @@ import {
 } from "@/lib/preload-preview";
 import { preloadImage, isReachablePreviewUrl, isCatboxAnimatedPreviewUrl } from "@/lib/preload-sprite";
 import { isConnectionConstrained } from "@/lib/connection";
-import { dlog } from "@/lib/debug";
-
-
+import { dlog, debugEnabled } from "@/lib/debug";
 
 /**
  * Preview URLs reach this hook already routed through the media proxy
@@ -25,7 +23,7 @@ function getInspectUrl(url: string | null | undefined): string | null {
       const inner = parsed.searchParams.get("url");
       if (inner) return inner;
     }
-    // wsrv.nl re-encodes media under its own origin (`/ ?url=<encoded>`).
+    // wsrv.nl re-encodes media under its own origin (`/?url=<encoded>`).
     // Unwrap so extension-based type detection still works.
     if (parsed.hostname.endsWith("wsrv.nl")) {
       const inner = parsed.searchParams.get("url");
@@ -58,7 +56,7 @@ interface UseHoverPreviewReturn {
     onFocus: React.FocusEventHandler;
     onBlur: React.FocusEventHandler;
   };
-  viewportRef: React.RefCallback<HTMLElement>;
+  viewportRef: React.RefObject<HTMLDivElement | null>;
 }
 
 export function useHoverPreview({
@@ -67,10 +65,13 @@ export function useHoverPreview({
   spriteUrl,
   enabled = true,
 }: UseHoverPreviewOptions): UseHoverPreviewReturn {
-  dlog("hoverpreview", "init", { thumbnailUrl, previewUrl, spriteUrl, enabled });
+  if (debugEnabled()) {
+    dlog("hoverpreview", "init", { thumbnailUrl, previewUrl, spriteUrl, enabled });
+  }
   const [isHovered, setIsHovered] = useState(false);
   const intersectionPreloadedRef = useRef(false);
   const enterTimer = useRef<number | null>(null);
+  const viewportElementRef = useRef<HTMLDivElement | null>(null);
   const intentDelay = 90;
 
   // The URL used for type detection (unwrapped from the proxy), while loading
@@ -83,58 +84,49 @@ export function useHoverPreview({
     intersectionPreloadedRef.current = false;
   }, [previewUrl, spriteUrl]);
 
-  const viewportRef = useMemo<React.RefCallback<HTMLElement>>(() => {
-    let observer: IntersectionObserver | null = null;
-    return (el: HTMLElement | null) => {
-      if (observer) {
-        observer.disconnect();
-        observer = null;
-      }
-      if (!el || !enabled || intersectionPreloadedRef.current) return;
+  useEffect(() => {
+    const el = viewportElementRef.current;
+    if (!el || !enabled || intersectionPreloadedRef.current) return;
+
+    if (debugEnabled()) {
       dlog("hoverpreview", "viewport attached", { previewUrl, spriteUrl });
-      observer = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            if (entry.isIntersecting && !intersectionPreloadedRef.current) {
-              intersectionPreloadedRef.current = true;
-              // Preload the lightweight sprite sheet (instant hover scrubber effect)
-              // when the card approaches viewport. Heavy video/animated-webp previews
-              // are preheated on hover intent (onMouseEnter) to prevent saturating
-              // connection streams and triggering HTTP/2 resets on Catbox.
-              if (spriteUrl && isReachablePreviewUrl(spriteUrl)) {
-                preloadImage(spriteUrl, { immediate: true });
-              }
-              observer?.disconnect();
-              break;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && !intersectionPreloadedRef.current) {
+            intersectionPreloadedRef.current = true;
+            if (spriteUrl && isReachablePreviewUrl(spriteUrl)) {
+              preloadImage(spriteUrl, { immediate: true });
             }
+            observer.disconnect();
+            break;
           }
-        },
-        // Preload only cards close to the viewport. 800px meant a whole grid
-        // row of cards fired TWO speculative downloads each on first paint;
-        // 400px still starts the fetch well before the pointer arrives while
-        // cutting the initial preload burst roughly in half.
-        { rootMargin: isConnectionConstrained() ? "200px" : "400px" }
-      );
-      observer.observe(el);
-    };
+        }
+      },
+      { rootMargin: isConnectionConstrained() ? "200px" : "400px" }
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
   }, [enabled, previewUrl, spriteUrl]);
 
   const onMouseEnter = useCallback(() => {
-    dlog("hoverpreview", "onMouseEnter", { enabled, intentDelay });
+    if (debugEnabled()) dlog("hoverpreview", "onMouseEnter", { enabled, intentDelay });
     if (!enabled) return;
-    // Eagerly preheat the preview on initial pointer entrance so network handshake starts immediately
     if (previewUrl && (isReachablePreviewUrl(previewUrl) || isCatboxAnimatedPreviewUrl(previewUrl))) {
       preloadPreviewMedia(previewUrl, true);
     }
     if (enterTimer.current) window.clearTimeout(enterTimer.current);
     enterTimer.current = window.setTimeout(() => {
-      dlog("hoverpreview", "hover timeout -> setIsHovered(true)");
+      if (debugEnabled()) dlog("hoverpreview", "hover timeout -> setIsHovered(true)");
       setIsHovered(true);
     }, intentDelay);
   }, [enabled, intentDelay, previewUrl]);
 
   const onMouseLeave = useCallback(() => {
-    dlog("hoverpreview", "onMouseLeave");
+    if (debugEnabled()) dlog("hoverpreview", "onMouseLeave");
     if (enterTimer.current) {
       window.clearTimeout(enterTimer.current);
       enterTimer.current = null;
@@ -143,13 +135,13 @@ export function useHoverPreview({
   }, []);
 
   const onFocus = useCallback(() => {
-    dlog("hoverpreview", "onFocus");
+    if (debugEnabled()) dlog("hoverpreview", "onFocus");
     if (!enabled) return;
     setIsHovered(true);
   }, [enabled]);
 
   const onBlur = useCallback(() => {
-    dlog("hoverpreview", "onBlur");
+    if (debugEnabled()) dlog("hoverpreview", "onBlur");
     setIsHovered(false);
   }, []);
 
@@ -159,26 +151,16 @@ export function useHoverPreview({
     };
   }, []);
 
-  // Preload the preview VIDEO while in viewport so playback starts instantly on hover.
-  // Skip entirely on slow connections — the bandwidth is needed for the grid,
-  // not speculative video preloads that may never be watched.
-  // Only preload actual video files (.mp4, .webm etc.) — .webp files are images
-  // and must NOT be loaded into a <video> element (it wastes a connection slot
-  // and blocks the <img> from loading).
   const canPreloadVideo = !!previewUrl && isVideoUrl(inspectUrl) && !isConnectionConstrained();
   const preloadVideoUrl = canPreloadVideo ? previewUrl : null;
 
-  // Determine preview type: video, animated WebP, or none. Real video files
-  // (.mp4, .webm) are shown via <video>; .webp files are shown via <img>.
-  // isVideoCandidate still includes .webp for the showVideo/showAnimatedImage
-  // flags (VideoCard uses isWebpPreview to pick the right rendering path).
   const isPreviewVideo = isVideoCandidate(inspectUrl);
   const isAnimatedImage = isAnimatedImageUrl(inspectUrl);
   const showVideo = isHovered && isPreviewVideo;
   const showAnimatedImage = isHovered && isAnimatedImage;
 
-  // Log which preview path resolves, so we can correlate with VideoCard.
   useEffect(() => {
+    if (!debugEnabled()) return;
     dlog("hoverpreview", "preview path", {
       isHovered,
       inspectUrl,
@@ -188,6 +170,10 @@ export function useHoverPreview({
     });
   }, [isHovered, showVideo, showAnimatedImage, inspectUrl, isPreviewVideo, isAnimatedImage]);
 
+  const hoverHandlers = useMemo(
+    () => ({ onMouseEnter, onMouseLeave, onFocus, onBlur }),
+    [onMouseEnter, onMouseLeave, onFocus, onBlur]
+  );
 
   return {
     isHovered,
@@ -195,8 +181,8 @@ export function useHoverPreview({
     showAnimatedImage,
     videoUrl: (showVideo ? previewUrl : null) ?? null,
     animatedImageUrl: (showAnimatedImage ? previewUrl : null) ?? null,
-    hoverHandlers: { onMouseEnter, onMouseLeave, onFocus, onBlur },
-    viewportRef,
+    hoverHandlers,
+    viewportRef: viewportElementRef,
     preloadVideoUrl: preloadVideoUrl ?? null,
   };
 }

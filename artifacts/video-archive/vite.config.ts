@@ -6,9 +6,6 @@ import path from "path";
 const env = loadEnv("development", process.cwd(), "");
 const rawPort = env.FRONTEND_PORT || env.PORT;
 const port = rawPort ? Number(rawPort) : 3000;
-// Use VITE_BASE_PATH first, then fall back to BASE_PATH (only if it looks valid),
-// otherwise default to "/". Git Bash sets BASE_PATH to a Git install path which
-// breaks routing, so we must validate it.
 const rawBase = env.VITE_BASE_PATH || env.BASE_PATH || "/";
 const basePath = rawBase.startsWith("/") && !rawBase.includes(" ") ? rawBase : "/";
 
@@ -49,17 +46,13 @@ export default defineConfig(async () => ({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist"),
     emptyOutDir: true,
+    target: "es2022",
+    cssCodeSplit: true,
     rollupOptions: {
-      // Keep peak memory low on Vercel's 2-core/8 GB build machines: fewer
-      // parallel file ops + no persistent cache means Rollup holds fewer
-      // module sources in memory at once.
       maxParallelFileOps: 2,
       cache: false,
       output: {
         manualChunks(id) {
-          // Monorepo workspace code (API client + zod schemas) — shared by every
-          // page that talks to the API, so it gets its own stable long-cacheable
-          // chunk instead of being duplicated into each lazy route chunk.
           if (
             id.includes("/lib/api-client-react/") ||
             id.includes("/lib/api-client/") ||
@@ -69,15 +62,6 @@ export default defineConfig(async () => ({
             return "workspace";
           }
           if (
-            id.includes("/src/components/Layout") ||
-            id.includes("/src/components/VideoCard") ||
-            id.includes("/src/components/nav/")
-          ) {
-            return "shared";
-          }
-          // React runtime + router essentials go in the vendor chunk so the
-          // entry bundle stays tiny and every lazy route only pays cache hits.
-          if (
             id.includes("/node_modules/react/") ||
             id.includes("/node_modules/react-dom/") ||
             id.includes("/node_modules/wouter/") ||
@@ -85,11 +69,11 @@ export default defineConfig(async () => ({
           ) {
             return "vendor";
           }
-          if (
-            id.includes("/node_modules/lucide-react/") ||
-            id.includes("/node_modules/@radix-ui/")
-          ) {
-            return "ui";
+          if (id.includes("/node_modules/lucide-react/")) {
+            return "icons";
+          }
+          if (id.includes("/node_modules/@radix-ui/")) {
+            return "radix";
           }
           if (id.includes("/node_modules/framer-motion/")) {
             return "motion";
@@ -135,8 +119,6 @@ export default defineConfig(async () => ({
     port,
     host: "0.0.0.0",
     allowedHosts: true,
-    // Vite preview does not inherit server.proxy. Keep the frontend's same-
-    // origin /api calls routed to the local API in production too.
     proxy: {
       "/api": {
         target: "http://127.0.0.1:8080",
