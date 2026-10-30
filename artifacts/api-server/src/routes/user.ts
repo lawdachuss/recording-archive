@@ -230,11 +230,28 @@ router.put("/user/profile", async (req, res) => {
       username?: string;
     };
 
+    // Validate avatar_url scheme and length (prevent XSS / javascript: / data: protocols and DoS)
+    if (avatar_url !== undefined && avatar_url !== null && avatar_url !== "") {
+      if (typeof avatar_url !== "string" || avatar_url.length > 2048 || !/^https?:\/\//i.test(avatar_url.trim())) {
+        res.status(400).json({ error: "avatar_url must be a valid http(s) URL" });
+        return;
+      }
+    }
+
+    // Validate username format and length
+    if (username !== undefined && username !== null && username.trim() !== "") {
+      const trimmedUser = username.trim();
+      if (!/^[a-zA-Z0-9_-]{3,30}$/.test(trimmedUser)) {
+        res.status(400).json({ error: "username must be 3-30 characters (letters, numbers, underscores, or hyphens)" });
+        return;
+      }
+    }
+
     const updates: { updated_at: string; display_name?: string; avatar_url?: string; bio?: string; username?: string; email?: string } = { updated_at: new Date().toISOString() };
-    if (display_name !== undefined) updates.display_name = display_name;
-    if (avatar_url !== undefined) updates.avatar_url = avatar_url;
-    if (bio !== undefined) updates.bio = bio;
-    if (username != null && typeof username === "string") updates.username = username.trim().toLowerCase();
+    if (display_name !== undefined && typeof display_name === "string") updates.display_name = display_name.trim().slice(0, 100);
+    if (avatar_url !== undefined && typeof avatar_url === "string") updates.avatar_url = avatar_url.trim() || undefined;
+    if (bio !== undefined && typeof bio === "string") updates.bio = bio.trim().slice(0, 1000);
+    if (username != null && typeof username === "string" && username.trim() !== "") updates.username = username.trim().toLowerCase();
     // Always include email so resolve-username can look up users by username
     if (req.user!.email) updates.email = req.user!.email;
 
