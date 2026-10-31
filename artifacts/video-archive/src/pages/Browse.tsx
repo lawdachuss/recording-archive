@@ -21,7 +21,6 @@ import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { VideoCard } from "@/components/VideoCard";
 import { AdGridCard } from "@/components/ads/AdGridCard";
 import { isAdCard } from "@/lib/ad-creatives";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { useContinuousPrefetch } from "@/hooks/use-continuous-prefetch";
@@ -55,13 +54,6 @@ const SORT_LABELS: Record<ListRecordingsSort, string> = {
   popular: "Most viewed",
 };
 
-// Slow/constrained links get a lighter browsing grid (12 items vs 24) so the
-// first page of thumbnails doesn't saturate the connection. Evaluated once at
-// module load so pagination state stays consistent for the whole session.
-// 40 was well past the point of diminishing returns: every card is a separate
-// /api/media request, and on a cold cache those serialize behind a ~1.5-2.7s
-// origin fetch each (measured against production), so the 25th card was still
-// arriving long after the user had scrolled past the 20th.
 const ITEMS_PER_PAGE = isConnectionConstrained() ? 12 : 24;
 
 function parseTagList(raw: string): string[] {
@@ -106,8 +98,6 @@ export default function Browse() {
   const [pageLoading, setPageLoading] = useState(false);
 
   // ─── Filter presets ──────────────────────────────────
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
-
   const [presetMenuOpen, setPresetMenuOpen] = useState(false);
   const presetRef = useRef<HTMLDivElement>(null);
   const [savePresetOpen, setSavePresetOpen] = useState(false);
@@ -166,24 +156,11 @@ export default function Browse() {
   const recordings = data?.data ?? [];
 
   // ─── Current-page media preload ───────────────────────────────────────
-  // Sprites + thumbnails + reachable previews are the hover/grid media, so
-  // warm ALL of them on this page during idle (dedup'd + bounded concurrency
-  // in preloadRecordingMedia) — hovering any card later is instant instead of
-  // waiting for a fresh fetch.
   usePreloadRecordings(recordings);
 
   const queryClient = useQueryClient();
 
   // ─── Continuous next-page prefetch (data + media) ────────────────────
-  // fetchPage stores every page under the SAME query key/queryFn the page
-  // navigation hook uses (ensureQueryData), so:
-  //   - the 5-pages-ahead data download happens ONCE and is reused the moment
-  //     the user clicks into that page (previously a raw fetch threw the
-  //     response away, so navigation re-downloaded it — and page+1 was
-  //     fetched TWICE, once raw and once by prefetchQuery);
-  //   - in-flight fetches dedupe with the scroll-triggered prefetchQuery.
-  // Media (thumbnails + sprites + previews) warms through the unified,
-  // connection-aware preload queue ahead of the scroll.
   const fetchNextPrefetchPage = useCallback(
     async (page: number) => {
       const params = { ...recordingsParams, page };
@@ -202,10 +179,6 @@ export default function Browse() {
     [recordingsParams, queryClient],
   );
 
-  // Filters/sort/search WITHOUT the page — the prefetch window resets when
-  // this changes so pages warmed for the old result set never count as warm
-  // for the new one (old bug: after any filter change, prefetch was dead
-  // until the user scrolled past the previous query's high-water mark).
   const prefetchResetKey = useMemo(() => {
     const { page: _page, ...filters } = recordingsParams;
     return JSON.stringify(filters);
@@ -214,80 +187,12 @@ export default function Browse() {
   const { sentinelRef: continuousSentinelRef } = useContinuousPrefetch({
     fetchPage: fetchNextPrefetchPage,
     currentPage: recordingsParams.page,
-    // Keep just one page of data ahead and warm a small thumbnail strip when idle.
-    // Viewport observers handle nearby sprites; full previews are fetched on hover,
-    // avoiding hundreds of speculative requests during normal browsing.
     prefetchAhead: 1,
     previewDepth: 1,
     eagerThumbs: Math.min(8, ITEMS_PER_PAGE),
-    // Prime the next page's thumbnails as soon as this page's data arrives,
-    // instead of only when the user scrolls near the bottom.
     startSignal: data,
     resetKey: prefetchResetKey,
   });
-
-  // ─── Next-page prefetch (data + previews) ─────────────────────────
-  // When the user scrolls toward the bottom of the list, prefetch the next
-  // page of recordings into the React Query cache and warm the preview clips
-  // so navigating (or hovering) is instant.
-  const prefetchedForRef = useRef("");
-
-  const prefetchNextPage = useCallback(() => {
-    if (!data) return;
-    // A partial page means there is no next page (also covers stale
-    // keepPreviousData totals during filter changes).
-    if (data.data.length < recordingsParams.limit) return;
-    const next = recordingsParams.page + 1;
-    if (next > Math.ceil(data.total / recordingsParams.limit)) return;
-
-    const nextParams = { ...recordingsParams, page: next };
-    const queryKey = getListRecordingsQueryKey(nextParams);
-    // One-shot guard keyed by the query (auto-resets on filter/page changes).
-    const guardKey = JSON.stringify(queryKey);
-    if (prefetchedForRef.current === guardKey) return;
-    // Already fetched (e.g. visited before or restored from cache) — nothing to do.
-    if (queryClient.getQueryData(queryKey) !== undefined) return;
-
-    prefetchedForRef.current = guardKey;
-    queryClient
-      .prefetchQuery({
-        queryKey,
-        queryFn: () => listRecordings(nextParams),
-        staleTime: 5 * 60_000,
-      });
-  }, [data, recordingsParams, queryClient]);
-
-  const prefetchNextPageRef = useRef(prefetchNextPage);
-  useEffect(() => {
-    prefetchNextPageRef.current = prefetchNextPage;
-  }, [prefetchNextPage]);
-
-  // Warm the next page's DATA right when the current page loads (the media
-  // hooks warm its thumbnails). Previously this only ran on scroll, so users
-  // who paginated without scrolling to the bottom hit a cold grid.
-  useEffect(() => {
-    prefetchNextPage();
-  }, [prefetchNextPage]);
-
-  // Observe a sentinel near the bottom of the grid; fire the prefetch when it
-  // approaches the viewport (1200px early) so the next page is ready before
-  // the user reaches the pagination.
-  const hasRecordings = recordings.length > 0;
-  useEffect(() => {
-    if (!hasRecordings) return;
-    const el = sentinelRef.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) prefetchNextPageRef.current();
-        }
-      },
-      { rootMargin: "1200px 0px" },
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [hasRecordings]);
 
   const handlePageChange = (newPage: number) => {
     setPageLoading(true);
@@ -299,9 +204,6 @@ export default function Browse() {
     window.scrollTo({ top: 0, behavior: "auto" });
   };
 
-  // Clamp out-of-range pages (e.g. deep-linked `?page=99` on a small result
-  // set): rewrite the URL to the last valid page so we never render a bogus
-  // empty state / "Page 99 of 3" while valid filters are applied.
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / ITEMS_PER_PAGE));
   useEffect(() => {
     const current = recordingsParams.page;
@@ -310,11 +212,8 @@ export default function Browse() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, totalPages]);
 
-  // Use isFetching (true while refetching) to clear the loading overlay
-  // rather than checking data — keepPreviousData keeps stale data alive.
   useEffect(() => {
     if (!isFetching && pageLoading) {
-      // Small delay to ensure the DOM has updated with new data
       const t = setTimeout(() => setPageLoading(false), 50);
       return () => clearTimeout(t);
     }
@@ -336,9 +235,6 @@ export default function Browse() {
       gender?: string;
       sort?: string;
     }) => {
-      // Use the *committed* search (from the URL), not the local input state —
-      // text that's been typed but not submitted shouldn't leak into filters
-      // when the user changes sort/tags/gender.
       const committedSearch = new URLSearchParams(searchString).get("search") || "";
       const next = {
         search: committedSearch,
@@ -347,10 +243,6 @@ export default function Browse() {
         sort: sort as string,
         ...overrides,
       };
-      // Keep local state in sync with the merged values so the UI (chips,
-      // sort select, filter pills) reflects what we push to the URL. Without
-      // this, toggling a gender chip never updates the UI and the filter
-      // becomes impossible to deselect.
       setSearch(next.search);
       setSelectedTags(next.tags);
       setGender(next.gender);
@@ -362,7 +254,7 @@ export default function Browse() {
       if (next.sort && next.sort !== "newest") params.set("sort", next.sort);
       setLocation(`/browse${params.toString() ? "?" + params.toString() : ""}`);
     },
-    [search, selectedTags, gender, sort, searchString, setLocation],
+    [selectedTags, gender, sort, searchString, setLocation],
   );
 
   const handleSearch = (e: React.FormEvent) => {
@@ -796,14 +688,9 @@ export default function Browse() {
                 )}
               </div>
 
-              {/* Scroll sentinel — triggers data + media prefetch of the next
-                  page (Browse's own observer prefetches data; the continuous
-                  prefetch hook warms media on the same element). */}
+              {/* Scroll sentinel — continuous prefetch hook warms next page data + media */}
               <div
-                ref={(el) => {
-                  sentinelRef.current = el;
-                  continuousSentinelRef.current = el;
-                }}
+                ref={continuousSentinelRef}
                 aria-hidden
                 className="h-px w-full"
               />
