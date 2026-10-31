@@ -147,6 +147,7 @@ export function NotificationBell() {
                     <button
                       onClick={() => deleteOne.mutate(n.id)}
                       className="shrink-0 text-muted-foreground/30 hover:text-muted-foreground transition-colors mt-0.5"
+                      aria-label="Delete notification"
                     >
                       <X className="w-3 h-3" />
                     </button>
