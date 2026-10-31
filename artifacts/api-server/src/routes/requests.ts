@@ -51,6 +51,28 @@ router.post("/requests", requireAuth, async (req, res) => {
     return;
   }
 
+  // Security input validation: prevent XSS / malicious schemes and payload size DoS
+  if (stream_link !== undefined && stream_link !== null && stream_link !== "") {
+    if (typeof stream_link !== "string" || stream_link.trim().length > 2048 || !/^https?:\/\//i.test(stream_link.trim())) {
+      res.status(400).json({ error: "stream_link must be a valid http(s) URL (max 2048 chars)" });
+      return;
+    }
+  }
+
+  if (performer_username !== undefined && performer_username !== null && performer_username !== "") {
+    if (typeof performer_username !== "string" || performer_username.trim().length > 100) {
+      res.status(400).json({ error: "performer_username must be a string up to 100 characters" });
+      return;
+    }
+  }
+
+  if (notes !== undefined && notes !== null && notes !== "") {
+    if (typeof notes !== "string" || notes.trim().length > 1000) {
+      res.status(400).json({ error: "notes must be a string up to 1000 characters" });
+      return;
+    }
+  }
+
   const validPriority = ["low", "normal", "high"].includes(priority ?? "") ? priority : "normal";
 
   // If the performer already has recordings in the archive, reject the request
