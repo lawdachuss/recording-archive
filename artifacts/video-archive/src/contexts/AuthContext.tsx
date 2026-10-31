@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { getSupabase } from "@/lib/supabase";
 import { resolveApiPath } from "@/lib/api-base";
@@ -57,8 +57,6 @@ async function fetchRole(token: string): Promise<"user" | "moderator" | "admin">
   try {
     const res = await fetch(resolveApiPath("/api/user/role"), {
       headers: { Authorization: `Bearer ${token}` },
-      // Never strand the UI: a hung request falls through to the "user"
-      // fallback below instead of leaving role null forever.
       signal: AbortSignal.timeout(8_000),
     });
     if (res.ok) {
@@ -96,17 +94,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<"user" | "moderator" | "admin" | null>(null);
-  // Generation counter so a slow `fetchRole` from a previous session/login
-  // can never overwrite the role of the current one (e.g. after sign-out).
   const roleGeneration = useRef(0);
 
-  const applyRole = (token: string) => {
+  const applyRole = useCallback((token: string) => {
     const gen = ++roleGeneration.current;
     setRole(null);
     fetchRole(token).then((r) => {
       if (roleGeneration.current === gen) setRole(r);
     });
-  };
+  }, []);
 
   useEffect(() => {
     let unsub: (() => void) | null = null;
@@ -124,8 +120,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           })
           .catch(() => {
-            // Corrupted/inaccessible session (e.g. IndexedDB hiccup) — treat
-            // as logged out instead of hanging the whole app in the loader.
             setSession(null);
             setUser(null);
           })
@@ -146,8 +140,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         unsub = () => subscription.unsubscribe();
       })
       .catch(() => {
-        // Supabase SDK failed to load/init — drop out of the loading state
-        // so the app renders (unauthenticated) instead of hanging forever.
         setLoading(false);
       });
 
@@ -155,9 +147,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unsub?.();
       roleGeneration.current++;
     };
-  }, []);
+  }, [applyRole]);
 
-  const signIn = async (
+  const signIn = useCallback(async (
     email: string,
     password: string,
   ): Promise<{ error?: string }> => {
@@ -171,9 +163,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       applyPendingUsername(data.session.access_token);
     }
     return {};
-  };
+  }, [applyRole]);
 
-  const signUp = async (
+  const signUp = useCallback(async (
     email: string,
     password: string,
     username?: string,
@@ -202,29 +194,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch {}
     }
     return {};
-  };
+  }, []);
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     const sb = await getSupabase();
     await sb.auth.signOut();
     setSession(null);
     setUser(null);
     setRole(null);
-    // Never leave the previous user's query data (in-memory or persisted)
-    // behind for the next visitor on a shared browser.
     await clearQueryCache();
-  };
+  }, []);
 
-  const resetPassword = async (email: string): Promise<{ error?: string }> => {
+  const resetPassword = useCallback(async (email: string): Promise<{ error?: string }> => {
     const sb = await getSupabase();
     const { error } = await sb.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/auth/callback`,
     });
     if (error) return { error: friendlyAuthError(error.message) };
     return {};
-  };
+  }, []);
 
-  const resolveUsername = async (username: string): Promise<{ email?: string; error?: string }> => {
+  const resolveUsername = useCallback(async (username: string): Promise<{ email?: string; error?: string }> => {
     try {
       const res = await fetch(resolveApiPath(`/api/user/resolve-username?username=${encodeURIComponent(username)}`));
       if (!res.ok) {
@@ -236,12 +226,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       return { error: "Network error" };
     }
-  };
+  }, []);
+
+  const value = useMemo(
+    () => ({ user, session, loading, role, signIn, signUp, signOut, resetPassword, resolveUsername }),
+    [user, session, loading, role, signIn, signUp, signOut, resetPassword, resolveUsername]
+  );
 
   return (
-    <AuthContext.Provider
-      value={{ user, session, loading, role, signIn, signUp, signOut, resetPassword, resolveUsername }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

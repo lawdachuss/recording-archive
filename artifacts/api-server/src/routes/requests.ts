@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase.js";
 import { notifyUser } from "../lib/notify.js";
+import { logger } from "../lib/logger.js";
 import { invalidateOnSuccess } from "../middleware/cache.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/requireRole.js";
@@ -50,6 +51,28 @@ router.post("/requests", requireAuth, async (req, res) => {
     return;
   }
 
+  // Security input validation: prevent XSS / malicious schemes and payload size DoS
+  if (stream_link !== undefined && stream_link !== null && stream_link !== "") {
+    if (typeof stream_link !== "string" || stream_link.trim().length > 2048 || !/^https?:\/\//i.test(stream_link.trim())) {
+      res.status(400).json({ error: "stream_link must be a valid http(s) URL (max 2048 chars)" });
+      return;
+    }
+  }
+
+  if (performer_username !== undefined && performer_username !== null && performer_username !== "") {
+    if (typeof performer_username !== "string" || performer_username.trim().length > 100) {
+      res.status(400).json({ error: "performer_username must be a string up to 100 characters" });
+      return;
+    }
+  }
+
+  if (notes !== undefined && notes !== null && notes !== "") {
+    if (typeof notes !== "string" || notes.trim().length > 1000) {
+      res.status(400).json({ error: "notes must be a string up to 1000 characters" });
+      return;
+    }
+  }
+
   const validPriority = ["low", "normal", "high"].includes(priority ?? "") ? priority : "normal";
 
   // If the performer already has recordings in the archive, reject the request
@@ -72,7 +95,8 @@ router.post("/requests", requireAuth, async (req, res) => {
         return;
       }
     } catch (err) {
-      console.error("[requests] existing-recordings check failed:", err);
+      req.log?.error?.({ err }, "[requests] existing-recordings check failed") ??
+        logger.error({ err }, "[requests] existing-recordings check failed");
       // If the check fails, fall through to the normal flow
     }
   }
@@ -128,7 +152,7 @@ router.post("/requests", requireAuth, async (req, res) => {
     });
 
     res.status(201).json(created);
-  } catch {
+  } catch (err) {
     // Catch: unique-violation from the index, or any other error.
     // Return the existing row if this was a duplicate.
     try {
@@ -137,9 +161,12 @@ router.post("/requests", requireAuth, async (req, res) => {
         res.status(200).json(existing);
         return;
       }
-    } catch {
-      // Fallback lookup also failed — return a proper error.
+    } catch (dupErr) {
+      req.log?.error?.({ err: dupErr }, "[requests] fallback duplicate check failed") ??
+        logger.error({ err: dupErr }, "[requests] fallback duplicate check failed");
     }
+    req.log?.error?.({ err }, "[requests] insert request failed") ??
+      logger.error({ err }, "[requests] insert request failed");
     res.status(500).json({ error: "Failed to submit request. Please try again." });
   }
 });

@@ -9,37 +9,58 @@
 
 type DebugScope = "hoverpreview";
 
-export function debugEnabled(): boolean {
-  if (typeof window === "undefined") return false;
+let cachedEnabled: boolean | null = null;
+let cachedLevel: number = 0;
+
+function updateDebugCache(): void {
+  if (typeof window === "undefined") {
+    cachedEnabled = false;
+    cachedLevel = 0;
+    return;
+  }
   try {
     const ls = window.localStorage.getItem("debug") ?? "";
     const qs = new URLSearchParams(window.location.search).get("debug") ?? "";
-    return `${ls},${qs}`.toLowerCase().includes("hoverpreview");
+    const raw = `${ls},${qs}`.toLowerCase();
+    cachedEnabled = raw.includes("hoverpreview");
+    if (cachedEnabled) {
+      const m = /hoverpreview,?(\d+)/.exec(raw);
+      cachedLevel = m ? parseInt(m[1], 10) : 1;
+    } else {
+      cachedLevel = 0;
+    }
   } catch {
-    return false;
+    cachedEnabled = false;
+    cachedLevel = 0;
   }
 }
 
-export function debugLevel(): number {
-  if (!debugEnabled()) return 0;
-  try {
-    const raw =
-      window.localStorage.getItem("debug") ??
-      new URLSearchParams(window.location.search).get("debug") ??
-      "";
-    const m = /hoverpreview,?(\d+)/.exec(raw.toLowerCase());
-    if (m) return parseInt(m[1], 10);
-    return 1;
-  } catch {
-    return 1;
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", updateDebugCache);
+}
+
+export function debugEnabled(): boolean {
+  if (cachedEnabled === null) {
+    updateDebugCache();
   }
+  return cachedEnabled ?? false;
+}
+
+export function debugLevel(): number {
+  if (cachedEnabled === null) {
+    updateDebugCache();
+  }
+  return cachedLevel;
+}
+
+/** Force refresh of cached debug state (useful if set via console in same tab). */
+export function refreshDebugState(): void {
+  updateDebugCache();
 }
 
 /**
  * Log a preview-flow event if the debug flag is on.
  * `level >= 1` (default) logs lifecycle events; `level >= 2` logs per-frame ticks.
- * The flag is re-checked on every call so it can be toggled live from the
- * console (via localStorage) without a page reload.
  */
 export function dlog(scope: DebugScope, message: string, data?: unknown): void {
   if (!debugEnabled()) return;
