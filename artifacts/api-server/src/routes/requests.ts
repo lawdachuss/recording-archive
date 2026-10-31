@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase.js";
 import { notifyUser } from "../lib/notify.js";
+import { logger } from "../lib/logger.js";
 import { invalidateOnSuccess } from "../middleware/cache.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/requireRole.js";
@@ -72,7 +73,8 @@ router.post("/requests", requireAuth, async (req, res) => {
         return;
       }
     } catch (err) {
-      console.error("[requests] existing-recordings check failed:", err);
+      req.log?.error?.({ err }, "[requests] existing-recordings check failed") ??
+        logger.error({ err }, "[requests] existing-recordings check failed");
       // If the check fails, fall through to the normal flow
     }
   }
@@ -128,7 +130,7 @@ router.post("/requests", requireAuth, async (req, res) => {
     });
 
     res.status(201).json(created);
-  } catch {
+  } catch (err) {
     // Catch: unique-violation from the index, or any other error.
     // Return the existing row if this was a duplicate.
     try {
@@ -137,9 +139,12 @@ router.post("/requests", requireAuth, async (req, res) => {
         res.status(200).json(existing);
         return;
       }
-    } catch {
-      // Fallback lookup also failed — return a proper error.
+    } catch (dupErr) {
+      req.log?.error?.({ err: dupErr }, "[requests] fallback duplicate check failed") ??
+        logger.error({ err: dupErr }, "[requests] fallback duplicate check failed");
     }
+    req.log?.error?.({ err }, "[requests] insert request failed") ??
+      logger.error({ err }, "[requests] insert request failed");
     res.status(500).json({ error: "Failed to submit request. Please try again." });
   }
 });
