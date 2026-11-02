@@ -7,21 +7,23 @@ const env = loadEnv("development", process.cwd(), "");
 const rawPort = env.FRONTEND_PORT || env.PORT;
 const port = rawPort ? Number(rawPort) : 3000;
 const rawBase = env.VITE_BASE_PATH || env.BASE_PATH || "/";
-const basePath = rawBase.startsWith("/") && !rawBase.includes(" ") ? rawBase : "/";
+const basePath =
+  rawBase.startsWith("/") && !rawBase.includes(" ") ? rawBase : "/";
 
 async function getPlugins() {
-  const plugins = [
-    react(),
-    tailwindcss(),
-  ];
+  const plugins = [react(), tailwindcss()];
 
   if (process.env.REPL_ID !== undefined) {
     try {
-      const { default: runtimeErrorOverlay } = await import("@replit/vite-plugin-runtime-error-modal");
+      const { default: runtimeErrorOverlay } =
+        await import("@replit/vite-plugin-runtime-error-modal");
       plugins.push(runtimeErrorOverlay());
       const { cartographer } = await import("@replit/vite-plugin-cartographer");
-      plugins.push(cartographer({ root: path.resolve(import.meta.dirname, "..") }));
-      const { default: devBanner } = await import("@replit/vite-plugin-dev-banner");
+      plugins.push(
+        cartographer({ root: path.resolve(import.meta.dirname, "..") }),
+      );
+      const { default: devBanner } =
+        await import("@replit/vite-plugin-dev-banner");
       plugins.push(devBanner());
     } catch {
       // Replit plugins not available
@@ -38,7 +40,12 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
-      "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
+      "@assets": path.resolve(
+        import.meta.dirname,
+        "..",
+        "..",
+        "attached_assets",
+      ),
     },
     dedupe: ["react", "react-dom"],
   },
@@ -74,9 +81,6 @@ export default defineConfig(async () => ({
           }
           if (id.includes("/node_modules/@radix-ui/")) {
             return "radix";
-          }
-          if (id.includes("/node_modules/framer-motion/")) {
-            return "motion";
           }
           if (id.includes("/node_modules/@tanstack/react-query/")) {
             return "data";

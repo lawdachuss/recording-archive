@@ -1,7 +1,16 @@
 import { useState, useCallback, useEffect, useMemo, useRef, memo } from "react";
 import { cn } from "@/lib/utils";
-import { isConnectionConstrained, resolveImageWidth, type ThumbnailTier } from "@/lib/connection";
-import { proxyImageUrl, isHttp2ResetHost, extractOriginalFromWsrv, markWsrvFailedForHost } from "@/lib/proxy-url";
+import {
+  isConnectionConstrained,
+  resolveImageWidth,
+  type ThumbnailTier,
+} from "@/lib/connection";
+import {
+  proxyImageUrl,
+  isHttp2ResetHost,
+  extractOriginalFromWsrv,
+  markWsrvFailedForHost,
+} from "@/lib/proxy-url";
 import { acquireHostConcurrency, cacheImage } from "@/lib/image-cache";
 
 interface OptimizedImageProps {
@@ -30,9 +39,20 @@ interface OptimizedImageProps {
  * `muted`/`muted-foreground` tokens so the placeholder follows the active
  * theme (dark in dark mode, light in light mode) instead of being hardcoded.
  */
-export function ImageUnavailable({ initials, className }: { initials?: string; className?: string }) {
+export function ImageUnavailable({
+  initials,
+  className,
+}: {
+  initials?: string;
+  className?: string;
+}) {
   return (
-    <div className={cn("absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted text-muted-foreground/40", className)}>
+    <div
+      className={cn(
+        "absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted text-muted-foreground/40",
+        className,
+      )}
+    >
       <svg
         className="w-8 h-8"
         xmlns="http://www.w3.org/2000/svg"
@@ -131,7 +151,9 @@ export const OptimizedImage = memo(function OptimizedImage({
   // DELAYED retries (see FLAKY_H2_RETRY_DELAYS_MS) instead of one instant one.
   const flakyH2 = useMemo(() => {
     try {
-      return isHttp2ResetHost(new URL(resolvedSrc, window.location.origin).hostname);
+      return isHttp2ResetHost(
+        new URL(resolvedSrc, window.location.origin).hostname,
+      );
     } catch {
       return false;
     }
@@ -232,9 +254,10 @@ export const OptimizedImage = memo(function OptimizedImage({
     // than a permanently blank tile.
     const ACQUIRE_TIMEOUT_MS = 2000;
     let timeoutId: number;
+    let timedOut = false;
     const acquirePromise = acquireHostConcurrency(host).then((release) => {
       window.clearTimeout(timeoutId);
-      if (cancelled) {
+      if (cancelled || timedOut) {
         release();
         return;
       }
@@ -250,13 +273,15 @@ export const OptimizedImage = memo(function OptimizedImage({
       }, 30_000);
     });
     const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutId = window.setTimeout(() => reject(new Error("slot acquire timeout")), ACQUIRE_TIMEOUT_MS);
+      timeoutId = window.setTimeout(() => {
+        timedOut = true;
+        reject(new Error("slot acquire timeout"));
+      }, ACQUIRE_TIMEOUT_MS);
     });
-    Promise.race([acquirePromise, timeoutPromise])
-      .catch(() => {
-        // Fail open: better an uncapped load than a permanently hidden image.
-        if (!cancelled) setSlotHeld(true);
-      });
+    Promise.race([acquirePromise, timeoutPromise]).catch(() => {
+      // Fail open: better an uncapped load than a permanently hidden image.
+      if (!cancelled) setSlotHeld(true);
+    });
     return () => {
       cancelled = true;
       window.clearTimeout(timeoutId);
@@ -273,7 +298,7 @@ export const OptimizedImage = memo(function OptimizedImage({
     // Cache the URL that actually loaded into IDB so repeat visits skip the
     // network. When wsrv 404'd and we fell back to directSrc (attempt≥1), cache
     // directSrc — NOT resolvedSrc (which would retry the broken wsrv URL again).
-    const urlToCache = (attempt >= 1 && directSrc) ? directSrc : resolvedSrc;
+    const urlToCache = attempt >= 1 && directSrc ? directSrc : resolvedSrc;
     cacheImage(urlToCache, 3).catch(() => {});
   }, [resolvedSrc, directSrc, attempt, releaseSlot]);
 
@@ -297,7 +322,8 @@ export const OptimizedImage = memo(function OptimizedImage({
       // shimmer keeps covering the dead <img> until the retry fires.
       releaseSlot();
       setSlotHeld(false);
-      const delay = FLAKY_H2_RETRY_DELAYS_MS[attempt] + Math.floor(Math.random() * 700);
+      const delay =
+        FLAKY_H2_RETRY_DELAYS_MS[attempt] + Math.floor(Math.random() * 700);
       if (FLAKY_H2_RETRY_DELAYS_MS[attempt] !== undefined) {
         clearRetryTimer();
         retryTimerRef.current = window.setTimeout(() => {
@@ -330,14 +356,21 @@ export const OptimizedImage = memo(function OptimizedImage({
   // inView AND a host slot. For non-flaky hosts (our /api/media, pixhost, imgchest):
   // render immediately. This prevents the thundering-herd on catbox without
   // delaying cached proxied loads.
-  const shouldRenderSrc = flakyH2 ? (inView && slotHeld) : true;
-  const actualSrc = shouldRenderSrc ? (attempt >= 1 && directSrc ? directSrc : resolvedSrc) : undefined;
+  const shouldRenderSrc = flakyH2 ? inView && slotHeld : true;
+  const actualSrc = shouldRenderSrc
+    ? attempt >= 1 && directSrc
+      ? directSrc
+      : resolvedSrc
+    : undefined;
   const corsMode = actualSrc ? canLoadInCorsMode(actualSrc) : false;
 
   return (
     <div
       ref={containerRef}
-      className={cn("relative overflow-hidden bg-secondary", containerClassName)}
+      className={cn(
+        "relative overflow-hidden bg-secondary",
+        containerClassName,
+      )}
     >
       <img
         key={`${resolvedSrc}-${attempt}`}

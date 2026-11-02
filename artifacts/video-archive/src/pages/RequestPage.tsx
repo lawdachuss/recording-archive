@@ -1,25 +1,49 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
 import Stepper, { Step } from "@/components/Stepper";
-import { PerformerDetailsCard, PerformerLookupLoading, PerformerLookupNotFound, PerformerLookupError } from "@/components/PerformerDetailsCard";
-import { usePerformerLookup, useCreateRequest, useDeleteRequest, type PerformerLookupResult, type UserRequest } from "@/lib/api";
+import {
+  PerformerDetailsCard,
+  PerformerLookupLoading,
+  PerformerLookupNotFound,
+  PerformerLookupError,
+} from "@/components/PerformerDetailsCard";
+import {
+  usePerformerLookup,
+  useCreateRequest,
+  useDeleteRequest,
+  type PerformerLookupResult,
+  type UserRequest,
+} from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { Layout } from "@/components/Layout";
 import { AdBanner } from "@/components/ads/AdBanner";
 import { toast } from "@/hooks/use-toast";
-import { Film, Sparkles, CheckCircle, Loader2, ArrowLeft, Trash2, XCircle } from "lucide-react";
+import {
+  Film,
+  Sparkles,
+  CheckCircle,
+  Loader2,
+  ArrowLeft,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import { formatRelativeTime } from "@/lib/formatters";
 import { resolveApiPath } from "@/lib/api-base";
-import { STATUS_LABEL_DETAIL, getStatusConfig, type StatusKey } from "@/lib/request-constants";
+import {
+  STATUS_LABEL_DETAIL,
+  getStatusConfig,
+  type StatusKey,
+} from "@/lib/request-constants";
 
 type Platform = "chaturbate" | "stripchat" | null;
 
 export default function RequestPage() {
   const { user } = useAuth();
   const [location, setLocation] = useLocation();
-  const viewId = new URLSearchParams(location.includes("?") ? location.split("?")[1] : "").get("id");
+  const viewId = new URLSearchParams(
+    location.includes("?") ? location.split("?")[1] : "",
+  ).get("id");
   const [step, setStep] = useState(1);
   const [platform, setPlatform] = useState<Platform>(null);
   const [username, setUsername] = useState("");
@@ -28,17 +52,24 @@ export default function RequestPage() {
   const [priority, setPriority] = useState<"low" | "normal" | "high">("normal");
   const [submitted, setSubmitted] = useState(false);
   const [submissionId, setSubmissionId] = useState<string | null>(null);
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
 
   // ── Fetch user's requests (for ?id= view) ────────────────────────────────
-  const { data: myRequests = [], isLoading: loadingRequests } = useQuery<UserRequest[]>({
+  const { data: myRequests = [], isLoading: loadingRequests } = useQuery<
+    UserRequest[]
+  >({
     queryKey: ["my-requests"],
     queryFn: async () => {
       const { getSupabase } = await import("@/lib/supabase");
       const sb = await getSupabase();
-      const { data: { session } } = await sb.auth.getSession();
+      const {
+        data: { session },
+      } = await sb.auth.getSession();
       const headers: Record<string, string> = {};
-      if (session?.access_token) headers["Authorization"] = `Bearer ${session.access_token}`;
+      if (session?.access_token)
+        headers["Authorization"] = `Bearer ${session.access_token}`;
       const res = await fetch(resolveApiPath("/api/requests"), { headers });
       if (!res.ok) return [];
       return res.json();
@@ -47,7 +78,9 @@ export default function RequestPage() {
     staleTime: 10_000,
   });
 
-  const viewedRequest = viewId ? myRequests.find((r) => String(r.id) === viewId) : null;
+  const viewedRequest = viewId
+    ? myRequests.find((r) => String(r.id) === viewId)
+    : null;
 
   const {
     data: lookupData,
@@ -97,7 +130,10 @@ export default function RequestPage() {
       });
       setSubmissionId(result.id);
       setSubmitted(true);
-      toast({ title: "Success", description: "Request submitted successfully!" });
+      toast({
+        title: "Success",
+        description: "Request submitted successfully!",
+      });
     } catch (err) {
       let message = "Failed to submit request. Please try again.";
       if (err instanceof Error) {
@@ -125,7 +161,9 @@ export default function RequestPage() {
     return (
       <Layout>
         <div className="min-h-[60vh] flex items-center justify-center">
-          <p className="text-muted-foreground">Please sign in to submit a request.</p>
+          <p className="text-muted-foreground">
+            Please sign in to submit a request.
+          </p>
         </div>
       </Layout>
     );
@@ -163,38 +201,66 @@ export default function RequestPage() {
               <div className="rounded-lg border border-border/30 bg-card overflow-hidden">
                 <div className="p-5 space-y-4">
                   <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${statusCfg.color.replace("text-", "bg-")}/10`}>
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center ${statusCfg.color.replace("text-", "bg-")}/10`}
+                    >
                       <StatusIcon className={`w-5 h-5 ${statusCfg.color}`} />
                     </div>
                     <div>
-                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Request Status</p>
-                      <p className={`text-base font-bold ${statusCfg.color}`}>{STATUS_LABEL_DETAIL[viewedRequest.status as StatusKey] ?? statusCfg.label}</p>
+                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">
+                        Request Status
+                      </p>
+                      <p className={`text-base font-bold ${statusCfg.color}`}>
+                        {STATUS_LABEL_DETAIL[
+                          viewedRequest.status as StatusKey
+                        ] ?? statusCfg.label}
+                      </p>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
-                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Platform</p>
-                      <p className="text-foreground font-medium capitalize">{viewedRequest.platform}</p>
+                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                        Platform
+                      </p>
+                      <p className="text-foreground font-medium capitalize">
+                        {viewedRequest.platform}
+                      </p>
                     </div>
                     <div>
-                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Performer</p>
-                      <p className="text-foreground font-medium">@{performerName}</p>
+                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                        Performer
+                      </p>
+                      <p className="text-foreground font-medium">
+                        @{performerName}
+                      </p>
                     </div>
                     <div>
-                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Priority</p>
-                      <p className="text-foreground font-medium capitalize">{viewedRequest.priority}</p>
+                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                        Priority
+                      </p>
+                      <p className="text-foreground font-medium capitalize">
+                        {viewedRequest.priority}
+                      </p>
                     </div>
                     <div>
-                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Submitted</p>
-                      <p className="text-foreground font-medium">{formatRelativeTime(viewedRequest.created_at)}</p>
+                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                        Submitted
+                      </p>
+                      <p className="text-foreground font-medium">
+                        {formatRelativeTime(viewedRequest.created_at)}
+                      </p>
                     </div>
                   </div>
 
                   {viewedRequest.notes && (
                     <div>
-                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-1">Notes</p>
-                      <p className="text-xs text-muted-foreground/80 bg-secondary/50 rounded-sm px-3 py-2">{viewedRequest.notes}</p>
+                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-1">
+                        Notes
+                      </p>
+                      <p className="text-xs text-muted-foreground/80 bg-secondary/50 rounded-sm px-3 py-2">
+                        {viewedRequest.notes}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -204,13 +270,25 @@ export default function RequestPage() {
                 {viewedRequest.status === "pending" && (
                   <button
                     onClick={async () => {
-                      if (!confirm(`Delete request for @${viewedRequest.performer_username ?? "this performer"}?`)) return;
+                      if (
+                        !confirm(
+                          `Delete request for @${viewedRequest.performer_username ?? "this performer"}?`,
+                        )
+                      )
+                        return;
                       try {
                         await deleteRequest.mutateAsync(viewedRequest.id);
-                        toast({ title: "Deleted", description: "Request has been deleted." });
+                        toast({
+                          title: "Deleted",
+                          description: "Request has been deleted.",
+                        });
                         setLocation("/my-requests");
                       } catch {
-                        toast({ title: "Error", description: "Failed to delete request.", variant: "destructive" });
+                        toast({
+                          title: "Error",
+                          description: "Failed to delete request.",
+                          variant: "destructive",
+                        });
                       }
                     }}
                     className="inline-flex items-center gap-1.5 px-4 py-2 text-xs border border-destructive/30 text-destructive hover:border-destructive/60 rounded-sm transition-colors"
@@ -238,8 +316,12 @@ export default function RequestPage() {
         <div className="min-h-[60vh] flex items-center justify-center px-4">
           <div className="text-center max-w-sm">
             <XCircle className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
-            <h2 className="text-lg font-bold text-foreground mb-1">Request not found</h2>
-            <p className="text-xs text-muted-foreground mb-6">This request could not be found or may have been deleted.</p>
+            <h2 className="text-lg font-bold text-foreground mb-1">
+              Request not found
+            </h2>
+            <p className="text-xs text-muted-foreground mb-6">
+              This request could not be found or may have been deleted.
+            </p>
             <Link
               href="/request"
               className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
@@ -258,18 +340,20 @@ export default function RequestPage() {
       <Layout>
         <div className="min-h-[60vh] flex items-center justify-center px-4">
           <div className="w-full max-w-md text-center">
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ type: "spring", duration: 0.6 }}
-            >
+            <div className="animate-fade-in-scale">
               <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-6" />
-            </motion.div>
-            <h2 className="text-xl font-bold text-foreground mb-2">Request Submitted!</h2>
+            </div>
+            <h2 className="text-xl font-bold text-foreground mb-2">
+              Request Submitted!
+            </h2>
             <p className="text-sm text-muted-foreground mb-6">
               Your request for{" "}
-              <span className="font-semibold text-foreground">@{username}</span> on{" "}
-              <span className="font-semibold text-foreground capitalize">{platform}</span> has been submitted.
+              <span className="font-semibold text-foreground">@{username}</span>{" "}
+              on{" "}
+              <span className="font-semibold text-foreground capitalize">
+                {platform}
+              </span>{" "}
+              has been submitted.
             </p>
             {submissionId && (
               <p className="text-xs text-muted-foreground/50 mb-8">
@@ -328,7 +412,15 @@ export default function RequestPage() {
             onFinalStepCompleted={handleSubmit}
             backButtonText="Back"
             nextButtonText={step === 3 ? "Submit Request" : "Continue"}
-            canNext={step === 2 ? !(lookupData?.in_archive && lookupData?.archive_recording_count && lookupData.archive_recording_count > 0) : true}
+            canNext={
+              step === 2
+                ? !(
+                    lookupData?.in_archive &&
+                    lookupData?.archive_recording_count &&
+                    lookupData.archive_recording_count > 0
+                  )
+                : true
+            }
           >
             <Step>
               <Step1PlatformSelect onSelect={handlePlatformSelect} />
@@ -341,7 +433,11 @@ export default function RequestPage() {
                 lookupData={lookupData ?? null}
                 lookupLoading={lookupLoading}
                 lookupError={lookupError}
-                lookupErrorMessage={lookupErrorObj instanceof Error ? lookupErrorObj.message : "Lookup failed"}
+                lookupErrorMessage={
+                  lookupErrorObj instanceof Error
+                    ? lookupErrorObj.message
+                    : "Lookup failed"
+                }
                 onRetry={handleRetry}
               />
             </Step>
@@ -367,7 +463,11 @@ export default function RequestPage() {
   );
 }
 
-function Step1PlatformSelect({ onSelect }: { onSelect: (p: Platform) => void }) {
+function Step1PlatformSelect({
+  onSelect,
+}: {
+  onSelect: (p: Platform) => void;
+}) {
   return (
     <div className="space-y-4 py-4">
       <p className="text-xs text-muted-foreground text-center">
@@ -444,7 +544,9 @@ function Step2PerformerLookup({
       <div className="space-y-2">
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           Performer username on{" "}
-          <span className="capitalize font-semibold text-foreground">{platform}</span>
+          <span className="capitalize font-semibold text-foreground">
+            {platform}
+          </span>
         </label>
         <div className="relative">
           <input
@@ -458,7 +560,9 @@ function Step2PerformerLookup({
           />
           {username && (
             <p className="text-[10px] text-muted-foreground/50 mt-1">
-              Profile: {platform === "chaturbate" ? "chaturbate.com" : "stripchat.com"}/{username.toLowerCase()}
+              Profile:{" "}
+              {platform === "chaturbate" ? "chaturbate.com" : "stripchat.com"}/
+              {username.toLowerCase()}
             </p>
           )}
         </div>
@@ -467,29 +571,46 @@ function Step2PerformerLookup({
       {username.trim().length >= 2 && (
         <div className="mt-4">
           {lookupLoading && (
-            <PerformerLookupLoading platform={platform ?? ""} username={username} />
+            <PerformerLookupLoading
+              platform={platform ?? ""}
+              username={username}
+            />
           )}
           {!lookupLoading && hasError && (
-            <PerformerLookupError message={lookupErrorMessage} onRetry={onRetry} />
+            <PerformerLookupError
+              message={lookupErrorMessage}
+              onRetry={onRetry}
+            />
           )}
-          {!lookupLoading && !hasError && data && (
-            data.exists ? (
+          {!lookupLoading &&
+            !hasError &&
+            data &&
+            (data.exists ? (
               <>
                 <PerformerDetailsCard data={data} />
-                {data.in_archive && data.archive_recording_count && data.archive_recording_count > 0 && (
-                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 mt-2">
-                    <p className="text-xs font-medium text-amber-500">Already in archive</p>
-                    <p className="text-[11px] text-muted-foreground mt-1">
-                      @{username} already has {data.archive_recording_count} recording{data.archive_recording_count === 1 ? "" : "s"} in the archive. Click Back to try a different username.
-                    </p>
-                  </div>
-                )}
+                {data.in_archive &&
+                  data.archive_recording_count &&
+                  data.archive_recording_count > 0 && (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 mt-2">
+                      <p className="text-xs font-medium text-amber-500">
+                        Already in archive
+                      </p>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        @{username} already has {data.archive_recording_count}{" "}
+                        recording{data.archive_recording_count === 1 ? "" : "s"}{" "}
+                        in the archive. Click Back to try a different username.
+                      </p>
+                    </div>
+                  )}
               </>
             ) : data.platform_check_failed ? (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
-                <p className="text-xs font-medium text-amber-500">Could not verify performer on {platform}</p>
+                <p className="text-xs font-medium text-amber-500">
+                  Could not verify performer on {platform}
+                </p>
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  The platform check failed — you can still submit this request and it will be reviewed manually.
+                  The platform check failed — you can still submit this request
+                  and it will be reviewed manually.
                 </p>
               </div>
             ) : (
@@ -498,8 +619,7 @@ function Step2PerformerLookup({
                 username={username}
                 onRetry={onRetry}
               />
-            )
-          )}
+            ))}
         </div>
       )}
 
@@ -540,9 +660,7 @@ function Step3Confirm({
 }: Step3ConfirmProps) {
   return (
     <div className="space-y-5 py-2">
-      {lookupData && (
-        <PerformerDetailsCard data={lookupData} />
-      )}
+      {lookupData && <PerformerDetailsCard data={lookupData} />}
 
       <div className="space-y-2">
         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
@@ -559,10 +677,17 @@ function Step3Confirm({
       </div>
 
       <div className="space-y-2">
-        <p id="request-priority-label" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+        <p
+          id="request-priority-label"
+          className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+        >
           Priority
         </p>
-        <div role="group" aria-labelledby="request-priority-label" className="flex gap-2">
+        <div
+          role="group"
+          aria-labelledby="request-priority-label"
+          className="flex gap-2"
+        >
           {(["low", "normal", "high"] as const).map((p) => (
             <button
               key={p}

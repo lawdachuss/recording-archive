@@ -19,11 +19,23 @@ function isActive(href: string, location: string) {
   return href === "/" ? location === "/" : location.startsWith(href);
 }
 
-export const DesktopNav = memo(function DesktopNav({ location, onRequestOpen }: DesktopNavProps) {
+export const DesktopNav = memo(function DesktopNav({
+  location,
+  onRequestOpen,
+}: DesktopNavProps) {
   return (
-    <nav className="hidden md:flex items-center gap-0.5 text-sm">
+    <nav
+      className="hidden md:flex items-center gap-0.5 text-sm"
+      aria-label="Main navigation"
+    >
       {NAV_LINKS.map(({ href, label, icon: Icon }) => (
-        <NavLink key={href} href={href} label={label} icon={Icon} isActive={isActive(href, location)} />
+        <NavLink
+          key={href}
+          href={href}
+          label={label}
+          icon={Icon}
+          isActive={isActive(href, location)}
+        />
       ))}
       <span className="w-px h-4 bg-border/20 mx-1" />
       <button
@@ -44,13 +56,18 @@ interface NavLinkProps {
   isActive: boolean;
 }
 
-const NavLink = memo(function NavLink({ href, label, icon: Icon, isActive: active }: NavLinkProps) {
+const NavLink = memo(function NavLink({
+  href,
+  label,
+  icon: Icon,
+  isActive: active,
+}: NavLinkProps) {
   const prefetch = useCallback(() => {
     prefetchRoute(href);
   }, [href]);
 
   return (
-    <Link href={href}>
+    <Link href={href} aria-current={active ? "page" : undefined}>
       <span
         onMouseEnter={prefetch}
         onFocus={prefetch}
@@ -60,9 +77,13 @@ const NavLink = memo(function NavLink({ href, label, icon: Icon, isActive: activ
             : "text-muted-foreground/70 hover:text-foreground"
         }`}
       >
-        <Icon className={`w-3.5 h-3.5 transition-all duration-200 ${
-          active ? "text-primary" : "text-muted-foreground/40 group-hover:text-foreground/60"
-        }`} />
+        <Icon
+          className={`w-3.5 h-3.5 transition-all duration-200 ${
+            active
+              ? "text-primary"
+              : "text-muted-foreground/40 group-hover:text-foreground/60"
+          }`}
+        />
         {label}
       </span>
     </Link>

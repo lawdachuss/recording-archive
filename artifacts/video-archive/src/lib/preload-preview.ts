@@ -16,7 +16,10 @@
 import { cacheImage, isCached, canReserveHost } from "@/lib/image-cache";
 import { isConnectionConstrained } from "@/lib/connection";
 
-const preloadCache = new Map<string, HTMLVideoElement | HTMLImageElement | true>();
+const preloadCache = new Map<
+  string,
+  HTMLVideoElement | HTMLImageElement | true
+>();
 
 // Maximum number of detached video elements to keep alive.
 // Each preview video holds a reference to the decoded media in memory.
@@ -115,22 +118,29 @@ export function cancelPendingPreviews(): void {
  * A 15s timeout keeps a stuck host (catbox can hold connections open) from
  * holding a slot forever and blocking the queue behind it.
  */
-function releaseOnSettle(el: HTMLVideoElement | HTMLImageElement, release: () => void): void {
+function releaseOnSettle(
+  el: HTMLVideoElement | HTMLImageElement,
+  release: () => void,
+): void {
   let done = false;
   const finish = () => {
     if (done) return;
     done = true;
     window.clearTimeout(timer);
+    el.removeEventListener("loadeddata", finish);
+    el.removeEventListener("load", finish);
+    el.removeEventListener("error", finish);
+    el.removeEventListener("abort", finish);
     release();
   };
   // 6s, down from 8s: a throttled host (catbox answers ~16KB/s) must not
   // hold a queue slot for a quarter of a minute while fast proxied previews
   // wait behind it.
   const timer = window.setTimeout(finish, 6_000);
-  el.addEventListener("loadeddata", finish, { once: true });
-  el.addEventListener("load", finish, { once: true });
-  el.addEventListener("error", finish, { once: true });
-  el.addEventListener("abort", finish, { once: true });
+  el.addEventListener("loadeddata", finish);
+  el.addEventListener("load", finish);
+  el.addEventListener("error", finish);
+  el.addEventListener("abort", finish);
 }
 /**
  * Unwrap a media-proxy URL (`/api/media?url=<encoded>`) to extract the
@@ -176,7 +186,9 @@ function getExt(url: string): string {
 export function isVideoUrl(url: string | null | undefined): boolean {
   if (!url) return false;
   const ext = getExt(unwrapProxyUrl(url));
-  return ext === ".mp4" || ext === ".webm" || ext === ".mov" || url.includes(".m3u8");
+  return (
+    ext === ".mp4" || ext === ".webm" || ext === ".mov" || url.includes(".m3u8")
+  );
 }
 
 export function isAnimatedImageUrl(url: string | null | undefined): boolean {
@@ -185,7 +197,11 @@ export function isAnimatedImageUrl(url: string | null | undefined): boolean {
   const ext = getExt(unwrapped);
   // `.webp` is a genuine animated WebP. `.mp4_preview` is a misleadingly-named
   // file that is actually animated WEBP content (observed on catbox mirrors).
-  return ext === ".webp" || ext === ".mp4_preview" || /\.mp4_preview$/i.test(unwrapped);
+  return (
+    ext === ".webp" ||
+    ext === ".mp4_preview" ||
+    /\.mp4_preview$/i.test(unwrapped)
+  );
 }
 
 /**
@@ -210,7 +226,7 @@ function evictOldestVideo(): void {
   const el = preloadCache.get(oldestKey);
   if (el instanceof HTMLVideoElement) {
     el.src = ""; // Release media resource
-    el.load();   // Force cleanup
+    el.load(); // Force cleanup
   }
   preloadCache.delete(oldestKey);
 }
@@ -254,40 +270,44 @@ export function preloadVideo(url: string, immediate = false): void {
       // intent) queues at the FRONT — otherwise a hover had to wait behind up
       // to MAX_CONCURRENT_PRELOADS background page-warm downloads before the
       // preview even started fetching.
-      void acquirePreloadSlot(immediate).then((release) => {
-        // Re-check: another caller may have warmed this URL while we waited.
-        if (preloadCache.has(url)) {
-          release();
-          return;
-        }
-        const v = document.createElement("video");
-        v.muted = true;
-        // Full download ("auto"), NOT metadata. preloadVideo is only called for
-        // cards already near the viewport (useHoverPreview's IO, gated by the
-        // global 3-concurrent cap), so fetching the full preview now makes the
-        // hover instant AND lets onloadeddata persist the whole file to the IDB
-        // blob cache for zero-network repeat hovers. Metadata-only left the actual
-        // bytes to re-fetch on every hover.
-        v.preload = "auto";
-        (v as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
-        v.src = url;
-        // Persist to IDB blob cache after load (fire-and-forget)
-        v.onloadeddata = () => { cacheImage(url, 1).catch(() => {}); };
-        // Drop failed videos so they don't pin memory or consume the video-element
-        // budget; a future hover can retry them.
-        v.onerror = () => {
-          preloadCache.delete(url);
-          const i = videoKeys.indexOf(url);
-          if (i >= 0) videoKeys.splice(i, 1);
-        };
-        releaseOnSettle(v, release);
-        preloadCache.set(url, v);
-        videoKeys.push(url);
-      }).catch(() => {});
+      void acquirePreloadSlot(immediate)
+        .then((release) => {
+          // Re-check: another caller may have warmed this URL while we waited.
+          if (preloadCache.has(url)) {
+            release();
+            return;
+          }
+          const v = document.createElement("video");
+          v.muted = true;
+          // Full download ("auto"), NOT metadata. preloadVideo is only called for
+          // cards already near the viewport (useHoverPreview's IO, gated by the
+          // global 3-concurrent cap), so fetching the full preview now makes the
+          // hover instant AND lets onloadeddata persist the whole file to the IDB
+          // blob cache for zero-network repeat hovers. Metadata-only left the actual
+          // bytes to re-fetch on every hover.
+          v.preload = "auto";
+          (v as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy =
+            "no-referrer";
+          v.src = url;
+          // Persist to IDB blob cache after load (fire-and-forget)
+          v.onloadeddata = () => {
+            cacheImage(url, 1).catch(() => {});
+          };
+          // Drop failed videos so they don't pin memory or consume the video-element
+          // budget; a future hover can retry them.
+          v.onerror = () => {
+            preloadCache.delete(url);
+            const i = videoKeys.indexOf(url);
+            if (i >= 0) videoKeys.splice(i, 1);
+          };
+          releaseOnSettle(v, release);
+          preloadCache.set(url, v);
+          videoKeys.push(url);
+        })
+        .catch(() => {});
     })
     .catch(() => {});
 }
-
 
 /**
  * Warm an animated image (.webp) into IndexedDB and memory cache.
@@ -325,50 +345,51 @@ export function preloadAnimatedImage(
       }
 
       // Cap concurrent speculative downloads with priority jumping for immediate requests.
-      void acquirePreloadSlot(immediate).then(async (release) => {
-        if (preloadCache.has(url)) {
-          release();
-          return;
-        }
-
-        try {
-          // Direct fetch & cache into IDB: single network request, zero duplicate fetches,
-          // instant blob URL on hover.
-          const entry = await cacheImage(url, immediate ? 3 : 1);
-          if (entry) {
-            preloadCache.set(url, true);
+      void acquirePreloadSlot(immediate)
+        .then(async (release) => {
+          if (preloadCache.has(url)) {
             release();
             return;
           }
-        } catch {
-          // Non-CORS or network error — fall through to <img> preload
-        }
 
-        // Fallback for non-CORS hosts: load into an <img> to warm browser HTTP cache
-        if (imageKeys.length >= MAX_IMAGE_ELEMENTS) {
-          evictOldestImage();
-        }
-        const img = new Image();
-        img.referrerPolicy = "no-referrer";
-        img.decoding = "async";
-        if (cors) img.crossOrigin = "anonymous";
-        img.onload = () => {
+          try {
+            // Direct fetch & cache into IDB: single network request, zero duplicate fetches,
+            // instant blob URL on hover.
+            const entry = await cacheImage(url, immediate ? 3 : 1);
+            if (entry) {
+              preloadCache.set(url, true);
+              release();
+              return;
+            }
+          } catch {
+            // Non-CORS or network error — fall through to <img> preload
+          }
+
+          // Fallback for non-CORS hosts: load into an <img> to warm browser HTTP cache
+          if (imageKeys.length >= MAX_IMAGE_ELEMENTS) {
+            evictOldestImage();
+          }
+          const img = new Image();
+          img.referrerPolicy = "no-referrer";
+          img.decoding = "async";
+          if (cors) img.crossOrigin = "anonymous";
+          img.onload = () => {
+            preloadCache.set(url, img);
+          };
+          img.onerror = () => {
+            preloadCache.delete(url);
+            const i = imageKeys.indexOf(url);
+            if (i >= 0) imageKeys.splice(i, 1);
+          };
+          releaseOnSettle(img, release);
           preloadCache.set(url, img);
-        };
-        img.onerror = () => {
-          preloadCache.delete(url);
-          const i = imageKeys.indexOf(url);
-          if (i >= 0) imageKeys.splice(i, 1);
-        };
-        releaseOnSettle(img, release);
-        preloadCache.set(url, img);
-        imageKeys.push(url);
-        img.src = url;
-      }).catch(() => {});
+          imageKeys.push(url);
+          img.src = url;
+        })
+        .catch(() => {});
     })
     .catch(() => {});
 }
-
 
 /**
  * Preload a preview URL using the best strategy for its (probable) type.
@@ -376,7 +397,10 @@ export function preloadAnimatedImage(
  * preloaded as <img> only — loading them into <video> wastes a connection
  * slot and blocks the actual <img> from loading.
  */
-export function preloadPreviewMedia(url: string | null | undefined, immediate = false): void {
+export function preloadPreviewMedia(
+  url: string | null | undefined,
+  immediate = false,
+): void {
   if (!url) return;
   if (!immediate && isConnectionConstrained()) return;
   const upstream = unwrapProxyUrl(url);
@@ -385,5 +409,6 @@ export function preloadPreviewMedia(url: string | null | undefined, immediate = 
     return;
   }
   if (isVideoUrl(url)) preloadVideo(url, immediate);
-  else if (isAnimatedImageUrl(url)) preloadAnimatedImage(upstream || url, false, immediate);
+  else if (isAnimatedImageUrl(url))
+    preloadAnimatedImage(upstream || url, false, immediate);
 }

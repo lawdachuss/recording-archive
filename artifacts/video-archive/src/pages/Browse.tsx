@@ -125,10 +125,12 @@ export default function Browse() {
   const popularTags = useMemo(() => tagsData ?? [], [tagsData]);
 
   const filteredPopularTags = useMemo(() => {
-    const unselected = popularTags.filter((t) => !selectedTags.includes(t.tag));
+    const selectedSet = new Set(selectedTags);
+    const unselected = popularTags.filter((t) => !selectedSet.has(t.tag));
     if (!tagSearch.trim()) return unselected.slice(0, 50);
+    const searchLower = tagSearch.toLowerCase();
     return unselected
-      .filter((t) => t.tag.toLowerCase().includes(tagSearch.toLowerCase()))
+      .filter((t) => t.tag.toLowerCase().includes(searchLower))
       .slice(0, 50);
   }, [popularTags, tagSearch, selectedTags]);
 
@@ -204,7 +206,10 @@ export default function Browse() {
     window.scrollTo({ top: 0, behavior: "auto" });
   };
 
-  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / ITEMS_PER_PAGE));
+  const totalPages = Math.max(
+    1,
+    Math.ceil((data?.total ?? 0) / ITEMS_PER_PAGE),
+  );
   useEffect(() => {
     const current = recordingsParams.page;
     if (!data || current <= totalPages) return;
@@ -235,7 +240,8 @@ export default function Browse() {
       gender?: string;
       sort?: string;
     }) => {
-      const committedSearch = new URLSearchParams(searchString).get("search") || "";
+      const committedSearch =
+        new URLSearchParams(searchString).get("search") || "";
       const next = {
         search: committedSearch,
         tags: selectedTags,
@@ -335,7 +341,8 @@ export default function Browse() {
                 </div>
                 {data && data.total != null && (
                   <p className="text-xs text-muted-foreground/70 ml-9.5">
-                    {(data.totalIsEstimate ?? false) ? "≈ " : ""}{data.total.toLocaleString()} recordings
+                    {(data.totalIsEstimate ?? false) ? "≈ " : ""}
+                    {data.total.toLocaleString()} recordings
                   </p>
                 )}
               </div>
@@ -444,10 +451,7 @@ export default function Browse() {
                                 <span className="truncate">{preset.name}</span>
                                 {(preset.tags.length > 0 || preset.gender) && (
                                   <span className="text-[9px] text-muted-foreground/40 shrink-0 ml-auto">
-                                    {[
-                                      preset.gender,
-                                      ...preset.tags.slice(0, 2),
-                                    ]
+                                    {[preset.gender, ...preset.tags.slice(0, 2)]
                                       .filter(Boolean)
                                       .join(", ")}
                                   </span>
@@ -723,7 +727,9 @@ export default function Browse() {
           {data && data.total > 0 && (
             <div className="mt-12 flex flex-col items-center gap-4">
               <div className="text-xs text-muted-foreground/60 flex items-center gap-2">
-                <span className="tabular-nums">Page {recordingsParams.page}</span>
+                <span className="tabular-nums">
+                  Page {recordingsParams.page}
+                </span>
                 <span className="w-px h-3 bg-border/40" />
                 <span className="tabular-nums">
                   {Math.ceil(data.total / recordingsParams.limit)} total

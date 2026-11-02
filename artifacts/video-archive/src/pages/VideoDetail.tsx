@@ -1,6 +1,10 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { useParams, Link, useLocation } from "wouter";
-import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import {
+  useQuery,
+  useQueryClient,
+  keepPreviousData,
+} from "@tanstack/react-query";
 import {
   useGetRecording,
   useListRelatedRecordings,
@@ -16,7 +20,11 @@ import { CommentSection } from "@/components/CommentSection";
 import { VideoCard } from "@/components/VideoCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OptimizedImage } from "@/components/ui/optimized-image";
-import { formatBytes, formatRelativeTime, formatDuration } from "@/lib/formatters";
+import {
+  formatBytes,
+  formatRelativeTime,
+  formatDuration,
+} from "@/lib/formatters";
 import { getSessionId } from "@/lib/session";
 import { trackView, useListRecommendations } from "@/lib/api";
 import { trackActivity } from "@/lib/rum";
@@ -39,10 +47,30 @@ import { useAds } from "@/contexts/AdsContext";
 import { pickPreroll, type PrerollCreative } from "@/lib/preroll";
 
 import {
-  AlertCircle, ArrowLeft, Maximize2, Minimize2,
-  User, Clapperboard, ThumbsUp, ThumbsDown, Bookmark, Share2,
-  Check, Server, Download, Clock, Play, Code2, ListVideo, Shuffle,
-  FolderPlus, Plus, ChevronDown, ExternalLink, LogIn, CheckCircle,
+  AlertCircle,
+  ArrowLeft,
+  Maximize2,
+  Minimize2,
+  User,
+  Clapperboard,
+  ThumbsUp,
+  ThumbsDown,
+  Bookmark,
+  Share2,
+  Check,
+  Server,
+  Download,
+  Clock,
+  Play,
+  Code2,
+  ListVideo,
+  Shuffle,
+  FolderPlus,
+  Plus,
+  ChevronDown,
+  ExternalLink,
+  LogIn,
+  CheckCircle,
 } from "lucide-react";
 
 function useFullscreen(ref: React.RefObject<HTMLDivElement | null>) {
@@ -85,7 +113,12 @@ function detectHostLabel(url: string): string {
     if (hostname.includes("gofile")) return "Gofile";
     if (hostname.includes("streamwish")) return "Streamwish";
     if (hostname.includes("earnvids")) return "EarnVids";
-    if (hostname.includes("seek") || hostname.includes("embedseek") || hostname.includes("seeks.cloud")) return "SeekStreaming";
+    if (
+      hostname.includes("seek") ||
+      hostname.includes("embedseek") ||
+      hostname.includes("seeks.cloud")
+    )
+      return "SeekStreaming";
     if (hostname.includes("upns")) return "UPNshare";
     if (hostname.includes("anonmp4")) return "AnonMP4";
     if (hostname.includes("udrop")) return "UDrop";
@@ -113,12 +146,21 @@ function isEmbedUrl(url: string): boolean {
       return false;
     }
     // Path-based detection for common embed patterns
-    if (pathname.includes("/e/") || pathname.includes("/embed/") || pathname.includes("/player/") || pathname.includes("/v/")) {
+    if (
+      pathname.includes("/e/") ||
+      pathname.includes("/embed/") ||
+      pathname.includes("/player/") ||
+      pathname.includes("/v/")
+    ) {
       return true;
     }
     // Host-based detection for known embed-friendly providers
     // Some hosts embed via direct URL without a standard embed path
-    if (hostname.includes("seek") || hostname.includes("embedseek") || hostname.includes("seeks.cloud")) {
+    if (
+      hostname.includes("seek") ||
+      hostname.includes("embedseek") ||
+      hostname.includes("seeks.cloud")
+    ) {
       return true;
     }
     if (hostname.includes("upns")) {
@@ -154,13 +196,18 @@ function deriveServers(
           // the innermost (e|v|embed|player)/<id> segment; skip links that
           // can't be repaired instead of rendering a broken iframe.
           if (/https?:\/\//i.test(parsed.pathname)) {
-            const inner = parsed.pathname.match(/\/(e|v|embed|player)\/([A-Za-z0-9_-]+)\/?$/i);
+            const inner = parsed.pathname.match(
+              /\/(e|v|embed|player)\/([A-Za-z0-9_-]+)\/?$/i,
+            );
             if (!inner) continue;
             url = `${parsed.origin}/${inner[1]}/${inner[2]}`;
             parsed = new URL(url);
           }
 
-          if (parsed.hostname.includes("voe") && !parsed.pathname.startsWith("/e/")) {
+          if (
+            parsed.hostname.includes("voe") &&
+            !parsed.pathname.startsWith("/e/")
+          ) {
             url = parsed.origin + "/e" + parsed.pathname;
           }
           // Convert pixeldrain API URLs to user-facing page URLs
@@ -170,7 +217,10 @@ function deriveServers(
             url = `https://pixeldrain.com/u/${pdMatch[1]}`;
           }
           // Vidara: /v/XXX is the download page, /e/XXX is the embed player
-          if (parsed.hostname.includes("vidara") && parsed.pathname.startsWith("/v/")) {
+          if (
+            parsed.hostname.includes("vidara") &&
+            parsed.pathname.startsWith("/v/")
+          ) {
             url = parsed.origin + "/e" + parsed.pathname.slice(2);
           }
         } catch {}
@@ -180,16 +230,24 @@ function deriveServers(
           servers.push({ label, src: url, type: "link" });
         }
         seen.add(url);
-        try { seenHosts.add(new URL(url).hostname); } catch {}
+        try {
+          seenHosts.add(new URL(url).hostname);
+        } catch {}
       }
     }
   }
 
   if (embedUrl && !seen.has(embedUrl)) {
     let hostDuplicate = false;
-    try { hostDuplicate = seenHosts.has(new URL(embedUrl).hostname); } catch {}
+    try {
+      hostDuplicate = seenHosts.has(new URL(embedUrl).hostname);
+    } catch {}
     if (!hostDuplicate) {
-      servers.push({ label: detectHostLabel(embedUrl), src: embedUrl, type: isAnonMP4(embedUrl) ? "link" : "iframe" });
+      servers.push({
+        label: detectHostLabel(embedUrl),
+        src: embedUrl,
+        type: isAnonMP4(embedUrl) ? "link" : "iframe",
+      });
       seen.add(embedUrl);
     }
   }
@@ -203,7 +261,11 @@ export default function VideoDetail() {
   const sessionId = getSessionId();
   const playerRef = useRef<HTMLDivElement>(null);
   const recSectionRef = useRef<HTMLDivElement>(null);
-  const { isFullscreen, enter: enterFS, exit: exitFS } = useFullscreen(playerRef);
+  const {
+    isFullscreen,
+    enter: enterFS,
+    exit: exitFS,
+  } = useFullscreen(playerRef);
   const { user } = useAuth();
 
   const [activeServer, setActiveServer] = useState(() => {
@@ -218,12 +280,19 @@ export default function VideoDetail() {
   // Pre-roll ad (Admin → Ads → "Pre-roll video" slot): "idle" waits for the
   // play gesture on the poster click, "playing" shows the overlay, "done"
   // never re-arms during this page visit (server switches included).
-  const [prerollPhase, setPrerollPhase] = useState<"idle" | "playing" | "done">("idle");
-  const [activePreroll, setActivePreroll] = useState<PrerollCreative | null>(null);
+  const [prerollPhase, setPrerollPhase] = useState<"idle" | "playing" | "done">(
+    "idle",
+  );
+  const [activePreroll, setActivePreroll] = useState<PrerollCreative | null>(
+    null,
+  );
   const { showAds } = usePremium();
   const { rows: adRows, settings: adSettings } = useAds();
   const prerollOn = showAds && adSettings.placements.preroll !== false;
-  const preroll = useMemo(() => (prerollOn ? pickPreroll(adRows) : null), [prerollOn, adRows]);
+  const preroll = useMemo(
+    () => (prerollOn ? pickPreroll(adRows) : null),
+    [prerollOn, adRows],
+  );
 
   const startPlayback = useCallback(() => {
     setVideoStarted(true);
@@ -254,14 +323,19 @@ export default function VideoDetail() {
   const [embedCopied, setEmbedCopied] = useState(false);
   const [collectionOpen, setCollectionOpen] = useState(false);
   const collectionRef = useRef<HTMLDivElement>(null);
-  const [cloudCollections, setCloudCollections] = useState<CloudCollection[]>([]);
+  const [cloudCollections, setCloudCollections] = useState<CloudCollection[]>(
+    [],
+  );
   const [newColName, setNewColName] = useState("");
   const [addedToCol, setAddedToCol] = useState<string | null>(null);
 
   useEffect(() => {
     if (!collectionOpen) return;
     const handler = (e: MouseEvent) => {
-      if (collectionRef.current && !collectionRef.current.contains(e.target as Node)) {
+      if (
+        collectionRef.current &&
+        !collectionRef.current.contains(e.target as Node)
+      ) {
         setCollectionOpen(false);
       }
     };
@@ -272,7 +346,11 @@ export default function VideoDetail() {
   const REC_PAGE_SIZE = 12;
   const queryClient = useQueryClient();
   const recentlyWatched = useRecentlyWatched();
-  const { data: video, isLoading, isError } = useGetRecording(id || "", {
+  const {
+    data: video,
+    isLoading,
+    isError,
+  } = useGetRecording(id || "", {
     query: { enabled: !!id, queryKey: getGetRecordingQueryKey(id || "") },
   });
   // Track watch progress (time spent, resume position, completion %)
@@ -283,7 +361,8 @@ export default function VideoDetail() {
   // nextInQueue is loop-aware (wraps to the first item when loop is on).
   const queue = usePlayQueue();
   const queueIndex = queue ? queue.items.findIndex((it) => it.id === id) : -1;
-  const nextInQueue = queue && queueIndex >= 0 ? nextQueueItem(queue, id) : null;
+  const nextInQueue =
+    queue && queueIndex >= 0 ? nextQueueItem(queue, id) : null;
 
   // Analytics: recording detail view (once per recording mount).
   useEffect(() => {
@@ -292,7 +371,12 @@ export default function VideoDetail() {
 
   const { data: related, isLoading: relatedLoading } = useListRelatedRecordings(
     { id: id || "", limit: 12 },
-    { query: { enabled: !!id, queryKey: getListRelatedRecordingsQueryKey({ id: id || "", limit: 12 }) } },
+    {
+      query: {
+        enabled: !!id,
+        queryKey: getListRelatedRecordingsQueryKey({ id: id || "", limit: 12 }),
+      },
+    },
   );
 
   const {
@@ -307,7 +391,15 @@ export default function VideoDetail() {
 
   const { data: reactions, refetch: refetchReactions } = useGetReactions(
     { recording_id: id || "", session_id: sessionId },
-    { query: { enabled: !!id, queryKey: getGetReactionsQueryKey({ recording_id: id || "", session_id: sessionId }) } },
+    {
+      query: {
+        enabled: !!id,
+        queryKey: getGetReactionsQueryKey({
+          recording_id: id || "",
+          session_id: sessionId,
+        }),
+      },
+    },
   );
 
   usePreloadRecordings(related);
@@ -354,30 +446,42 @@ export default function VideoDetail() {
     watchLaterRef.current = false;
     setRecPage(1);
     if (id && user) {
-      userApi.getSaved().then((items) => {
-        setBookmarked(items.some((i) => i.recording_id === id));
-      }).catch(() => {});
-      userApi.getWatchLater().then((items) => {
-        setWatchLater(items.some((i) => i.recording_id === id));
-      }).catch(() => {});
+      userApi
+        .getSaved()
+        .then((items) => {
+          setBookmarked(items.some((i) => i.recording_id === id));
+        })
+        .catch(() => {});
+      userApi
+        .getWatchLater()
+        .then((items) => {
+          setWatchLater(items.some((i) => i.recording_id === id));
+        })
+        .catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, user]);
 
   useEffect(() => {
     if (recPage > 1 && recSectionRef.current) {
-      recSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+      recSectionRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recPage]);
 
   useEffect(() => {
     if (collectionOpen && user) {
-      userApi.getCollections().then(setCloudCollections).catch(() => {});
+      userApi
+        .getCollections()
+        .then(setCloudCollections)
+        .catch(() => {});
     }
   }, [collectionOpen, user]);
 
-  const getVideoMeta = () => {
+  const getVideoMeta = useCallback(() => {
     if (!video) return null;
     return {
       id: video.id,
@@ -390,7 +494,7 @@ export default function VideoDetail() {
       timestamp: video.timestamp,
       saved_at: new Date().toISOString(),
     };
-  };
+  }, [video]);
 
   const handleAddToCollection = async (colId: string) => {
     const meta = getVideoMeta();
@@ -398,10 +502,14 @@ export default function VideoDetail() {
     try {
       await userApi.addCollectionItem(colId, meta.id, recordingToMeta(meta));
       // Analytics: recording added to an existing collection.
-      trackActivity("collection_item_add", { meta: { collection_id: colId, recording_id: meta.id } });
+      trackActivity("collection_item_add", {
+        meta: { collection_id: colId, recording_id: meta.id },
+      });
       queryClient.invalidateQueries({ queryKey: ["user", "collections"] });
       queryClient.invalidateQueries({ queryKey: ["public-playlists"] });
-      queryClient.invalidateQueries({ queryKey: ["public-playlist-items", colId] });
+      queryClient.invalidateQueries({
+        queryKey: ["public-playlist-items", colId],
+      });
       setAddedToCol(colId);
       setTimeout(() => {
         setCollectionOpen(false);
@@ -420,10 +528,14 @@ export default function VideoDetail() {
       const col = await userApi.createCollection(newColName.trim());
       await userApi.addCollectionItem(col.id, meta.id, recordingToMeta(meta));
       // Analytics: collection created (with a recording added in one action).
-      trackActivity("collection_create", { meta: { collection_id: col.id, recording_id: meta.id } });
+      trackActivity("collection_create", {
+        meta: { collection_id: col.id, recording_id: meta.id },
+      });
       queryClient.invalidateQueries({ queryKey: ["user", "collections"] });
       queryClient.invalidateQueries({ queryKey: ["public-playlists"] });
-      queryClient.invalidateQueries({ queryKey: ["public-playlist-items", col.id] });
+      queryClient.invalidateQueries({
+        queryKey: ["public-playlist-items", col.id],
+      });
       setCloudCollections((prev) => [{ ...col, item_count: 1 }, ...prev]);
       setAddedToCol(col.id);
       setNewColName("");
@@ -483,7 +595,11 @@ export default function VideoDetail() {
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      )
+        return;
       if (e.key === "f" || e.key === "F") {
         isFullscreen ? exitFS() : enterFS();
       }
@@ -503,7 +619,10 @@ export default function VideoDetail() {
     // Analytics: reaction toggle (like/dislike).
     trackActivity("reaction", { meta: { recording_id: id, type } });
 
-    const queryKey = getGetReactionsQueryKey({ recording_id: id, session_id: sessionId });
+    const queryKey = getGetReactionsQueryKey({
+      recording_id: id,
+      session_id: sessionId,
+    });
 
     // Cancel any in-flight refetches so they don't overwrite our optimistic update
     queryClient.cancelQueries({ queryKey });
@@ -513,14 +632,21 @@ export default function VideoDetail() {
 
     // Optimistic update — UI responds instantly
     queryClient.setQueryData(queryKey, (old: unknown) => {
-      const current = (old as { likes: number; dislikes: number; user_reaction?: string | null }) ?? { likes: 0, dislikes: 0, user_reaction: null };
+      const current = (old as {
+        likes: number;
+        dislikes: number;
+        user_reaction?: string | null;
+      }) ?? { likes: 0, dislikes: 0, user_reaction: null };
       const prevReaction = current.user_reaction;
 
       if (prevReaction === type) {
         // Toggle off
         return {
           ...current,
-          [type === "like" ? "likes" : "dislikes"]: Math.max(0, (current[type === "like" ? "likes" : "dislikes"] ?? 0) - 1),
+          [type === "like" ? "likes" : "dislikes"]: Math.max(
+            0,
+            (current[type === "like" ? "likes" : "dislikes"] ?? 0) - 1,
+          ),
           user_reaction: null,
         };
       }
@@ -528,9 +654,13 @@ export default function VideoDetail() {
       // Toggle on or switch
       const result = { ...current };
       if (prevReaction) {
-        result[prevReaction === "like" ? "likes" : "dislikes"] = Math.max(0, (result[prevReaction === "like" ? "likes" : "dislikes"] ?? 0) - 1);
+        result[prevReaction === "like" ? "likes" : "dislikes"] = Math.max(
+          0,
+          (result[prevReaction === "like" ? "likes" : "dislikes"] ?? 0) - 1,
+        );
       }
-      result[type === "like" ? "likes" : "dislikes"] = (result[type === "like" ? "likes" : "dislikes"] ?? 0) + 1;
+      result[type === "like" ? "likes" : "dislikes"] =
+        (result[type === "like" ? "likes" : "dislikes"] ?? 0) + 1;
       result.user_reaction = type;
       return result;
     });
@@ -578,7 +708,12 @@ export default function VideoDetail() {
         await userApi.addSaved(video.id, recordingToMeta(savedRec));
       }
       // Analytics: bookmark add/remove.
-      trackActivity("bookmark", { meta: { recording_id: video.id, action: isCurrently ? "remove" : "add" } });
+      trackActivity("bookmark", {
+        meta: {
+          recording_id: video.id,
+          action: isCurrently ? "remove" : "add",
+        },
+      });
     } catch {
       // Revert optimistic toggle on failure
       bookmarkedRef.current = isCurrently;
@@ -612,7 +747,12 @@ export default function VideoDetail() {
         await userApi.addWatchLater(video.id, recordingToMeta(savedRec));
       }
       // Analytics: watch-later add/remove.
-      trackActivity("watch_later", { meta: { recording_id: video.id, action: isCurrently ? "remove" : "add" } });
+      trackActivity("watch_later", {
+        meta: {
+          recording_id: video.id,
+          action: isCurrently ? "remove" : "add",
+        },
+      });
     } catch {
       // Revert optimistic toggle on failure
       watchLaterRef.current = isCurrently;
@@ -638,7 +778,9 @@ export default function VideoDetail() {
         document.body.removeChild(ta);
         setCopied(true);
         setTimeout(() => setCopied(false), 2500);
-      } catch { /* clipboard unavailable */ }
+      } catch {
+        /* clipboard unavailable */
+      }
     }
   };
 
@@ -661,7 +803,9 @@ export default function VideoDetail() {
         document.body.removeChild(ta);
         setEmbedCopied(true);
         setTimeout(() => setEmbedCopied(false), 2500);
-      } catch { /* clipboard unavailable */ }
+      } catch {
+        /* clipboard unavailable */
+      }
     }
   };
 
@@ -680,7 +824,9 @@ export default function VideoDetail() {
       // restarted programmatically and navigating to the same URL remounts
       // nothing, so drop back to the poster — the click is the gesture that
       // loads a fresh iframe (and re-arms the preroll for the new playback).
-      trackActivity("queue_advance", { meta: { queue_title: queue.title, recording_id: next.id } });
+      trackActivity("queue_advance", {
+        meta: { queue_title: queue.title, recording_id: next.id },
+      });
       sessionStorage.removeItem("vplayed");
       setVideoStarted(false);
       setPrerollPhase("idle");
@@ -699,7 +845,10 @@ export default function VideoDetail() {
   }, [queue, id, setLocation]);
 
   const totalReactions = (reactions?.likes ?? 0) + (reactions?.dislikes ?? 0);
-  const likePercent = totalReactions > 0 ? Math.round(((reactions?.likes ?? 0) / totalReactions) * 100) : null;
+  const likePercent =
+    totalReactions > 0
+      ? Math.round(((reactions?.likes ?? 0) / totalReactions) * 100)
+      : null;
 
   if (isError) {
     // A recording can vanish from the archive while it sits in a playback
@@ -724,7 +873,10 @@ export default function VideoDetail() {
               </button>
             </div>
           )}
-          <Link href="/browse" className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline">
+          <Link
+            href="/browse"
+            className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+          >
             <ArrowLeft className="w-3.5 h-3.5" /> Back to Browse
           </Link>
         </div>
@@ -759,7 +911,12 @@ export default function VideoDetail() {
                   {servers.map((s, i) => (
                     <button
                       key={i}
-                      onClick={() => { setActiveServer(i); sessionStorage.setItem("vserver", String(i)); setVideoStarted(false); sessionStorage.removeItem("vplayed"); }}
+                      onClick={() => {
+                        setActiveServer(i);
+                        sessionStorage.setItem("vserver", String(i));
+                        setVideoStarted(false);
+                        sessionStorage.removeItem("vplayed");
+                      }}
                       className={`px-3 py-1 text-[11px] font-medium rounded-[2px] border transition-all ${
                         activeServer === i
                           ? "border-primary/60 text-primary"
@@ -781,49 +938,55 @@ export default function VideoDetail() {
                 ref={playerRef}
                 className="relative group aspect-video w-full bg-black overflow-hidden rounded-sm"
               >
-                  {currentServer?.type === "iframe" && !videoStarted ? (
-                    /* Pre-roll first (armed by this click), else poster / click-to-play */
-                    prerollPhase === "playing" && prerollOn && activePreroll ? (
-                      <PrerollPlayer creative={activePreroll} onDone={finishPreroll} withGesture />
-                    ) : (
+                {currentServer?.type === "iframe" && !videoStarted ? (
+                  /* Pre-roll first (armed by this click), else poster / click-to-play */
+                  prerollPhase === "playing" && prerollOn && activePreroll ? (
+                    <PrerollPlayer
+                      creative={activePreroll}
+                      onDone={finishPreroll}
+                      withGesture
+                    />
+                  ) : (
                     <button
                       className="absolute inset-0 w-full h-full cursor-pointer focus:outline-none"
                       onClick={handlePosterClick}
                       aria-label="Play video"
                     >
-                    {proxyUrl(posterUrl) ? (
-                      <OptimizedImage
-                        src={proxyUrl(posterUrl)!}
-                        alt={video.username}
-                        className="w-full h-full object-cover"
-                        containerClassName="w-full h-full"
-                        width="hero"
-                        fetchPriority="high"
-                        loading="eager"
-                        fallback={
-                          <div className="w-full h-full bg-black flex items-center justify-center">
-                            <Clapperboard className="w-12 h-12 text-white/10" />
-                          </div>
-                        }
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-black flex items-center justify-center">
-                        <Clapperboard className="w-12 h-12 text-white/10" />
+                      {proxyUrl(posterUrl) ? (
+                        <OptimizedImage
+                          src={proxyUrl(posterUrl)!}
+                          alt={video.username}
+                          className="w-full h-full object-cover"
+                          containerClassName="w-full h-full"
+                          width="hero"
+                          fetchPriority="high"
+                          loading="eager"
+                          fallback={
+                            <div className="w-full h-full bg-black flex items-center justify-center">
+                              <Clapperboard className="w-12 h-12 text-white/10" />
+                            </div>
+                          }
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-black flex items-center justify-center">
+                          <Clapperboard className="w-12 h-12 text-white/10" />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center gap-3">
+                        <div className="w-16 h-16 rounded-full border-2 border-primary/60 hover:border-primary flex items-center justify-center transition-all hover:scale-105">
+                          <Play className="w-7 h-7 text-white fill-white ml-1" />
+                        </div>
+                        <span className="text-white/80 text-xs font-medium">
+                          Click to play
+                        </span>
                       </div>
-                    )}
-                    <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center gap-3">
-                      <div className="w-16 h-16 rounded-full border-2 border-primary/60 hover:border-primary flex items-center justify-center transition-all hover:scale-105">
-                        <Play className="w-7 h-7 text-white fill-white ml-1" />
-                      </div>
-                      <span className="text-white/80 text-xs font-medium">Click to play</span>
-                    </div>
-                    {video.resolution && (
-                      <div className="absolute top-3 right-3 text-[10px] font-bold text-white/80 bg-black/30 backdrop-blur-sm ring-1 ring-white/10 px-2 py-0.5 rounded-[2px]">
-                        {video.resolution}
-                      </div>
-                    )}
+                      {video.resolution && (
+                        <div className="absolute top-3 right-3 text-[10px] font-bold text-white/80 bg-black/30 backdrop-blur-sm ring-1 ring-white/10 px-2 py-0.5 rounded-[2px]">
+                          {video.resolution}
+                        </div>
+                      )}
                     </button>
-                    )
+                  )
                 ) : currentServer?.type === "link" ? (
                   <div className="w-full h-full flex flex-col items-center justify-center gap-4 bg-black/80 p-8">
                     <p className="text-muted-foreground text-sm text-center">
@@ -869,23 +1032,32 @@ export default function VideoDetail() {
                 {/* Iframe Up Next countdown — cross-origin players can't report
                     `ended`, so this runs on the metadata-duration estimate from
                     lib/up-next.ts. Keyed by video so cancel state resets per video. */}
-                {currentServer?.type === "iframe" && videoStarted && video && nextInQueue && (
-                  <UpNextOverlay
-                    key={video.id}
-                    next={nextInQueue}
-                    durationSeconds={video.duration ?? 0}
-                    onPlayNow={handleQueueAdvance}
-                  />
-                )}
+                {currentServer?.type === "iframe" &&
+                  videoStarted &&
+                  video &&
+                  nextInQueue && (
+                    <UpNextOverlay
+                      key={video.id}
+                      next={nextInQueue}
+                      durationSeconds={video.duration ?? 0}
+                      onPlayNow={handleQueueAdvance}
+                    />
+                  )}
 
                 {videoStarted && (
                   <button
                     onClick={isFullscreen ? exitFS : enterFS}
                     className="absolute bottom-3 right-3 z-10 w-8 h-8 flex items-center justify-center bg-black/30 backdrop-blur-sm ring-1 ring-white/10 hover:bg-black/50 hover:ring-white/20 text-white/70 hover:text-white rounded transition-all opacity-0 group-hover:opacity-100"
-                    aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+                    aria-label={
+                      isFullscreen ? "Exit fullscreen" : "Enter fullscreen"
+                    }
                     title="Fullscreen (F)"
                   >
-                    {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                    {isFullscreen ? (
+                      <Minimize2 className="w-3.5 h-3.5" />
+                    ) : (
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    )}
                   </button>
                 )}
               </div>
@@ -918,19 +1090,37 @@ export default function VideoDetail() {
                 {/* Compact metadata — pipe-separated, no icons */}
                 <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground/70">
                   {video.timestamp && (
-                    <span>{new Date(video.timestamp).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                    <span>
+                      {new Date(video.timestamp).toLocaleDateString("en-US", {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </span>
                   )}
                   {video.viewers != null && video.viewers > 0 && (
-                    <><span className="text-muted-foreground/30">|</span><span>{video.viewers.toLocaleString()} views</span></>
+                    <>
+                      <span className="text-muted-foreground/30">|</span>
+                      <span>{video.viewers.toLocaleString()} views</span>
+                    </>
                   )}
                   {video.resolution && (
-                    <><span className="text-muted-foreground/30">|</span><span>{video.resolution}</span></>
+                    <>
+                      <span className="text-muted-foreground/30">|</span>
+                      <span>{video.resolution}</span>
+                    </>
                   )}
                   {video.duration != null && video.duration > 0 && (
-                    <><span className="text-muted-foreground/30">|</span><span>{formatDuration(video.duration)}</span></>
+                    <>
+                      <span className="text-muted-foreground/30">|</span>
+                      <span>{formatDuration(video.duration)}</span>
+                    </>
                   )}
                   {video.filesize ? (
-                    <><span className="text-muted-foreground/30">|</span><span>{formatBytes(video.filesize)}</span></>
+                    <>
+                      <span className="text-muted-foreground/30">|</span>
+                      <span>{formatBytes(video.filesize)}</span>
+                    </>
                   ) : null}
                 </div>
 
@@ -945,6 +1135,7 @@ export default function VideoDetail() {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => handleReaction("like")}
+                    aria-pressed={reactions?.user_reaction === "like"}
                     className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border transition-all ${
                       reactions?.user_reaction === "like"
                         ? "border-primary/60 text-primary"
@@ -952,12 +1143,15 @@ export default function VideoDetail() {
                     }`}
                   >
                     <ThumbsUp className="w-3.5 h-3.5" />
-                    {reactions?.likes != null && reactions.likes > 0 && <span>{reactions.likes.toLocaleString()}</span>}
+                    {reactions?.likes != null && reactions.likes > 0 && (
+                      <span>{reactions.likes.toLocaleString()}</span>
+                    )}
                     Like
                   </button>
 
                   <button
                     onClick={() => handleReaction("dislike")}
+                    aria-pressed={reactions?.user_reaction === "dislike"}
                     className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border transition-all ${
                       reactions?.user_reaction === "dislike"
                         ? "border-destructive/40 text-destructive"
@@ -965,36 +1159,42 @@ export default function VideoDetail() {
                     }`}
                   >
                     <ThumbsDown className="w-3.5 h-3.5" />
-                    {reactions?.dislikes != null && reactions.dislikes > 0 && <span>{reactions.dislikes.toLocaleString()}</span>}
+                    {reactions?.dislikes != null && reactions.dislikes > 0 && (
+                      <span>{reactions.dislikes.toLocaleString()}</span>
+                    )}
                     Dislike
                   </button>
 
                   {user && (
-                  <button
-                    onClick={handleBookmark}
-                    className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border transition-all ${
-                      bookmarked
-                        ? "border-amber-500/40 text-amber-500"
-                        : "border-border/50 text-muted-foreground hover:border-border hover:text-foreground"
-                    }`}
-                  >
-                    <Bookmark className={`w-3.5 h-3.5 ${bookmarked ? "fill-amber-500" : ""}`} />
-                    {bookmarked ? "Saved" : "Save"}
-                  </button>
+                    <button
+                      onClick={handleBookmark}
+                      aria-pressed={bookmarked}
+                      className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border transition-all ${
+                        bookmarked
+                          ? "border-amber-500/40 text-amber-500"
+                          : "border-border/50 text-muted-foreground hover:border-border hover:text-foreground"
+                      }`}
+                    >
+                      <Bookmark
+                        className={`w-3.5 h-3.5 ${bookmarked ? "fill-amber-500" : ""}`}
+                      />
+                      {bookmarked ? "Saved" : "Save"}
+                    </button>
                   )}
 
                   {user && (
-                  <button
-                    onClick={handleWatchLater}
-                    className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border transition-all ${
-                      watchLater
-                        ? "border-blue-500/40 text-blue-400"
-                        : "border-border/50 text-muted-foreground hover:border-border hover:text-foreground"
-                    }`}
-                  >
-                    <ListVideo className="w-3.5 h-3.5" />
-                    {watchLater ? "Queued" : "Watch Later"}
-                  </button>
+                    <button
+                      onClick={handleWatchLater}
+                      aria-pressed={watchLater}
+                      className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border transition-all ${
+                        watchLater
+                          ? "border-blue-500/40 text-blue-400"
+                          : "border-border/50 text-muted-foreground hover:border-border hover:text-foreground"
+                      }`}
+                    >
+                      <ListVideo className="w-3.5 h-3.5" />
+                      {watchLater ? "Queued" : "Watch Later"}
+                    </button>
                   )}
 
                   <button
@@ -1002,9 +1202,13 @@ export default function VideoDetail() {
                     className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border border-border/50 text-muted-foreground hover:border-border hover:text-foreground transition-all"
                   >
                     {copied ? (
-                      <><Check className="w-3.5 h-3.5 text-green-500" /> Copied!</>
+                      <>
+                        <Check className="w-3.5 h-3.5 text-green-500" /> Copied!
+                      </>
                     ) : (
-                      <><Share2 className="w-3.5 h-3.5" /> Share</>
+                      <>
+                        <Share2 className="w-3.5 h-3.5" /> Share
+                      </>
                     )}
                   </button>
 
@@ -1014,9 +1218,14 @@ export default function VideoDetail() {
                       className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border border-border/50 text-muted-foreground hover:border-border hover:text-foreground transition-all"
                     >
                       {embedCopied ? (
-                        <><Check className="w-3.5 h-3.5 text-green-500" /> Copied!</>
+                        <>
+                          <Check className="w-3.5 h-3.5 text-green-500" />{" "}
+                          Copied!
+                        </>
                       ) : (
-                        <><Code2 className="w-3.5 h-3.5" /> Embed</>
+                        <>
+                          <Code2 className="w-3.5 h-3.5" /> Embed
+                        </>
                       )}
                     </button>
                   )}
@@ -1035,79 +1244,87 @@ export default function VideoDetail() {
 
                   {/* Add to Collection dropdown */}
                   {user && (
-                  <div ref={collectionRef} className="relative">
-                    <button
-                      onClick={() => setCollectionOpen((v) => !v)}
-                      className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border border-border/50 text-muted-foreground hover:border-border hover:text-foreground transition-all"
-                    >
-                      <FolderPlus className="w-3.5 h-3.5" />
-                      Collection
-                      <ChevronDown className={`w-3 h-3 transition-transform ${collectionOpen ? "rotate-180" : ""}`} />
-                    </button>
-                    {collectionOpen && (
-                      <div className="absolute right-0 sm:left-0 sm:right-auto top-full mt-1 z-50 w-56 glass-dropdown rounded overflow-hidden">
-                        <div className="p-2 border-b border-border/40">
-                          <div className="flex gap-1">
-                            <input
-                              autoFocus
-                              type="text"
-                              aria-label="New collection name"
-                              placeholder="New collection…"
-                              value={newColName}
-                              onChange={(e) => setNewColName(e.target.value)}
-                              onKeyDown={(e) => { if (e.key === "Enter") handleCreateAndAdd(); }}
-                              maxLength={60}
-                              className="flex-1 h-7 bg-card border border-border/40 focus:border-primary/50 rounded-[2px] px-2 text-xs outline-none"
-                            />
-                            <button
-                              onClick={handleCreateAndAdd}
-                              disabled={!newColName.trim()}
-                              className="w-7 h-7 flex items-center justify-center border border-primary/30 text-primary rounded-[2px] disabled:opacity-40 hover:border-primary/60 transition-opacity"
-                              title="Create and add"
-                            >
-                              <Plus className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                        {cloudCollections.length === 0 ? (
-                          <div className="px-3 py-4 text-center">
-                            <p className="text-[11px] text-muted-foreground">No collections yet.</p>
-                            <p className="text-[11px] text-muted-foreground/60">Create one above.</p>
-                          </div>
-                        ) : (
-                          <div className="max-h-48 overflow-y-auto">
-                            {cloudCollections.map((col) => (
+                    <div ref={collectionRef} className="relative">
+                      <button
+                        onClick={() => setCollectionOpen((v) => !v)}
+                        className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border border-border/50 text-muted-foreground hover:border-border hover:text-foreground transition-all"
+                      >
+                        <FolderPlus className="w-3.5 h-3.5" />
+                        Collection
+                        <ChevronDown
+                          className={`w-3 h-3 transition-transform ${collectionOpen ? "rotate-180" : ""}`}
+                        />
+                      </button>
+                      {collectionOpen && (
+                        <div className="absolute right-0 sm:left-0 sm:right-auto top-full mt-1 z-50 w-56 glass-dropdown rounded overflow-hidden">
+                          <div className="p-2 border-b border-border/40">
+                            <div className="flex gap-1">
+                              <input
+                                autoFocus
+                                type="text"
+                                aria-label="New collection name"
+                                placeholder="New collection…"
+                                value={newColName}
+                                onChange={(e) => setNewColName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") handleCreateAndAdd();
+                                }}
+                                maxLength={60}
+                                className="flex-1 h-7 bg-card border border-border/40 focus:border-primary/50 rounded-[2px] px-2 text-xs outline-none"
+                              />
                               <button
-                                key={col.id}
-                                onClick={() => handleAddToCollection(col.id)}
-                                className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-secondary transition-colors"
+                                onClick={handleCreateAndAdd}
+                                disabled={!newColName.trim()}
+                                className="w-7 h-7 flex items-center justify-center border border-primary/30 text-primary rounded-[2px] disabled:opacity-40 hover:border-primary/60 transition-opacity"
+                                title="Create and add"
                               >
-                                {addedToCol === col.id ? (
-                                  <Check className="w-3 h-3 text-green-500 shrink-0" />
-                                ) : (
-                                  <ListVideo className="w-3 h-3 text-muted-foreground/50 shrink-0" />
-                                )}
-                                <span className="truncate">{col.name}</span>
-                                <span className="ml-auto text-[10px] text-muted-foreground/40 shrink-0">
-                                  {col.item_count ?? 0}
-                                </span>
+                                <Plus className="w-3 h-3" />
                               </button>
-                            ))}
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                          {cloudCollections.length === 0 ? (
+                            <div className="px-3 py-4 text-center">
+                              <p className="text-[11px] text-muted-foreground">
+                                No collections yet.
+                              </p>
+                              <p className="text-[11px] text-muted-foreground/60">
+                                Create one above.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="max-h-48 overflow-y-auto">
+                              {cloudCollections.map((col) => (
+                                <button
+                                  key={col.id}
+                                  onClick={() => handleAddToCollection(col.id)}
+                                  className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-secondary transition-colors"
+                                >
+                                  {addedToCol === col.id ? (
+                                    <Check className="w-3 h-3 text-green-500 shrink-0" />
+                                  ) : (
+                                    <ListVideo className="w-3 h-3 text-muted-foreground/50 shrink-0" />
+                                  )}
+                                  <span className="truncate">{col.name}</span>
+                                  <span className="ml-auto text-[10px] text-muted-foreground/40 shrink-0">
+                                    {col.item_count ?? 0}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {user && (
-                  <Link
-                    href="/history"
-                    className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border border-border/50 text-muted-foreground hover:border-border hover:text-foreground transition-all"
-                  >
-                    <Clock className="w-3.5 h-3.5" />
-                    History
-                  </Link>
+                    <Link
+                      href="/history"
+                      className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border border-border/50 text-muted-foreground hover:border-border hover:text-foreground transition-all"
+                    >
+                      <Clock className="w-3.5 h-3.5" />
+                      History
+                    </Link>
                   )}
                 </div>
 
@@ -1115,7 +1332,10 @@ export default function VideoDetail() {
                 {video.tags && video.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {video.tags.map((tag) => (
-                      <Link key={tag} href={`/browse?tags=${encodeURIComponent(tag)}`}>
+                      <Link
+                        key={tag}
+                        href={`/browse?tags=${encodeURIComponent(tag)}`}
+                      >
                         <span className="inline-block px-2.5 py-1 text-[11px] border border-border/50 text-muted-foreground hover:border-primary/50 hover:text-primary hover:bg-primary/5 transition-all cursor-pointer rounded-[2px]">
                           {tag}
                         </span>
@@ -1145,7 +1365,13 @@ export default function VideoDetail() {
                   <div className="flex items-center gap-2 p-3 border border-border/40 rounded-sm bg-secondary">
                     <LogIn className="w-4 h-4 text-muted-foreground/40" />
                     <p className="text-xs text-muted-foreground/60">
-                      <Link href="/login" className="text-primary hover:underline font-medium">Sign in</Link> to like, save, or add to collections
+                      <Link
+                        href="/login"
+                        className="text-primary hover:underline font-medium"
+                      >
+                        Sign in
+                      </Link>{" "}
+                      to like, save, or add to collections
                     </p>
                   </div>
                 )}
@@ -1196,12 +1422,19 @@ export default function VideoDetail() {
                   </div>
                 ))}
               </div>
-            ) : related && related.filter((r) => r.id !== id && r.username === video?.username).length > 0 ? (
+            ) : related &&
+              related.filter(
+                (r) => r.id !== id && r.username === video?.username,
+              ).length > 0 ? (
               <div className="space-y-3">
                 {related
                   .filter((r) => r.id !== id && r.username === video?.username)
                   .map((rec, i) => (
-                    <Link key={rec.id} href={`/video/${rec.id}`} className="group flex gap-3 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background">
+                    <Link
+                      key={rec.id}
+                      href={`/video/${rec.id}`}
+                      className="group flex gap-3 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    >
                       <div className="w-28 aspect-video shrink-0 overflow-hidden bg-secondary rounded-[2px] relative">
                         {proxyUrl(rec.thumbnail_url) ? (
                           <OptimizedImage
@@ -1225,7 +1458,9 @@ export default function VideoDetail() {
                         {recentlyWatched.has(rec.id) && (
                           <div className="absolute top-1 right-1 z-10 flex items-center gap-0.5 bg-black/40 backdrop-blur-sm ring-1 ring-white/10 px-1 py-0.5 rounded-[2px] pointer-events-none">
                             <CheckCircle className="w-2 h-2 text-green-400" />
-                            <span className="text-[7px] font-semibold text-green-300/90 uppercase tracking-wider">Watched</span>
+                            <span className="text-[7px] font-semibold text-green-300/90 uppercase tracking-wider">
+                              Watched
+                            </span>
                           </div>
                         )}
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20">
@@ -1240,7 +1475,9 @@ export default function VideoDetail() {
                           {formatRelativeTime(rec.timestamp)}
                         </p>
                         {rec.resolution && (
-                          <p className="text-[10px] text-muted-foreground/40">{rec.resolution}</p>
+                          <p className="text-[10px] text-muted-foreground/40">
+                            {rec.resolution}
+                          </p>
                         )}
                       </div>
                     </Link>
@@ -1256,7 +1493,9 @@ export default function VideoDetail() {
                 )}
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground/40">No related recordings found.</p>
+              <p className="text-xs text-muted-foreground/40">
+                No related recordings found.
+              </p>
             )}
           </div>
         </div>
@@ -1284,14 +1523,22 @@ export default function VideoDetail() {
                 ))}
               </div>
             ) : recError ? (
-              <p className="text-xs text-destructive/60">Could not load recommendations.</p>
-            ) : recData && recData.data.filter((r) => r.id !== id).length > 0 ? (
+              <p className="text-xs text-destructive/60">
+                Could not load recommendations.
+              </p>
+            ) : recData &&
+              recData.data.filter((r) => r.id !== id).length > 0 ? (
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
                   {recData.data
                     .filter((r) => r.id !== id)
                     .map((rec) => (
-                      <VideoCard key={rec.id} recording={rec} isWatched={recentlyWatched.has(rec.id)} showAdd />
+                      <VideoCard
+                        key={rec.id}
+                        recording={rec}
+                        isWatched={recentlyWatched.has(rec.id)}
+                        showAdd
+                      />
                     ))}
                 </div>
 
@@ -1306,15 +1553,23 @@ export default function VideoDetail() {
                       <ChevronDown className="w-3.5 h-3.5 rotate-90" />
                     </button>
 
-                    {Array.from({ length: recData.totalPages }, (_, i) => i + 1).map((p) => {
+                    {Array.from(
+                      { length: recData.totalPages },
+                      (_, i) => i + 1,
+                    ).map((p) => {
                       const isCurrent = p === recData.page;
                       const isEdge =
-                        p === 1 || p === recData.totalPages || Math.abs(p - recData.page) <= 1;
+                        p === 1 ||
+                        p === recData.totalPages ||
+                        Math.abs(p - recData.page) <= 1;
                       if (!isEdge && p > 1 && p < recData.totalPages) {
                         // collapse middle gaps with a single ellipsis
                         if (p === recData.page - 2 || p === recData.page + 2) {
                           return (
-                            <span key={p} className="px-1 text-[10px] text-muted-foreground/40">
+                            <span
+                              key={p}
+                              className="px-1 text-[10px] text-muted-foreground/40"
+                            >
                               …
                             </span>
                           );
@@ -1338,8 +1593,12 @@ export default function VideoDetail() {
                     })}
 
                     <button
-                      onClick={() => setRecPage((p) => Math.min(recData.totalPages, p + 1))}
-                      disabled={recData.page >= recData.totalPages || recFetching}
+                      onClick={() =>
+                        setRecPage((p) => Math.min(recData.totalPages, p + 1))
+                      }
+                      disabled={
+                        recData.page >= recData.totalPages || recFetching
+                      }
                       aria-label="Next page"
                       className="inline-flex items-center justify-center w-7 h-7 text-xs rounded-[2px] border border-border/50 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                     >
@@ -1349,7 +1608,9 @@ export default function VideoDetail() {
                 )}
               </>
             ) : (
-              <p className="text-xs text-muted-foreground/40">No recommendations available.</p>
+              <p className="text-xs text-muted-foreground/40">
+                No recommendations available.
+              </p>
             )}
           </div>
         ) : null}

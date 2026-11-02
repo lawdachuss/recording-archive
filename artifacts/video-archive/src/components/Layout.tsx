@@ -13,9 +13,17 @@ import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 // Lazy-load components that are heavy or only needed on interaction:
 // - NotificationBell: pulls in notification hooks, only visible for auth users
 // - MobileMenu: only visible on mobile toggle
-// - RequestDialog: pulls in framer-motion, only opens on click
-const NotificationBell = lazy(() => import("@/components/NotificationBell").then(m => ({ default: m.NotificationBell })));
-const MobileMenu = lazy(() => import("@/components/nav/MobileMenu").then(m => ({ default: m.MobileMenu })));
+// - RequestDialog: multi-step form dialog, only opens on click
+const NotificationBell = lazy(() =>
+  import("@/components/NotificationBell").then((m) => ({
+    default: m.NotificationBell,
+  })),
+);
+const MobileMenu = lazy(() =>
+  import("@/components/nav/MobileMenu").then((m) => ({
+    default: m.MobileMenu,
+  })),
+);
 const RequestDialog = lazy(() => import("@/components/RequestDialog"));
 
 import { prefetchRoute } from "@/lib/route-chunks";
@@ -75,16 +83,28 @@ function RandomButton() {
       }`}
       aria-label="Random video"
     >
-      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7 opacity-60 hover:opacity-100 transition-opacity" style={{ color: 'hsl(var(--primary))' }}>
-        <path d="M10.82 16.12c1.69.6 3.91.79 5.18.85.28.01.53-.09.7-.27"/>
-        <path d="M11.14 20.57c.52.24 2.44 1.12 4.08 1.37.46.06.86-.25.9-.71.12-1.52-.3-3.43-.5-4.28"/>
-        <path d="M16.13 21.05c1.65.63 3.68.84 4.87.91a.9.9 0 0 0 .7-.26"/>
-        <path d="M17.99 5.52a20.83 20.83 0 0 1 3.15 4.5.8.8 0 0 1-.68 1.13c-1.17.1-2.5.02-3.9-.25"/>
-        <path d="M20.57 11.14c.24.52 1.12 2.44 1.37 4.08.04.3-.08.59-.31.75"/>
-        <path d="M4.93 4.93a10 10 0 0 0-.67 13.4c.35.43.96.4 1.17-.12.69-1.71 1.07-5.07 1.07-6.71 1.34.45 3.1.9 4.88.62a.85.85 0 0 0 .48-.24"/>
-        <path d="M5.52 17.99c1.05.95 2.91 2.42 4.5 3.15a.8.8 0 0 0 1.13-.68c.2-2.34-.33-5.3-1.57-8.28"/>
-        <path d="M8.35 2.68a10 10 0 0 1 9.98 1.58c.43.35.4.96-.12 1.17-1.5.6-4.3.98-6.07 1.05"/>
-        <path d="m2 2 20 20"/>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="w-7 h-7 opacity-60 hover:opacity-100 transition-opacity"
+        style={{ color: "hsl(var(--primary))" }}
+      >
+        <path d="M10.82 16.12c1.69.6 3.91.79 5.18.85.28.01.53-.09.7-.27" />
+        <path d="M11.14 20.57c.52.24 2.44 1.12 4.08 1.37.46.06.86-.25.9-.71.12-1.52-.3-3.43-.5-4.28" />
+        <path d="M16.13 21.05c1.65.63 3.68.84 4.87.91a.9.9 0 0 0 .7-.26" />
+        <path d="M17.99 5.52a20.83 20.83 0 0 1 3.15 4.5.8.8 0 0 1-.68 1.13c-1.17.1-2.5.02-3.9-.25" />
+        <path d="M20.57 11.14c.24.52 1.12 2.44 1.37 4.08.04.3-.08.59-.31.75" />
+        <path d="M4.93 4.93a10 10 0 0 0-.67 13.4c.35.43.96.4 1.17-.12.69-1.71 1.07-5.07 1.07-6.71 1.34.45 3.1.9 4.88.62a.85.85 0 0 0 .48-.24" />
+        <path d="M5.52 17.99c1.05.95 2.91 2.42 4.5 3.15a.8.8 0 0 0 1.13-.68c.2-2.34-.33-5.3-1.57-8.28" />
+        <path d="M8.35 2.68a10 10 0 0 1 9.98 1.58c.43.35.4.96-.12 1.17-1.5.6-4.3.98-6.07 1.05" />
+        <path d="m2 2 20 20" />
       </svg>
     </button>
   );
@@ -132,36 +152,42 @@ export function AgeGate() {
               </DialogPrimitive.Description>
               <div className="text-sm text-muted-foreground leading-relaxed space-y-4 max-h-[60vh] overflow-y-auto pr-2">
                 <p>
-                  By accessing this site, you agree to the following terms and conditions. If you do not
-                  agree with any part of these terms, you must not use this site.
+                  By accessing this site, you agree to the following terms and
+                  conditions. If you do not agree with any part of these terms,
+                  you must not use this site.
                 </p>
                 <p>
-                  <strong>Age Restriction.</strong> This site contains adult content intended for
-                  individuals who are 18 years of age or older (21 in some jurisdictions). By entering,
-                  you confirm that you meet the age requirement in your jurisdiction.
+                  <strong>Age Restriction.</strong> This site contains adult
+                  content intended for individuals who are 18 years of age or
+                  older (21 in some jurisdictions). By entering, you confirm
+                  that you meet the age requirement in your jurisdiction.
                 </p>
                 <p>
-                  <strong>Personal Use.</strong> Content on this site is provided for personal,
-                  non-commercial viewing only. You may not download, redistribute, or reproduce any
-                  content without explicit permission.
+                  <strong>Personal Use.</strong> Content on this site is
+                  provided for personal, non-commercial viewing only. You may
+                  not download, redistribute, or reproduce any content without
+                  explicit permission.
                 </p>
                 <p>
-                  <strong>User Conduct.</strong> You agree not to use the site for any unlawful purpose
-                  or to violate any applicable laws. Harassment, abuse, or harmful behavior toward other
-                  users will result in account termination.
+                  <strong>User Conduct.</strong> You agree not to use the site
+                  for any unlawful purpose or to violate any applicable laws.
+                  Harassment, abuse, or harmful behavior toward other users will
+                  result in account termination.
                 </p>
                 <p>
-                  <strong>Privacy.</strong> Your privacy is important to us. Please review our Privacy
-                  Policy to understand how we collect and handle your data.
+                  <strong>Privacy.</strong> Your privacy is important to us.
+                  Please review our Privacy Policy to understand how we collect
+                  and handle your data.
                 </p>
                 <p>
-                  <strong>Disclaimer.</strong> All content is provided "as is" without warranty of any
-                  kind. The site operators are not responsible for user-uploaded content or external
-                  links.
+                  <strong>Disclaimer.</strong> All content is provided "as is"
+                  without warranty of any kind. The site operators are not
+                  responsible for user-uploaded content or external links.
                 </p>
                 <p>
-                  <strong>Changes.</strong> These terms may be updated at any time. Continued use of the
-                  site after changes constitutes acceptance of the new terms.
+                  <strong>Changes.</strong> These terms may be updated at any
+                  time. Continued use of the site after changes constitutes
+                  acceptance of the new terms.
                 </p>
               </div>
               <div className="mt-8 text-center">
@@ -180,11 +206,13 @@ export function AgeGate() {
                 <DialogPrimitive.Title className="text-xs uppercase tracking-[0.3em] text-muted-foreground mb-6">
                   Age Verification Required
                 </DialogPrimitive.Title>
-                <div className="text-6xl font-black tracking-tighter text-foreground mb-2">18+</div>
+                <div className="text-6xl font-black tracking-tighter text-foreground mb-2">
+                  18+
+                </div>
                 <div className="w-8 h-px bg-primary mx-auto mb-6" />
                 <DialogPrimitive.Description className="text-sm text-muted-foreground leading-relaxed">
-                  This site contains adult material. By entering, you confirm you are 18 years of age or
-                  older and agree to our{" "}
+                  This site contains adult material. By entering, you confirm
+                  you are 18 years of age or older and agree to our{" "}
                   <button
                     type="button"
                     onClick={() => setShowTerms(true)}
@@ -261,7 +289,10 @@ export function Navbar() {
 
         <div className="hidden md:block w-px h-5 bg-border/30" />
 
-        <DesktopNav location={location} onRequestOpen={() => setRequestOpen(true)} />
+        <DesktopNav
+          location={location}
+          onRequestOpen={() => setRequestOpen(true)}
+        />
 
         <div className="flex-1" />
 
@@ -276,7 +307,11 @@ export function Navbar() {
               title={dark ? "Light mode" : "Dark mode"}
             >
               <div className="relative z-10 transition-transform duration-200 hover:scale-105">
-                {dark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                {dark ? (
+                  <Sun className="w-4 h-4" />
+                ) : (
+                  <Moon className="w-4 h-4" />
+                )}
               </div>
             </button>
           )}
@@ -284,8 +319,16 @@ export function Navbar() {
           <Link
             href="/premium"
             className={`nav-btn ${searchOpen ? "hidden sm:flex" : ""}`}
-            aria-label={isPremium ? "Premium member — see benefits" : "Go Premium — see details & upgrade"}
-            title={isPremium ? "You're Premium — see benefits" : "Go Premium — see details & upgrade"}
+            aria-label={
+              isPremium
+                ? "Premium member — see benefits"
+                : "Go Premium — see details & upgrade"
+            }
+            title={
+              isPremium
+                ? "You're Premium — see benefits"
+                : "Go Premium — see details & upgrade"
+            }
           >
             <Crown
               className={`w-4 h-4 transition-colors ${isPremium ? "text-primary" : ""}`}
@@ -304,7 +347,9 @@ export function Navbar() {
           </Link>
 
           <div className={searchOpen ? "hidden sm:block" : ""}>
-            <Suspense fallback={null}><NotificationBell /></Suspense>
+            <Suspense fallback={null}>
+              <NotificationBell />
+            </Suspense>
           </div>
           <UserMenu />
 
@@ -314,8 +359,17 @@ export function Navbar() {
             aria-label="Toggle menu"
             aria-expanded={mobileOpen}
           >
-            <div className="relative transition-transform duration-200" style={{ transform: mobileOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>
-              {mobileOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+            <div
+              className="relative transition-transform duration-200"
+              style={{
+                transform: mobileOpen ? "rotate(90deg)" : "rotate(0deg)",
+              }}
+            >
+              {mobileOpen ? (
+                <X className="w-4 h-4" />
+              ) : (
+                <Menu className="w-4 h-4" />
+              )}
             </div>
           </button>
         </div>
@@ -361,9 +415,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      <main className="flex-1 flex flex-col">
-        {children}
-      </main>
+      <main className="flex-1 flex flex-col">{children}</main>
 
       <RandomButton />
       <PremiumUpsellPopup />
@@ -375,7 +427,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
           style={{
             opacity: 0.22,
             maskImage: "linear-gradient(to top, black 0%, transparent 70%)",
-            WebkitMaskImage: "linear-gradient(to top, black 0%, transparent 70%)",
+            WebkitMaskImage:
+              "linear-gradient(to top, black 0%, transparent 70%)",
           }}
           aria-hidden="true"
         />
@@ -407,25 +460,110 @@ export function Layout({ children }: { children: React.ReactNode }) {
               className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground/50"
               aria-label="Footer navigation"
             >
-              <Link href="/premium" className="text-primary/60 hover:text-primary transition-colors" onMouseEnter={() => prefetchFooter("/premium")} onFocus={() => prefetchFooter("/premium")}>Premium</Link>
-              <Link href="/browse" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/browse")} onFocus={() => prefetchFooter("/browse")}>Browse</Link>
-              <Link href="/performers" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/performers")} onFocus={() => prefetchFooter("/performers")}>Performers</Link>
-              <Link href="/tags" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/tags")} onFocus={() => prefetchFooter("/tags")}>Tags</Link>
-              <Link href="/playlists" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/playlists")} onFocus={() => prefetchFooter("/playlists")}>Playlists</Link>
-              <Link href="/collections" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/collections")} onFocus={() => prefetchFooter("/collections")}>Collections</Link>
-              <Link href="/request" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/request")} onFocus={() => prefetchFooter("/request")}>Request</Link>
-              <Link href="/my-requests" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/my-requests")} onFocus={() => prefetchFooter("/my-requests")}>My Requests</Link>
-              <Link href="/bookmarks" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/bookmarks")} onFocus={() => prefetchFooter("/bookmarks")}>Bookmarks</Link>
-              <Link href="/watch-later" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/watch-later")} onFocus={() => prefetchFooter("/watch-later")}>Watch Later</Link>
-              <Link href="/history" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/history")} onFocus={() => prefetchFooter("/history")}>History</Link>
-              <Link href="/analytics" className="hover:text-muted-foreground transition-colors" onMouseEnter={() => prefetchFooter("/analytics")} onFocus={() => prefetchFooter("/analytics")}>Analytics</Link>
+              <Link
+                href="/premium"
+                className="text-primary/60 hover:text-primary transition-colors"
+                onMouseEnter={() => prefetchFooter("/premium")}
+                onFocus={() => prefetchFooter("/premium")}
+              >
+                Premium
+              </Link>
+              <Link
+                href="/browse"
+                className="hover:text-muted-foreground transition-colors"
+                onMouseEnter={() => prefetchFooter("/browse")}
+                onFocus={() => prefetchFooter("/browse")}
+              >
+                Browse
+              </Link>
+              <Link
+                href="/performers"
+                className="hover:text-muted-foreground transition-colors"
+                onMouseEnter={() => prefetchFooter("/performers")}
+                onFocus={() => prefetchFooter("/performers")}
+              >
+                Performers
+              </Link>
+              <Link
+                href="/tags"
+                className="hover:text-muted-foreground transition-colors"
+                onMouseEnter={() => prefetchFooter("/tags")}
+                onFocus={() => prefetchFooter("/tags")}
+              >
+                Tags
+              </Link>
+              <Link
+                href="/playlists"
+                className="hover:text-muted-foreground transition-colors"
+                onMouseEnter={() => prefetchFooter("/playlists")}
+                onFocus={() => prefetchFooter("/playlists")}
+              >
+                Playlists
+              </Link>
+              <Link
+                href="/collections"
+                className="hover:text-muted-foreground transition-colors"
+                onMouseEnter={() => prefetchFooter("/collections")}
+                onFocus={() => prefetchFooter("/collections")}
+              >
+                Collections
+              </Link>
+              <Link
+                href="/request"
+                className="hover:text-muted-foreground transition-colors"
+                onMouseEnter={() => prefetchFooter("/request")}
+                onFocus={() => prefetchFooter("/request")}
+              >
+                Request
+              </Link>
+              <Link
+                href="/my-requests"
+                className="hover:text-muted-foreground transition-colors"
+                onMouseEnter={() => prefetchFooter("/my-requests")}
+                onFocus={() => prefetchFooter("/my-requests")}
+              >
+                My Requests
+              </Link>
+              <Link
+                href="/bookmarks"
+                className="hover:text-muted-foreground transition-colors"
+                onMouseEnter={() => prefetchFooter("/bookmarks")}
+                onFocus={() => prefetchFooter("/bookmarks")}
+              >
+                Bookmarks
+              </Link>
+              <Link
+                href="/watch-later"
+                className="hover:text-muted-foreground transition-colors"
+                onMouseEnter={() => prefetchFooter("/watch-later")}
+                onFocus={() => prefetchFooter("/watch-later")}
+              >
+                Watch Later
+              </Link>
+              <Link
+                href="/history"
+                className="hover:text-muted-foreground transition-colors"
+                onMouseEnter={() => prefetchFooter("/history")}
+                onFocus={() => prefetchFooter("/history")}
+              >
+                History
+              </Link>
+              <Link
+                href="/analytics"
+                className="hover:text-muted-foreground transition-colors"
+                onMouseEnter={() => prefetchFooter("/analytics")}
+                onFocus={() => prefetchFooter("/analytics")}
+              >
+                Analytics
+              </Link>
               <span className="hidden sm:block w-px h-3 bg-border/40 self-center" />
               <span className="cursor-default">Terms</span>
               <span className="cursor-default">Privacy</span>
             </nav>
           </div>
           <div className="mt-8 pt-5 border-t border-border/30 text-[11px] text-muted-foreground/30">
-            &copy; {new Date().getFullYear()} VAULT — Private Archive — Adults only (18+)
+            &copy; {new Date().getFullYear()} VAULT — Private Archive — Adults
+            only (18+)
           </div>
         </div>
       </footer>

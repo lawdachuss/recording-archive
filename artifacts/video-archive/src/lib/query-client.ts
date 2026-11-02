@@ -10,8 +10,17 @@
  *   - Fast connection → per-query configured value
  */
 
-import { QueryClient, onlineManager, keepPreviousData } from "@tanstack/react-query";
-import { cacheGetSync, cacheSetLocal, cacheGetLocal, cacheDelete } from "./cache";
+import {
+  QueryClient,
+  onlineManager,
+  keepPreviousData,
+} from "@tanstack/react-query";
+import {
+  cacheGetSync,
+  cacheSetLocal,
+  cacheGetLocal,
+  cacheDelete,
+} from "./cache";
 import { isConnectionConstrained } from "./connection";
 
 const PERSIST_KEY = "vault-rq-cache";
@@ -90,7 +99,11 @@ export function persistQueryCache(queryClient: QueryClient) {
     // Use the TTL cache (switches to IndexedDB if payload > ~100KB).
     // Local-only: the snapshot contains authenticated, user-specific query
     // data and must never be written to the shared, CDN-cached edge tier.
-    cacheSetLocal(PERSIST_KEY, payload, PERSIST_TTL);
+    try {
+      cacheSetLocal(PERSIST_KEY, payload, PERSIST_TTL);
+    } catch {
+      // Gracefully handle storage quota or private-browsing restrictions
+    }
   }
 }
 
@@ -102,8 +115,8 @@ export function restoreQueryCache(queryClient: QueryClient) {
   // cacheGetSync handles TTL expiry internally via lsGet.
   let persisted = cacheGetSync<PersistedCache>(PERSIST_KEY);
   if (!persisted) {
-// Cache miss from sync — schedule an async restore later
-  setTimeout(async () => {
+    // Cache miss from sync — schedule an async restore later
+    setTimeout(async () => {
       try {
         const p = await cacheGetLocal<PersistedCache>(PERSIST_KEY);
         if (p) applyCache(queryClient, p);
@@ -122,7 +135,11 @@ function applyCache(queryClient: QueryClient, persisted: PersistedCache) {
       const queryKey = JSON.parse(keyStr) as unknown[];
       const existing = cache.find({ queryKey, exact: true });
       // Don't overwrite fresher data
-      if (existing && existing.state.dataUpdatedAt > (entry as any).dataUpdatedAt) continue;
+      if (
+        existing &&
+        existing.state.dataUpdatedAt > (entry as any).dataUpdatedAt
+      )
+        continue;
 
       queryClient.setQueryData(queryKey, (entry as any).data, {
         updatedAt: (entry as any).dataUpdatedAt,
@@ -156,7 +173,7 @@ export function createQueryClient() {
         retry: 2,
         retryDelay: (attempt) => Math.min(500 * Math.pow(2, attempt), 5000),
         refetchOnWindowFocus: false, // avoid distracting refreshes
-        refetchOnReconnect: true,    // do refresh on reconnect
+        refetchOnReconnect: true, // do refresh on reconnect
       },
     },
   });

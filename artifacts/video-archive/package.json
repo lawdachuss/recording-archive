@@ -29,8 +29,6 @@
     "class-variance-authority": "catalog:",
     "clsx": "catalog:",
     "esbuild": "0.27.3",
-    "esbuild-plugin-pino": "^2.3.3",
-    "framer-motion": "catalog:",
     "lucide-react": "^1.21.0",
     "react": "catalog:",
     "react-dom": "catalog:",
@@ -49,7 +47,6 @@
     "@radix-ui/react-separator": "^1.1.8",
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-tabs": "^1.1.13",
-    "@supabase/supabase-js": "^2.107.0",
-    "serverless-http": "^4.0.0"
+    "@supabase/supabase-js": "^2.107.0"
   }
 }

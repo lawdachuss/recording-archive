@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { userApi } from "@/lib/user-api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -49,14 +49,36 @@ export function useRecentlyWatched(): Set<string> {
 
   const localWatched = useMemo(() => getWatchedIds(), [localVersion]);
 
-  // Merge local and server sets — memoized to avoid creating a new Set
-  // reference on every render, which would trigger downstream re-renders.
+  // Stabilize the returned Set instance across re-renders. If the members
+  // have not changed, return the exact same Set reference so downstream
+  // memoized components (e.g. VideoCard lists across Home/Browse/VideoDetail)
+  // do not trigger unnecessary re-renders.
+  const prevSetRef = useRef<Set<string>>(localWatched);
+
   return useMemo(() => {
+    let nextSet: Set<string>;
     if (serverSet && serverSet.size > 0) {
-      const merged = new Set(localWatched);
-      for (const id of serverSet) merged.add(id);
-      return merged;
+      nextSet = new Set(localWatched);
+      for (const id of serverSet) nextSet.add(id);
+    } else {
+      nextSet = localWatched;
     }
-    return localWatched;
+
+    const prev = prevSetRef.current;
+    if (prev.size === nextSet.size) {
+      let identical = true;
+      for (const item of nextSet) {
+        if (!prev.has(item)) {
+          identical = false;
+          break;
+        }
+      }
+      if (identical) {
+        return prev;
+      }
+    }
+
+    prevSetRef.current = nextSet;
+    return nextSet;
   }, [serverSet, localWatched]);
 }
