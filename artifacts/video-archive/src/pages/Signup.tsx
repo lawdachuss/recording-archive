@@ -156,7 +156,6 @@ export default function Signup() {
                 type="button"
                 onClick={() => setShowPw((v) => !v)}
                 aria-label={showPw ? "Hide password" : "Show password"}
-                aria-pressed={showPw}
                 aria-controls="signup-password"
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground"
               >
