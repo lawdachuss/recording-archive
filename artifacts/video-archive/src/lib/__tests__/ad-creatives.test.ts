@@ -63,7 +63,7 @@ describe("bareUrlToMarkup", () => {
   it("turns a bare StripCash smartlink into a clickable banner instead of rejecting it", () => {
     const html = bareUrlToMarkup("https://go.stripchat.com/?userId=abc&p1=vault", 728, 90);
     expect(html).not.toBeNull();
-    expect(html).toContain('<a href="https://go.stripchat.com/?userId=abc&p1=vault"');
+    expect(html).toContain('<a href="https://go.stripchat.com/?userId=abc&amp;p1=vault"');
     expect(html).toContain('target="_blank"');
     expect(html).toContain('rel="sponsored noopener nofollow"');
     expect(html).toContain("height:90px");
@@ -71,10 +71,23 @@ describe("bareUrlToMarkup", () => {
     expect(html).not.toContain("<img");
   });
 
-  it("quote-escapes the URL in the href", () => {
+  it("URL-encodes quote characters before placing them in HTML attributes", () => {
     const html = bareUrlToMarkup('https://x.com/?a="b"', 300, 100);
     expect(html).not.toBeNull();
-    expect(html).toContain("&quot;b&quot;");
+    expect(html).toContain("%22b%22");
+    expect(html).not.toContain("&quot;b&quot;");
+  });
+
+  it("encodes markup delimiters in a crafted bare URL instead of injecting tags", () => {
+    const html = bareUrlToMarkup('https://x.com/"><script>alert(1)</script>', 300, 100);
+    expect(html).not.toBeNull();
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("%3Cscript%3E");
+  });
+
+  it("rejects non-HTTP(S) schemes for bare URL creatives", () => {
+    expect(bareUrlToMarkup("javascript:/embed/alert(1)", 300, 100)).toBeNull();
+    expect(bareUrlToMarkup("data:text/html,<script>alert(1)</script>", 300, 100)).toBeNull();
   });
 
   it("returns null only for an empty input", () => {
