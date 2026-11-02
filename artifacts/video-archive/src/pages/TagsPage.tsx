@@ -4,10 +4,16 @@ import { Link } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AdBanner } from "@/components/ads/AdBanner";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
-import { Tags, Hash } from "lucide-react";
+import { Tags, Hash, RefreshCw } from "lucide-react";
 
 export default function TagsPage() {
-  const { data: tags, isLoading } = useListTags({ query: { queryKey: getListTagsQueryKey(), staleTime: 30_000 } });
+  const {
+    data: tags,
+    isLoading,
+    isError,
+    refetch,
+    isFetching,
+  } = useListTags({ query: { queryKey: getListTagsQueryKey(), staleTime: 30_000 } });
 
   const sorted = tags ? [...tags].sort((a, b) => b.count - a.count) : [];
   const maxCount = sorted[0]?.count ?? 1;
@@ -34,6 +40,23 @@ export default function TagsPage() {
             {[...Array(40)].map((_, i) => (
               <Skeleton key={i} className="h-8 rounded-lg" style={{ width: `${60 + Math.random() * 100}px` }} />
             ))}
+          </div>
+        ) : isError && !tags ? (
+          <div className="py-20 text-center border border-border/30 rounded-2xl bg-secondary/10" role="alert">
+            <div className="w-14 h-14 rounded-full bg-secondary/50 flex items-center justify-center mx-auto mb-4">
+              <Tags className="w-6 h-6 text-muted-foreground/40" />
+            </div>
+            <p className="text-sm font-medium text-foreground mb-1">Tags couldn’t be loaded.</p>
+            <p className="text-xs text-muted-foreground mb-5">The archive may be temporarily unavailable. Your data hasn’t been changed.</p>
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              disabled={isFetching}
+              className="inline-flex items-center gap-2 h-9 px-4 text-xs font-medium text-primary border border-primary/30 hover:border-primary/60 rounded-lg transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3 h-3 ${isFetching ? "animate-spin" : ""}`} />
+              Try again
+            </button>
           </div>
         ) : sorted.length > 0 ? (
           <div className="flex flex-wrap gap-2 items-baseline">
