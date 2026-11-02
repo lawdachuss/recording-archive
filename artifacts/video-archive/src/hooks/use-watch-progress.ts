@@ -23,10 +23,15 @@ export function useWatchProgress({ video, durationSeconds, isActive }: WatchProg
   const unmountedRef = useRef(false);
   const estimatedDurationMs = (durationSeconds ?? 600) * 1000;
 
+  useEffect(() => {
+    totalMsRef.current = 0;
+    lastActiveAtRef.current = null;
+  }, [video?.id]);
+
   const syncProgress = useCallback(() => {
     if (!video?.id || !user) return;
     const now = Date.now();
-    if (lastActiveAtRef.current !== null && !document.hidden) {
+    if (lastActiveAtRef.current !== null) {
       totalMsRef.current += Math.max(0, now - lastActiveAtRef.current);
       lastActiveAtRef.current = now;
     } else {
