@@ -216,7 +216,7 @@ async function networkFirstWithCache(request) {
     const cacheControl = response.headers.get("cache-control") || "";
     const vary = response.headers.get("vary") || "";
     const isCacheable =
-      !/\\b(?:private|no-store)\\b/i.test(cacheControl) &&
+      !/\b(?:private|no-store)\b/i.test(cacheControl) &&
       vary.trim() !== "*";
 
     if (response.ok && isCacheable) {
@@ -262,7 +262,7 @@ self.addEventListener("fetch", (event) => {
   // so a later session could otherwise receive another session's stale result.
   const isSensitiveApiRequest =
     request.headers.has("authorization") ||
-    /^\\/api\\/(?:user|admin)(?:\\/|$)/.test(url.pathname) ||
+    /^\/api\/(?:user|admin)(?:\/|$)/.test(url.pathname) ||
     url.pathname.startsWith("/api/recordings/recommendations");
   const isApiRequest =
     url.pathname.startsWith("/api/") &&
