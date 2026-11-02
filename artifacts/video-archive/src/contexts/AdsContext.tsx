@@ -10,6 +10,7 @@ import {
 } from "react";
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { getSupabase } from "@/lib/supabase";
+import { safeExternalUrl } from "@/lib/safe-url";
 import { resolveApiPath } from "@/lib/api-base";
 import {
   bareUrlToMarkup,
@@ -176,7 +177,7 @@ export function AdsProvider({ children }: { children: ReactNode }) {
         setStripCash({
           configured: Boolean(d.configured),
           verified: Boolean(d.verified),
-          smartlink: typeof d.smartlink === "string" && d.smartlink ? d.smartlink : null,
+          smartlink: typeof d.smartlink === "string" ? safeExternalUrl(d.smartlink) : null,
         });
       })
       .catch(() => {
@@ -296,22 +297,19 @@ export function AdsProvider({ children }: { children: ReactNode }) {
     const pool: string[] = [];
     if (dbRows) {
       for (const r of dbRows) {
-        if (
-          r.slot === "direct-link" &&
-          r.enabled &&
-          /^https?:\/\/\S+$/i.test(r.content.trim())
-        ) {
-          pool.push(r.content.trim());
-        }
+        if (r.slot !== "direct-link" || !r.enabled) continue;
+        const safe = safeExternalUrl(r.content);
+        if (safe) pool.push(safe);
       }
     } else {
-      const fileLink = getDirectLink();
+      const fileLink = safeExternalUrl(getDirectLink() ?? "");
       if (fileLink) pool.push(fileLink);
     }
     // StripCash smartlink rotates into the same pool (its own zone switch);
     // in database mode it also keeps the CTA alive when no direct-link rows exist.
     if (settings.placements.stripcash !== false && stripcash?.smartlink) {
-      pool.push(stripcash.smartlink);
+      const safe = safeExternalUrl(stripcash.smartlink);
+      if (safe) pool.push(safe);
     }
     if (pool.length === 0) return null;
     return pool[Math.floor(Math.random() * pool.length)];
