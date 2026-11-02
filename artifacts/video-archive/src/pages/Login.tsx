@@ -130,7 +130,6 @@ export default function Login() {
                 type="button"
                 onClick={() => setShowPw((v) => !v)}
                 aria-label={showPw ? "Hide password" : "Show password"}
-                aria-pressed={showPw}
                 aria-controls="login-password"
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground"
               >
