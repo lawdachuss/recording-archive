@@ -20,6 +20,7 @@
  */
 import type { AdRow } from "../contexts/AdsContext";
 import { getPrerollFileUrls } from "./ad-creatives";
+import { safeExternalUrl } from "./safe-url";
 
 /** Skip button appears after this many ms (industry-standard 5s). */
 export const PREROLL_SKIP_AFTER_MS = 5_000;
@@ -30,8 +31,6 @@ export const PREROLL_START_TIMEOUT_MS = 10_000;
 export type PrerollCreative =
   | { type: "video"; url: string }
   | { type: "html"; html: string };
-
-const URL_RE = /^https?:\/\/\S+$/i;
 
 /**
  * Pick one preroll creative from the live rows (or the file fallback when
@@ -44,14 +43,18 @@ export function pickPreroll(rows: readonly AdRow[] | null): PrerollCreative | nu
     for (const row of rows) {
       if (row.slot !== "preroll" || !row.enabled) continue;
       const content = row.content.trim();
-      if (row.kind === "url" && URL_RE.test(content)) {
-        pool.push({ type: "video", url: content });
+      if (row.kind === "url") {
+        const safeUrl = safeExternalUrl(content);
+        if (safeUrl) pool.push({ type: "video", url: safeUrl });
       } else if (row.kind === "html" && content) {
         pool.push({ type: "html", html: content });
       }
     }
   } else {
-    for (const url of getPrerollFileUrls()) pool.push({ type: "video", url });
+    for (const url of getPrerollFileUrls()) {
+      const safeUrl = safeExternalUrl(url);
+      if (safeUrl) pool.push({ type: "video", url: safeUrl });
+    }
   }
   if (pool.length === 0) return null;
   return pool[Math.floor(Math.random() * pool.length)];
