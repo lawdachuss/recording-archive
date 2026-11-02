@@ -42,7 +42,7 @@ import {
   AlertCircle, ArrowLeft, Maximize2, Minimize2,
   User, Clapperboard, ThumbsUp, ThumbsDown, Bookmark, Share2,
   Check, Server, Download, Clock, Play, Code2, ListVideo, Shuffle,
-  FolderPlus, Plus, ChevronDown, ExternalLink, LogIn, CheckCircle,
+  FolderPlus, Plus, ChevronDown, ExternalLink, LogIn, CheckCircle, RefreshCw,
 } from "lucide-react";
 
 function useFullscreen(ref: React.RefObject<HTMLDivElement | null>) {
