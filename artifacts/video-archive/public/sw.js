@@ -2,7 +2,7 @@
 // v9: removed dead staleWhileRevalidate handler (mediaCacheFirst covers it)
 
 const IMAGE_CACHE = "vault-images-v7";
-const API_CACHE = "vault-api-v1";
+const API_CACHE = "vault-api-v2";
 const IMAGE_MAX_ENTRIES = 10000;
 const API_TTL = 5 * 60_000; // 5 minutes — API data changes more often than images
 
@@ -62,17 +62,17 @@ self.addEventListener("activate", (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter(
-            (key) =>
+          .filter((key) => {
+            const isOldImageCache =
               (key.startsWith("vault-img-") || key.startsWith("vault-images-")) &&
-              // Never purge the cache this worker is currently USING. The name
-              // is versioned ("vault-images-v7"), so it matches the
-              // "vault-images-" prefix too — without this guard every SW
-              // version bump wiped all 10k live thumbnail entries, and since
-              // install/activate call skipWaiting() + clients.claim() the
-              // wipe landed on the very first page load after each deploy.
-              key !== IMAGE_CACHE,
-          )
+              // Never purge the image cache this worker is currently using.
+              key !== IMAGE_CACHE;
+            // Previous API cache versions could contain user-specific JSON.
+            // Remove them when this worker activates so the safer policy starts
+            // with an empty cache instead of inheriting old entries.
+            const isOldApiCache = key.startsWith("vault-api-") && key !== API_CACHE;
+            return isOldImageCache || isOldApiCache;
+          })
           .map((key) => caches.delete(key)),
       ),
     ).then(() => self.clients.claim()),
@@ -213,8 +213,14 @@ async function networkFirstWithCache(request) {
   const cache = await caches.open(API_CACHE);
   try {
     const response = await fetch(request, { cache: "no-cache" });
-    if (response.ok) {
-      // Clone and cache a copy (non-blocking)
+    const cacheControl = response.headers.get("cache-control") || "";
+    const vary = response.headers.get("vary") || "";
+    const isCacheable =
+      !/\\b(?:private|no-store)\\b/i.test(cacheControl) &&
+      vary.trim() !== "*";
+
+    if (response.ok && isCacheable) {
+      // Clone and cache only responses that explicitly permit shared caching.
       const tagged = new Response(response.clone().body, {
         status: response.status,
         headers: new Headers(response.headers),
@@ -224,10 +230,16 @@ async function networkFirstWithCache(request) {
     }
     return response;
   } catch {
-    // Network failed — serve from cache if available
+    // Offline fallback is deliberately short-lived. Never resurrect stale API
+    // snapshots indefinitely, and discard legacy/untagged entries.
     const cached = await cache.match(request);
-    if (cached) return cached;
-    // Return a simple JSON error so the app can handle it gracefully
+    if (cached) {
+      const cachedAt = Number(cached.headers.get("sw-cached-at") || 0);
+      const age = Date.now() - cachedAt;
+      if (cachedAt > 0 && age >= 0 && age <= API_TTL) return cached;
+      await cache.delete(request);
+    }
+    // Return a simple JSON error so the app can handle it gracefully.
     return new Response(JSON.stringify({ error: "offline" }), {
       status: 503,
       headers: { "Content-Type": "application/json" },
@@ -244,13 +256,20 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
 
-  // API requests: network-first with cache fallback (for offline/slow)
+  // API requests: network-first with cache fallback (for offline/slow).
+  // Never cache bearer-authenticated or user/admin/personalized endpoints:
+  // Cache API keys are URL-based unless the response varies on Authorization,
+  // so a later session could otherwise receive another session's stale result.
+  const isSensitiveApiRequest =
+    request.headers.has("authorization") ||
+    /^\\/api\\/(?:user|admin)(?:\\/|$)/.test(url.pathname) ||
+    url.pathname.startsWith("/api/recordings/recommendations");
   const isApiRequest =
     url.pathname.startsWith("/api/") &&
     !url.pathname.endsWith("/api/media") &&
     request.headers.get("accept")?.includes("application/json");
 
-  if (isApiRequest) {
+  if (isApiRequest && !isSensitiveApiRequest) {
     event.respondWith(networkFirstWithCache(request));
     return;
   }
