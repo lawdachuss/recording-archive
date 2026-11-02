@@ -130,6 +130,52 @@ describe("service-worker API cache privacy and freshness", () => {
     expect(cache.put).not.toHaveBeenCalled();
   });
 
+  it("purges an old public snapshot when the server later marks the response private", async () => {
+    const now = Date.now();
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      call += 1;
+      if (call === 1) {
+        return new Response("public", { headers: { "cache-control": "public" } });
+      }
+      if (call === 2) {
+        return new Response("private", { headers: { "cache-control": "private, no-store" } });
+      }
+      throw new TypeError("offline");
+    });
+    const { fetchHandler, cache, entries } = bootWorker(fetchImpl, now);
+    const request = new Request("https://vault.test/api/recordings", {
+      headers: { accept: "application/json" },
+    });
+
+    await dispatchFetch(fetchHandler, request)!;
+    await Promise.resolve();
+    expect(entries.has(request.url)).toBe(true);
+
+    const privateResponse = await dispatchFetch(fetchHandler, request)!;
+    expect(await privateResponse.text()).toBe("private");
+    expect(cache.delete).toHaveBeenCalledWith(request);
+    expect(entries.has(request.url)).toBe(false);
+
+    const offlineResponse = await dispatchFetch(fetchHandler, request)!;
+    expect(offlineResponse.status).toBe(503);
+  });
+
+  it("does not cache responses that require revalidation", async () => {
+    for (const cacheControl of ["no-cache", "must-revalidate", "public, max-age=0"]) {
+      const fetchImpl = vi.fn(async () =>
+        new Response("must-revalidate", { headers: { "cache-control": cacheControl } }),
+      );
+      const { fetchHandler, cache } = bootWorker(fetchImpl);
+      const request = new Request("https://vault.test/api/recordings", {
+        headers: { accept: "application/json" },
+      });
+      await dispatchFetch(fetchHandler, request)!;
+      await Promise.resolve();
+      expect(cache.put).not.toHaveBeenCalled();
+    }
+  });
+
   it("serves a fresh cached public response while offline", async () => {
     const now = Date.now();
     const fetchImpl = vi.fn(async () => {
