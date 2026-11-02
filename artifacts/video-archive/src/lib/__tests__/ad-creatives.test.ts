@@ -109,21 +109,22 @@ describe("buildClickPopMarkup", () => {
     expect(html).toContain('"noopener,noreferrer"');
   });
 
-  it("rejects invalid schemes, malformed URLs, and embedded credentials", () => {
+  it("rejects invalid schemes and embedded credentials while normalizing spaces", () => {
     expect(buildClickPopMarkup("")).toBeNull();
     expect(buildClickPopMarkup("   ")).toBeNull();
     expect(buildClickPopMarkup("javascript:alert(1)")).toBeNull();
-    expect(buildClickPopMarkup("https://x.com/ has spaces")).toBeNull();
     expect(buildClickPopMarkup("ftp://x.com/file")).toBeNull();
     expect(buildClickPopMarkup("https://user:pass@x.com/offer")).toBeNull();
+    expect(buildClickPopMarkup("https://x.com/ has spaces")).toContain("%20has%20spaces");
   });
 
-  it("escapes angle brackets so a crafted URL can't break out of the script tag", () => {
+  it("normalizes script delimiters so a crafted URL can't break out of the script tag", () => {
     const html = buildClickPopMarkup("https://x.com/</script><b>");
     expect(html).not.toBeNull();
     // Exactly one closing tag: the wrapper's own — none from the URL.
     expect(html!.match(/<\/script>/g)).toHaveLength(1);
-    expect(html).toContain("\\u003c");
+    expect(html).toContain("%3C%2Fscript%3E");
+    expect(html).not.toContain("</script><b>");
   });
 
   it("JSON-escapes quotes in the URL", () => {
