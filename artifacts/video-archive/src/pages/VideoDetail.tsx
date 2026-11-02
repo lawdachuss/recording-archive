@@ -275,8 +275,6 @@ export default function VideoDetail() {
   const { data: video, isLoading, isError } = useGetRecording(id || "", {
     query: { enabled: !!id, queryKey: getGetRecordingQueryKey(id || "") },
   });
-  // Track watch progress (time spent, resume position, completion %)
-  useWatchProgress({ video, durationSeconds: video?.duration });
 
   // Playback queue (Playlists → Play all): position is derived from the route,
   // so deep links, back/forward and manual URL edits all stay in sync.
@@ -494,6 +492,9 @@ export default function VideoDetail() {
 
   const servers = deriveServers(video?.embed_url, video?.links);
   const currentServer = servers[activeServer] ?? servers[0];
+  
+  // Count estimated watch time only after the in-page player is launched.
+  useWatchProgress({ video, durationSeconds: video?.duration, isActive: videoStarted && currentServer?.type === "iframe" });
 
   const posterUrl = video?.sprite_url || video?.thumbnail_url;
 
