@@ -109,12 +109,13 @@ describe("buildClickPopMarkup", () => {
     expect(html).toContain('"noopener,noreferrer"');
   });
 
-  it("rejects anything that isn't a bare http(s) URL", () => {
+  it("rejects invalid schemes, malformed URLs, and embedded credentials", () => {
     expect(buildClickPopMarkup("")).toBeNull();
     expect(buildClickPopMarkup("   ")).toBeNull();
     expect(buildClickPopMarkup("javascript:alert(1)")).toBeNull();
     expect(buildClickPopMarkup("https://x.com/ has spaces")).toBeNull();
     expect(buildClickPopMarkup("ftp://x.com/file")).toBeNull();
+    expect(buildClickPopMarkup("https://user:pass@x.com/offer")).toBeNull();
   });
 
   it("escapes angle brackets so a crafted URL can't break out of the script tag", () => {
