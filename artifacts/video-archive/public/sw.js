@@ -215,9 +215,10 @@ async function networkFirstWithCache(request) {
     const response = await fetch(request, { cache: "no-cache" });
     const cacheControl = response.headers.get("cache-control") || "";
     const vary = response.headers.get("vary") || "";
-    const isCacheable =
-      !/\b(?:private|no-store)\b/i.test(cacheControl) &&
-      vary.trim() !== "*";
+    const requiresRevalidation =
+      /\b(?:private|no-store|no-cache|must-revalidate)\b/i.test(cacheControl) ||
+      /(?:^|,)\s*max-age\s*=\s*0(?:,|$)/i.test(cacheControl);
+    const isCacheable = !requiresRevalidation && vary.trim() !== "*";
 
     if (response.ok && isCacheable) {
       // Clone and cache only responses that explicitly permit shared caching.
@@ -227,6 +228,10 @@ async function networkFirstWithCache(request) {
       });
       tagged.headers.set("sw-cached-at", String(Date.now()));
       cache.put(request, tagged).catch(() => {});
+    } else if (!isCacheable) {
+      // If a response changes from public to private/no-cache, remove any
+      // earlier public snapshot so a later offline request cannot revive it.
+      await cache.delete(request).catch(() => {});
     }
     return response;
   } catch {
