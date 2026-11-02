@@ -42,7 +42,7 @@ import {
   AlertCircle, ArrowLeft, Maximize2, Minimize2,
   User, Clapperboard, ThumbsUp, ThumbsDown, Bookmark, Share2,
   Check, Server, Download, Clock, Play, Code2, ListVideo, Shuffle,
-  FolderPlus, Plus, ChevronDown, ExternalLink, LogIn, CheckCircle,
+  FolderPlus, Plus, ChevronDown, ExternalLink, LogIn, CheckCircle, RefreshCw,
 } from "lucide-react";
 
 function useFullscreen(ref: React.RefObject<HTMLDivElement | null>) {
@@ -272,7 +272,7 @@ export default function VideoDetail() {
   const REC_PAGE_SIZE = 12;
   const queryClient = useQueryClient();
   const recentlyWatched = useRecentlyWatched();
-  const { data: video, isLoading, isError } = useGetRecording(id || "", {
+  const { data: video, isLoading, isError, refetch: retryRecording } = useGetRecording(id || "", {
     query: { enabled: !!id, queryKey: getGetRecordingQueryKey(id || "") },
   });
 
@@ -710,10 +710,19 @@ export default function VideoDetail() {
       <Layout>
         <div className="container mx-auto px-4 sm:px-6 py-24 text-center">
           <AlertCircle className="w-10 h-10 text-muted-foreground/40 mx-auto mb-5" />
-          <h1 className="text-lg font-bold mb-2">Recording not found</h1>
+          <h1 className="text-lg font-bold mb-2">Couldn&apos;t load this recording</h1>
           <p className="text-sm text-muted-foreground mb-6">
-            This video doesn&apos;t exist or was removed.
+            It may have been removed, or there may be a temporary connection issue. Try again.
           </p>
+          <div className="mb-6">
+            <button
+              onClick={() => void retryRecording()}
+              className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-semibold border border-primary/40 text-primary hover:border-primary/70 transition-colors rounded-md"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Try again
+            </button>
+          </div>
           {deadNext && (
             <div className="mb-6">
               <button
