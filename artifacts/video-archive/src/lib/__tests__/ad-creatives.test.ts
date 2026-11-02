@@ -90,7 +90,7 @@ describe("bareUrlToMarkup", () => {
     expect(bareUrlToMarkup("data:text/html,<script>alert(1)</script>", 300, 100)).toBeNull();
   });
 
-  it("returns null only for an empty input", () => {
+  it("returns null for empty input", () => {
     expect(bareUrlToMarkup("", 300, 100)).toBeNull();
   });
 });
