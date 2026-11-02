@@ -295,6 +295,7 @@ export default function CollectionDetail() {
                 <input
                   autoFocus
                   type="text"
+                  aria-label="Playlist name"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                   onKeyDown={(e) => {
@@ -304,10 +305,20 @@ export default function CollectionDetail() {
                   maxLength={80}
                   className="h-9 bg-background border border-primary/50 rounded-sm px-3 text-sm font-bold outline-none flex-1 max-w-xs"
                 />
-                <button onClick={handleRename} className="text-green-500 hover:text-green-400 transition-colors">
+                <button
+                  onClick={handleRename}
+                  className="text-green-500 hover:text-green-400 transition-colors"
+                  aria-label="Save playlist name"
+                  title="Save playlist name"
+                >
                   <Check className="w-4 h-4" />
                 </button>
-                <button onClick={() => setEditing(false)} className="text-muted-foreground hover:text-foreground transition-colors">
+                <button
+                  onClick={() => setEditing(false)}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Cancel renaming"
+                  title="Cancel"
+                >
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -318,6 +329,7 @@ export default function CollectionDetail() {
                   <button
                     onClick={() => { setEditing(true); setEditName(playlistName); }}
                     className="text-muted-foreground hover:text-foreground transition-colors"
+                    aria-label="Rename playlist"
                     title="Rename playlist"
                   >
                     <Pencil className="w-3.5 h-3.5" />
@@ -331,6 +343,7 @@ export default function CollectionDetail() {
                 <input
                   autoFocus
                   type="text"
+                  aria-label="Playlist description"
                   value={editDesc}
                   onChange={(e) => setEditDesc(e.target.value)}
                   onKeyDown={(e) => {
@@ -341,10 +354,20 @@ export default function CollectionDetail() {
                   placeholder="Description (optional)"
                   className="h-8 bg-background border border-primary/50 rounded-sm px-2.5 text-sm outline-none flex-1 max-w-sm"
                 />
-                <button onClick={handleDescSave} className="text-green-500 hover:text-green-400 transition-colors" title="Save description">
+                <button
+                  onClick={handleDescSave}
+                  className="text-green-500 hover:text-green-400 transition-colors"
+                  aria-label="Save description"
+                  title="Save description"
+                >
                   <Check className="w-4 h-4" />
                 </button>
-                <button onClick={() => setEditingDesc(false)} className="text-muted-foreground hover:text-foreground transition-colors" title="Cancel">
+                <button
+                  onClick={() => setEditingDesc(false)}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Cancel editing description"
+                  title="Cancel"
+                >
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -477,6 +500,7 @@ export default function CollectionDetail() {
                         <button
                           onClick={() => handleRemove(rec.id)}
                           className="w-6 h-6 flex items-center justify-center bg-black/40 backdrop-blur-sm ring-1 ring-white/10 text-white/60 hover:text-red-400 hover:bg-red-600/60 hover:ring-red-600/30 transition-all rounded-lg opacity-0 group-hover/card:opacity-100 cursor-pointer"
+                          aria-label="Remove from playlist"
                           title="Remove from playlist"
                         >
                           <Trash2 className="w-3 h-3" />
