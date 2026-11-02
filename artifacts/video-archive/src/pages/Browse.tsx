@@ -301,7 +301,7 @@ export default function Browse() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    const term = search.trim().replace(/\\s+/g, " ");
+    const term = search.trim().replace(/\s+/g, " ");
     setSearch(term);
     if (term) setRecentSearches(rememberSearch(term));
     setShowRecentSearches(false);
