@@ -384,9 +384,9 @@ export function injectGlobalAd(file: string, creative?: string): string | null {
  * script tag. Returns null for anything that isn't a bare http(s) URL.
  */
 export function buildClickPopMarkup(url: string): string | null {
-  const u = url.trim();
-  if (!/^https?:\/\/\S+$/i.test(u)) return null;
-  const serialized = JSON.stringify(u).replace(/</g, "\\u003c");
+  const safeUrl = safeExternalUrl(url);
+  if (!safeUrl) return null;
+  const serialized = JSON.stringify(safeUrl).replace(/</g, "\\u003c");
   return (
     "<script>(function(){var u=" +
     serialized +
