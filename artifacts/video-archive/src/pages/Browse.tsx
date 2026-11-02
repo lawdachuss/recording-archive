@@ -38,6 +38,8 @@ import {
   Trash2,
   Clapperboard,
   Clock3,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import { AppPagination } from "@/components/ui/app-pagination";
 import {
