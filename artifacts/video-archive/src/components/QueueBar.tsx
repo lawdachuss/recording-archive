@@ -1,10 +1,24 @@
+import { memo } from "react";
 import { Link, useLocation } from "wouter";
 import { OptimizedImage } from "@/components/ui/optimized-image";
 import { proxyUrl } from "@/lib/proxy-url";
 import { formatDuration } from "@/lib/formatters";
-import { clearQueue, nextQueueItem, queueHref, setQueueLoop, type PlayQueue } from "@/lib/play-queue";
+import {
+  clearQueue,
+  nextQueueItem,
+  queueHref,
+  setQueueLoop,
+  type PlayQueue,
+} from "@/lib/play-queue";
 import { trackActivity } from "@/lib/rum";
-import { ListVideo, ChevronLeft, ChevronRight, X, Clapperboard, Repeat } from "lucide-react";
+import {
+  ListVideo,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  Clapperboard,
+  Repeat,
+} from "lucide-react";
 
 interface QueueBarProps {
   queue: PlayQueue;
@@ -20,7 +34,10 @@ interface QueueBarProps {
  * metadata duration) that auto-advances near the estimated end. The bar stays
  * as the manual path: jump, replay, or bail out of the queue.
  */
-export function QueueBar({ queue, index }: QueueBarProps) {
+export const QueueBar = memo(function QueueBar({
+  queue,
+  index,
+}: QueueBarProps) {
   const [, setLocation] = useLocation();
   const items = queue.items;
   const loop = queue.loop === true;
@@ -36,7 +53,9 @@ export function QueueBar({ queue, index }: QueueBarProps) {
     // target === index happens in one-item looping queues (next/prev resolve
     // to the item itself) — navigating would remount nothing.
     if (!item || target === index) return;
-    trackActivity("queue_nav", { meta: { queue_title: queue.title, index: target } });
+    trackActivity("queue_nav", {
+      meta: { queue_title: queue.title, index: target },
+    });
     // Queue-driven jump: mark the arrival so the player auto-starts (and
     // replays) instead of parking on the click-to-play poster.
     sessionStorage.setItem("vauto", item.id);
@@ -45,7 +64,9 @@ export function QueueBar({ queue, index }: QueueBarProps) {
   };
 
   const toggleLoop = () => {
-    trackActivity("queue_loop", { meta: { queue_title: queue.title, loop: !loop } });
+    trackActivity("queue_loop", {
+      meta: { queue_title: queue.title, loop: !loop },
+    });
     setQueueLoop(!loop);
   };
 
@@ -57,8 +78,13 @@ export function QueueBar({ queue, index }: QueueBarProps) {
           <ListVideo className="w-3.5 h-3.5 text-primary" />
         </div>
         <div className="leading-tight min-w-0">
-          <p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-semibold">Queue</p>
-          <p className="text-xs font-semibold truncate max-w-[130px] sm:max-w-[220px]" title={queue.title}>
+          <p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-semibold">
+            Queue
+          </p>
+          <p
+            className="text-xs font-semibold truncate max-w-[130px] sm:max-w-[220px]"
+            title={queue.title}
+          >
             {queue.title}
           </p>
         </div>
@@ -93,10 +119,14 @@ export function QueueBar({ queue, index }: QueueBarProps) {
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <p className="text-[9px] uppercase tracking-wider text-muted-foreground/60">Up next</p>
+            <p className="text-[9px] uppercase tracking-wider text-muted-foreground/60">
+              Up next
+            </p>
             <p className="text-xs font-semibold truncate group-hover:text-primary transition-colors">
               {next.username}
-              {next.room_title && next.room_title !== next.username ? ` · ${next.room_title}` : ""}
+              {next.room_title && next.room_title !== next.username
+                ? ` · ${next.room_title}`
+                : ""}
             </p>
           </div>
           {next.duration != null && next.duration > 0 && (
@@ -151,7 +181,9 @@ export function QueueBar({ queue, index }: QueueBarProps) {
         <span className="w-px h-4 bg-border/40 mx-1" />
         <button
           onClick={() => {
-            trackActivity("queue_clear", { meta: { queue_title: queue.title } });
+            trackActivity("queue_clear", {
+              meta: { queue_title: queue.title },
+            });
             clearQueue();
           }}
           className="w-7 h-7 flex items-center justify-center border border-border/40 text-muted-foreground/50 hover:text-destructive hover:border-destructive/40 transition-all rounded-[3px]"
@@ -163,4 +195,4 @@ export function QueueBar({ queue, index }: QueueBarProps) {
       </div>
     </div>
   );
-}
+});

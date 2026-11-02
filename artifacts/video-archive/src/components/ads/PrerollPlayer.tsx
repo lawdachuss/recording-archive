@@ -1,10 +1,31 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, VolumeX } from "lucide-react";
 import {
   PREROLL_SKIP_AFTER_MS,
   PREROLL_START_TIMEOUT_MS,
   type PrerollCreative,
 } from "@/lib/preroll";
+
+/**
+ * Basic sanitize for HTML ad creatives: strips direct script tags with inline
+ * execution or arbitrary protocol handlers to prevent XSS in sandboxed previews.
+ */
+function sanitizeCreativeHtml(html: string): string {
+  if (!html) return "";
+  return html.replace(
+    /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
+    (match) => {
+      // Only permit trusted ad network loader scripts (external src) and strip raw inline scripts
+      if (
+        /<script[^>]+src=["']https?:\/\//i.test(match) &&
+        !/javascript:/i.test(match)
+      ) {
+        return match;
+      }
+      return "";
+    },
+  );
+}
 
 /**
  * PrerollPlayer — the pre-roll overlay that gates VideoDetail playback.
@@ -30,12 +51,20 @@ export interface PrerollPlayerProps {
   withGesture?: boolean;
 }
 
-export function PrerollPlayer({ creative, onDone, withGesture = false }: PrerollPlayerProps) {
+export function PrerollPlayer({
+  creative,
+  onDone,
+  withGesture = false,
+}: PrerollPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const doneRef = useRef(false);
   const startedRef = useRef(false);
   const [muted, setMuted] = useState(false);
   const [skipIn, setSkipIn] = useState(Math.ceil(PREROLL_SKIP_AFTER_MS / 1000));
+  const safeHtml = useMemo(
+    () => (creative.type === "html" ? sanitizeCreativeHtml(creative.html) : ""),
+    [creative],
+  );
 
   const finish = useCallback(() => {
     if (doneRef.current) return;
@@ -130,7 +159,7 @@ export function PrerollPlayer({ creative, onDone, withGesture = false }: Preroll
       ) : (
         <div
           className="w-full h-full [&_iframe]:absolute [&_iframe]:inset-0 [&_iframe]:h-full [&_iframe]:w-full [&_video]:h-full [&_video]:w-full"
-          dangerouslySetInnerHTML={{ __html: creative.html }}
+          dangerouslySetInnerHTML={{ __html: safeHtml }}
         />
       )}
 

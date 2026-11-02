@@ -16,48 +16,23 @@ import { ListVideo, Plus, Check, Clock, X } from "lucide-react";
  * watched-storage / play-queue).
  */
 
-export interface AddTarget {
-  id: string;
-  username: string;
-  filename?: string | null;
-  room_title?: string | null;
-  thumbnail_url?: string | null;
-  preview_url?: string | null;
-  sprite_url?: string | null;
-  resolution?: string | null;
-  timestamp?: string | null;
-}
+import {
+  openAddToCollection,
+  closeAddToCollection,
+  subscribe,
+  getDialogState,
+  type AddTarget,
+} from "@/lib/collection-dialog-store";
 
-interface DialogState {
-  open: boolean;
-  target: AddTarget | null;
-}
-
-let state: DialogState = { open: false, target: null };
-const listeners = new Set<() => void>();
-
-function emit() {
-  for (const fn of listeners) fn();
-}
-
-export function openAddToCollection(target: AddTarget): void {
-  state = { open: true, target };
-  emit();
-}
-
-export function closeAddToCollection(): void {
-  state = { open: false, target: null };
-  emit();
-}
-
-function subscribe(fn: () => void): () => void {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
-}
+export { openAddToCollection, closeAddToCollection, type AddTarget };
 
 /** Mount ONCE near the app root (App.tsx). Renders nothing while closed. */
 export function AddToCollectionDialog() {
-  const { open, target } = useSyncExternalStore(subscribe, () => state, () => state);
+  const { open, target } = useSyncExternalStore(
+    subscribe,
+    getDialogState,
+    getDialogState,
+  );
   const { user, loading } = useAuth();
   const queryClient = useQueryClient();
   const [newName, setNewName] = useState("");
@@ -100,11 +75,15 @@ export function AddToCollectionDialog() {
           target.id,
           JSON.stringify({ ...target, saved_at: new Date().toISOString() }),
         );
-        trackActivity("collection_item_add", { meta: { collection_id: colId, recording_id: target.id } });
+        trackActivity("collection_item_add", {
+          meta: { collection_id: colId, recording_id: target.id },
+        });
         setAdded(colId);
         queryClient.invalidateQueries({ queryKey: ["user", "collections"] });
         queryClient.invalidateQueries({ queryKey: ["public-playlists"] });
-        queryClient.invalidateQueries({ queryKey: ["public-playlist-items", colId] });
+        queryClient.invalidateQueries({
+          queryKey: ["public-playlist-items", colId],
+        });
       } catch {
         setError("Could not add — try again.");
       } finally {
@@ -119,8 +98,13 @@ export function AddToCollectionDialog() {
     setAddingTo("__wl");
     setError(null);
     try {
-      await userApi.addWatchLater(target.id, JSON.stringify({ ...target, saved_at: new Date().toISOString() }));
-      trackActivity("watch_later", { meta: { recording_id: target.id, action: "add" } });
+      await userApi.addWatchLater(
+        target.id,
+        JSON.stringify({ ...target, saved_at: new Date().toISOString() }),
+      );
+      trackActivity("watch_later", {
+        meta: { recording_id: target.id, action: "add" },
+      });
       setWlAdded(true);
       queryClient.invalidateQueries({ queryKey: ["user", "watch-later"] });
     } catch {
@@ -141,10 +125,14 @@ export function AddToCollectionDialog() {
         target.id,
         JSON.stringify({ ...target, saved_at: new Date().toISOString() }),
       );
-      trackActivity("collection_create", { meta: { collection_id: col.id, recording_id: target.id } });
+      trackActivity("collection_create", {
+        meta: { collection_id: col.id, recording_id: target.id },
+      });
       queryClient.invalidateQueries({ queryKey: ["user", "collections"] });
       queryClient.invalidateQueries({ queryKey: ["public-playlists"] });
-      queryClient.invalidateQueries({ queryKey: ["public-playlist-items", col.id] });
+      queryClient.invalidateQueries({
+        queryKey: ["public-playlist-items", col.id],
+      });
       setAdded(col.id);
       setNewName("");
     } catch {
@@ -168,7 +156,9 @@ export function AddToCollectionDialog() {
         aria-label="Add to collection"
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/40">
-          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Add to</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            Add to
+          </p>
           <button
             onClick={closeAddToCollection}
             className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
@@ -180,13 +170,19 @@ export function AddToCollectionDialog() {
 
         <div className="px-4 py-2.5 border-b border-border/30">
           <p className="text-sm font-semibold truncate">{target?.username}</p>
-          {target?.room_title && <p className="text-[11px] text-muted-foreground truncate">{target.room_title}</p>}
+          {target?.room_title && (
+            <p className="text-[11px] text-muted-foreground truncate">
+              {target.room_title}
+            </p>
+          )}
         </div>
 
         {!user ? (
           <div className="px-4 py-6 text-center">
             <p className="text-xs text-muted-foreground mb-4">
-              {loading ? "Checking sign-in…" : "Sign in to save recordings to collections."}
+              {loading
+                ? "Checking sign-in…"
+                : "Sign in to save recordings to collections."}
             </p>
             <Link
               href="/login"
@@ -209,11 +205,17 @@ export function AddToCollectionDialog() {
                 <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
               )}
               <span className="text-xs font-medium flex-1">Watch Later</span>
-              {addingTo === "__wl" && <span className="text-[10px] text-muted-foreground">adding…</span>}
+              {addingTo === "__wl" && (
+                <span className="text-[10px] text-muted-foreground">
+                  adding…
+                </span>
+              )}
             </button>
             <div className="mx-4 my-1 border-t border-border/30" />
             {isLoading ? (
-              <p className="px-4 py-3 text-xs text-muted-foreground">Loading collections…</p>
+              <p className="px-4 py-3 text-xs text-muted-foreground">
+                Loading collections…
+              </p>
             ) : (
               collections.map((col) => (
                 <button
@@ -227,9 +229,17 @@ export function AddToCollectionDialog() {
                   ) : (
                     <ListVideo className="w-4 h-4 text-muted-foreground shrink-0" />
                   )}
-                  <span className="text-xs font-medium flex-1 truncate">{col.name}</span>
-                  <span className="text-[10px] text-muted-foreground/50 shrink-0">{col.item_count ?? 0}</span>
-                  {addingTo === col.id && <span className="text-[10px] text-muted-foreground">adding…</span>}
+                  <span className="text-xs font-medium flex-1 truncate">
+                    {col.name}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground/50 shrink-0">
+                    {col.item_count ?? 0}
+                  </span>
+                  {addingTo === col.id && (
+                    <span className="text-[10px] text-muted-foreground">
+                      adding…
+                    </span>
+                  )}
                 </button>
               ))
             )}
@@ -257,7 +267,9 @@ export function AddToCollectionDialog() {
                 <Plus className="w-3.5 h-3.5" />
               </button>
             </div>
-            {error && <p className="px-4 pb-2 text-[11px] text-destructive">{error}</p>}
+            {error && (
+              <p className="px-4 pb-2 text-[11px] text-destructive">{error}</p>
+            )}
           </div>
         )}
       </div>

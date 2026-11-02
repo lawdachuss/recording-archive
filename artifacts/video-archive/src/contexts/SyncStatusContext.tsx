@@ -1,4 +1,11 @@
-import { createContext, useContext, useState, useCallback, useRef } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useRef,
+  useMemo,
+} from "react";
 import type {
   UseMutationOptions,
   UseMutationResult,
@@ -24,7 +31,11 @@ const SyncStatusContext = createContext<SyncStatusContextType | null>(null);
  *
  * Wrap your app with <SyncStatusProvider>.
  */
-export function SyncStatusProvider({ children }: { children: React.ReactNode }) {
+export function SyncStatusProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [pendingCount, setPendingCount] = useState(0);
   const countRef = useRef(0);
 
@@ -38,10 +49,18 @@ export function SyncStatusProvider({ children }: { children: React.ReactNode }) 
     setPendingCount(countRef.current);
   }, []);
 
+  const value = useMemo(
+    () => ({
+      pendingCount,
+      isSyncing: pendingCount > 0,
+      addPending,
+      removePending,
+    }),
+    [pendingCount, addPending, removePending],
+  );
+
   return (
-    <SyncStatusContext.Provider
-      value={{ pendingCount, isSyncing: pendingCount > 0, addPending, removePending }}
-    >
+    <SyncStatusContext.Provider value={value}>
       {children}
     </SyncStatusContext.Provider>
   );
@@ -53,7 +72,12 @@ export function SyncStatusProvider({ children }: { children: React.ReactNode }) 
 export function useSyncStatus(): SyncStatusContextType {
   const ctx = useContext(SyncStatusContext);
   if (!ctx) {
-    return { pendingCount: 0, isSyncing: false, addPending: () => {}, removePending: () => {} };
+    return {
+      pendingCount: 0,
+      isSyncing: false,
+      addPending: () => {},
+      removePending: () => {},
+    };
   }
   return ctx;
 }

@@ -1,20 +1,44 @@
 import { useMemo, useState, useEffect, useCallback, memo } from "react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
-import { getRecording, getGetRecordingQueryKey, listRelatedRecordings, getListRelatedRecordingsQueryKey, type Recording } from "@workspace/api-client-react";
-import { formatBytes, formatRelativeTime, formatViewers, formatDuration } from "@/lib/formatters";
+import {
+  getRecording,
+  getGetRecordingQueryKey,
+  listRelatedRecordings,
+  getListRelatedRecordingsQueryKey,
+  type Recording,
+} from "@workspace/api-client-react";
+import {
+  formatBytes,
+  formatRelativeTime,
+  formatViewers,
+  formatDuration,
+} from "@/lib/formatters";
 import { Eye, HardDrive, Clock, CheckCircle, FolderPlus } from "lucide-react";
-import { OptimizedImage, ImageUnavailable } from "@/components/ui/optimized-image";
+import {
+  OptimizedImage,
+  ImageUnavailable,
+} from "@/components/ui/optimized-image";
 import { useHoverPreview } from "@/hooks/use-hover-preview";
 import { useProgressiveImage } from "@/hooks/use-progressive-image";
 import { useCachedMediaSrc } from "@/hooks/use-cached-media-src";
 import { useConnectionConstrained } from "@/hooks/use-connection-quality";
 import { SpriteSlideshow } from "@/components/SpriteSlideshow";
 import { cn } from "@/lib/utils";
-import { proxyUrl, proxyImageUrl, proxySpriteUrl, catboxProxyUrl, markWsrvFailedForHost } from "@/lib/proxy-url";
+import {
+  proxyUrl,
+  proxyImageUrl,
+  proxySpriteUrl,
+  catboxProxyUrl,
+  markWsrvFailedForHost,
+} from "@/lib/proxy-url";
 import { getSpriteGrid } from "@/lib/sprite-grid";
-import { openAddToCollection } from "@/components/AddToCollectionDialog";
-import { buildPreviewFallbacks, buildThumbnailFallbacks, buildSpriteFallbacks } from "@/lib/mirrors";
+import { openAddToCollection } from "@/lib/collection-dialog-store";
+import {
+  buildPreviewFallbacks,
+  buildThumbnailFallbacks,
+  buildSpriteFallbacks,
+} from "@/lib/mirrors";
 import { prefetchRoute } from "@/lib/route-chunks";
 import { preloadRecordingMedia } from "@/lib/preload-sprite";
 import { dlog, debugEnabled } from "@/lib/debug";
@@ -71,7 +95,7 @@ function isUnreliablePreviewHost(url: string | null | undefined): boolean {
   try {
     const hostname = new URL(url, window.location.origin).hostname;
     return UNRELIABLE_PREVIEW_HOSTS.some(
-      (h) => hostname === h || hostname.endsWith(`.${h}`)
+      (h) => hostname === h || hostname.endsWith(`.${h}`),
     );
   } catch {
     return false;
@@ -97,7 +121,9 @@ function isStaticThumbnailUrl(url: string | null | undefined): boolean {
 function isAnimatedImageUrl(url: string | null | undefined): boolean {
   if (!url) return false;
   const ext = getExt(url);
-  return ext === ".webp" || ext === ".mp4_preview" || /\.mp4_preview$/i.test(url);
+  return (
+    ext === ".webp" || ext === ".mp4_preview" || /\.mp4_preview$/i.test(url)
+  );
 }
 
 // If a hover preview hasn't produced its first frame within this window,
@@ -116,17 +142,37 @@ interface VideoCardProps {
   progress?: number;
 }
 
-export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemove, showAdd, fetchPriority, isWatched, progress }: VideoCardProps) {
-
+export const VideoCard = memo(function VideoCard({
+  recording,
+  showRemove,
+  onRemove,
+  showAdd,
+  fetchPriority,
+  isWatched,
+  progress,
+}: VideoCardProps) {
   // Build mirror fallback URLs for preview, thumbnail, and sprite
-  const previewFallbacks = useMemo(() => buildPreviewFallbacks(recording), [recording.preview_url, recording.preview_mirrors]);
-  const thumbnailFallbacks = useMemo(() => buildThumbnailFallbacks(recording), [recording.thumbnail_url, recording.thumbnail_mirrors]);
-  const spriteFallbacks = useMemo(() => buildSpriteFallbacks(recording), [recording.sprite_url, recording.sprite_mirrors]);
+  const previewFallbacks = useMemo(
+    () => buildPreviewFallbacks(recording),
+    [recording.preview_url, recording.preview_mirrors],
+  );
+  const thumbnailFallbacks = useMemo(
+    () => buildThumbnailFallbacks(recording),
+    [recording.thumbnail_url, recording.thumbnail_mirrors],
+  );
+  const spriteFallbacks = useMemo(
+    () => buildSpriteFallbacks(recording),
+    [recording.sprite_url, recording.sprite_mirrors],
+  );
 
   const webpFallbacks = useMemo(() => {
-    return previewFallbacks.filter(url => {
+    return previewFallbacks.filter((url) => {
       const original = getOriginalUrl(url) ?? url;
-      return isAnimatedImageUrl(original) && !isStaticThumbnailUrl(original) && !isUnreliablePreviewHost(original);
+      return (
+        isAnimatedImageUrl(original) &&
+        !isStaticThumbnailUrl(original) &&
+        !isUnreliablePreviewHost(original)
+      );
     });
   }, [previewFallbacks]);
 
@@ -135,10 +181,18 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   const [thumbnailIndex, setThumbnailIndex] = useState(0);
   const [spriteIndex, setSpriteIndex] = useState(0);
 
-  const thumbnailUrl = useMemo(() => thumbnailFallbacks[thumbnailIndex] ? proxyImageUrl(thumbnailFallbacks[thumbnailIndex]) : null, [thumbnailFallbacks, thumbnailIndex]);
+  const thumbnailUrl = useMemo(
+    () =>
+      thumbnailFallbacks[thumbnailIndex]
+        ? proxyImageUrl(thumbnailFallbacks[thumbnailIndex])
+        : null,
+    [thumbnailFallbacks, thumbnailIndex],
+  );
   const previewUrl = useMemo(() => {
     if (webpFallbacks.length === 0) return null;
-    return proxyUrl(webpFallbacks[Math.min(previewIndex, webpFallbacks.length - 1)]);
+    return proxyUrl(
+      webpFallbacks[Math.min(previewIndex, webpFallbacks.length - 1)],
+    );
   }, [webpFallbacks, previewIndex]);
   const [spriteUseDirect, setSpriteUseDirect] = useState(false);
   const spriteUrl = useMemo(() => {
@@ -147,7 +201,10 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     if (spriteUseDirect) return raw;
     return proxySpriteUrl(raw);
   }, [spriteFallbacks, spriteIndex, spriteUseDirect]);
-  const spriteGrid = useMemo(() => getSpriteGrid(spriteFallbacks[spriteIndex] || null), [spriteFallbacks, spriteIndex]);
+  const spriteGrid = useMemo(
+    () => getSpriteGrid(spriteFallbacks[spriteIndex] || null),
+    [spriteFallbacks, spriteIndex],
+  );
 
   const isSlowConnection = useConnectionConstrained();
   const queryClient = useQueryClient();
@@ -163,11 +220,21 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
       .catch(() => {});
     void queryClient
       .ensureQueryData({
-        queryKey: getListRelatedRecordingsQueryKey({ id: recording.id, limit: 12 }),
-        queryFn: ({ signal }) => listRelatedRecordings({ id: recording.id, limit: 12 }, { signal }),
+        queryKey: getListRelatedRecordingsQueryKey({
+          id: recording.id,
+          limit: 12,
+        }),
+        queryFn: ({ signal }) =>
+          listRelatedRecordings({ id: recording.id, limit: 12 }, { signal }),
       })
       .then((related) => {
-        if (related && related.length > 0) preloadRecordingMedia(related, { immediate: true, spriteLimit: 4, skipThumbnails: true, skipPreviews: true });
+        if (related && related.length > 0)
+          preloadRecordingMedia(related, {
+            immediate: true,
+            spriteLimit: 4,
+            skipThumbnails: true,
+            skipPreviews: true,
+          });
       })
       .catch(() => {});
   }, [isSlowConnection, queryClient, recording.id]);
@@ -183,40 +250,43 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     preloadVideoUrl,
   } = useHoverPreview({ thumbnailUrl, previewUrl, spriteUrl });
 
-  const linkHandlers = useMemo(() => ({
-    ...hoverHandlers,
-    onMouseEnter: (e: React.MouseEvent) => {
-      hoverHandlers.onMouseEnter?.(e);
-      prefetchDetailPage();
-    },
-    onFocus: (e: React.FocusEvent) => {
-      hoverHandlers.onFocus?.(e);
-      prefetchDetailPage();
-    },
-  }), [hoverHandlers, prefetchDetailPage]);
+  const linkHandlers = useMemo(
+    () => ({
+      ...hoverHandlers,
+      onMouseEnter: (e: React.MouseEvent) => {
+        hoverHandlers.onMouseEnter?.(e);
+        prefetchDetailPage();
+      },
+      onFocus: (e: React.FocusEvent) => {
+        hoverHandlers.onFocus?.(e);
+        prefetchDetailPage();
+      },
+    }),
+    [hoverHandlers, prefetchDetailPage],
+  );
 
   const staticImage = thumbnailUrl;
   const hasStaticImage = !!staticImage;
-  const initials = useMemo(() => recording.username?.slice(0, 2).toUpperCase() ?? "??", [recording.username]);
+  const initials = useMemo(
+    () => recording.username?.slice(0, 2).toUpperCase() ?? "??",
+    [recording.username],
+  );
 
   const previewVideoSrc = useCachedMediaSrc(videoUrl);
 
   const [mediaFail, setMediaFail] = useState<"none" | "video" | "all">("none");
   const [previewReady, setPreviewReady] = useState(false);
+  const [spriteReady, setSpriteReady] = useState(false);
+  const [spriteFailed, setSpriteFailed] = useState(false);
+  const [videoProgress, setVideoProgress] = useState<number | null>(null);
+
+  // Consolidated reset when hover changes or preview/sprite URLs change
   useEffect(() => {
     setMediaFail("none");
     setPreviewReady(false);
+    setVideoProgress(null);
   }, [previewUrl]);
 
-  useEffect(() => {
-    if (!isHovered) {
-      setMediaFail("none");
-      setPreviewReady(false);
-    }
-  }, [isHovered]);
-
-  const [spriteReady, setSpriteReady] = useState(false);
-  const [spriteFailed, setSpriteFailed] = useState(false);
   useEffect(() => {
     setSpriteReady(false);
     setSpriteFailed(false);
@@ -224,15 +294,22 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
 
   useEffect(() => {
     if (!isHovered) {
+      setMediaFail("none");
+      setPreviewReady(false);
       setSpriteReady(false);
       setSpriteFailed(false);
+      setVideoProgress(null);
     }
   }, [isHovered]);
 
   const handleSpriteLoaded = useCallback(() => setSpriteReady(true), []);
   const handleSpriteError = useCallback(() => {
     const current = spriteFallbacks[spriteIndex];
-    if (current && !spriteUseDirect && (current.includes("catbox.moe") || current.includes("wsrv.nl"))) {
+    if (
+      current &&
+      !spriteUseDirect &&
+      (current.includes("catbox.moe") || current.includes("wsrv.nl"))
+    ) {
       markWsrvFailedForHost(current);
       setSpriteUseDirect(true);
       return;
@@ -241,29 +318,32 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
       setSpriteFailed(false);
       setSpriteReady(false);
       setSpriteUseDirect(false);
-      setSpriteIndex(i => i + 1);
+      setSpriteIndex((i) => i + 1);
     } else {
       setSpriteFailed(true);
     }
   }, [spriteIndex, spriteFallbacks, spriteUseDirect]);
 
-  const onPreviewReady = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
-    const v = e.currentTarget;
-    const rvfc = (
-      v as HTMLVideoElement & {
-        requestVideoFrameCallback?: (cb: () => void) => number;
+  const onPreviewReady = useCallback(
+    (e: React.SyntheticEvent<HTMLVideoElement>) => {
+      const v = e.currentTarget;
+      const rvfc = (
+        v as HTMLVideoElement & {
+          requestVideoFrameCallback?: (cb: () => void) => number;
+        }
+      ).requestVideoFrameCallback;
+      if (typeof rvfc === "function") {
+        try {
+          rvfc.call(v, () => setPreviewReady(true));
+          return;
+        } catch {
+          /* fall through to the eager path */
+        }
       }
-    ).requestVideoFrameCallback;
-    if (typeof rvfc === "function") {
-      try {
-        rvfc.call(v, () => setPreviewReady(true));
-        return;
-      } catch {
-        /* fall through to the eager path */
-      }
-    }
-    setPreviewReady(true);
-  }, []);
+      setPreviewReady(true);
+    },
+    [],
+  );
 
   const spriteAvailable = !!spriteUrl;
   const previewAvailable = !!previewUrl;
@@ -276,16 +356,41 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
   const isStaticThumb = isStaticThumbnailUrl(originalPreviewUrl);
   const isAnimatedImg = isAnimatedImageUrl(originalPreviewUrl);
   const previewExt = getExt(originalPreviewUrl ?? "");
-  const isRealVideo = previewExt === ".mp4" || previewExt === ".webm" || previewExt === ".mov";
+  const isRealVideo =
+    previewExt === ".mp4" || previewExt === ".webm" || previewExt === ".mov";
 
   const catboxWorkerUrl =
-    isCatboxPreview && isAnimatedImg && !isStaticThumb ? catboxProxyUrl(originalPreviewUrl) : null;
+    isCatboxPreview && isAnimatedImg && !isStaticThumb
+      ? catboxProxyUrl(originalPreviewUrl)
+      : null;
 
   const heavyPreviewEnabled = !isSlowConnection;
-  const showCatboxWebpImg = !!catboxWorkerUrl && heavyPreviewEnabled && usePreviewChain && showAnimatedImage && mediaFail === "none";
-  const showWebpImg = heavyPreviewEnabled && isAnimatedImg && !isStaticThumb && !isCatboxPreview && usePreviewChain && showAnimatedImage && mediaFail === "none";
-  const showVideoEl = heavyPreviewEnabled && isRealVideo && usePreviewChain && showVideo && mediaFail === "none";
-  const showImgFallback = heavyPreviewEnabled && isRealVideo && usePreviewChain && showAnimatedImage && mediaFail === "video";
+  const showCatboxWebpImg =
+    !!catboxWorkerUrl &&
+    heavyPreviewEnabled &&
+    usePreviewChain &&
+    showAnimatedImage &&
+    mediaFail === "none";
+  const showWebpImg =
+    heavyPreviewEnabled &&
+    isAnimatedImg &&
+    !isStaticThumb &&
+    !isCatboxPreview &&
+    usePreviewChain &&
+    showAnimatedImage &&
+    mediaFail === "none";
+  const showVideoEl =
+    heavyPreviewEnabled &&
+    isRealVideo &&
+    usePreviewChain &&
+    showVideo &&
+    mediaFail === "none";
+  const showImgFallback =
+    heavyPreviewEnabled &&
+    isRealVideo &&
+    usePreviewChain &&
+    showAnimatedImage &&
+    mediaFail === "video";
 
   const showSprite = isHovered && useSprite;
 
@@ -295,16 +400,6 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     showAnyWebpImg ? animatedImageUrl : null,
     showAnyWebpImg,
   );
-  const [videoProgress, setVideoProgress] = useState<number | null>(null);
-  useEffect(() => {
-    setVideoProgress(null);
-  }, [previewUrl]);
-  useEffect(() => {
-    if (!isHovered) setVideoProgress(null);
-  }, [isHovered]);
-  useEffect(() => {
-    setVideoProgress(null);
-  }, [mediaFail]);
 
   const hoverProgress: number | null =
     spriteProgressive.progress !== null ||
@@ -326,43 +421,60 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     ((useSprite && !spriteReady) || (usePreviewChain && !previewReady));
 
   useEffect(() => {
-    if (!debugEnabled()) return;
-    dlog("hoverpreview", "[VideoCard] branch", {
-      id: recording.id,
-      isHovered,
-      previewUrl,
-      spriteUrl,
-      isCatbox: isCatboxPreview,
-      isStaticThumb,
-      isAnimatedImg,
-      previewExt,
-      catboxWorkerUrl,
-      mediaFail,
-      previewReady,
-      spriteReady,
-      showSprite,
-      showWebpImg,
-      showVideoEl,
-      showImgFallback,
-      showLoadingBar,
-      usePreviewChain,
-      useSprite,
-    });
+    if (process.env.NODE_ENV !== "production" && debugEnabled()) {
+      dlog("hoverpreview", "[VideoCard] branch", {
+        id: recording.id,
+        isHovered,
+        previewUrl,
+        spriteUrl,
+        isCatbox: isCatboxPreview,
+        isStaticThumb,
+        isAnimatedImg,
+        previewExt,
+        catboxWorkerUrl,
+        mediaFail,
+        previewReady,
+        spriteReady,
+        showSprite,
+        showWebpImg,
+        showVideoEl,
+        showImgFallback,
+        showLoadingBar,
+        usePreviewChain,
+        useSprite,
+      });
+    }
   }, [
-    isHovered, previewUrl, spriteUrl, isCatboxPreview, isStaticThumb, isAnimatedImg, previewExt, catboxWorkerUrl, mediaFail,
-    previewReady, spriteReady, showSprite, showWebpImg,
-    showVideoEl, showImgFallback, showLoadingBar, usePreviewChain, useSprite,
+    isHovered,
+    previewUrl,
+    spriteUrl,
+    isCatboxPreview,
+    isStaticThumb,
+    isAnimatedImg,
+    previewExt,
+    catboxWorkerUrl,
+    mediaFail,
+    previewReady,
+    spriteReady,
+    showSprite,
+    showWebpImg,
+    showVideoEl,
+    showImgFallback,
+    showLoadingBar,
+    usePreviewChain,
+    useSprite,
     recording.id,
   ]);
 
   useEffect(() => {
-    if (!debugEnabled()) return;
-    dlog("hoverpreview", "[VideoCard] media state", {
-      id: recording.id,
-      mediaFail,
-      previewReady,
-      spriteReady,
-    });
+    if (process.env.NODE_ENV !== "production" && debugEnabled()) {
+      dlog("hoverpreview", "[VideoCard] media state", {
+        id: recording.id,
+        mediaFail,
+        previewReady,
+        spriteReady,
+      });
+    }
   }, [mediaFail, previewReady, spriteReady, recording.id]);
 
   useEffect(() => {
@@ -385,18 +497,25 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
     >
       <div ref={viewportRef} className="flex flex-col gap-2">
         <div className="relative aspect-video overflow-hidden bg-secondary rounded-sm will-change-transform">
-
-          {usePreviewChain && preloadVideoUrl && !isSlowConnection && isRealVideo && (
-            <video
-              src={preloadVideoUrl}
-              className="hidden"
-              muted playsInline preload="metadata"
-              aria-hidden
-              ref={(el) => {
-                if (el) (el as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
-              }}
-            />
-          )}
+          {usePreviewChain &&
+            preloadVideoUrl &&
+            !isSlowConnection &&
+            isRealVideo && (
+              <video
+                src={preloadVideoUrl}
+                className="hidden"
+                muted
+                playsInline
+                preload="metadata"
+                aria-hidden
+                ref={(el) => {
+                  if (el)
+                    (
+                      el as HTMLVideoElement & { referrerPolicy?: string }
+                    ).referrerPolicy = "no-referrer";
+                }}
+              />
+            )}
 
           {hasStaticImage ? (
             <div className="absolute inset-0 w-full h-full">
@@ -442,11 +561,20 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               fetchPriority="high"
               className="absolute inset-0 w-full h-full object-cover transition-opacity duration-150"
               onLoad={() => {
-                if (debugEnabled()) dlog("hoverpreview", "[VideoCard] webp loaded", { id: recording.id, src: previewProgressive.src || animatedImageUrl });
+                if (debugEnabled())
+                  dlog("hoverpreview", "[VideoCard] webp loaded", {
+                    id: recording.id,
+                    src: previewProgressive.src || animatedImageUrl,
+                  });
                 setPreviewReady(true);
               }}
               onError={() => {
-                if (debugEnabled()) dlog("hoverpreview", "[VideoCard] webp failed, trying next fallback", { id: recording.id, index: previewIndex });
+                if (debugEnabled())
+                  dlog(
+                    "hoverpreview",
+                    "[VideoCard] webp failed, trying next fallback",
+                    { id: recording.id, index: previewIndex },
+                  );
                 if (previewIndex + 1 < webpFallbacks.length) {
                   setMediaFail("none");
                   setPreviewReady(false);
@@ -463,35 +591,66 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
               poster={hasStaticImage ? staticImage! : undefined}
               className={cn(
                 "absolute inset-0 w-full h-full object-cover",
-                previewReady ? "opacity-100" : "opacity-0"
+                previewReady ? "opacity-100" : "opacity-0",
               )}
-              autoPlay muted playsInline loop
+              autoPlay
+              muted
+              playsInline
+              loop
               preload="auto"
               onProgress={(e) => {
                 const v = e.currentTarget;
-                if (v.buffered.length > 0 && v.duration > 0 && isFinite(v.duration)) {
+                if (
+                  v.buffered.length > 0 &&
+                  v.duration > 0 &&
+                  isFinite(v.duration)
+                ) {
                   const pct = Math.min(
                     99,
                     (v.buffered.end(v.buffered.length - 1) / v.duration) * 100,
                   );
-                  setVideoProgress((prev) => (prev === null || pct > prev ? pct : prev));
+                  setVideoProgress((prev) =>
+                    prev === null || pct > prev ? pct : prev,
+                  );
                 }
               }}
               onCanPlay={onPreviewReady}
-              onLoadedData={() => { if (debugEnabled()) dlog("hoverpreview", "[VideoCard] video loadeddata", { id: recording.id, src: videoUrl }); }}
-              onPlaying={() => { if (debugEnabled()) dlog("hoverpreview", "[VideoCard] video playing", { id: recording.id, loop: true }); }}
-              onEnded={() => { if (debugEnabled()) dlog("hoverpreview", "[VideoCard] video ENDED (not looping?)", { id: recording.id }); }}
+              onLoadedData={() => {
+                if (debugEnabled())
+                  dlog("hoverpreview", "[VideoCard] video loadeddata", {
+                    id: recording.id,
+                    src: videoUrl,
+                  });
+              }}
+              onPlaying={() => {
+                if (debugEnabled())
+                  dlog("hoverpreview", "[VideoCard] video playing", {
+                    id: recording.id,
+                    loop: true,
+                  });
+              }}
+              onEnded={() => {
+                if (debugEnabled())
+                  dlog(
+                    "hoverpreview",
+                    "[VideoCard] video ENDED (not looping?)",
+                    { id: recording.id },
+                  );
+              }}
               onError={() => {
                 if (previewIndex + 1 < webpFallbacks.length) {
                   setMediaFail("none");
                   setPreviewReady(false);
-                  setPreviewIndex(i => i + 1);
+                  setPreviewIndex((i) => i + 1);
                 } else {
                   setMediaFail("all");
                 }
               }}
               ref={(el) => {
-                if (el) (el as HTMLVideoElement & { referrerPolicy?: string }).referrerPolicy = "no-referrer";
+                if (el)
+                  (
+                    el as HTMLVideoElement & { referrerPolicy?: string }
+                  ).referrerPolicy = "no-referrer";
               }}
             />
           )}
@@ -506,7 +665,7 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
                 if (previewIndex + 1 < webpFallbacks.length) {
                   setMediaFail("none");
                   setPreviewReady(false);
-                  setPreviewIndex(i => i + 1);
+                  setPreviewIndex((i) => i + 1);
                 } else {
                   setMediaFail("all");
                 }
@@ -532,7 +691,9 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             {isWatched && (
               <div className="flex items-center gap-1 bg-black/40 backdrop-blur-sm ring-1 ring-white/10 px-1.5 py-0.5 rounded-[2px]">
                 <CheckCircle className="w-2.5 h-2.5 text-green-400" />
-                <span className="text-[9px] font-semibold text-green-300/90 uppercase tracking-wider">Watched</span>
+                <span className="text-[9px] font-semibold text-green-300/90 uppercase tracking-wider">
+                  Watched
+                </span>
               </div>
             )}
             {showAdd && (
@@ -561,7 +722,11 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
             )}
             {showRemove && onRemove && (
               <button
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onRemove();
+                }}
                 className="w-6 h-6 flex items-center justify-center bg-black/30 backdrop-blur-sm ring-1 ring-white/10 hover:bg-red-600/70 hover:ring-red-600/30 text-white rounded-[2px] opacity-0 group-hover:opacity-100 transition-all text-[10px] font-bold pointer-events-auto cursor-pointer"
                 aria-label="Remove"
               >
@@ -606,7 +771,9 @@ export const VideoCard = memo(function VideoCard({ recording, showRemove, onRemo
                 <HardDrive className="w-2.5 h-2.5" />
                 {formatBytes(recording.filesize)}
               </span>
-            ) : <span />}
+            ) : (
+              <span />
+            )}
           </div>
         </div>
 

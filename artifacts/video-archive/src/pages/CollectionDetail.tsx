@@ -14,11 +14,28 @@ import { userApi, parseCloudItem, type CloudItem } from "@/lib/user-api";
 import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
 import { useRecentlyWatched } from "@/hooks/use-recently-watched";
 import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
-import { setQueue, shuffleQueueItems, toQueueItem, type QueueItem } from "@/lib/play-queue";
+import {
+  setQueue,
+  shuffleQueueItems,
+  toQueueItem,
+  type QueueItem,
+} from "@/lib/play-queue";
 import { byPositionThenNewest, moveItem } from "@/lib/list-order";
 import { trackActivity } from "@/lib/rum";
 import { cn } from "@/lib/utils";
-import { ArrowLeft, Film, Pencil, Check, X, Trash2, ListVideo, Play, Shuffle, GripVertical, User } from "lucide-react";
+import {
+  ArrowLeft,
+  Film,
+  Pencil,
+  Check,
+  X,
+  Trash2,
+  ListVideo,
+  Play,
+  Shuffle,
+  GripVertical,
+  User,
+} from "lucide-react";
 import { formatRelativeTime } from "@/lib/formatters";
 import { proxyUrl } from "@/lib/proxy-url";
 
@@ -59,7 +76,10 @@ export default function CollectionDetail() {
   const [editDesc, setEditDesc] = useState("");
   const [order, setOrder] = useState<string[] | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean } | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    id: string;
+    after: boolean;
+  } | null>(null);
 
   // Query public playlist details
   const { data: publicPlaylist, isLoading: publicPlaylistLoading } = useQuery({
@@ -80,7 +100,11 @@ export default function CollectionDetail() {
 
   const updateMeta = useTrackedMutation({
     mutationFn: (payload: { name?: string; description?: string | null }) =>
-      userApi.updateCollection(id!, payload.name ?? publicPlaylist?.name ?? "Playlist", payload.description),
+      userApi.updateCollection(
+        id!,
+        payload.name ?? publicPlaylist?.name ?? "Playlist",
+        payload.description,
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["public-playlist", id] });
       queryClient.invalidateQueries({ queryKey: ["public-playlists"] });
@@ -92,7 +116,9 @@ export default function CollectionDetail() {
     mutationFn: (recordingId: string) =>
       userApi.removeCollectionItem(id!, recordingId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["public-playlist-items", id] });
+      queryClient.invalidateQueries({
+        queryKey: ["public-playlist-items", id],
+      });
       queryClient.invalidateQueries({ queryKey: ["public-playlist", id] });
       queryClient.invalidateQueries({ queryKey: ["user", "collections"] });
     },
@@ -121,13 +147,18 @@ export default function CollectionDetail() {
 
   const handleDescSave = () => {
     if (!isOwner) return;
-    updateMeta.mutate({ description: editDesc.trim() ? editDesc.trim() : null });
+    updateMeta.mutate({
+      description: editDesc.trim() ? editDesc.trim() : null,
+    });
     setEditingDesc(false);
   };
 
   type CloudItemWithId = CloudItem & { id: string };
   const sortedItems = useMemo<CloudItemWithId[]>(() => {
-    const wrapped: CloudItemWithId[] = publicItems.map((it) => ({ ...it, id: it.recording_id }));
+    const wrapped: CloudItemWithId[] = publicItems.map((it) => ({
+      ...it,
+      id: it.recording_id,
+    }));
     const sorted = wrapped.sort(byPositionThenNewest);
     if (!order) return sorted;
     const byId = new Map(sorted.map((it) => [it.recording_id, it]));
@@ -144,9 +175,12 @@ export default function CollectionDetail() {
   };
 
   const reorderCloud = useTrackedMutation({
-    mutationFn: (recording_ids: string[]) => userApi.reorderCollectionItems(id!, recording_ids),
+    mutationFn: (recording_ids: string[]) =>
+      userApi.reorderCollectionItems(id!, recording_ids),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["public-playlist-items", id] });
+      queryClient.invalidateQueries({
+        queryKey: ["public-playlist-items", id],
+      });
       setOrder(null);
     },
     onError: () => {
@@ -171,7 +205,9 @@ export default function CollectionDetail() {
     e.dataTransfer.dropEffect = "move";
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const after = e.clientY > rect.top + rect.height / 2;
-    setDropTarget((prev) => (prev?.id === recId && prev.after === after ? prev : { id: recId, after }));
+    setDropTarget((prev) =>
+      prev?.id === recId && prev.after === after ? prev : { id: recId, after },
+    );
   };
 
   const handleDropOn = (recId: string) => (e: React.DragEvent) => {
@@ -183,7 +219,9 @@ export default function CollectionDetail() {
       const next = moveItem(base, dragId, recId, after);
       if (next !== base) {
         commitOrder(next);
-        trackActivity("collection_reorder", { meta: { collection_id: id, count: next.length } });
+        trackActivity("collection_reorder", {
+          meta: { collection_id: id, count: next.length },
+        });
       }
     }
     setDragId(null);
@@ -202,7 +240,10 @@ export default function CollectionDetail() {
   const playlistName = publicPlaylist?.name ?? "Playlist";
   const playlistDesc = publicPlaylist?.description ?? undefined;
   const playlistCreatedAt = publicPlaylist?.created_at;
-  const authorName = publicPlaylist?.author?.display_name || publicPlaylist?.author?.username || "Community User";
+  const authorName =
+    publicPlaylist?.author?.display_name ||
+    publicPlaylist?.author?.username ||
+    "Community User";
 
   const previewThumbnail = (() => {
     const first = items[0];
@@ -217,7 +258,9 @@ export default function CollectionDetail() {
   })();
 
   const listItems = (): QueueItem[] =>
-    publicItems.map((it) => toQueueItem(parseCloudItem(it))).filter((it): it is QueueItem => it !== null);
+    publicItems
+      .map((it) => toQueueItem(parseCloudItem(it)))
+      .filter((it): it is QueueItem => it !== null);
 
   const startQueue = (title: string, items: QueueItem[], startIndex = 0) => {
     setQueue(title, items);
@@ -229,16 +272,31 @@ export default function CollectionDetail() {
   const handlePlayAll = () => {
     const queueItems = listItems();
     if (queueItems.length === 0) return;
-    trackActivity("playlist_start", { meta: { mix: "playlist", count: queueItems.length, index: 0, order: "sequential" } });
+    trackActivity("playlist_start", {
+      meta: {
+        mix: "playlist",
+        count: queueItems.length,
+        index: 0,
+        order: "sequential",
+      },
+    });
     startQueue(playlistName, queueItems);
   };
 
   const handleShuffle = () => {
     const queueItems = listItems();
     if (queueItems.length === 0) return;
-    const startId = queueItems[Math.floor(Math.random() * queueItems.length)].id;
+    const startId =
+      queueItems[Math.floor(Math.random() * queueItems.length)].id;
     const shuffled = shuffleQueueItems(queueItems, startId);
-    trackActivity("playlist_start", { meta: { mix: "playlist", count: shuffled.length, index: 0, order: "shuffle" } });
+    trackActivity("playlist_start", {
+      meta: {
+        mix: "playlist",
+        count: shuffled.length,
+        index: 0,
+        order: "shuffle",
+      },
+    });
     startQueue(playlistName, shuffled);
   };
 
@@ -247,8 +305,13 @@ export default function CollectionDetail() {
       <Layout>
         <div className="container mx-auto px-4 sm:px-6 py-24 text-center">
           <ListVideo className="w-10 h-10 text-muted-foreground/20 mx-auto mb-4" />
-          <p className="text-sm text-muted-foreground mb-4">Playlist not found</p>
-          <Link href="/playlists" className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline">
+          <p className="text-sm text-muted-foreground mb-4">
+            Playlist not found
+          </p>
+          <Link
+            href="/playlists"
+            className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+          >
             <ArrowLeft className="w-3 h-3" /> Back to Playlists
           </Link>
         </div>
@@ -304,19 +367,34 @@ export default function CollectionDetail() {
                   maxLength={80}
                   className="h-9 bg-background border border-primary/50 rounded-sm px-3 text-sm font-bold outline-none flex-1 max-w-xs"
                 />
-                <button onClick={handleRename} className="text-green-500 hover:text-green-400 transition-colors">
+                <button
+                  onClick={handleRename}
+                  className="text-green-500 hover:text-green-400 transition-colors"
+                  aria-label="Save collection name"
+                  title="Save collection name"
+                >
                   <Check className="w-4 h-4" />
                 </button>
-                <button onClick={() => setEditing(false)} className="text-muted-foreground hover:text-foreground transition-colors">
+                <button
+                  onClick={() => setEditing(false)}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Cancel rename"
+                  title="Cancel rename"
+                >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             ) : (
               <div className="flex items-center gap-2 mb-1">
-                <h1 className="text-xl sm:text-2xl font-black tracking-tighter">{playlistName}</h1>
+                <h1 className="text-xl sm:text-2xl font-black tracking-tighter">
+                  {playlistName}
+                </h1>
                 {isOwner && (
                   <button
-                    onClick={() => { setEditing(true); setEditName(playlistName); }}
+                    onClick={() => {
+                      setEditing(true);
+                      setEditName(playlistName);
+                    }}
                     className="text-muted-foreground hover:text-foreground transition-colors"
                     title="Rename playlist"
                   >
@@ -341,24 +419,46 @@ export default function CollectionDetail() {
                   placeholder="Description (optional)"
                   className="h-8 bg-background border border-primary/50 rounded-sm px-2.5 text-sm outline-none flex-1 max-w-sm"
                 />
-                <button onClick={handleDescSave} className="text-green-500 hover:text-green-400 transition-colors" title="Save description">
+                <button
+                  onClick={handleDescSave}
+                  className="text-green-500 hover:text-green-400 transition-colors"
+                  aria-label="Save description"
+                  title="Save description"
+                >
                   <Check className="w-4 h-4" />
                 </button>
-                <button onClick={() => setEditingDesc(false)} className="text-muted-foreground hover:text-foreground transition-colors" title="Cancel">
+                <button
+                  onClick={() => setEditingDesc(false)}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Cancel description editing"
+                  title="Cancel"
+                >
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             ) : (
               <button
                 disabled={!isOwner}
-                onClick={() => { if (isOwner) { setEditingDesc(true); setEditDesc(playlistDesc ?? ""); } }}
-                className={cn("group/desc flex items-center gap-1.5 mb-1 text-left min-w-0", isOwner ? "cursor-pointer" : "cursor-default")}
+                onClick={() => {
+                  if (isOwner) {
+                    setEditingDesc(true);
+                    setEditDesc(playlistDesc ?? "");
+                  }
+                }}
+                className={cn(
+                  "group/desc flex items-center gap-1.5 mb-1 text-left min-w-0",
+                  isOwner ? "cursor-pointer" : "cursor-default",
+                )}
                 title={isOwner ? "Edit description" : undefined}
               >
                 {playlistDesc ? (
-                  <p className="text-sm text-muted-foreground truncate">{playlistDesc}</p>
+                  <p className="text-sm text-muted-foreground truncate">
+                    {playlistDesc}
+                  </p>
                 ) : isOwner ? (
-                  <p className="text-xs text-muted-foreground/40 italic">Add a description…</p>
+                  <p className="text-xs text-muted-foreground/40 italic">
+                    Add a description…
+                  </p>
                 ) : null}
                 {isOwner && (
                   <Pencil className="w-3 h-3 shrink-0 text-muted-foreground/0 group-hover/desc:text-muted-foreground transition-colors" />
@@ -370,17 +470,24 @@ export default function CollectionDetail() {
               <div className="flex items-center gap-1.5 font-medium text-foreground">
                 {publicPlaylist?.author?.avatar_url ? (
                   <img
-                    src={proxyUrl(publicPlaylist.author.avatar_url) || undefined}
+                    src={
+                      proxyUrl(publicPlaylist.author.avatar_url) || undefined
+                    }
                     alt={authorName}
                     className="w-4 h-4 rounded-full object-cover shrink-0"
                   />
                 ) : (
                   <User className="w-3.5 h-3.5 text-muted-foreground" />
                 )}
-                <span>Created by <strong className="text-foreground">{authorName}</strong></span>
+                <span>
+                  Created by{" "}
+                  <strong className="text-foreground">{authorName}</strong>
+                </span>
               </div>
               <span>•</span>
-              <span>{items.length} {items.length === 1 ? "video" : "videos"}</span>
+              <span>
+                {items.length} {items.length === 1 ? "video" : "videos"}
+              </span>
               {playlistCreatedAt && (
                 <>
                   <span>•</span>
@@ -414,7 +521,8 @@ export default function CollectionDetail() {
             {isOwner && (
               <button
                 onClick={async () => {
-                  if (!confirm("Delete this playlist? This cannot be undone.")) return;
+                  if (!confirm("Delete this playlist? This cannot be undone."))
+                    return;
                   try {
                     await deleteCloud.mutateAsync();
                     setLocation("/playlists");
@@ -438,16 +546,22 @@ export default function CollectionDetail() {
         {publicItemsLoading || publicPlaylistLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
             {[...Array(8)].map((_, i) => (
-              <div key={i} className="aspect-video bg-secondary/30 animate-pulse rounded-lg" />
+              <div
+                key={i}
+                className="aspect-video bg-secondary/30 animate-pulse rounded-lg"
+              />
             ))}
           </div>
         ) : items.length === 0 ? (
           <div className="py-20 text-center border border-dashed border-border/40 rounded-2xl">
             <Film className="w-8 h-8 text-muted-foreground/20 mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">No videos in this playlist yet.</p>
+            <p className="text-sm text-muted-foreground">
+              No videos in this playlist yet.
+            </p>
             {isOwner && (
               <p className="text-xs text-muted-foreground/60 mt-1">
-                Open any video and use the "Add to Collection" button to add it here.
+                Open any video and use the "Add to Collection" button to add it
+                here.
               </p>
             )}
           </div>
@@ -460,15 +574,25 @@ export default function CollectionDetail() {
               return (
                 <Fragment key={rec.id}>
                   <div
-                    className={cn("relative group/card", isDragging && "opacity-40")}
+                    className={cn(
+                      "relative group/card",
+                      isDragging && "opacity-40",
+                    )}
                     draggable={isOwner}
                     onDragStart={handleDragStart(rec.id)}
                     onDragOver={handleDragOver(rec.id)}
                     onDrop={handleDropOn(rec.id)}
                     onDragEnd={handleDragEnd}
-                    onDragLeave={() => setDropTarget((prev) => (prev?.id === rec.id ? null : prev))}
+                    onDragLeave={() =>
+                      setDropTarget((prev) =>
+                        prev?.id === rec.id ? null : prev,
+                      )
+                    }
                   >
-                    <VideoCard recording={toRecording(rec)} isWatched={recentlyWatched.has(rec.id)} />
+                    <VideoCard
+                      recording={toRecording(rec)}
+                      isWatched={recentlyWatched.has(rec.id)}
+                    />
                     <div className="absolute top-2 left-2 z-10 flex items-center gap-1">
                       <div className="w-6 h-6 rounded-lg border border-primary/40 text-primary text-[10px] font-bold flex items-center justify-center bg-black/50 backdrop-blur-sm">
                         {i + 1}

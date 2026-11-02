@@ -18,7 +18,10 @@ interface WatchProgressOptions {
  * - Syncs to server every 15 seconds and on unmount
  * - Saves resume position (last known time spent)
  */
-export function useWatchProgress({ video, durationSeconds }: WatchProgressOptions) {
+export function useWatchProgress({
+  video,
+  durationSeconds,
+}: WatchProgressOptions) {
   const { user } = useAuth();
   const startTimeRef = useRef(Date.now());
   const totalMsRef = useRef(0);
@@ -37,7 +40,10 @@ export function useWatchProgress({ video, durationSeconds }: WatchProgressOption
     totalMsRef.current += elapsed;
     startTimeRef.current = now;
 
-    const progress = Math.min(100, Math.round((totalMsRef.current / estimatedDurationMs) * 100));
+    const progress = Math.min(
+      100,
+      Math.round((totalMsRef.current / estimatedDurationMs) * 100),
+    );
     const lastPositionMs = totalMsRef.current;
 
     // Build metadata
@@ -55,7 +61,12 @@ export function useWatchProgress({ video, durationSeconds }: WatchProgressOption
     };
 
     userApi
-      .updateHistoryProgress(video.id, progress, lastPositionMs, totalMsRef.current)
+      .updateHistoryProgress(
+        video.id,
+        progress,
+        lastPositionMs,
+        totalMsRef.current,
+      )
       .catch(() => {
         // Also ensure history entry exists with metadata
         userApi.addHistory(video.id, recordingToMeta(meta)).catch(() => {});
@@ -97,7 +108,10 @@ export function useWatchProgress({ video, durationSeconds }: WatchProgressOption
 
     return () => {
       unmountedRef.current = true;
-      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+        syncIntervalRef.current = null;
+      }
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("beforeunload", onBeforeUnload);
       // Final sync on unmount

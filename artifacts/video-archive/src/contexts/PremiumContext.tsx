@@ -1,10 +1,22 @@
-import { createContext, useContext, useEffect, useMemo, useState, useCallback, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAds } from "@/contexts/AdsContext";
 import { adPageId } from "@/lib/ad-slots";
-import { premiumApi, type PremiumConfig, type PremiumStatus } from "@/lib/premium-client";
+import {
+  premiumApi,
+  type PremiumConfig,
+  type PremiumStatus,
+} from "@/lib/premium-client";
 import { isAgeGatePassed, onAgeGatePassed } from "@/lib/gating";
 
 /** Routes that never mount ad slots (auth + payment + admin screens). */
@@ -78,19 +90,25 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     await queryClient.invalidateQueries({ queryKey: STATUS_QUERY_KEY });
   }, [queryClient]);
 
+  const excludedPage = useMemo(() => isExcludedPage(location), [location]);
+  const pageId = useMemo(() => adPageId(location), [location]);
+  const pageSetting = settings.pages[pageId];
+
   const value = useMemo<PremiumContextValue>(() => {
     const isPremium = status?.is_premium === true && !premiumExpired(status);
     // Grace period disabled - ads show immediately after age gate
     const inGrace = false;
 
-    const excludedPage = isExcludedPage(location);
     // Master switch VITE_ADS_ENABLED: unset/empty means ON (Vercel ships the
     // key empty today, and it previously had no effect at all); "false"/"0"/
     // "no" turns every ad slot off at once.
-    const adsFlag = (import.meta.env.VITE_ADS_ENABLED ?? "").trim().toLowerCase();
-    const adsEnabled = adsFlag !== "false" && adsFlag !== "0" && adsFlag !== "no";
+    const adsFlag = (import.meta.env.VITE_ADS_ENABLED ?? "")
+      .trim()
+      .toLowerCase();
+    const adsEnabled =
+      adsFlag !== "false" && adsFlag !== "0" && adsFlag !== "no";
     // Admin per-page switch (Admin → Ads → Placements): missing key = page ON.
-    const pageAdsOn = settings.pages[adPageId(location)] !== false;
+    const pageAdsOn = pageSetting !== false;
     // Ads render when the switch is on, the age gate has passed, the user is
     // not premium, the route is not excluded and this page is switched on.
     const showAds =
@@ -117,12 +135,14 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     statusLoading,
     user,
     agePassed,
-    location,
-    settings,
+    excludedPage,
+    pageSetting,
     refreshStatus,
   ]);
 
-  return <PremiumContext.Provider value={value}>{children}</PremiumContext.Provider>;
+  return (
+    <PremiumContext.Provider value={value}>{children}</PremiumContext.Provider>
+  );
 }
 
 function premiumExpired(status: PremiumStatus | null | undefined): boolean {

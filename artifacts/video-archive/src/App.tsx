@@ -1,4 +1,10 @@
-import { Component, Suspense, useEffect, type ErrorInfo, type ReactNode } from "react";
+import {
+  Component,
+  Suspense,
+  useEffect,
+  type ErrorInfo,
+  type ReactNode,
+} from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { AlertCircle, RefreshCw } from "lucide-react";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -9,7 +15,12 @@ import { SyncStatusProvider } from "@/contexts/SyncStatusContext";
 import { PremiumProvider } from "@/contexts/PremiumContext";
 import { AdsProvider } from "@/contexts/AdsContext";
 import { AdPopunder } from "@/components/ads/AdPopunder";
-import { AddToCollectionDialog } from "@/components/AddToCollectionDialog";
+import { lazy } from "react";
+const AddToCollectionDialog = lazy(() =>
+  import("@/components/AddToCollectionDialog").then((m) => ({
+    default: m.AddToCollectionDialog,
+  })),
+);
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { lazyWithSkeleton } from "@/components/lazy-route";
 import { prefetchRoute } from "@/lib/route-chunks";
@@ -22,7 +33,11 @@ import {
   SkeletonSimplePage,
   SkeletonAdminPage,
 } from "@/components/skeletons/PageSkeletons";
-import { createQueryClient, restoreQueryCache, persistQueryCache } from "@/lib/query-client";
+import {
+  createQueryClient,
+  restoreQueryCache,
+  persistQueryCache,
+} from "@/lib/query-client";
 import { initCache } from "@/lib/cache";
 import { startCatalogWarmup } from "@/lib/catalog-warmer";
 import { cancelPendingPreviews } from "@/lib/preload-preview";
@@ -36,47 +51,155 @@ import { trackActivity } from "@/lib/rum";
 import Home from "@/pages/Home";
 import RandomRedirect from "@/pages/RandomRedirect";
 
-const Browse = lazyWithSkeleton(() => import("@/pages/Browse"), <SkeletonGridPage count={12} />, "Browse");
-const VideoDetail = lazyWithSkeleton(() => import("@/pages/VideoDetail"), <SkeletonDetailPage />, "VideoDetail");
-const PerformersList = lazyWithSkeleton(() => import("@/pages/PerformersList"), <SkeletonPerformersPage />, "PerformersList");
-const PerformerProfile = lazyWithSkeleton(() => import("@/pages/PerformerProfile"), <SkeletonProfilePage />, "PerformerProfile");
-const TagsPage = lazyWithSkeleton(() => import("@/pages/TagsPage"), <SkeletonGridPage count={24} eyebrow={false} />, "TagsPage");
-const Bookmarks = lazyWithSkeleton(() => import("@/pages/Bookmarks"), <SkeletonGridPage count={8} />, "Bookmarks");
-const History = lazyWithSkeleton(() => import("@/pages/History"), <SkeletonGridPage count={8} />, "History");
-const Analytics = lazyWithSkeleton(() => import("@/pages/Analytics"), <SkeletonSimplePage rows={6} />, "Analytics");
-const WatchLater = lazyWithSkeleton(() => import("@/pages/WatchLater"), <SkeletonGridPage count={8} />, "WatchLater");
-const Playlists = lazyWithSkeleton(() => import("@/pages/Playlists"), <SkeletonGridPage count={12} />, "Playlists");
-const Collections = lazyWithSkeleton(() => import("@/pages/Collections"), <SkeletonGridPage count={8} />, "Collections");
-const CollectionDetail = lazyWithSkeleton(() => import("@/pages/CollectionDetail"), <SkeletonGridPage count={12} />, "CollectionDetail");
-const AdminPage = lazyWithSkeleton(() => import("@/pages/admin"), <SkeletonAdminPage />, "Admin");
-const Login = lazyWithSkeleton(() => import("@/pages/Login"), <SkeletonAuthPage />, "Login");
-const Signup = lazyWithSkeleton(() => import("@/pages/Signup"), <SkeletonAuthPage />, "Signup");
-const ForgotPassword = lazyWithSkeleton(() => import("@/pages/ForgotPassword"), <SkeletonAuthPage />, "ForgotPassword");
-const AuthCallback = lazyWithSkeleton(() => import("@/pages/AuthCallback"), <SkeletonAuthPage />, "AuthCallback");
-const Settings = lazyWithSkeleton(() => import("@/pages/Settings"), <SkeletonSimplePage rows={6} />, "Settings");
-const Profile = lazyWithSkeleton(() => import("@/pages/Profile"), <SkeletonSimplePage rows={6} />, "Profile");
-const Following = lazyWithSkeleton(() => import("@/pages/Following"), <SkeletonGridPage count={8} />, "Following");
-const Notifications = lazyWithSkeleton(() => import("@/pages/Notifications"), <SkeletonSimplePage rows={6} />, "Notifications");
-const RequestPage = lazyWithSkeleton(() => import("@/pages/RequestPage"), <SkeletonSimplePage rows={6} />, "RequestPage");
-const MyRequests = lazyWithSkeleton(() => import("@/pages/MyRequests"), <SkeletonSimplePage rows={6} />, "MyRequests");
-const Premium = lazyWithSkeleton(() => import("@/pages/Premium"), <SkeletonSimplePage rows={6} />, "Premium");
+const Browse = lazyWithSkeleton(
+  () => import("@/pages/Browse"),
+  <SkeletonGridPage count={12} />,
+  "Browse",
+);
+const VideoDetail = lazyWithSkeleton(
+  () => import("@/pages/VideoDetail"),
+  <SkeletonDetailPage />,
+  "VideoDetail",
+);
+const PerformersList = lazyWithSkeleton(
+  () => import("@/pages/PerformersList"),
+  <SkeletonPerformersPage />,
+  "PerformersList",
+);
+const PerformerProfile = lazyWithSkeleton(
+  () => import("@/pages/PerformerProfile"),
+  <SkeletonProfilePage />,
+  "PerformerProfile",
+);
+const TagsPage = lazyWithSkeleton(
+  () => import("@/pages/TagsPage"),
+  <SkeletonGridPage count={24} eyebrow={false} />,
+  "TagsPage",
+);
+const Bookmarks = lazyWithSkeleton(
+  () => import("@/pages/Bookmarks"),
+  <SkeletonGridPage count={8} />,
+  "Bookmarks",
+);
+const History = lazyWithSkeleton(
+  () => import("@/pages/History"),
+  <SkeletonGridPage count={8} />,
+  "History",
+);
+const Analytics = lazyWithSkeleton(
+  () => import("@/pages/Analytics"),
+  <SkeletonSimplePage rows={6} />,
+  "Analytics",
+);
+const WatchLater = lazyWithSkeleton(
+  () => import("@/pages/WatchLater"),
+  <SkeletonGridPage count={8} />,
+  "WatchLater",
+);
+const Playlists = lazyWithSkeleton(
+  () => import("@/pages/Playlists"),
+  <SkeletonGridPage count={12} />,
+  "Playlists",
+);
+const Collections = lazyWithSkeleton(
+  () => import("@/pages/Collections"),
+  <SkeletonGridPage count={8} />,
+  "Collections",
+);
+const CollectionDetail = lazyWithSkeleton(
+  () => import("@/pages/CollectionDetail"),
+  <SkeletonGridPage count={12} />,
+  "CollectionDetail",
+);
+const AdminPage = lazyWithSkeleton(
+  () => import("@/pages/admin"),
+  <SkeletonAdminPage />,
+  "Admin",
+);
+const Login = lazyWithSkeleton(
+  () => import("@/pages/Login"),
+  <SkeletonAuthPage />,
+  "Login",
+);
+const Signup = lazyWithSkeleton(
+  () => import("@/pages/Signup"),
+  <SkeletonAuthPage />,
+  "Signup",
+);
+const ForgotPassword = lazyWithSkeleton(
+  () => import("@/pages/ForgotPassword"),
+  <SkeletonAuthPage />,
+  "ForgotPassword",
+);
+const AuthCallback = lazyWithSkeleton(
+  () => import("@/pages/AuthCallback"),
+  <SkeletonAuthPage />,
+  "AuthCallback",
+);
+const Settings = lazyWithSkeleton(
+  () => import("@/pages/Settings"),
+  <SkeletonSimplePage rows={6} />,
+  "Settings",
+);
+const Profile = lazyWithSkeleton(
+  () => import("@/pages/Profile"),
+  <SkeletonSimplePage rows={6} />,
+  "Profile",
+);
+const Following = lazyWithSkeleton(
+  () => import("@/pages/Following"),
+  <SkeletonGridPage count={8} />,
+  "Following",
+);
+const Notifications = lazyWithSkeleton(
+  () => import("@/pages/Notifications"),
+  <SkeletonSimplePage rows={6} />,
+  "Notifications",
+);
+const RequestPage = lazyWithSkeleton(
+  () => import("@/pages/RequestPage"),
+  <SkeletonSimplePage rows={6} />,
+  "RequestPage",
+);
+const MyRequests = lazyWithSkeleton(
+  () => import("@/pages/MyRequests"),
+  <SkeletonSimplePage rows={6} />,
+  "MyRequests",
+);
+const Premium = lazyWithSkeleton(
+  () => import("@/pages/Premium"),
+  <SkeletonSimplePage rows={6} />,
+  "Premium",
+);
 
-const NotFound = lazyWithSkeleton(() => import("@/pages/not-found"), <SkeletonSimplePage rows={3} />, "NotFound");
+const NotFound = lazyWithSkeleton(
+  () => import("@/pages/not-found"),
+  <SkeletonSimplePage rows={3} />,
+  "NotFound",
+);
 
 const queryClient = createQueryClient();
 
 function scheduleIdleWork(task: () => void, timeout = 1_500) {
   if (typeof window === "undefined") return;
-  const requestIdle = window.requestIdleCallback ?? ((cb: IdleRequestCallback) => {
-    const id = window.setTimeout(() => cb({ didTimeout: false, timeRemaining: () => 0 }), timeout);
-    return id as unknown as number;
-  });
+  const requestIdle =
+    window.requestIdleCallback ??
+    ((cb: IdleRequestCallback) => {
+      const id = window.setTimeout(
+        () => cb({ didTimeout: false, timeRemaining: () => 0 }),
+        timeout,
+      );
+      return id as unknown as number;
+    });
   requestIdle(task, { timeout });
 }
 
 // Global error boundary — catches chunk load errors (auto-reload) and
 // rendering errors (shows a friendly recovery UI instead of white-screen).
-class GlobalErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
+class GlobalErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
   state = { hasError: false, error: null as Error | null };
 
   static getDerivedStateFromError(error: Error) {
@@ -87,7 +210,10 @@ class GlobalErrorBoundary extends Component<{ children: ReactNode }, { hasError:
     // Coordinate with main.tsx and lazy-route.tsx: allow at most one automatic
     // reload in this tab, then leave the recovery UI visible if the chunk still fails.
     const message = error.message ?? "";
-    if (error.name === "ChunkLoadError" || /dynamically imported|failed to fetch dynamically/i.test(message)) {
+    if (
+      error.name === "ChunkLoadError" ||
+      /dynamically imported|failed to fetch dynamically/i.test(message)
+    ) {
       try {
         const reloadKey = "app_stale_chunk_reload";
         const now = Date.now();
@@ -186,74 +312,104 @@ function Router() {
       {/* AdsProvider is OUTSIDE PremiumProvider on purpose: the per-page ad
           switches from Admin → Ads → Placements feed showAds below. */}
       <AdsProvider>
-      <PremiumProvider>
-      <TrackPageView />
-      <PredictivePrefetch />
-      <AdPopunder />
-      <AddToCollectionDialog />
-      <Switch>
-        <Route path="/" component={Home} />
-        <Route path="/browse" component={Browse} />
-        <Route path="/video/:id" component={VideoDetail} />
-        <Route path="/performers" component={PerformersList} />
-        <Route path="/performers/:username" component={PerformerProfile} />
-        <Route path="/tags" component={TagsPage} />
-        <Route path="/bookmarks">
-          <ProtectedRoute><Bookmarks /></ProtectedRoute>
-        </Route>
-        <Route path="/history">
-          <ProtectedRoute><History /></ProtectedRoute>
-        </Route>
-        <Route path="/analytics">
-          <ProtectedRoute><Analytics /></ProtectedRoute>
-        </Route>
-        <Route path="/watch-later">
-          <ProtectedRoute><WatchLater /></ProtectedRoute>
-        </Route>
+        <PremiumProvider>
+          <TrackPageView />
+          <PredictivePrefetch />
+          <AdPopunder />
+          <AddToCollectionDialog />
+          <Switch>
+            <Route path="/" component={Home} />
+            <Route path="/browse" component={Browse} />
+            <Route path="/video/:id" component={VideoDetail} />
+            <Route path="/performers" component={PerformersList} />
+            <Route path="/performers/:username" component={PerformerProfile} />
+            <Route path="/tags" component={TagsPage} />
+            <Route path="/bookmarks">
+              <ProtectedRoute>
+                <Bookmarks />
+              </ProtectedRoute>
+            </Route>
+            <Route path="/history">
+              <ProtectedRoute>
+                <History />
+              </ProtectedRoute>
+            </Route>
+            <Route path="/analytics">
+              <ProtectedRoute>
+                <Analytics />
+              </ProtectedRoute>
+            </Route>
+            <Route path="/watch-later">
+              <ProtectedRoute>
+                <WatchLater />
+              </ProtectedRoute>
+            </Route>
 
-        <Route path="/random" component={RandomRedirect} />
-        <Route path="/playlists" component={Playlists} />
-        <Route path="/collections">
-          <ProtectedRoute><Collections /></ProtectedRoute>
-        </Route>
-        <Route path="/collections/:id">
-          <ProtectedRoute><CollectionDetail /></ProtectedRoute>
-        </Route>
-        <Route path="/admin">
-          <ProtectedRoute requiredRole="admin"><AdminPage /></ProtectedRoute>
-        </Route>
-        <Route path="/admin/*">
-          <ProtectedRoute requiredRole="admin"><AdminPage /></ProtectedRoute>
-        </Route>
-        <Route path="/premium" component={Premium} />
-        <Route path="/login" component={Login} />
-        <Route path="/signup" component={Signup} />
-        <Route path="/forgot-password" component={ForgotPassword} />
-        <Route path="/auth/callback" component={AuthCallback} />
-        <Route path="/settings">
-          <ProtectedRoute><Settings /></ProtectedRoute>
-        </Route>
-        <Route path="/profile">
-          <ProtectedRoute><Profile /></ProtectedRoute>
-        </Route>
-        <Route path="/user">
-          <ProtectedRoute><Profile /></ProtectedRoute>
-        </Route>
-        <Route path="/following">
-          <ProtectedRoute><Following /></ProtectedRoute>
-        </Route>
-        <Route path="/notifications">
-          <ProtectedRoute><Notifications /></ProtectedRoute>
-        </Route>
-        <Route path="/my-requests">
-          <ProtectedRoute><MyRequests /></ProtectedRoute>
-        </Route>
-        <Route path="/request">
-          <ProtectedRoute><RequestPage /></ProtectedRoute>
-        </Route>
-        <Route component={NotFound} />
-      </Switch>
-      </PremiumProvider>
+            <Route path="/random" component={RandomRedirect} />
+            <Route path="/playlists" component={Playlists} />
+            <Route path="/collections">
+              <ProtectedRoute>
+                <Collections />
+              </ProtectedRoute>
+            </Route>
+            <Route path="/collections/:id">
+              <ProtectedRoute>
+                <CollectionDetail />
+              </ProtectedRoute>
+            </Route>
+            <Route path="/admin">
+              <ProtectedRoute requiredRole="admin">
+                <AdminPage />
+              </ProtectedRoute>
+            </Route>
+            <Route path="/admin/*">
+              <ProtectedRoute requiredRole="admin">
+                <AdminPage />
+              </ProtectedRoute>
+            </Route>
+            <Route path="/premium" component={Premium} />
+            <Route path="/login" component={Login} />
+            <Route path="/signup" component={Signup} />
+            <Route path="/forgot-password" component={ForgotPassword} />
+            <Route path="/auth/callback" component={AuthCallback} />
+            <Route path="/settings">
+              <ProtectedRoute>
+                <Settings />
+              </ProtectedRoute>
+            </Route>
+            <Route path="/profile">
+              <ProtectedRoute>
+                <Profile />
+              </ProtectedRoute>
+            </Route>
+            <Route path="/user">
+              <ProtectedRoute>
+                <Profile />
+              </ProtectedRoute>
+            </Route>
+            <Route path="/following">
+              <ProtectedRoute>
+                <Following />
+              </ProtectedRoute>
+            </Route>
+            <Route path="/notifications">
+              <ProtectedRoute>
+                <Notifications />
+              </ProtectedRoute>
+            </Route>
+            <Route path="/my-requests">
+              <ProtectedRoute>
+                <MyRequests />
+              </ProtectedRoute>
+            </Route>
+            <Route path="/request">
+              <ProtectedRoute>
+                <RequestPage />
+              </ProtectedRoute>
+            </Route>
+            <Route component={NotFound} />
+          </Switch>
+        </PremiumProvider>
       </AdsProvider>
     </GlobalErrorBoundary>
   );
@@ -270,7 +426,11 @@ function App() {
     // destination chunks (Browse grid + VideoDetail) during idle time. Route
     // hover/focus prefetching covers the rest (DesktopNav/MobileMenu/footer).
     const chunkTimer = window.setTimeout(
-      () => scheduleIdleWork(() => { prefetchRoute("/browse"); prefetchRoute("/video"); }, 2_000),
+      () =>
+        scheduleIdleWork(() => {
+          prefetchRoute("/browse");
+          prefetchRoute("/video");
+        }, 2_000),
       3_000,
     );
 
