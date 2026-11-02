@@ -98,15 +98,17 @@ router.get("/stats", cache({ ttlSeconds: 60, staleSeconds: 300, tags: ["stats", 
         stats = await fetchStatsLegacy();
       }
     } catch (err) {
+      // Secure error handling: log internal errors securely, don't expose error details to client
       req.log.error({ err }, "Stats aggregation error");
-      res.status(500).json({ error: "Failed to fetch stats", details: (err as any)?.message ?? String(err) });
+      res.status(500).json({ error: "Failed to fetch stats" });
       return;
     }
 
     res.json(stats);
   } catch (err) {
+    // Secure error handling: log internal errors securely, don't expose error details to client
     req.log.error({ err }, "GET /stats unexpected error");
-    res.status(500).json({ error: "Failed to fetch stats", details: (err as any)?.message ?? String(err) });
+    res.status(500).json({ error: "Failed to fetch stats" });
   }
 });
 

@@ -41828,20 +41828,34 @@ function createHttpRedis(url, key) {
             signal: controller.signal
           });
           receivedResponse = true;
+          const contentType = res.headers.get("content-type") ?? "";
+          if (!contentType.toLowerCase().includes("json")) {
+            openHttpCircuit();
+            throw new Error(
+              `Redis HTTP bridge returned HTTP ${res.status} (${contentType || "unknown content type"}; expected JSON)`
+            );
+          }
           let payload;
           try {
             payload = await res.json();
           } catch {
             openHttpCircuit();
-            throw new Error(`Redis HTTP bridge returned ${res.status} with an unreadable response`);
+            throw new Error(
+              `Redis HTTP bridge returned HTTP ${res.status} with invalid JSON (${contentType})`
+            );
           }
           if (res.status === 503) {
             openHttpCircuit();
             throw new Error("Redis unavailable (HTTP bridge 503)");
           }
           if (!res.ok || !payload?.ok) {
-            if (res.status >= 500) openHttpCircuit();
-            throw new Error(payload?.error ?? `Redis HTTP bridge error ${res.status}`);
+            const detail = typeof payload?.details === "string" ? payload.details : "";
+            const message = typeof payload?.error === "string" ? payload.error : "";
+            const isExistingGroup = /^BUSYGROUP\b/i.test(detail) || /^BUSYGROUP\b/i.test(message);
+            if (res.status >= 500 && !isExistingGroup) openHttpCircuit();
+            throw new Error(
+              detail && message && detail !== message ? `${message}: ${detail}` : detail || message || `Redis HTTP bridge error ${res.status}`
+            );
           }
           isConnected = true;
           httpCircuitOpenUntil = 0;
@@ -41971,10 +41985,13 @@ function createHttpRedis(url, key) {
       set: (k, v) => push("set", [k, v]),
       del: (keys) => push("del", [keys]),
       exec: async () => {
-        const payload = await post({ pipeline: ops });
         const results = [];
-        for (const [err, result] of payload.results ?? []) {
-          results.push([err ? new Error(String(err)) : null, err ? void 0 : result]);
+        for (let i = 0; i < ops.length; i += MAX_HTTP_PIPELINE_OPS) {
+          const batch = ops.slice(i, i + MAX_HTTP_PIPELINE_OPS);
+          const payload = await post({ pipeline: batch });
+          for (const [err, result] of payload.results ?? []) {
+            results.push([err ? new Error(String(err)) : null, err ? void 0 : result]);
+          }
         }
         return results;
       }
@@ -42880,6 +42897,18 @@ router.get("/media", async (req, res) => {
     streamResponse(response, res, req.log);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
+    const upstreamStatus = /^upstream (\d{3})$/.exec(errorMessage);
+    const statusCode = upstreamStatus ? Number(upstreamStatus[1]) : null;
+    const permanentImageFailure = !isVideoRequest && statusCode !== null && statusCode >= 400 && statusCode < 500 && !isTransientStatus(statusCode);
+    if (!res.headersSent && permanentImageFailure) {
+      markCachedFailure(urlStr);
+      req.log.warn(
+        { url: urlStr, status: statusCode },
+        "Media proxy upstream image unavailable; allowing mirror fallback"
+      );
+      res.status(404).end();
+      return;
+    }
     req.log.error({ err, url: urlStr }, "Media proxy fetch error");
     if (!res.headersSent) {
       markCachedFailure(urlStr);

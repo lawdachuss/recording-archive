@@ -229,6 +229,14 @@ router.get(
         });
         return;
       }
+      // Security input validation: prevent SSRF, path traversal, ReDoS, and URL injection via unvetted usernames
+      if (!/^[a-zA-Z0-9_.-]{1,100}$/.test(username)) {
+        res.status(400).json({
+          error:
+            "username must be between 1 and 100 characters containing only letters, numbers, underscores, periods, or hyphens",
+        });
+        return;
+      }
 
       const profileUrl =
         platform === "chaturbate"

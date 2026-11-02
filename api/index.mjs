@@ -50974,7 +50974,9 @@ function requireSupabaseKey() {
 function getSupabaseSync() {
   if (_supabase) return _supabase;
   try {
-    _supabase = createClient(supabaseUrl, requireSupabaseKey());
+    _supabase = createClient(supabaseUrl, requireSupabaseKey(), {
+      global: { fetch: supabaseFetch }
+    });
     return _supabase;
   } catch (err) {
     throw new Error(`Supabase client creation failed: ${String(err)}`);
@@ -50987,6 +50989,7 @@ function refreshSupabaseSchema() {
 function createUserClient(token) {
   return createClient(supabaseUrl, requireSupabaseKey(), {
     global: {
+      fetch: supabaseFetch,
       headers: { Authorization: `Bearer ${token}` }
     },
     auth: {
@@ -51009,11 +51012,21 @@ async function fetchAll(build, pageSize = 1e3) {
   }
   return { data: all, error: null };
 }
-var supabaseUrl, supabaseKey, _supabase, supabaseProxy;
+var SUPABASE_REQUEST_TIMEOUT_MS, supabaseFetch, supabaseUrl, supabaseKey, _supabase, supabaseProxy;
 var init_supabase = __esm({
   "src/lib/supabase.ts"() {
     "use strict";
     init_dist4();
+    SUPABASE_REQUEST_TIMEOUT_MS = (() => {
+      const configured = Number.parseInt(process.env.SUPABASE_REQUEST_TIMEOUT_MS ?? "", 10);
+      if (!Number.isFinite(configured) || configured < 1e3) return 12e3;
+      return Math.min(configured, 3e4);
+    })();
+    supabaseFetch = (input, init) => {
+      const timeoutSignal = AbortSignal.timeout(SUPABASE_REQUEST_TIMEOUT_MS);
+      const signal = init?.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
+      return fetch(input, { ...init, signal });
+    };
     supabaseUrl = normalizeUrl(process.env.SUPABASE_URL);
     supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || process.env.SUPABASE_ANON_KEY?.trim() || "";
     _supabase = null;
@@ -68493,20 +68506,34 @@ function createHttpRedis(url, key) {
             signal: controller.signal
           });
           receivedResponse = true;
+          const contentType = res.headers.get("content-type") ?? "";
+          if (!contentType.toLowerCase().includes("json")) {
+            openHttpCircuit();
+            throw new Error(
+              `Redis HTTP bridge returned HTTP ${res.status} (${contentType || "unknown content type"}; expected JSON)`
+            );
+          }
           let payload;
           try {
             payload = await res.json();
           } catch {
             openHttpCircuit();
-            throw new Error(`Redis HTTP bridge returned ${res.status} with an unreadable response`);
+            throw new Error(
+              `Redis HTTP bridge returned HTTP ${res.status} with invalid JSON (${contentType})`
+            );
           }
           if (res.status === 503) {
             openHttpCircuit();
             throw new Error("Redis unavailable (HTTP bridge 503)");
           }
           if (!res.ok || !payload?.ok) {
-            if (res.status >= 500) openHttpCircuit();
-            throw new Error(payload?.error ?? `Redis HTTP bridge error ${res.status}`);
+            const detail = typeof payload?.details === "string" ? payload.details : "";
+            const message = typeof payload?.error === "string" ? payload.error : "";
+            const isExistingGroup = /^BUSYGROUP\b/i.test(detail) || /^BUSYGROUP\b/i.test(message);
+            if (res.status >= 500 && !isExistingGroup) openHttpCircuit();
+            throw new Error(
+              detail && message && detail !== message ? `${message}: ${detail}` : detail || message || `Redis HTTP bridge error ${res.status}`
+            );
           }
           isConnected = true;
           httpCircuitOpenUntil = 0;
@@ -68636,10 +68663,13 @@ function createHttpRedis(url, key) {
       set: (k, v) => push("set", [k, v]),
       del: (keys) => push("del", [keys]),
       exec: async () => {
-        const payload = await post2({ pipeline: ops });
         const results = [];
-        for (const [err, result] of payload.results ?? []) {
-          results.push([err ? new Error(String(err)) : null, err ? void 0 : result]);
+        for (let i = 0; i < ops.length; i += MAX_HTTP_PIPELINE_OPS) {
+          const batch = ops.slice(i, i + MAX_HTTP_PIPELINE_OPS);
+          const payload = await post2({ pipeline: batch });
+          for (const [err, result] of payload.results ?? []) {
+            results.push([err ? new Error(String(err)) : null, err ? void 0 : result]);
+          }
         }
         return results;
       }
@@ -68799,7 +68829,8 @@ var DEFAULT_MEMORY_ENTRIES = 500;
 var INFLOW_TIMEOUT_MS = Number.parseInt(process.env.API_CACHE_INFLOW_TIMEOUT ?? "", 10) || 1e4;
 function shouldUseSharedResponseCache() {
   if (process.env.VERCEL_CACHE_LOCAL_ONLY === "1") return false;
-  return process.env.VERCEL === "1" || Boolean(process.env.VERCEL_URL) || process.env.VERCEL_ENV === "production" || process.env.VERCEL_ENV === "preview";
+  const isVercelRuntime = process.env.VERCEL === "1" || Boolean(process.env.VERCEL_URL) || process.env.VERCEL_ENV === "production" || process.env.VERCEL_ENV === "preview";
+  return !isVercelRuntime;
 }
 var inflightRedisMap = /* @__PURE__ */ new Map();
 var inflightReqMap = /* @__PURE__ */ new Map();
@@ -69130,6 +69161,18 @@ function cache(options) {
     const originalJson = res.json.bind(res);
     res.json = function(body) {
       const statusCode = res.statusCode;
+      if (statusCode >= 500 && existing && existing.statusCode >= 200 && existing.statusCode < 300) {
+        logger.warn(
+          { cacheKey, statusCode, staleStatus: existing.statusCode },
+          "Origin failed \u2014 serving stale cached response"
+        );
+        if (resolveInflight) {
+          resolveInflight();
+          resolveInflight = null;
+        }
+        sendEntry(req, res, existing, "STALE", staleSeconds);
+        return res;
+      }
       let entryForResponse = null;
       if (cacheStatuses.includes(statusCode)) {
         const now = Date.now();
@@ -69495,24 +69538,28 @@ router2.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["re
     const { page = 1, limit = 24, search, tags, gender, username, resolution, sort } = parsed.data;
     const normalizedPage = Math.max(1, page);
     const normalizedLimit = Math.min(Math.max(1, limit), 100);
-    let query = supabaseProxy.from("recordings_with_links").select(LIST_COLS, { count: "exact" }).not("links", "is", "null");
-    if (search?.trim()) {
-      const s = escapeLike(search.trim());
-      query = query.or(`username.ilike.%${s}%,room_title.ilike.%${s}%,filename.ilike.%${s}%`);
-    }
-    if (tags) {
-      const tagList = tags.split(",").map((t) => t.trim()).filter(Boolean);
-      if (tagList.length > 0) query = query.overlaps("tags", tagList);
-    }
-    if (gender) {
-      const genderMatch = resolveGenderBucket(gender);
-      if (genderMatch) query = query.in("gender", genderMatch);
-    }
-    if (username) query = query.eq("username", username);
-    if (resolution) query = query.eq("resolution", resolution);
+    const countMode = search?.trim() ? "estimated" : "exact";
     const ascending = sort === "oldest";
     const sortCol = sort === "largest" ? "filesize" : sort === "popular" ? "viewers" : "timestamp";
-    query = query.order(sortCol, { ascending, nullsFirst: false });
+    const buildQuery = () => {
+      let next = supabaseProxy.from("linked_recordings").select(LIST_COLS, { count: countMode });
+      if (search?.trim()) {
+        const s = escapeLike(search.trim());
+        next = next.or(`username.ilike.%${s}%,room_title.ilike.%${s}%,filename.ilike.%${s}%`);
+      }
+      if (tags) {
+        const tagList = tags.split(",").map((t) => t.trim()).filter(Boolean);
+        if (tagList.length > 0) next = next.overlaps("tags", tagList);
+      }
+      if (gender) {
+        const genderMatch = resolveGenderBucket(gender);
+        if (genderMatch) next = next.in("gender", genderMatch);
+      }
+      if (username) next = next.eq("username", username);
+      if (resolution) next = next.eq("resolution", resolution);
+      return next.order(sortCol, { ascending, nullsFirst: false }).order("id", { ascending: false });
+    };
+    let query = buildQuery();
     const offset = (normalizedPage - 1) * normalizedLimit;
     let data = null;
     let error = null;
@@ -69528,10 +69575,7 @@ router2.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["re
     if (error && typeof error === "object" && error.code === "PGRST205") {
       req.log.warn("Schema cache miss (PGRST205), refreshing and retrying");
       await Promise.resolve().then(() => (init_supabase(), supabase_exports)).then((m) => m.refreshSupabaseSchema());
-      const refreshed = supabaseProxy.from("recordings_with_links").select(LIST_COLS, { count: "exact" }).not("links", "is", "null");
-      const ascending2 = sort === "oldest";
-      const sortCol2 = sort === "largest" ? "filesize" : sort === "popular" ? "viewers" : "timestamp";
-      const retryQuery = refreshed.order(sortCol2, { ascending: ascending2, nullsFirst: false }).range(offset, offset + normalizedLimit - 1);
+      const retryQuery = buildQuery().range(offset, offset + normalizedLimit - 1);
       const retryResult = await retryQuery;
       data = retryResult.data;
       error = retryResult.error;
@@ -69546,6 +69590,7 @@ router2.get("/recordings", cache({ ttlSeconds: 90, staleSeconds: 300, tags: ["re
     res.json({
       data: enriched,
       total: count ?? 0,
+      totalIsEstimate: Boolean(search?.trim()),
       page: normalizedPage,
       limit: normalizedLimit,
       totalPages: Math.ceil((count ?? 0) / normalizedLimit)
@@ -69639,7 +69684,8 @@ router2.get("/recordings/recommendations", async (req, res) => {
             }
           }
         }
-      } catch {
+      } catch (err) {
+        req.log?.debug?.({ err }, "Optional auth user lookup for recommendations failed");
       }
     }
     const logWeight = (n) => Math.log10(n + 1);
@@ -69691,14 +69737,14 @@ router2.get("/recordings/recommendations", async (req, res) => {
     };
     if (isAuthenticated) {
       const POOL = Math.min(Math.max(page * limit * 4, limit * 10), MAX_POOL);
-      const { data } = await supabaseProxy.from("recordings_with_links").select(POOL_COLS).not("links", "is", "null").order("timestamp", { ascending: false }).limit(POOL * 2);
+      const { data } = await supabaseProxy.from("linked_recordings").select(POOL_COLS).order("timestamp", { ascending: false }).order("id", { ascending: false }).limit(POOL * 2);
       addScored(data, 0);
       scored.sort((a, b) => b._score - a._score);
     } else {
       const POOL = Math.min(Math.max(page * limit * 4, limit * 10), MAX_POOL);
       const [newest, popular] = await Promise.all([
-        supabaseProxy.from("recordings_with_links").select(POOL_COLS).not("links", "is", "null").order("timestamp", { ascending: false }).limit(POOL),
-        supabaseProxy.from("recordings_with_links").select(POOL_COLS).not("links", "is", "null").order("viewers", { ascending: false, nullsFirst: false }).limit(POOL)
+        supabaseProxy.from("linked_recordings").select(POOL_COLS).order("timestamp", { ascending: false }).order("id", { ascending: false }).limit(POOL),
+        supabaseProxy.from("linked_recordings").select(POOL_COLS).order("viewers", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(POOL)
       ]);
       addScored(newest.data, 80);
       addScored(popular.data, 20);
@@ -69721,11 +69767,12 @@ router2.get("/recordings/random", async (req, res) => {
   res.set("Cache-Control", "private, no-store");
   try {
     const excludeRaw = typeof req.query.exclude === "string" ? req.query.exclude : "";
+    const uuidRegex2 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const excludeIds = new Set(
-      excludeRaw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 100)
+      excludeRaw.split(",").map((s) => s.trim()).filter((s) => uuidRegex2.test(s)).slice(0, 100)
     );
     const POOL_SIZE = Math.max(200, excludeIds.size + 50);
-    const { data: pool, error } = await supabaseProxy.from("recordings_with_links").select("id").not("links", "is", "null").limit(POOL_SIZE);
+    const { data: pool, error } = await supabaseProxy.from("linked_recordings").select("id").limit(POOL_SIZE);
     if (error) {
       req.log.error({ err: error }, "Supabase error getting recordings for random");
       res.status(500).json({ error: "Failed to get random recording" });
@@ -69733,7 +69780,7 @@ router2.get("/recordings/random", async (req, res) => {
     }
     const candidates = (pool ?? []).filter((r) => !excludeIds.has(r.id));
     if (candidates.length === 0) {
-      const { data: fallback } = await supabaseProxy.from("recordings_with_links").select("id").not("links", "is", "null").limit(1);
+      const { data: fallback } = await supabaseProxy.from("linked_recordings").select("id").limit(1);
       if (fallback && fallback.length > 0) {
         res.json({ id: fallback[0].id });
         return;
@@ -69761,7 +69808,7 @@ router2.get("/recordings/related", async (req, res) => {
       res.json([]);
       return;
     }
-    const { data: recording, error: recError } = await supabaseProxy.from("recordings_with_links").select("username, tags, gender").not("links", "is", "null").eq("id", id).single();
+    const { data: recording, error: recError } = await supabaseProxy.from("linked_recordings").select("username, tags, gender").eq("id", id).single();
     if (recError || !recording) {
       res.json([]);
       return;
@@ -69789,14 +69836,15 @@ router2.get("/recordings/related", async (req, res) => {
             }
           }
         }
-      } catch {
+      } catch (err) {
+        req.log?.debug?.({ err }, "Optional auth user lookup for related recordings failed");
       }
     }
-    const { data: performerData } = await supabaseProxy.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).eq("username", recording.username).order("timestamp", { ascending: false }).limit(limit);
+    const { data: performerData } = await supabaseProxy.from("linked_recordings").select(RELATED_COLS).neq("id", id).eq("username", recording.username).order("timestamp", { ascending: false }).order("id", { ascending: false }).limit(limit);
     let tagResults = [];
     if (recording.tags && recording.tags.length > 0) {
       const sourceTags = new Set(recording.tags);
-      const { data } = await supabaseProxy.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).neq("username", recording.username).overlaps("tags", recording.tags).order("timestamp", { ascending: false }).limit(limit * 3);
+      const { data } = await supabaseProxy.from("linked_recordings").select(RELATED_COLS).neq("id", id).neq("username", recording.username).overlaps("tags", recording.tags).order("timestamp", { ascending: false }).order("id", { ascending: false }).limit(limit * 3);
       tagResults = (data ?? []).map((r) => {
         let score = (r.tags ?? []).filter((t) => sourceTags.has(t)).length * 15;
         if (isAuthenticated) {
@@ -69830,7 +69878,7 @@ router2.get("/recordings/related", async (req, res) => {
       }
     }
     if (merged.length < limit && recording.gender) {
-      const { data } = await supabaseProxy.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).neq("username", recording.username).eq("gender", recording.gender).order("viewers", { ascending: false, nullsFirst: false }).limit(limit * 2);
+      const { data } = await supabaseProxy.from("linked_recordings").select(RELATED_COLS).neq("id", id).neq("username", recording.username).eq("gender", recording.gender).order("viewers", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(limit * 2);
       for (const r of data ?? []) {
         if (merged.length >= limit) break;
         if (!seen.has(r.id)) {
@@ -69840,7 +69888,7 @@ router2.get("/recordings/related", async (req, res) => {
       }
     }
     if (merged.length < limit) {
-      const { data } = await supabaseProxy.from("recordings_with_links").select(RELATED_COLS).not("links", "is", "null").neq("id", id).neq("username", recording.username).order("viewers", { ascending: false, nullsFirst: false }).limit(limit * 3);
+      const { data } = await supabaseProxy.from("linked_recordings").select(RELATED_COLS).neq("id", id).neq("username", recording.username).order("viewers", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(limit * 3);
       for (const r of data ?? []) {
         if (merged.length >= limit) break;
         if (!seen.has(r.id)) {
@@ -69868,7 +69916,7 @@ router2.get("/recordings/:id", cache({ ttlSeconds: 120, staleSeconds: 600, tags:
       res.status(404).json({ error: "Recording not found" });
       return;
     }
-    const { data, error } = await supabaseProxy.from("recordings_with_links").select("*").not("links", "is", "null").eq("id", id).single();
+    const { data, error } = await supabaseProxy.from("linked_recordings").select("*").eq("id", id).single();
     if (error) {
       if (error.code === "PGRST116") {
         res.status(404).json({ error: "Recording not found" });
@@ -70052,6 +70100,12 @@ router3.get(
         });
         return;
       }
+      if (!/^[a-zA-Z0-9_.-]{1,100}$/.test(username)) {
+        res.status(400).json({
+          error: "username must be between 1 and 100 characters containing only letters, numbers, underscores, periods, or hyphens"
+        });
+        return;
+      }
       const profileUrl = platform === "chaturbate" ? `https://chaturbate.com/${username}/${CB_AFFILIATE ? `?campaign=${CB_AFFILIATE}` : ""}` : `https://stripchat.com/${username}`;
       const result = {
         exists: false,
@@ -70061,9 +70115,9 @@ router3.get(
         in_archive: false
       };
       try {
-        const { data: archiveData } = await supabaseProxy.from("recordings_with_links").select(
+        const { data: archiveData } = await supabaseProxy.from("linked_recordings").select(
           "thumbnail_url, sprite_url, preview_url, timestamp, username"
-        ).eq("username", username).not("links", "is", "null").order("timestamp", { ascending: false }).limit(50);
+        ).eq("username", username).order("timestamp", { ascending: false }).order("id", { ascending: false }).limit(50);
         if (archiveData && archiveData.length > 0) {
           result.in_archive = true;
           result.archive_recording_count = archiveData.length;
@@ -70194,6 +70248,27 @@ function newerRow(cur, candidate) {
   if (!cur.timestamp) return candidate;
   return candidate.timestamp > cur.timestamp ? candidate : cur;
 }
+async function fetchPerformersViaRpc() {
+  const { data, error } = await supabaseProxy.rpc("get_performer_stats");
+  if (error) {
+    const code = error.code;
+    const message = error.message ?? "";
+    if (code === "PGRST202" || code === "42883" || /function.*(?:not found|does not exist)|Could not find the function/i.test(message)) {
+      logger.warn("get_performer_stats RPC unavailable \u2014 falling back to legacy aggregation");
+      return null;
+    }
+    throw error;
+  }
+  return (data ?? []).map((row) => ({
+    username: String(row.username ?? ""),
+    recording_count: Number(row.recording_count ?? 0),
+    gender: row.gender ?? null,
+    latest_timestamp: row.latest_timestamp ?? null,
+    latest_thumbnail: row.latest_thumbnail ?? null,
+    sprite_url: row.sprite_url ?? null,
+    pickId: row.pick_id ?? null
+  }));
+}
 var PERFORMER_AGGREGATION_CACHE_MS = 6e4;
 var performerAggregationCache = null;
 var performerAggregationInFlight = null;
@@ -70206,6 +70281,8 @@ async function fetchPerformers() {
     return performerAggregationInFlight;
   }
   const pending = (async () => {
+    const aggregated = await fetchPerformersViaRpc();
+    if (aggregated !== null) return aggregated;
     const { data, error } = await fetchAll(
       (start, end) => supabaseProxy.from("recordings_with_links").select("id,username,gender,timestamp,thumbnail_url,sprite_url").not("links", "is", "null").range(start, end)
     );
@@ -70366,7 +70443,7 @@ router3.get(
       }
       const { username } = parsed.data;
       const SELECT_COLS = "id,channel_id,username,filename,timestamp,room_title,tags,viewers,resolution,framerate,filesize,duration,gender,thumbnail_url,sprite_url,embed_url,preview_url,instance_id,created_at,updated_at";
-      const { data: validRecordings, error } = await supabaseProxy.from("recordings_with_links").select(SELECT_COLS).not("links", "is", "null").eq("username", username).order("timestamp", { ascending: false });
+      const { data: validRecordings, error } = await supabaseProxy.from("linked_recordings").select(SELECT_COLS).eq("username", username).order("timestamp", { ascending: false }).order("id", { ascending: false });
       if (error) {
         req.log.error(
           { err: error, username },
@@ -70519,13 +70596,13 @@ router5.get("/stats", cache({ ttlSeconds: 60, staleSeconds: 300, tags: ["stats",
       }
     } catch (err) {
       req.log.error({ err }, "Stats aggregation error");
-      res.status(500).json({ error: "Failed to fetch stats", details: err?.message ?? String(err) });
+      res.status(500).json({ error: "Failed to fetch stats" });
       return;
     }
     res.json(stats);
   } catch (err) {
     req.log.error({ err }, "GET /stats unexpected error");
-    res.status(500).json({ error: "Failed to fetch stats", details: err?.message ?? String(err) });
+    res.status(500).json({ error: "Failed to fetch stats" });
   }
 });
 var stats_default = router5;
@@ -70534,13 +70611,28 @@ var stats_default = router5;
 var import_express6 = __toESM(require_express2(), 1);
 init_supabase();
 async function getReactionCounts(recordingId) {
-  const { data, error } = await fetchAll(
+  const { data, error } = await supabaseProxy.rpc("get_reaction_counts", {
+    p_recording_id: recordingId
+  });
+  if (!error) {
+    const row = Array.isArray(data) ? data[0] : void 0;
+    return {
+      likes: Number(row?.likes ?? 0),
+      dislikes: Number(row?.dislikes ?? 0)
+    };
+  }
+  const code = error.code;
+  const message = error.message ?? "";
+  if (code !== "PGRST202" && !/function.*not.*found|Could not find the function/i.test(message)) {
+    throw error;
+  }
+  const { data: rows, error: fallbackError } = await fetchAll(
     (start, end) => supabaseProxy.from("reactions").select("type").eq("recording_id", recordingId).range(start, end)
   );
-  if (error) throw error;
+  if (fallbackError) throw fallbackError;
   let likes = 0;
   let dislikes = 0;
-  for (const r of data ?? []) {
+  for (const r of rows ?? []) {
     if (r.type === "like") likes++;
     else if (r.type === "dislike") dislikes++;
   }
@@ -70678,11 +70770,30 @@ function buildCommentTree(rows, likedSet) {
   }
   return roots;
 }
-async function fetchLikesForComments(commentIds) {
+async function fetchLikesForComments(commentIds, sessionId) {
   const likeCounts = /* @__PURE__ */ new Map();
   const likedBySession = /* @__PURE__ */ new Map();
   for (let i = 0; i < commentIds.length; i += 1e3) {
     const chunk = commentIds.slice(i, i + 1e3);
+    const { data: aggregateRows, error: aggregateError } = await supabaseProxy.rpc(
+      "get_comment_like_stats",
+      { p_comment_ids: chunk, p_session_id: sessionId ?? null }
+    );
+    if (!aggregateError) {
+      for (const row of aggregateRows ?? []) {
+        const commentId = Number(row.comment_id);
+        likeCounts.set(commentId, Number(row.like_count ?? 0));
+        if (sessionId && row.user_liked) {
+          likedBySession.set(commentId, /* @__PURE__ */ new Set([sessionId]));
+        }
+      }
+      continue;
+    }
+    const code = aggregateError.code;
+    const message = aggregateError.message ?? "";
+    if (code !== "PGRST202" && !/function.*not.*found|Could not find the function/i.test(message)) {
+      throw aggregateError;
+    }
     const { data, error } = await supabaseProxy.from("comment_likes").select("comment_id, session_id").in("comment_id", chunk);
     if (error) throw error;
     for (const r of data ?? []) {
@@ -70705,6 +70816,55 @@ router7.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comm
       res.status(400).json({ error: "recording_id is required" });
       return;
     }
+    const rawPage = req.query.page;
+    const rawLimit = req.query.limit;
+    const hasPagination = rawPage !== void 0 && rawLimit !== void 0;
+    const page = hasPagination ? Math.max(1, parseInt(rawPage) || 1) : 1;
+    const limit = hasPagination ? Math.min(100, Math.max(1, parseInt(rawLimit) || 50)) : 0;
+    const offset = hasPagination ? (page - 1) * limit : 0;
+    if (hasPagination) {
+      const { data: feedData, error: feedError } = await supabaseProxy.rpc("get_comment_feed", {
+        p_recording_id: recording_id,
+        p_sort: sort,
+        p_offset: offset,
+        p_limit: hasPagination ? limit : null,
+        p_session_id: session_id ?? null
+      });
+      if (!feedError) {
+        const feedRows = feedData ?? [];
+        let total2 = Number(feedRows[0]?.total ?? 0);
+        if (feedRows.length === 0) {
+          const { count: totalCount, error: countError } = await supabaseProxy.from("comments").select("id", { count: "exact", head: true }).eq("recording_id", recording_id);
+          if (countError) {
+            req.log?.error?.({ err: countError, recording_id }, "Supabase error counting comments");
+            res.status(500).json({ error: "Failed to fetch comments" });
+            return;
+          }
+          total2 = totalCount ?? 0;
+        }
+        const windowRows2 = feedRows.map(({ total: _total, user_liked: _userLiked, ...row }) => ({
+          ...row,
+          likes: Number(row.likes ?? 0)
+        }));
+        const likedSet2 = session_id ? new Set(feedRows.filter((row) => row.user_liked).map((row) => Number(row.id))) : void 0;
+        const tree2 = buildCommentTree(windowRows2, likedSet2);
+        if (hasPagination) {
+          const totalPages2 = Math.ceil(total2 / limit) || 1;
+          res.json({ data: tree2, total: total2, page, limit, totalPages: totalPages2 });
+        } else {
+          res.json(tree2);
+        }
+        return;
+      }
+      const feedErrorCode = feedError.code;
+      const feedErrorMessage = feedError.message ?? "";
+      const canUseLegacyPath = feedErrorCode === "PGRST202" || feedErrorCode === "42501" || /function.*not.*found|Could not find the function|permission denied/i.test(feedErrorMessage);
+      if (!canUseLegacyPath) {
+        req.log?.error?.({ err: feedError, recording_id }, "Supabase error fetching paginated comment feed");
+        res.status(500).json({ error: "Failed to fetch comments" });
+        return;
+      }
+    }
     const { data, error } = await fetchAll(
       (start, end) => supabaseProxy.from("comments").select("id,recording_id,parent_id,author,content,deleted,created_at").eq("recording_id", recording_id).range(start, end)
     );
@@ -70715,14 +70875,10 @@ router7.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comm
     }
     const allRows = data ?? [];
     const total = allRows.length;
-    const rawPage = req.query.page;
-    const rawLimit = req.query.limit;
-    const hasPagination = rawPage !== void 0 && rawLimit !== void 0;
-    const page = hasPagination ? Math.max(1, parseInt(rawPage) || 1) : 1;
-    const limit = hasPagination ? Math.min(100, Math.max(1, parseInt(rawLimit) || 50)) : total || 50;
-    const totalPages = hasPagination ? Math.ceil(total / limit) || 1 : 1;
+    const fallbackLimit = hasPagination ? limit : total || 50;
+    const totalPages = hasPagination ? Math.ceil(total / fallbackLimit) || 1 : 1;
     const commentIds = allRows.map((r) => Number(r.id));
-    const { likeCounts, likedBySession } = await fetchLikesForComments(commentIds);
+    const { likeCounts, likedBySession } = await fetchLikesForComments(commentIds, session_id);
     const likedSet = session_id ? new Set(commentIds.filter((id) => likedBySession.get(id)?.has(session_id))) : void 0;
     allRows.sort((a, b) => {
       const pa = a.parent_id == null ? 0 : 1;
@@ -70738,14 +70894,14 @@ router7.get("/comments", cache({ ttlSeconds: 30, staleSeconds: 120, tags: ["comm
       if (ta !== tb) return sort === "old" ? ta - tb : tb - ta;
       return 0;
     });
-    const offset = (page - 1) * limit;
-    const windowRows = allRows.slice(offset, offset + limit).map((r) => ({
+    const fallbackOffset = (page - 1) * fallbackLimit;
+    const windowRows = allRows.slice(fallbackOffset, fallbackOffset + fallbackLimit).map((r) => ({
       ...r,
       likes: likeCounts.get(Number(r.id)) ?? 0
     }));
     const tree = buildCommentTree(windowRows, likedSet);
     if (hasPagination) {
-      res.json({ data: tree, total, page, limit, totalPages });
+      res.json({ data: tree, total, page, limit: fallbackLimit, totalPages });
     } else {
       res.json(tree);
     }
@@ -70953,6 +71109,24 @@ router8.post("/requests", requireAuth, async (req, res) => {
     res.status(400).json({ error: "performer_username or stream_link is required" });
     return;
   }
+  if (stream_link !== void 0 && stream_link !== null && stream_link !== "") {
+    if (typeof stream_link !== "string" || stream_link.trim().length > 2048 || !/^https?:\/\//i.test(stream_link.trim())) {
+      res.status(400).json({ error: "stream_link must be a valid http(s) URL (max 2048 chars)" });
+      return;
+    }
+  }
+  if (performer_username !== void 0 && performer_username !== null && performer_username !== "") {
+    if (typeof performer_username !== "string" || performer_username.trim().length > 100) {
+      res.status(400).json({ error: "performer_username must be a string up to 100 characters" });
+      return;
+    }
+  }
+  if (notes !== void 0 && notes !== null && notes !== "") {
+    if (typeof notes !== "string" || notes.trim().length > 1e3) {
+      res.status(400).json({ error: "notes must be a string up to 1000 characters" });
+      return;
+    }
+  }
   const validPriority = ["low", "normal", "high"].includes(priority ?? "") ? priority : "normal";
   if (performer_username) {
     try {
@@ -70967,7 +71141,7 @@ router8.post("/requests", requireAuth, async (req, res) => {
         return;
       }
     } catch (err) {
-      console.error("[requests] existing-recordings check failed:", err);
+      req.log?.error?.({ err }, "[requests] existing-recordings check failed") ?? logger.error({ err }, "[requests] existing-recordings check failed");
     }
   }
   const dedupeKey = performer_username ? performer_username : stream_link;
@@ -70999,15 +71173,17 @@ router8.post("/requests", requireAuth, async (req, res) => {
       relatedId: String(created.id)
     });
     res.status(201).json(created);
-  } catch {
+  } catch (err) {
     try {
       const existing = await findDuplicate(req.user.id, platform, performer_username, stream_link);
       if (existing) {
         res.status(200).json(existing);
         return;
       }
-    } catch {
+    } catch (dupErr) {
+      req.log?.error?.({ err: dupErr }, "[requests] fallback duplicate check failed") ?? logger.error({ err: dupErr }, "[requests] fallback duplicate check failed");
     }
+    req.log?.error?.({ err }, "[requests] insert request failed") ?? logger.error({ err }, "[requests] insert request failed");
     res.status(500).json({ error: "Failed to submit request. Please try again." });
   }
 });
@@ -71213,11 +71389,24 @@ router9.put("/user/profile", async (req, res) => {
   try {
     const userId = req.user.id;
     const { display_name, avatar_url, bio, username } = req.body;
+    if (avatar_url !== void 0 && avatar_url !== null && avatar_url !== "") {
+      if (typeof avatar_url !== "string" || avatar_url.length > 2048 || !/^https?:\/\//i.test(avatar_url.trim())) {
+        res.status(400).json({ error: "avatar_url must be a valid http(s) URL" });
+        return;
+      }
+    }
+    if (username !== void 0 && username !== null && username.trim() !== "") {
+      const trimmedUser = username.trim();
+      if (!/^[a-zA-Z0-9_-]{3,30}$/.test(trimmedUser)) {
+        res.status(400).json({ error: "username must be 3-30 characters (letters, numbers, underscores, or hyphens)" });
+        return;
+      }
+    }
     const updates = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
-    if (display_name !== void 0) updates.display_name = display_name;
-    if (avatar_url !== void 0) updates.avatar_url = avatar_url;
-    if (bio !== void 0) updates.bio = bio;
-    if (username != null && typeof username === "string") updates.username = username.trim().toLowerCase();
+    if (display_name !== void 0 && typeof display_name === "string") updates.display_name = display_name.trim().slice(0, 100);
+    if (avatar_url !== void 0 && typeof avatar_url === "string") updates.avatar_url = avatar_url.trim() || void 0;
+    if (bio !== void 0 && typeof bio === "string") updates.bio = bio.trim().slice(0, 1e3);
+    if (username != null && typeof username === "string" && username.trim() !== "") updates.username = username.trim().toLowerCase();
     if (req.user.email) updates.email = req.user.email;
     const { data, error } = await req.supabase.from("user_profiles").upsert({ user_id: userId, ...updates }).select("user_id, display_name, avatar_url, bio, created_at, updated_at, username, email").single();
     if (error) {
@@ -71394,6 +71583,34 @@ router9.get("/user/history/continue", async (req, res) => {
 router9.get("/user/history/stats", async (req, res) => {
   try {
     const userId = req.user.id;
+    const { data: aggregate, error: aggregateError } = await req.supabase.rpc(
+      "get_user_history_stats",
+      { p_user_id: userId }
+    );
+    const statsRow = Array.isArray(aggregate) ? aggregate[0] : void 0;
+    if (!aggregateError && statsRow) {
+      res.json({
+        totalWatchMs: Number(statsRow.total_watch_ms ?? 0),
+        totalVideos: Number(statsRow.total_videos ?? 0),
+        completedVideos: Number(statsRow.completed_videos ?? 0),
+        avgProgress: Number(statsRow.avg_progress ?? 0),
+        topPerformers: statsRow.top_performers ?? [],
+        dayBuckets: statsRow.day_buckets ?? [0, 0, 0, 0, 0, 0, 0],
+        hourBuckets: statsRow.hour_buckets ?? Array(24).fill(0)
+      });
+      return;
+    }
+    if (aggregateError) {
+      const code = aggregateError.code;
+      const message = aggregateError.message ?? "";
+      const canFallback = code === "PGRST202" || code === "42501" || /function.*not.*found|Could not find the function|permission denied/i.test(message);
+      if (!canFallback) {
+        req.log.error({ err: aggregateError }, "Supabase error aggregating watch history stats");
+        res.status(500).json({ error: "Internal server error" });
+        return;
+      }
+      req.log.warn({ code }, "get_user_history_stats RPC unavailable; using compatibility fallback");
+    }
     const { data, error } = await req.supabase.from("watch_history").select("recording_id, progress, total_watch_ms, metadata, watched_at").eq("user_id", userId);
     if (error) {
       req.log.error({ err: error }, "Supabase error fetching watch stats");
@@ -72593,6 +72810,7 @@ async function buildSuggestionSnapshot() {
       tags,
       recordings
     };
+    snapshotMemo = { at: Date.now(), value: snapshot };
     const counts = { performers: performers.length, tags: tags.length, recordings: recordings.length };
     if (redis) {
       await redis.setex(SNAPSHOT_KEY, SNAPSHOT_TTL_SECONDS, JSON.stringify(snapshot));
@@ -72623,9 +72841,11 @@ var snapshotMemo = {
   at: 0,
   value: null
 };
-var MEMO_TTL_MS = 3e4;
+var MEMO_TTL_MS = 6e4;
+var MISSING_MEMO_TTL_MS = 3e3;
 async function getSuggestionSnapshot() {
-  if (snapshotMemo.value && Date.now() - snapshotMemo.at < MEMO_TTL_MS) {
+  const memoTtl = snapshotMemo.value ? MEMO_TTL_MS : MISSING_MEMO_TTL_MS;
+  if (Date.now() - snapshotMemo.at < memoTtl) {
     return snapshotMemo.value;
   }
   const redis = client4();
@@ -72916,6 +73136,34 @@ async function fetchRoles(userIds) {
   return roles;
 }
 router11.get("/admin/stats", ...admin3, async (_req, res) => {
+  const { data: aggregate, error: aggregateError } = await supabaseProxy.rpc("get_admin_stats");
+  const aggregateRow = Array.isArray(aggregate) && aggregate.length > 0 ? aggregate[0] : null;
+  if (!aggregateError && aggregateRow) {
+    res.json({
+      users: Number(aggregateRow.users ?? 0),
+      recordings: Number(aggregateRow.recordings ?? 0),
+      performers: Number(aggregateRow.performers ?? 0),
+      requests: {
+        total: Number(aggregateRow.request_total ?? 0),
+        pending: Number(aggregateRow.request_pending ?? 0),
+        approved: Number(aggregateRow.request_approved ?? 0),
+        rejected: Number(aggregateRow.request_rejected ?? 0),
+        done: Number(aggregateRow.request_done ?? 0)
+      }
+    });
+    return;
+  }
+  if (aggregateError) {
+    const code = aggregateError.code;
+    const message = aggregateError.message ?? "";
+    const canFallback = code === "PGRST202" || code === "42501" || /function.*not.*found|Could not find the function|permission denied/i.test(message);
+    if (!canFallback) {
+      _req.log?.error?.({ err: aggregateError }, "GET /admin/stats aggregate RPC failed");
+      res.status(500).json({ error: "Failed to fetch admin stats" });
+      return;
+    }
+    _req.log?.warn?.({ code }, "get_admin_stats RPC unavailable; using compatibility fallback");
+  }
   const safeCount = async (label, run) => {
     try {
       const { count, error } = await run();
@@ -73230,7 +73478,6 @@ var router12 = (0, import_express12.Router)();
 function escapeLike2(input) {
   return input.replace(/[\\%_]/g, "\\$&");
 }
-var MAX_TAG_SCAN_PAGES = 20;
 router12.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["search", "recordings", "performers", "tags"] }), async (req, res) => {
   const q = String(req.query.q ?? "").trim();
   if (!q || q.length < 2) {
@@ -73245,17 +73492,26 @@ router12.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["searc
     res.json({ suggestions: matchSuggestions(q, snapshot), query: q, source: "index" });
     return;
   }
-  maybeBuildSuggestionSnapshot().catch(
-    (err) => logger.error({ err, query: q }, "Background suggestion build kicked off with error")
-  );
+  if (!process.env.VERCEL && !process.env.VERCEL_ENV && !process.env.VERCEL_URL) {
+    maybeBuildSuggestionSnapshot().catch(
+      (err) => logger.error({ err, query: q }, "Background suggestion build kicked off with error")
+    );
+  }
   const safeQ = escapeLike2(q);
   const suggestions = [];
   try {
-    const { data: performers } = await supabaseProxy.from("recordings_with_links").select("username, thumbnail_url, sprite_url, preview_url, links").not("links", "is", "null").ilike("username", `%${safeQ}%`).order("timestamp", { ascending: false }).limit(4);
-    if (performers) {
+    const [performerResult, recordingResult] = await Promise.all([
+      supabaseProxy.from("linked_recordings").select("username, thumbnail_url, sprite_url, preview_url, links").ilike("username", `%${safeQ}%`).order("timestamp", { ascending: false }).order("id", { ascending: false }).limit(16),
+      supabaseProxy.from("linked_recordings").select("id, username, room_title, filename, thumbnail_url, links").or(
+        `username.ilike.%${safeQ}%,room_title.ilike.%${safeQ}%,filename.ilike.%${safeQ}%`
+      ).order("timestamp", { ascending: false }).order("id", { ascending: false }).limit(4)
+    ]);
+    if (performerResult.error) {
+      logger.warn({ err: performerResult.error, query: q }, "Fallback performer suggestions failed");
+    } else {
       const seen = /* @__PURE__ */ new Set();
-      for (const p of performers) {
-        if (seen.has(p.username)) continue;
+      for (const p of performerResult.data ?? []) {
+        if (!p.username || seen.has(p.username)) continue;
         seen.add(p.username);
         const image = p.thumbnail_url || p.sprite_url || p.preview_url;
         suggestions.push({
@@ -73265,13 +73521,13 @@ router12.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["searc
           image_url: image,
           href: `/performers/${encodeURIComponent(p.username)}`
         });
+        if (seen.size >= 4) break;
       }
     }
-    const { data: recordings } = await supabaseProxy.from("recordings_with_links").select("id, username, room_title, filename, thumbnail_url, links").not("links", "is", "null").or(
-      `username.ilike.%${safeQ}%,room_title.ilike.%${safeQ}%,filename.ilike.%${safeQ}%`
-    ).order("timestamp", { ascending: false }).limit(4);
-    if (recordings) {
-      for (const r of recordings) {
+    if (recordingResult.error) {
+      logger.warn({ err: recordingResult.error, query: q }, "Fallback recording suggestions failed");
+    } else {
+      for (const r of recordingResult.data ?? []) {
         const title = r.room_title || r.filename;
         suggestions.push({
           type: "recording",
@@ -73282,45 +73538,8 @@ router12.get("/search", cache({ ttlSeconds: 45, staleSeconds: 120, tags: ["searc
         });
       }
     }
-    {
-      try {
-        const lowerQ = q.toLowerCase();
-        const seenTags = /* @__PURE__ */ new Set();
-        const matchedTags = [];
-        const PAGE_SIZE = 1e3;
-        for (let start = 0; ; start += PAGE_SIZE) {
-          const pageIndex = start / PAGE_SIZE;
-          if (pageIndex >= MAX_TAG_SCAN_PAGES) break;
-          const { data, error } = await supabaseProxy.from("recordings_with_links").select("tags").not("links", "is", "null").not("tags", "is", "null").range(start, start + PAGE_SIZE - 1);
-          if (error) break;
-          if (!data || data.length === 0) break;
-          for (const r of data) {
-            for (const tag of r.tags ?? []) {
-              if (!tag || seenTags.has(tag)) continue;
-              seenTags.add(tag);
-              if (tag.toLowerCase().includes(lowerQ)) {
-                matchedTags.push(tag);
-                if (matchedTags.length >= 4) break;
-              }
-            }
-            if (matchedTags.length >= 4) break;
-          }
-          if (matchedTags.length >= 4) break;
-          if (data.length < PAGE_SIZE) break;
-        }
-        for (const tag of matchedTags) {
-          suggestions.push({
-            type: "tag",
-            label: tag,
-            subtitle: "Tag",
-            href: `/browse?tags=${encodeURIComponent(tag)}`
-          });
-        }
-      } catch {
-      }
-    }
   } catch (err) {
-    logger.error({ err, query: q }, "Search error");
+    logger.error({ err, query: q }, "Search fallback error");
   }
   res.json({ suggestions, query: q });
 });
@@ -74005,6 +74224,18 @@ router13.get("/media", async (req, res) => {
     streamResponse(response, res, req.log);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
+    const upstreamStatus = /^upstream (\d{3})$/.exec(errorMessage);
+    const statusCode = upstreamStatus ? Number(upstreamStatus[1]) : null;
+    const permanentImageFailure = !isVideoRequest && statusCode !== null && statusCode >= 400 && statusCode < 500 && !isTransientStatus(statusCode);
+    if (!res.headersSent && permanentImageFailure) {
+      markCachedFailure(urlStr);
+      req.log.warn(
+        { url: urlStr, status: statusCode },
+        "Media proxy upstream image unavailable; allowing mirror fallback"
+      );
+      res.status(404).end();
+      return;
+    }
     req.log.error({ err, url: urlStr }, "Media proxy fetch error");
     if (!res.headersSent) {
       markCachedFailure(urlStr);
@@ -74148,6 +74379,11 @@ router15.post("/recordings/:id/view", async (req, res) => {
   const { id } = req.params;
   if (!id) {
     res.status(400).json({ error: "Missing recording id" });
+    return;
+  }
+  const uuidRegex2 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex2.test(id)) {
+    res.status(400).json({ error: "Invalid recording id" });
     return;
   }
   const bufferedViewers = await recordView(id);
@@ -74906,7 +75142,7 @@ router18.get(
         res.json({ data: hot, source: "redis" });
         return;
       }
-      const { data, error } = await supabaseProxy.from("recordings_with_links").select("id,username,room_title,thumbnail_url,sprite_url,viewers").not("links", "is", "null").order("viewers", { ascending: false, nullsFirst: false }).limit(limit);
+      const { data, error } = await supabaseProxy.from("linked_recordings").select("id,username,room_title,thumbnail_url,sprite_url,viewers").order("viewers", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).limit(limit);
       if (error) {
         res.status(500).json({ error: "Failed to fetch hot recordings" });
         return;
