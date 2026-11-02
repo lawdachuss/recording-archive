@@ -141,6 +141,11 @@ export default function Browse() {
   const [showRecentSearches, setShowRecentSearches] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  const { data: tagsData } = useListTags({
+    query: { queryKey: getListTagsQueryKey(), staleTime: 60_000 },
+  });
+
+
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 220);
     return () => window.clearTimeout(timer);
@@ -213,9 +218,6 @@ export default function Browse() {
     return () => window.removeEventListener("keydown", onShortcut);
   }, []);
 
-  const { data: tagsData } = useListTags({
-    query: { queryKey: getListTagsQueryKey(), staleTime: 60_000 },
-  });
   const popularTags = useMemo(() => tagsData ?? [], [tagsData]);
 
   const filteredPopularTags = useMemo(() => {
