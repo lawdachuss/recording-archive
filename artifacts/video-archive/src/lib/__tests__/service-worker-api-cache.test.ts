@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 const workerSource = readFileSync(new URL("../../../public/sw.js", import.meta.url), "utf8");
 const API_TTL_MS = 5 * 60_000;
 
-function bootWorker(fetchImpl: typeof fetch, now = Date.now()) {
+function bootWorker(fetchImpl: typeof fetch, now = Date.now(), existingCacheNames: string[] = []) {
   const listeners = new Map<string, (event: any) => void>();
   const entries = new Map<string, Response>();
   const cache = {
@@ -16,10 +16,14 @@ function bootWorker(fetchImpl: typeof fetch, now = Date.now()) {
     delete: vi.fn(async (request: Request) => entries.delete(request.url)),
     keys: vi.fn(async () => []),
   };
+  const deletedCacheNames: string[] = [];
   const caches = {
     open: vi.fn(async () => cache),
-    keys: vi.fn(async () => []),
-    delete: vi.fn(async () => true),
+    keys: vi.fn(async () => existingCacheNames),
+    delete: vi.fn(async (name: string) => {
+      deletedCacheNames.push(name);
+      return true;
+    }),
   };
   const self = {
     addEventListener: (name: string, listener: (event: any) => void) => listeners.set(name, listener),
@@ -48,7 +52,7 @@ function bootWorker(fetchImpl: typeof fetch, now = Date.now()) {
     console,
   });
 
-  return { fetchHandler: listeners.get("fetch")!, caches, cache, entries };
+  return { fetchHandler: listeners.get("fetch")!, listeners, caches, cache, entries, deletedCacheNames };
 }
 
 function dispatchFetch(fetchHandler: (event: any) => void, request: Request) {
@@ -145,6 +149,28 @@ describe("service-worker API cache privacy and freshness", () => {
 
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("fresh");
+  });
+
+  it("purges old API cache generations on activation but keeps the current caches", async () => {
+    const fetchImpl = vi.fn(async () => new Response("unused"));
+    const { listeners, deletedCacheNames } = bootWorker(fetchImpl, Date.now(), [
+      "vault-api-v1",
+      "vault-api-v2",
+      "vault-images-v6",
+      "vault-images-v7",
+    ]);
+    let activationPromise: Promise<void> | undefined;
+    listeners.get("activate")!({
+      waitUntil: (promise: Promise<void>) => {
+        activationPromise = promise;
+      },
+    });
+    await activationPromise!;
+
+    expect(deletedCacheNames).toContain("vault-api-v1");
+    expect(deletedCacheNames).toContain("vault-images-v6");
+    expect(deletedCacheNames).not.toContain("vault-api-v2");
+    expect(deletedCacheNames).not.toContain("vault-images-v7");
   });
 
   it("rejects and deletes stale cached responses older than five minutes", async () => {
