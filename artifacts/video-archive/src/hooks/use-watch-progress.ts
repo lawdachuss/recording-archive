@@ -7,40 +7,36 @@ interface WatchProgressOptions {
   video: Recording | null | undefined;
   /** Estimated duration in seconds (from metadata). If null, uses a default. */
   durationSeconds?: number | null;
+  /** True only after the user starts an in-page player. */
+  isActive: boolean;
 }
 
 /**
- * Tracks watch progress for a video based on time spent on the page.
- *
- * Strategy:
- * - Records time spent watching (incremented every 5s while tab is visible)
- * - Estimates progress as min(100, (timeSpent / estimatedDuration) * 100)
- * - Syncs to server every 15 seconds and on unmount
- * - Saves resume position (last known time spent)
+ * Tracks estimated watch time only while an in-page player has been started
+ * and the document is visible. Cross-origin embeds do not expose play/pause or
+ * seek events, so this is an active-session estimate, not exact media position.
  */
-export function useWatchProgress({ video, durationSeconds }: WatchProgressOptions) {
+export function useWatchProgress({ video, durationSeconds, isActive }: WatchProgressOptions) {
   const { user } = useAuth();
-  const startTimeRef = useRef(Date.now());
   const totalMsRef = useRef(0);
-  const lastSyncRef = useRef(0);
-  const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastActiveAtRef = useRef<number | null>(null);
   const unmountedRef = useRef(false);
-
-  // Estimate duration: use provided, fallback to 10 minutes (600s)
   const estimatedDurationMs = (durationSeconds ?? 600) * 1000;
 
   const syncProgress = useCallback(() => {
     if (!video?.id || !user) return;
-
     const now = Date.now();
-    const elapsed = now - startTimeRef.current;
-    totalMsRef.current += elapsed;
-    startTimeRef.current = now;
+    if (lastActiveAtRef.current !== null && !document.hidden) {
+      totalMsRef.current += Math.max(0, now - lastActiveAtRef.current);
+      lastActiveAtRef.current = now;
+    } else {
+      lastActiveAtRef.current = null;
+    }
+    // Do not create empty history entries if the player was never started.
+    if (totalMsRef.current <= 0) return;
 
     const progress = Math.min(100, Math.round((totalMsRef.current / estimatedDurationMs) * 100));
     const lastPositionMs = totalMsRef.current;
-
-    // Build metadata
     const meta = {
       id: video.id,
       username: video.username,
@@ -57,51 +53,43 @@ export function useWatchProgress({ video, durationSeconds }: WatchProgressOption
     userApi
       .updateHistoryProgress(video.id, progress, lastPositionMs, totalMsRef.current)
       .catch(() => {
-        // Also ensure history entry exists with metadata
         userApi.addHistory(video.id, recordingToMeta(meta)).catch(() => {});
       });
-
-    lastSyncRef.current = now;
   }, [video, user, estimatedDurationMs]);
 
   useEffect(() => {
-    if (!video?.id) return;
+    if (!video?.id || !user || !isActive) {
+      lastActiveAtRef.current = null;
+      return;
+    }
 
-    startTimeRef.current = Date.now();
-    totalMsRef.current = 0;
-    lastSyncRef.current = 0;
     unmountedRef.current = false;
-
-    // Sync every 15 seconds while tab is visible
-    syncIntervalRef.current = setInterval(() => {
-      if (!document.hidden) {
-        syncProgress();
-      }
+    lastActiveAtRef.current = document.hidden ? null : Date.now();
+    const interval = window.setInterval(() => {
+      if (!document.hidden) syncProgress();
     }, 15_000);
 
-    // Handle tab visibility changes — sync when tab becomes hidden
     const onVisibility = () => {
-      if (document.hidden && !unmountedRef.current) {
+      if (document.hidden) {
         syncProgress();
+        lastActiveAtRef.current = null;
+      } else if (!unmountedRef.current) {
+        lastActiveAtRef.current = Date.now();
       }
     };
-    document.addEventListener("visibilitychange", onVisibility);
-
-    // Sync on page unload
     const onBeforeUnload = () => {
-      if (!unmountedRef.current) {
-        syncProgress();
-      }
+      if (!unmountedRef.current) syncProgress();
     };
-    window.addEventListener("beforeunload", onBeforeUnload);
 
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("beforeunload", onBeforeUnload);
     return () => {
       unmountedRef.current = true;
-      if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+      window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("beforeunload", onBeforeUnload);
-      // Final sync on unmount
       syncProgress();
+      lastActiveAtRef.current = null;
     };
-  }, [video?.id, syncProgress]);
+  }, [video?.id, user, isActive, syncProgress]);
 }
