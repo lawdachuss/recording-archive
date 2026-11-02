@@ -2,7 +2,7 @@ import { createRoot } from "react-dom/client";
 import { setBaseUrl } from "@workspace/api-client-react";
 import { getApiBaseUrl } from "./lib/api-base";
 import App from "./App";
-import { initRum } from "./lib/rum";
+import { initRum, trackActivity } from "./lib/rum";
 import "./index.css";
 
 // Real-user monitoring: Core Web Vitals + resource timing, 10% sampled,
@@ -14,11 +14,17 @@ if (baseUrl) {
   setBaseUrl(baseUrl);
 }
 
-// Safety net: never let a stray unhandled promise rejection from IDB caching,
-// the Supabase lazy load, or network preloads spam the console / trip the
-// devtools breakpoint. These are all best-effort fetch-dedup layers.
-window.addEventListener("unhandledrejection", (e) => {
-  e.preventDefault();
+// Keep unhandled promise rejections visible in the browser console instead of
+// silently swallowing them. Record only the error class (never the message,
+// which may contain URLs or user data) in the existing RUM pipeline.
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason;
+  trackActivity("unhandled_rejection", {
+    meta: {
+      error_name: reason instanceof Error ? reason.name.slice(0, 64) : "NonErrorRejection",
+      reason_type: typeof reason,
+    },
+  });
 });
 
 // Auto-recover when a user has an older version open during a new deployment.
