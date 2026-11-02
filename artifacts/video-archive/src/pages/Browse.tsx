@@ -241,7 +241,7 @@ export default function Browse() {
     };
   }, [searchString]);
 
-  const { data, isLoading, isFetching } = useListRecordings(recordingsParams, {
+  const { data, isLoading, isFetching, isError, refetch: retryRecordings } = useListRecordings(recordingsParams, {
     query: {
       queryKey: getListRecordingsQueryKey(recordingsParams),
       staleTime: 30_000,
@@ -857,6 +857,24 @@ export default function Browse() {
                   <div className="h-3 w-1/2 rounded bg-secondary/30" />
                 </div>
               ))}
+            </div>
+          ) : isError ? (
+            <div className="py-24 sm:py-32 text-center border border-border/30 rounded-2xl bg-secondary/10">
+              <div className="w-14 h-14 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-4">
+                <AlertCircle className="w-6 h-6 text-destructive/60" />
+              </div>
+              <p className="text-sm text-foreground mb-1">Couldn&apos;t load recordings.</p>
+              <p className="text-xs text-muted-foreground/50 mb-5 max-w-xs mx-auto">
+                There may be a temporary connection issue. Your search and filters are unchanged.
+              </p>
+              <button
+                type="button"
+                onClick={() => void retryRecordings()}
+                className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-semibold text-primary border border-primary/30 hover:border-primary/60 rounded-lg transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Try again
+              </button>
             </div>
           ) : recordings.length > 0 ? (
             <>
