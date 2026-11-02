@@ -47,7 +47,7 @@ import {
   type FilterPreset,
 } from "@/lib/filter-presets";
 import { GENDER_OPTIONS, genderLabel } from "@/lib/genders";
-import { useSearchSuggestions } from "@/lib/api";
+import { useSearchSuggestions, useListPerformers } from "@/lib/api";
 
 const SORT_LABELS: Record<ListRecordingsSort, string> = {
   newest: "Newest",
@@ -57,6 +57,20 @@ const SORT_LABELS: Record<ListRecordingsSort, string> = {
 };
 
 const ITEMS_PER_PAGE = isConnectionConstrained() ? 12 : 24;
+
+function editDistance(a: string, b: string): number {
+  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i++) {
+    let diagonal = previous[0];
+    previous[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const above = previous[j];
+      previous[j] = Math.min(previous[j] + 1, previous[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diagonal = above;
+    }
+  }
+  return previous[b.length];
+}
 
 function parseTagList(raw: string): string[] {
   return raw
@@ -132,9 +146,33 @@ export default function Browse() {
     return () => window.clearTimeout(timer);
   }, [search]);
 
+  const suggestionsEnabled = showRecentSearches && debouncedSearch.length >= 3;
   const { data: searchSuggestionsData, isLoading: suggestionsLoading } =
     useSearchSuggestions(debouncedSearch, { enabled: showRecentSearches && debouncedSearch.length >= 2 });
-  const searchSuggestions = searchSuggestionsData?.suggestions ?? [];
+  const { data: popularPerformers } = useListPerformers(
+    { limit: 100, sort: "count" },
+    { enabled: suggestionsEnabled, staleTime: 5 * 60_000 },
+  );
+  const searchSuggestions = useMemo(() => {
+    const exact = searchSuggestionsData?.suggestions ?? [];
+    if (!suggestionsEnabled) return exact;
+    const query = debouncedSearch.toLowerCase();
+    const maxDistance = query.length >= 8 ? 2 : 1;
+    const seen = new Set(exact.map((item) => `${item.type}:${item.label.toLowerCase()}`));
+    const fuzzy = [
+      ...(tagsData ?? []).map((tag) => ({
+        type: "tag" as const, label: tag.tag, href: `/browse?tags=${encodeURIComponent(tag.tag)}`, subtitle: "Tag",
+      })),
+      ...(popularPerformers?.performers ?? []).map((performer) => ({
+        type: "performer" as const, label: performer.username, href: `/performers/${encodeURIComponent(performer.username)}`, subtitle: "Performer",
+      })),
+    ].map((item) => ({ ...item, distance: editDistance(query, item.label.toLowerCase()) }))
+      .filter((item) => item.distance > 0 && item.distance <= maxDistance && !seen.has(`${item.type}:${item.label.toLowerCase()}`))
+      .sort((a, b) => a.distance - b.distance || a.label.localeCompare(b.label))
+      .slice(0, 4)
+      .map(({ distance: _distance, ...item }) => item);
+    return [...exact, ...fuzzy].slice(0, 10);
+  }, [searchSuggestionsData, suggestionsEnabled, debouncedSearch, tagsData, popularPerformers]);
 
   // ─── Filter presets ──────────────────────────────────
   const [presetMenuOpen, setPresetMenuOpen] = useState(false);
@@ -465,7 +503,7 @@ export default function Browse() {
                             onClick={() => { setShowRecentSearches(false); setLocation(item.href); }}
                             className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-muted-foreground hover:bg-secondary hover:text-foreground">
                             <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                            <span className="text-[9px] uppercase tracking-wide text-muted-foreground/50">{item.type}</span>
+                            <span className="text-[9px] uppercase tracking-wide text-muted-foreground/50">{item.subtitle === "Tag" || item.subtitle === "Performer" ? "Suggested" : item.type}</span>
                           </button>
                         ))
                       ) : (
