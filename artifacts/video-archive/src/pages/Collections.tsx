@@ -11,7 +11,7 @@ import { userApi, type CloudCollection } from "@/lib/user-api";
 import { trackActivity } from "@/lib/rum";
 import { CloudSyncIndicator } from "@/components/CloudSyncIndicator";
 import {
-  FolderOpen, Plus, Trash2, Film, ListVideo, ChevronRight,
+  FolderOpen, Plus, Trash2, Film, ListVideo, ChevronRight, AlertCircle, RefreshCw,
 } from "lucide-react";
 import { formatRelativeTime } from "@/lib/formatters";
 
@@ -29,7 +29,7 @@ export default function Collections() {
     if (!loading && !user) setLocation("/login");
   }, [user, loading, setLocation]);
 
-  const { data: cloudCollections = [], isLoading } = useQuery({
+  const { data: cloudCollections = [], isLoading, isError, refetch: retryCollections } = useQuery({
     queryKey: ["user", "collections"],
     queryFn: () => userApi.getCollections(),
     enabled: !!user,
@@ -165,6 +165,24 @@ export default function Collections() {
             {[...Array(4)].map((_, i) => (
               <div key={i} className="h-16 bg-secondary/30 border border-border/30 rounded-lg animate-pulse" />
             ))}
+          </div>
+        ) : isError ? (
+          <div className="py-24 text-center border border-border/30 rounded-2xl bg-secondary/10 animate-fade-in-up">
+            <div className="w-14 h-14 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-4">
+              <AlertCircle className="w-6 h-6 text-destructive/60" />
+            </div>
+            <p className="text-sm font-medium text-foreground mb-1">Couldn&apos;t load your collections.</p>
+            <p className="text-xs text-muted-foreground/60 mb-6 max-w-xs mx-auto">
+              This may be a temporary connection issue. Your collections haven&apos;t been changed.
+            </p>
+            <button
+              type="button"
+              onClick={() => void retryCollections()}
+              className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-semibold border border-primary/30 text-primary hover:border-primary/60 transition-colors rounded-lg"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Try again
+            </button>
           </div>
         ) : collections.length === 0 ? (
           <div className="py-24 text-center border border-border/30 rounded-2xl bg-secondary/10 animate-fade-in-up">
