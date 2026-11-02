@@ -687,7 +687,7 @@ export default function VideoDetail() {
       // restarted programmatically and navigating to the same URL remounts
       // nothing, so drop back to the poster — the click is the gesture that
       // loads a fresh iframe (and re-arms the preroll for the new playback).
-      trackActivity("queue_advance", { meta: { queue_title: queue.title, recording_id: next.id } });
+      trackActivity("queue_advance", { meta: { recording_id: next.id } });
       sessionStorage.removeItem("vplayed");
       setVideoStarted(false);
       setPrerollPhase("idle");
