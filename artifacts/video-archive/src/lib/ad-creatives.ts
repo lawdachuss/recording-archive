@@ -22,6 +22,8 @@
  * (age gate passed, not premium, route not excluded).
  */
 
+import { safeExternalUrl } from "./safe-url";
+
 const globbedFiles = import.meta.glob<string>("../../ads/*.txt", {
   query: "?raw",
   import: "default",
@@ -55,8 +57,16 @@ const IMAGE_EXT = /\.(gif|jpe?g|png|webp|avif|bmp)(\?|#|$)/i;
  * Returns null only for an empty input.
  */
 export function bareUrlToMarkup(url: string, width: number, height: number): string | null {
-  if (!url) return null;
-  const safe = url.replace(/"/g, "&quot;");
+  const safeUrl = safeExternalUrl(url);
+  if (!safeUrl) return null;
+  // URL parsing percent-encodes markup delimiters; HTML-escape ampersands and
+  // quotes as well so query parameters cannot be interpreted as entities.
+  const safe = safeUrl
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/'/g, "&#39;");
   if (IMAGE_EXT.test(url)) {
     const img =
       `<img src="${safe}" alt="Advertisement" width="${width}" height="${height}" ` +
