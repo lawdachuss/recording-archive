@@ -123,15 +123,16 @@ describe("buildClickPopMarkup", () => {
     expect(html).not.toBeNull();
     // Exactly one closing tag: the wrapper's own — none from the URL.
     expect(html!.match(/<\/script>/g)).toHaveLength(1);
-    expect(html).toContain("%3C%2Fscript%3E");
+    expect(html).toContain("%3C/script%3E%3Cb%3E");
     expect(html).not.toContain("</script><b>");
   });
 
-  it("JSON-escapes quotes in the URL", () => {
+  it("URL-encodes quote characters before embedding the URL in the script", () => {
     const html = buildClickPopMarkup('https://x.com/?a="b"');
     expect(html).not.toBeNull();
-    expect(html).toContain('\\"b\\"');
-  });
+    expect(html).toContain("%22b%22");
+    expect(html).not.toContain('"b"');
+  });;
 });
 
 describe("withJQueryBootstrap", () => {
