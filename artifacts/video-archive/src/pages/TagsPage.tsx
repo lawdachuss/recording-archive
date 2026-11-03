@@ -57,7 +57,7 @@ export default function TagsPage() {
                 aria-label="Search tags"
                 aria-controls="tag-results"
                 autoComplete="off"
-                className="h-10 w-full bg-secondary border border-border/60 hover:border-border focus:border-primary/60 rounded-lg pl-9 pr-10 text-sm outline-none transition-colors placeholder:text-muted-foreground/50 focus:ring-2 focus:ring-primary/10"
+                className="h-10 w-full appearance-none bg-secondary border border-border/60 hover:border-border focus:border-primary/60 rounded-lg pl-9 pr-10 text-sm outline-none transition-colors placeholder:text-muted-foreground/50 focus:ring-2 focus:ring-primary/10"
               />
               {tagSearch && (
                 <button
@@ -78,6 +78,7 @@ export default function TagsPage() {
           </div>
         )}
 
+        <div id="tag-results">
         {isLoading ? (
           <div className="flex flex-wrap gap-2">
             {[...Array(40)].map((_, i) => (
@@ -102,7 +103,7 @@ export default function TagsPage() {
             </button>
           </div>
         ) : filtered.length > 0 ? (
-          <div id="tag-results" className="flex flex-wrap gap-2 items-baseline" aria-label="Tag results">
+          <div className="flex flex-wrap gap-2 items-baseline" aria-label="Tag results">
             {filtered.map(({ tag, count }, index) => {
               const weight = count / maxCount;
               const size = weight > 0.7 ? "text-base font-bold" : weight > 0.4 ? "text-sm font-semibold" : "text-xs font-medium";
@@ -147,6 +148,7 @@ export default function TagsPage() {
             <p className="text-sm text-muted-foreground">No tags found.</p>
           </div>
         )}
+        </div>
         {/* Bottom ad — 300×100 rectangle */}
         <div className="mt-10 flex justify-center">
           <AdBanner file="rect-300x100" />
