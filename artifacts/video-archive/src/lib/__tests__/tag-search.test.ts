@@ -38,6 +38,39 @@ describe("filterTagsByQuery", () => {
       "Café",
     ]);
   });
+
+  it("ignores malformed rows and invalid counts instead of throwing", () => {
+    const malformedRows: unknown[] = [
+      null,
+      undefined,
+      {},
+      { tag: "missing count" },
+      { tag: 42, count: 10 },
+      { tag: "infinite", count: Infinity },
+      { tag: "not a number", count: Number.NaN },
+      { tag: "negative", count: -1 },
+      { tag: "string count", count: "5" },
+      { tag: "   ", count: 2 },
+      { tag: "Valid zero", count: 0 },
+      { tag: "Valid match", count: 3 },
+    ];
+
+    expect(filterTagsByQuery(malformedRows, "valid").map((tag) => tag.tag)).toEqual([
+      "Valid match",
+    ]);
+    expect(filterTagsByQuery(malformedRows, "").map((tag) => tag.tag)).toEqual([
+      "Valid zero",
+      "Valid match",
+    ]);
+  });
+
+  it("treats a malformed query payload as an empty query", () => {
+    expect(filterTagsByQuery(tags, null)).toEqual(tags);
+  });
+
+  it("returns an empty list for a non-array payload", () => {
+    expect(filterTagsByQuery({ tag: "not-an-array", count: 1 }, "tag")).toEqual([]);
+  });
 });
 
 describe("sortTagsByCount", () => {
@@ -54,5 +87,26 @@ describe("sortTagsByCount", () => {
     const result = sortTagsByCount(tags);
     expect(result).not.toBe(tags);
     expect(tags[0].tag).toBe("Behind The Scenes");
+  });
+
+  it("drops malformed rows and invalid counts before sorting", () => {
+    const malformedRows: unknown[] = [
+      null,
+      { tag: "missing count" },
+      { tag: "bad label", count: 4 },
+      { tag: "infinite", count: Infinity },
+      { tag: "negative", count: -2 },
+      { tag: "valid lower", count: 1 },
+      { tag: "valid higher", count: 9 },
+    ];
+
+    expect(sortTagsByCount(malformedRows).map((tag) => tag.tag)).toEqual([
+      "valid higher",
+      "valid lower",
+    ]);
+  });
+
+  it("returns an empty list for a non-array payload", () => {
+    expect(sortTagsByCount({ tag: "not-an-array", count: 1 })).toEqual([]);
   });
 });
