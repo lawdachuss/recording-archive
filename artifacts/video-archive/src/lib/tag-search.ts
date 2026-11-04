@@ -3,24 +3,49 @@ export interface TagCount {
   count: number;
 }
 
-function normalizeTagSearch(value: string): string {
-  return value.normalize("NFKC").trim().toLowerCase();
+function normalizeTagSearch(value: unknown): string {
+  return typeof value === "string"
+    ? value.normalize("NFKC").trim().toLowerCase()
+    : "";
 }
 
-/** Return tags whose names contain the normalized query, preserving their input order. */
+/** Keep only plain tag records with a usable label and a finite, non-negative count. */
+function getValidTags(value: unknown): TagCount[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.filter((item): item is TagCount => {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) {
+      return false;
+    }
+
+    const candidate = item as Record<string, unknown>;
+    return (
+      typeof candidate.tag === "string" &&
+      candidate.tag.trim().length > 0 &&
+      typeof candidate.count === "number" &&
+      Number.isFinite(candidate.count) &&
+      candidate.count >= 0
+    );
+  });
+}
+
+/** Return valid tags whose names contain the normalized query, preserving input order. */
 export function filterTagsByQuery(
-  tags: readonly TagCount[],
-  query: string,
+  tags: unknown,
+  query: unknown,
 ): TagCount[] {
+  const validTags = getValidTags(tags);
   const normalizedQuery = normalizeTagSearch(query);
-  if (!normalizedQuery) return [...tags];
+  if (!normalizedQuery) return validTags;
 
-  return tags.filter(({ tag }) => normalizeTagSearch(tag).includes(normalizedQuery));
+  return validTags.filter(({ tag }) =>
+    normalizeTagSearch(tag).includes(normalizedQuery),
+  );
 }
 
-/** Sort by popularity, then by a deterministic case-insensitive name order. */
-export function sortTagsByCount(tags: readonly TagCount[]): TagCount[] {
-  return [...tags].sort((a, b) => {
+/** Sort valid tags by popularity, then by a deterministic case-insensitive name order. */
+export function sortTagsByCount(tags: unknown): TagCount[] {
+  return getValidTags(tags).sort((a, b) => {
     const countDifference = b.count - a.count;
     if (countDifference !== 0) return countDifference;
 
