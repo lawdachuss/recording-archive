@@ -37,7 +37,7 @@ export default function TagsPage() {
           <h1 className="text-2xl sm:text-3xl font-black tracking-tighter">Browse by Tag</h1>
           {tags && (
             <p className="text-sm text-muted-foreground mt-2">
-              {tags.length.toLocaleString()} categories across the archive
+              {sorted.length.toLocaleString()} categories across the archive
             </p>
           )}
         </div>
