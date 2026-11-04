@@ -41,11 +41,8 @@ export function pickPreroll(rows: readonly AdRow[] | null): PrerollCreative | nu
   const pool: PrerollCreative[] = [];
   if (rows) {
     for (const row of rows) {
-      // Treat malformed runtime rows as unusable instead of letting a null or
-      // non-string content value throw and interrupt the recording page.
-      if (row.slot !== "preroll" || row.enabled !== true || typeof row.content !== "string") continue;
+      if (row.slot !== "preroll" || !row.enabled) continue;
       const content = row.content.trim();
-      if (!content) continue;
       if (row.kind === "url") {
         const safeUrl = safeExternalUrl(content);
         if (safeUrl) pool.push({ type: "video", url: safeUrl });

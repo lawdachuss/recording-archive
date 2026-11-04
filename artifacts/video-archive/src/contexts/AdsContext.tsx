@@ -14,6 +14,8 @@ import { safeExternalUrl } from "@/lib/safe-url";
 import { resolveApiPath } from "@/lib/api-base";
 import {
   bareUrlToMarkup,
+  filterAdRows,
+  type AdRow,
   getAdCreatives,
   getDirectLink,
   parseAdDimensions,
@@ -23,15 +25,7 @@ import {
 } from "@/lib/ad-creatives";
 import { DEFAULT_AD_SETTINGS, mergeAdSettings, type AdSettings } from "@/lib/ad-slots";
 
-/** One row of the Supabase `ad_creatives` table. */
-export interface AdRow {
-  id: string;
-  slot: string;
-  kind: "html" | "url";
-  content: string;
-  enabled: boolean;
-  sort_order?: number;
-}
+export type { AdRow } from "@/lib/ad-creatives";
 
 /**
  * Where creatives currently come from:
@@ -111,7 +105,7 @@ export function AdsProvider({ children }: { children: ReactNode }) {
     sbRef.current = sb;
     const { data, error } = await sb.from(TABLE).select("*");
     if (error) throw error;
-    const next = (data ?? []) as AdRow[];
+    const next = filterAdRows(data);
     setRows((prev) => {
       // Keep the old array identity when nothing actually changed (realtime
       // fires for edits in ANY slot — unrelated edits must not re-render).

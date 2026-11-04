@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildClickPopMarkup,
   bareUrlToMarkup,
+  filterAdRows,
   isSelfContainedLine,
   pickPopunderMarkup,
   withJQueryBootstrap,
@@ -9,6 +10,31 @@ import {
 
 const POPUNDER =
   "<script src='https://chaturbate.com/affiliates/promotools/popup/LKGEE/popchaturbate.js' type='text/javascript'></script>";
+
+describe("filterAdRows", () => {
+  it("keeps only rows with safe runtime field types", () => {
+    const rows = filterAdRows([
+      { id: "1", slot: "leaderboard", kind: "html", content: "<b>ok</b>", enabled: true, sort_order: 1 },
+      null,
+      {},
+      { id: "2", slot: "leaderboard", kind: "url", content: null, enabled: true },
+      { id: "3", slot: "leaderboard", kind: "script", content: "x", enabled: true },
+      { id: "4", slot: " ", kind: "url", content: "https://example.com", enabled: true },
+      { id: "5", slot: "leaderboard", kind: "url", content: "https://example.com", enabled: "true" },
+      { id: "6", slot: "leaderboard", kind: "url", content: "https://example.com", enabled: true, sort_order: Infinity },
+    ]);
+
+    expect(rows).toEqual([
+      { id: "1", slot: "leaderboard", kind: "html", content: "<b>ok</b>", enabled: true, sort_order: 1 },
+      { id: "6", slot: "leaderboard", kind: "url", content: "https://example.com", enabled: true },
+    ]);
+  });
+
+  it("returns an empty list for non-array payloads", () => {
+    expect(filterAdRows({ id: "1" })).toEqual([]);
+    expect(filterAdRows(null)).toEqual([]);
+  });
+});
 
 describe("isSelfContainedLine", () => {
   it("recognises complete one-line codes as self-contained", () => {
