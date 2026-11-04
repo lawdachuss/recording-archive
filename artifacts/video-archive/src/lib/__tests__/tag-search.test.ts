@@ -55,7 +55,7 @@ describe("filterTagsByQuery", () => {
       { tag: "Valid match", count: 3 },
     ];
 
-    expect(filterTagsByQuery(malformedRows, "valid").map((tag) => tag.tag)).toEqual([
+    expect(filterTagsByQuery(malformedRows, "match").map((tag) => tag.tag)).toEqual([
       "Valid match",
     ]);
     expect(filterTagsByQuery(malformedRows, "").map((tag) => tag.tag)).toEqual([
