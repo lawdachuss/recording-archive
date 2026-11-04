@@ -63,7 +63,7 @@ describe("bareUrlToMarkup", () => {
   it("turns a bare StripCash smartlink into a clickable banner instead of rejecting it", () => {
     const html = bareUrlToMarkup("https://go.stripchat.com/?userId=abc&p1=vault", 728, 90);
     expect(html).not.toBeNull();
-    expect(html).toContain('<a href="https://go.stripchat.com/?userId=abc&p1=vault"');
+    expect(html).toContain('<a href="https://go.stripchat.com/?userId=abc&amp;p1=vault"');
     expect(html).toContain('target="_blank"');
     expect(html).toContain('rel="sponsored noopener nofollow"');
     expect(html).toContain("height:90px");
@@ -71,13 +71,26 @@ describe("bareUrlToMarkup", () => {
     expect(html).not.toContain("<img");
   });
 
-  it("quote-escapes the URL in the href", () => {
+  it("URL-encodes quote characters before placing them in HTML attributes", () => {
     const html = bareUrlToMarkup('https://x.com/?a="b"', 300, 100);
     expect(html).not.toBeNull();
-    expect(html).toContain("&quot;b&quot;");
+    expect(html).toContain("%22b%22");
+    expect(html).not.toContain("&quot;b&quot;");
   });
 
-  it("returns null only for an empty input", () => {
+  it("encodes markup delimiters in a crafted bare URL instead of injecting tags", () => {
+    const html = bareUrlToMarkup('https://x.com/"><script>alert(1)</script>', 300, 100);
+    expect(html).not.toBeNull();
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("%3Cscript%3E");
+  });
+
+  it("rejects non-HTTP(S) schemes for bare URL creatives", () => {
+    expect(bareUrlToMarkup("javascript:/embed/alert(1)", 300, 100)).toBeNull();
+    expect(bareUrlToMarkup("data:text/html,<script>alert(1)</script>", 300, 100)).toBeNull();
+  });
+
+  it("returns null for empty input", () => {
     expect(bareUrlToMarkup("", 300, 100)).toBeNull();
   });
 });
@@ -96,27 +109,30 @@ describe("buildClickPopMarkup", () => {
     expect(html).toContain('"noopener,noreferrer"');
   });
 
-  it("rejects anything that isn't a bare http(s) URL", () => {
+  it("rejects invalid schemes and embedded credentials while normalizing spaces", () => {
     expect(buildClickPopMarkup("")).toBeNull();
     expect(buildClickPopMarkup("   ")).toBeNull();
     expect(buildClickPopMarkup("javascript:alert(1)")).toBeNull();
-    expect(buildClickPopMarkup("https://x.com/ has spaces")).toBeNull();
     expect(buildClickPopMarkup("ftp://x.com/file")).toBeNull();
+    expect(buildClickPopMarkup("https://user:pass@x.com/offer")).toBeNull();
+    expect(buildClickPopMarkup("https://x.com/ has spaces")).toContain("%20has%20spaces");
   });
 
-  it("escapes angle brackets so a crafted URL can't break out of the script tag", () => {
+  it("normalizes script delimiters so a crafted URL can't break out of the script tag", () => {
     const html = buildClickPopMarkup("https://x.com/</script><b>");
     expect(html).not.toBeNull();
     // Exactly one closing tag: the wrapper's own — none from the URL.
     expect(html!.match(/<\/script>/g)).toHaveLength(1);
-    expect(html).toContain("\\u003c");
+    expect(html).toContain("%3C/script%3E%3Cb%3E");
+    expect(html).not.toContain("</script><b>");
   });
 
-  it("JSON-escapes quotes in the URL", () => {
+  it("URL-encodes quote characters before embedding the URL in the script", () => {
     const html = buildClickPopMarkup('https://x.com/?a="b"');
     expect(html).not.toBeNull();
-    expect(html).toContain('\\"b\\"');
-  });
+    expect(html).toContain("%22b%22");
+    expect(html).not.toContain('"b"');
+  });;
 });
 
 describe("withJQueryBootstrap", () => {
