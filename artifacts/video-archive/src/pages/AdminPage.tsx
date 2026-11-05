@@ -9,6 +9,7 @@ import {
   ArrowLeft, Trash2, Filter, Lock,
 } from "lucide-react";
 import { formatRelativeTime } from "@/lib/formatters";
+import { safeExternalUrl } from "@/lib/safe-url";
 
 interface AdminRequest {
   id: number | null;
@@ -230,6 +231,7 @@ export default function AdminPage() {
         ) : (
           <div className="space-y-2">
             {filtered.map((req) => {
+              const safeStreamLink = safeExternalUrl(req.stream_link);
               const isExpanded = expandedId === req.id;
               const statusStyle = STATUS_STYLES[req.status] ?? STATUS_STYLES.pending;
               const priorityStyle = PRIORITY_STYLES[req.priority ?? "normal"] ?? "";
@@ -252,15 +254,21 @@ export default function AdminPage() {
                           </span>
                         )}
                         {req.stream_link && !req.performer_username && (
-                          <a
-                            href={req.stream_link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm font-semibold text-primary hover:underline flex items-center gap-1 truncate max-w-xs"
-                          >
-                            <Link2 className="w-3 h-3 shrink-0" />
-                            {req.stream_link}
-                          </a>
+                          safeStreamLink ? (
+                            <a
+                              href={safeStreamLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm font-semibold text-primary hover:underline flex items-center gap-1 truncate max-w-xs"
+                            >
+                              <Link2 className="w-3 h-3 shrink-0" />
+                              {req.stream_link}
+                            </a>
+                          ) : (
+                            <span className="text-sm font-semibold text-muted-foreground truncate max-w-xs">
+                              {req.stream_link}
+                            </span>
+                          )
                         )}
                         {req.priority && req.priority !== "normal" && (
                           <span className={`text-[11px] ${priorityStyle}`}>[{req.priority}]</span>
@@ -330,14 +338,18 @@ export default function AdminPage() {
                       {req.stream_link && (
                         <div className="flex items-start gap-2 text-xs">
                           <Link2 className="w-3.5 h-3.5 text-muted-foreground/50 mt-0.5 shrink-0" />
-                          <a
-                            href={req.stream_link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline break-all"
-                          >
-                            {req.stream_link}
-                          </a>
+                          {safeStreamLink ? (
+                            <a
+                              href={safeStreamLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:underline break-all"
+                            >
+                              {req.stream_link}
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground break-all">{req.stream_link}</span>
+                          )}
                         </div>
                       )}
                       {req.notes && (

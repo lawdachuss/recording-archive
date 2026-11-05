@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePremium } from "@/contexts/PremiumContext";
 import { injectAdMarkup } from "@/lib/ad-creatives";
 import { useAds } from "@/contexts/AdsContext";
+import { safeExternalUrl } from "@/lib/safe-url";
 
 /**
  * AdGridCard — a STANDALONE ad card in video grids.
@@ -77,7 +78,8 @@ export function AdGridCard() {
           if (link instanceof HTMLAnchorElement && link.href) {
             e.stopPropagation();
             e.preventDefault();
-            window.open(link.href, "_blank", "noopener,noreferrer");
+            const safeHref = safeExternalUrl(link.href);
+            if (safeHref) window.open(safeHref, "_blank", "noopener,noreferrer");
             return;
           }
           // Fallback for bare img elements or other media without a parent <a> tag
@@ -86,7 +88,8 @@ export function AdGridCard() {
           if (img && img.src) {
             e.stopPropagation();
             e.preventDefault();
-            window.open(img.src, "_blank", "noopener,noreferrer");
+            const safeSrc = safeExternalUrl(img.src);
+            if (safeSrc) window.open(safeSrc, "_blank", "noopener,noreferrer");
           }
         }}
       >
