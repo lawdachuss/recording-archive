@@ -50,6 +50,16 @@ function isSampled(): boolean {
   return sessionSampled;
 }
 
+/**
+ * Keep analytics route labels useful without collecting query strings or
+ * fragments. Auth callbacks can carry one-time PKCE codes and recovery links
+ * can carry tokens; search terms and filter values can also be private.
+ */
+export function sanitizeActivityPath(path: string): string {
+  const pathname = (typeof path === "string" ? path : "").split(/[?#]/, 1)[0];
+  return (pathname || "/").slice(0, 256);
+}
+
 function currentPath(): string {
   try {
     return location.pathname;

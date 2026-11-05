@@ -22,6 +22,49 @@
  * (age gate passed, not premium, route not excluded).
  */
 
+import { safeExternalUrl } from "./safe-url";
+
+/** Runtime-validated row shape returned by the browser-safe ad tables. */
+export interface AdRow {
+  id: string;
+  slot: string;
+  kind: "html" | "url";
+  content: string;
+  enabled: boolean;
+  sort_order?: number;
+}
+
+/** Ignore malformed rows from remote data before they reach ad rendering sinks. */
+export function filterAdRows(value: unknown): AdRow[] {
+  if (!Array.isArray(value)) return [];
+
+  const rows: AdRow[] = [];
+  for (const item of value) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+    const row = item as Record<string, unknown>;
+    if (
+      typeof row.id !== "string" || !row.id.trim() ||
+      typeof row.slot !== "string" || !row.slot.trim() ||
+      (row.kind !== "html" && row.kind !== "url") ||
+      typeof row.content !== "string" ||
+      typeof row.enabled !== "boolean"
+    ) continue;
+
+    const valid: AdRow = {
+      id: row.id,
+      slot: row.slot,
+      kind: row.kind,
+      content: row.content,
+      enabled: row.enabled,
+    };
+    if (typeof row.sort_order === "number" && Number.isFinite(row.sort_order)) {
+      valid.sort_order = row.sort_order;
+    }
+    rows.push(valid);
+  }
+  return rows;
+}
+
 const globbedFiles = import.meta.glob<string>("../../ads/*.txt", {
   query: "?raw",
   import: "default",
@@ -52,11 +95,19 @@ const IMAGE_EXT = /\.(gif|jpe?g|png|webp|avif|bmp)(\?|#|$)/i;
  * The admin API sniffs links at save time and stores finished markup for
  * most cases (see api-server/src/lib/ad-sniff.ts); this stays the render
  * path for ads/*.txt files and raw links saved when the probe failed.
- * Returns null only for an empty input.
+ * Returns null for empty or unsafe input.
  */
 export function bareUrlToMarkup(url: string, width: number, height: number): string | null {
-  if (!url) return null;
-  const safe = url.replace(/"/g, "&quot;");
+  const safeUrl = safeExternalUrl(url);
+  if (!safeUrl) return null;
+  // URL parsing percent-encodes markup delimiters; HTML-escape ampersands and
+  // quotes as well so query parameters cannot be interpreted as entities.
+  const safe = safeUrl
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/'/g, "&#39;");
   if (IMAGE_EXT.test(url)) {
     const img =
       `<img src="${safe}" alt="Advertisement" width="${width}" height="${height}" ` +
@@ -374,9 +425,9 @@ export function injectGlobalAd(file: string, creative?: string): string | null {
  * script tag. Returns null for anything that isn't a bare http(s) URL.
  */
 export function buildClickPopMarkup(url: string): string | null {
-  const u = url.trim();
-  if (!/^https?:\/\/\S+$/i.test(u)) return null;
-  const serialized = JSON.stringify(u).replace(/</g, "\\u003c");
+  const safeUrl = safeExternalUrl(url);
+  if (!safeUrl) return null;
+  const serialized = JSON.stringify(safeUrl).replace(/</g, "\\u003c");
   return (
     "<script>(function(){var u=" +
     serialized +

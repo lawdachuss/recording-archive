@@ -26,7 +26,7 @@ import { createQueryClient, restoreQueryCache, persistQueryCache } from "@/lib/q
 import { initCache } from "@/lib/cache";
 import { startCatalogWarmup } from "@/lib/catalog-warmer";
 import { cancelPendingPreviews } from "@/lib/preload-preview";
-import { trackActivity } from "@/lib/rum";
+import { sanitizeActivityPath, trackActivity } from "@/lib/rum";
 
 // Home is eagerly imported for instant first paint (landing page)
 // All other pages are lazy-loaded — fetched on-demand when navigated to.
@@ -142,11 +142,11 @@ class GlobalErrorBoundary extends Component<{ children: ReactNode }, { hasError:
 }
 
 // Fires a page_view activity event on every route change (SPA navigation).
-// The full path (including query string) is captured for search/filter routes.
+// Keep only the route path; query strings/fragments can contain auth codes or private search terms.
 function TrackPageView() {
   const [location] = useLocation();
   useEffect(() => {
-    trackActivity("page_view", { meta: { path: location.slice(0, 256) } });
+    trackActivity("page_view", { meta: { path: sanitizeActivityPath(location) } });
     // Flush queued speculative preview downloads from the previous page so
     // they don't hold the 6 preview slots while the new page loads.
     cancelPendingPreviews();

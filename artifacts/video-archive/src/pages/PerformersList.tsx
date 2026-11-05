@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useListPerformers } from "@/lib/api";
 import { Layout } from "@/components/Layout";
 import { PerformerCard } from "@/components/PerformerCard";
-import { Search, X, ChevronDown, Users } from "lucide-react";
+import { Search, X, ChevronDown, Users, RefreshCw } from "lucide-react";
 import { AppPagination } from "@/components/ui/app-pagination";
 import { AdBanner } from "@/components/ads/AdBanner";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
@@ -26,7 +26,7 @@ export default function PerformersList() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const { data, isLoading, isFetching } = useListPerformers({
+  const { data, isLoading, isFetching, isError, refetch } = useListPerformers({
     page,
     limit: ITEMS_PER_PAGE,
     search: debouncedSearch || undefined,
@@ -61,9 +61,7 @@ export default function PerformersList() {
                   {isLoading ? (
                     <span className="w-12 h-[10px] rounded bg-muted-foreground/20 animate-pulse inline-block align-middle" />
                   ) : (
-                    <span className="tabular-nums">
-                      {total.toLocaleString()}
-                    </span>
+                    <span className="tabular-nums">{total.toLocaleString()}</span>
                   )}{" "}
                   total
                 </p>
@@ -151,8 +149,6 @@ export default function PerformersList() {
               </button>
             )}
           </div>
-
-          {/* ── Grid ──────────────────────────────────────── */}
         </div>
       </section>
 
@@ -164,14 +160,30 @@ export default function PerformersList() {
             {isLoading ? (
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-9 gap-y-6 justify-items-center">
                 {Array.from({ length: 27 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="animate-pulse flex flex-col items-center gap-2.5"
-                  >
+                  <div key={i} className="animate-pulse flex flex-col items-center gap-2.5">
                     <div className="w-[76px] h-[76px] sm:w-[86px] sm:h-[86px] rounded-full bg-secondary/40" />
                     <div className="h-2.5 w-16 rounded-full bg-secondary/30" />
                   </div>
                 ))}
+              </div>
+            ) : isError && !data ? (
+              <div className="py-20 sm:py-28 text-center border border-border/20 rounded-2xl bg-secondary/8" role="alert">
+                <div className="w-14 h-14 rounded-full bg-secondary/50 flex items-center justify-center mx-auto mb-4">
+                  <Users className="w-6 h-6 text-muted-foreground/40" />
+                </div>
+                <p className="text-sm font-medium text-foreground mb-1">Performers couldn’t be loaded.</p>
+                <p className="text-xs text-muted-foreground mb-5 max-w-sm mx-auto">
+                  The archive may be temporarily unavailable. Please try again.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void refetch()}
+                  disabled={isFetching}
+                  className="inline-flex items-center gap-2 h-9 px-4 text-xs font-medium text-primary border border-primary/20 hover:border-primary/40 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isFetching ? "animate-spin" : ""}`} />
+                  Try again
+                </button>
               </div>
             ) : performers.length > 0 ? (
               <>
@@ -212,9 +224,7 @@ export default function PerformersList() {
                       <span className="text-border/40">·</span>
                       <span className="tabular-nums">{totalPages}</span> pages
                       <span className="text-border/40">·</span>
-                      <span className="tabular-nums">
-                        {total.toLocaleString()}
-                      </span>{" "}
+                      <span className="tabular-nums">{total.toLocaleString()}</span>{" "}
                       performers
                     </div>
                     <div className="w-full max-w-4xl flex justify-center">

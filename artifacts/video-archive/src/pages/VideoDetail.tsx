@@ -31,6 +31,7 @@ import { QueueBar } from "@/components/QueueBar";
 import { UpNextOverlay } from "@/components/UpNextOverlay";
 import { advanceQueue, nextQueueItem } from "@/lib/play-queue";
 import { proxyUrl } from "@/lib/proxy-url";
+import { safeExternalUrl } from "@/lib/safe-url";
 import { AdBanner } from "@/components/ads/AdBanner";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
 import { PrerollPlayer } from "@/components/ads/PrerollPlayer";
@@ -42,7 +43,7 @@ import {
   AlertCircle, ArrowLeft, Maximize2, Minimize2,
   User, Clapperboard, ThumbsUp, ThumbsDown, Bookmark, Share2,
   Check, Server, Download, Clock, Play, Code2, ListVideo, Shuffle,
-  FolderPlus, Plus, ChevronDown, ExternalLink, LogIn, CheckCircle,
+  FolderPlus, Plus, ChevronDown, ExternalLink, LogIn, CheckCircle, RefreshCw,
 } from "lucide-react";
 
 function useFullscreen(ref: React.RefObject<HTMLDivElement | null>) {
@@ -105,8 +106,10 @@ function isAnonMP4(url: string): boolean {
 }
 
 function isEmbedUrl(url: string): boolean {
+  const safeUrl = safeExternalUrl(url);
+  if (!safeUrl) return false;
   try {
-    const { pathname, hostname } = new URL(url);
+    const { pathname, hostname } = new URL(safeUrl);
     // AnonMP4 rejects cross-origin iframe playback with "Forbidden: Playback
     // ticket already used or invalid session." — never iframe it, only link out.
     if (hostname.includes("anonmp4")) {
@@ -143,8 +146,9 @@ function deriveServers(
 
   if (links) {
     for (const [label, src] of Object.entries(links)) {
-      if (src) {
-        let url = src;
+      const safeSrc = safeExternalUrl(src);
+      if (safeSrc) {
+        let url = safeSrc;
         try {
           let parsed = new URL(url);
 
@@ -185,12 +189,13 @@ function deriveServers(
     }
   }
 
-  if (embedUrl && !seen.has(embedUrl)) {
+  const safeEmbedUrl = safeExternalUrl(embedUrl);
+  if (safeEmbedUrl && !seen.has(safeEmbedUrl)) {
     let hostDuplicate = false;
-    try { hostDuplicate = seenHosts.has(new URL(embedUrl).hostname); } catch {}
+    try { hostDuplicate = seenHosts.has(new URL(safeEmbedUrl).hostname); } catch {}
     if (!hostDuplicate) {
-      servers.push({ label: detectHostLabel(embedUrl), src: embedUrl, type: isAnonMP4(embedUrl) ? "link" : "iframe" });
-      seen.add(embedUrl);
+      servers.push({ label: detectHostLabel(safeEmbedUrl), src: safeEmbedUrl, type: isAnonMP4(safeEmbedUrl) ? "link" : "iframe" });
+      seen.add(safeEmbedUrl);
     }
   }
 
@@ -272,11 +277,9 @@ export default function VideoDetail() {
   const REC_PAGE_SIZE = 12;
   const queryClient = useQueryClient();
   const recentlyWatched = useRecentlyWatched();
-  const { data: video, isLoading, isError } = useGetRecording(id || "", {
+  const { data: video, isLoading, isError, refetch: retryRecording } = useGetRecording(id || "", {
     query: { enabled: !!id, queryKey: getGetRecordingQueryKey(id || "") },
   });
-  // Track watch progress (time spent, resume position, completion %)
-  useWatchProgress({ video, durationSeconds: video?.duration });
 
   // Playback queue (Playlists → Play all): position is derived from the route,
   // so deep links, back/forward and manual URL edits all stay in sync.
@@ -492,8 +495,12 @@ export default function VideoDetail() {
     return () => window.removeEventListener("keydown", handleKey);
   }, [isFullscreen, enterFS, exitFS]);
 
+  const safeEmbedSource = safeExternalUrl(video?.embed_url);
   const servers = deriveServers(video?.embed_url, video?.links);
   const currentServer = servers[activeServer] ?? servers[0];
+  
+  // Count estimated watch time only after the in-page player is launched.
+  useWatchProgress({ video, durationSeconds: video?.duration, isActive: videoStarted && currentServer?.type === "iframe" });
 
   const posterUrl = video?.sprite_url || video?.thumbnail_url;
 
@@ -680,7 +687,7 @@ export default function VideoDetail() {
       // restarted programmatically and navigating to the same URL remounts
       // nothing, so drop back to the poster — the click is the gesture that
       // loads a fresh iframe (and re-arms the preroll for the new playback).
-      trackActivity("queue_advance", { meta: { queue_title: queue.title, recording_id: next.id } });
+      trackActivity("queue_advance", { meta: { recording_id: next.id } });
       sessionStorage.removeItem("vplayed");
       setVideoStarted(false);
       setPrerollPhase("idle");
@@ -709,10 +716,19 @@ export default function VideoDetail() {
       <Layout>
         <div className="container mx-auto px-4 sm:px-6 py-24 text-center">
           <AlertCircle className="w-10 h-10 text-muted-foreground/40 mx-auto mb-5" />
-          <h1 className="text-lg font-bold mb-2">Recording not found</h1>
+          <h1 className="text-lg font-bold mb-2">Couldn&apos;t load this recording</h1>
           <p className="text-sm text-muted-foreground mb-6">
-            This video doesn&apos;t exist or was removed.
+            It may have been removed, or there may be a temporary connection issue. Try again.
           </p>
+          <div className="mb-6">
+            <button
+              onClick={() => void retryRecording()}
+              className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-semibold border border-primary/40 text-primary hover:border-primary/70 transition-colors rounded-md"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Try again
+            </button>
+          </div>
           {deadNext && (
             <div className="mb-6">
               <button
@@ -1021,9 +1037,9 @@ export default function VideoDetail() {
                     </button>
                   )}
 
-                  {video.embed_url && (
+                  {safeEmbedSource && (
                     <a
-                      href={video.embed_url}
+                      href={safeEmbedSource}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-[2px] border border-border/50 text-muted-foreground hover:border-border hover:text-foreground transition-all"

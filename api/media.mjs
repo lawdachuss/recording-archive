@@ -41828,20 +41828,34 @@ function createHttpRedis(url, key) {
             signal: controller.signal
           });
           receivedResponse = true;
+          const contentType = res.headers.get("content-type") ?? "";
+          if (!contentType.toLowerCase().includes("json")) {
+            openHttpCircuit();
+            throw new Error(
+              `Redis HTTP bridge returned HTTP ${res.status} (${contentType || "unknown content type"}; expected JSON)`
+            );
+          }
           let payload;
           try {
             payload = await res.json();
           } catch {
             openHttpCircuit();
-            throw new Error(`Redis HTTP bridge returned ${res.status} with an unreadable response`);
+            throw new Error(
+              `Redis HTTP bridge returned HTTP ${res.status} with invalid JSON (${contentType})`
+            );
           }
           if (res.status === 503) {
             openHttpCircuit();
             throw new Error("Redis unavailable (HTTP bridge 503)");
           }
           if (!res.ok || !payload?.ok) {
-            if (res.status >= 500) openHttpCircuit();
-            throw new Error(payload?.error ?? `Redis HTTP bridge error ${res.status}`);
+            const detail = typeof payload?.details === "string" ? payload.details : "";
+            const message = typeof payload?.error === "string" ? payload.error : "";
+            const isExistingGroup = /^BUSYGROUP\b/i.test(detail) || /^BUSYGROUP\b/i.test(message);
+            if (res.status >= 500 && !isExistingGroup) openHttpCircuit();
+            throw new Error(
+              detail && message && detail !== message ? `${message}: ${detail}` : detail || message || `Redis HTTP bridge error ${res.status}`
+            );
           }
           isConnected = true;
           httpCircuitOpenUntil = 0;
@@ -41971,10 +41985,13 @@ function createHttpRedis(url, key) {
       set: (k, v) => push("set", [k, v]),
       del: (keys) => push("del", [keys]),
       exec: async () => {
-        const payload = await post({ pipeline: ops });
         const results = [];
-        for (const [err, result] of payload.results ?? []) {
-          results.push([err ? new Error(String(err)) : null, err ? void 0 : result]);
+        for (let i = 0; i < ops.length; i += MAX_HTTP_PIPELINE_OPS) {
+          const batch = ops.slice(i, i + MAX_HTTP_PIPELINE_OPS);
+          const payload = await post({ pipeline: batch });
+          for (const [err, result] of payload.results ?? []) {
+            results.push([err ? new Error(String(err)) : null, err ? void 0 : result]);
+          }
         }
         return results;
       }
@@ -42257,7 +42274,8 @@ function scheduleHostGate(gate) {
     gate.active++;
     const next = gate.waiters.shift();
     next?.();
-    if (gate.waiters.length) gate.timer = setTimeout(tryStart, HOST_START_INTERVAL_MS);
+    if (gate.waiters.length)
+      gate.timer = setTimeout(tryStart, HOST_START_INTERVAL_MS);
   };
   gate.timer = setTimeout(tryStart, 0);
 }
@@ -42287,7 +42305,10 @@ var IMAGE_MEM_CACHE_MAX = 500;
 var imageMemCache = /* @__PURE__ */ new Map();
 var imageInflight = /* @__PURE__ */ new Map();
 function cacheImageInMemory(url, img) {
-  imageMemCache.set(url, { ...img, expires: Date.now() + IMAGE_MEM_CACHE_TTL_MS });
+  imageMemCache.set(url, {
+    ...img,
+    expires: Date.now() + IMAGE_MEM_CACHE_TTL_MS
+  });
   if (imageMemCache.size > IMAGE_MEM_CACHE_MAX) {
     const oldest = imageMemCache.keys().next().value;
     if (oldest !== void 0) imageMemCache.delete(oldest);
@@ -42295,16 +42316,27 @@ function cacheImageInMemory(url, img) {
 }
 async function fetchImageOnce(urlStr, upstreamHeaders, log) {
   const deadline = Date.now() + IMAGE_BUDGET_MS;
-  const release = await acquireHostGate(new URL(urlStr).hostname, deadline - Date.now());
+  const release = await acquireHostGate(
+    new URL(urlStr).hostname,
+    deadline - Date.now()
+  );
   if (!release) {
     log?.warn?.({ url: urlStr }, "Media proxy image host gate timeout");
     return null;
   }
   try {
-    const response = await fetchWithRetry(urlStr, upstreamHeaders, log, IMAGE_TIMEOUT_MS, deadline);
+    const response = await fetchWithRetry(
+      urlStr,
+      upstreamHeaders,
+      log,
+      IMAGE_TIMEOUT_MS,
+      deadline
+    );
     if (!response || !response.ok) {
       if (response && isTransientStatus(response.status)) return null;
-      throw new Error(response ? `upstream ${response.status}` : "upstream fetch failed");
+      throw new Error(
+        response ? `upstream ${response.status}` : "upstream fetch failed"
+      );
     }
     const contentType = response.headers.get("content-type") || "image/jpeg";
     if (!isSafeMediaType(contentType, new URL(urlStr))) {
@@ -42350,7 +42382,10 @@ function transformCacheKey(url, width, fmt) {
   return `${url}|${fmt ?? ""}|${width}`;
 }
 function cacheTransform(key, img) {
-  transformMemCache.set(key, { ...img, expires: Date.now() + TRANSFORM_CACHE_TTL_MS });
+  transformMemCache.set(key, {
+    ...img,
+    expires: Date.now() + TRANSFORM_CACHE_TTL_MS
+  });
   if (transformMemCache.size > TRANSFORM_CACHE_MAX) {
     const oldest = transformMemCache.keys().next().value;
     if (oldest !== void 0) transformMemCache.delete(oldest);
@@ -42384,7 +42419,10 @@ async function getTransformedImage(urlStr, img, width, fmt, log) {
   try {
     const shared = await getTransformFromRedis(key);
     if (shared) {
-      transformMemCache.set(key, { ...shared, expires: Date.now() + TRANSFORM_CACHE_TTL_MS });
+      transformMemCache.set(key, {
+        ...shared,
+        expires: Date.now() + TRANSFORM_CACHE_TTL_MS
+      });
       return shared;
     }
   } catch (err) {
@@ -42434,7 +42472,8 @@ var MEDIA_EXT_RE = /\.(jpe?g|jxl|png|webp|gif|avif|apng|mp4|webm|mov|m4v|m3u8|og
 function isSafeMediaType(contentType, url) {
   if (contentType && typeof contentType === "string") {
     const ct = contentType.split(";")[0].trim();
-    if (ct && ct !== "*/*" && ct !== "application/stream") return SAFE_MEDIA_RE.test(ct);
+    if (ct && ct !== "*/*" && ct !== "application/stream")
+      return SAFE_MEDIA_RE.test(ct);
   }
   return MEDIA_EXT_RE.test(url.pathname);
 }
@@ -42468,7 +42507,10 @@ async function resolveHostname(hostname) {
   if (cached && cached.expires > Date.now()) return cached.ip;
   const shared = await getDnsFromRedis(hostname).catch(() => null);
   if (shared) {
-    dnsCache.set(hostname, { ip: shared, expires: Date.now() + DNS_CACHE_TTL_MS });
+    dnsCache.set(hostname, {
+      ip: shared,
+      expires: Date.now() + DNS_CACHE_TTL_MS
+    });
     return shared;
   }
   let ip = null;
@@ -42521,7 +42563,7 @@ function ipv6ToBigInt(ip) {
     const v4 = ip.split(":").pop() ?? "";
     const [a, b, c, d] = v4.split(".").map(Number);
     const hex = ((a << 24) + (b << 16) + (c << 8) + d >>> 0).toString(16).padStart(8, "0");
-    ip = ip.slice(0, ip.lastIndexOf(":") + 1) + hex;
+    ip = ip.slice(0, ip.lastIndexOf(":") + 1) + `${hex.slice(0, 4)}:${hex.slice(4)}`;
   }
   let groups;
   const doubleColon = ip.indexOf("::");
@@ -42544,11 +42586,13 @@ function isPrivateIpv6(ip) {
   const inRange = (start, count) => value >= start && value < start + count;
   return inRange(0n, 1n) || // ::/128 unspecified
   inRange(1n, 1n) || // ::1/128 loopback
-  inRange(BigInt(65535) << 32n, BigInt(4294967296)) || // ::ffff:0:0/96 IPv4-mapped (block all)
-  inRange(BigInt(64512) << 96n, BigInt(512) << 96n) || // fc00::/7 ULA
-  inRange(BigInt(65152) << 96n, BigInt(1024) << 96n) || // fe80::/10 link-local
-  inRange(BigInt(65280) << 96n, BigInt(256) << 96n) || // ff00::/8 multicast
-  inRange(BigInt(8193) << 112n, BigInt(65536) << 96n);
+  inRange(0xffffn << 32n, 1n << 32n) || // ::ffff:0:0/96 IPv4-mapped (block all)
+  inRange(0x64ff9bn << 96n, 1n << 32n) || // 64:ff9b::/96 IPv4/IPv6 translation
+  inRange(0x0100n << 112n, 1n << 64n) || // 0100::/64 discard prefix
+  inRange(0x20010db8n << 96n, 1n << 96n) || // 2001:db8::/32 documentation
+  inRange(0xfc00n << 112n, 1n << 121n) || // fc00::/7 ULA
+  inRange(0xfe80n << 112n, 1n << 118n) || // fe80::/10 link-local
+  inRange(0xff00n << 112n, 1n << 120n);
 }
 function isPrivateIp(ip) {
   const kind = net.isIP(ip);
@@ -42587,7 +42631,14 @@ async function fetchWithTimeout(urlStr, headers, timeoutMs) {
       throw new Error(`Blocked: private/reserved IP (${resolvedIp})`);
     }
     try {
-      return await directConnect(protocol, parsedUrl, headers, resolvedIp, family, timeoutMs);
+      return await directConnect(
+        protocol,
+        parsedUrl,
+        headers,
+        resolvedIp,
+        family,
+        timeoutMs
+      );
     } catch (err) {
       if (!(err instanceof Error)) throw err;
       const msg = err.message.toLowerCase();
@@ -42602,7 +42653,14 @@ async function fetchWithTimeout(urlStr, headers, timeoutMs) {
     if (isPrivateIp(systemIp)) {
       throw new Error(`Blocked: private/reserved IP (${systemIp})`);
     }
-    return await directConnect(protocol, parsedUrl, headers, systemIp, systemFamily, timeoutMs);
+    return await directConnect(
+      protocol,
+      parsedUrl,
+      headers,
+      systemIp,
+      systemFamily,
+      timeoutMs
+    );
   } catch {
     throw new Error("DNS resolution failed or blocked");
   }
@@ -42673,7 +42731,11 @@ async function fetchWithRetry(url, headers, log, timeoutMs = CONNECTION_TIMEOUT_
         }
         const redirectHeaders = { ...headers };
         delete redirectHeaders["Referer"];
-        response = await fetchWithTimeout(redirectUrl, redirectHeaders, attemptTimeout);
+        response = await fetchWithTimeout(
+          redirectUrl,
+          redirectHeaders,
+          attemptTimeout
+        );
         redirectCount++;
       }
       if (response.status >= 500 && response.status < 600 && attempt <= MAX_RETRIES) {
@@ -42681,23 +42743,34 @@ async function fetchWithRetry(url, headers, log, timeoutMs = CONNECTION_TIMEOUT_
           BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200,
           remaining
         );
-        log.warn({ url, status: response.status, attempt }, "Media proxy upstream 5xx, retrying");
+        log.warn(
+          { url, status: response.status, attempt },
+          "Media proxy upstream 5xx, retrying"
+        );
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
       }
       if (response.status === 429 && attempt <= MAX_RETRIES) {
-        const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
+        const retryAfterMs = parseRetryAfter(
+          response.headers.get("retry-after")
+        );
         const delay = Math.min(
           retryAfterMs ?? BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200,
           remaining
         );
-        log.warn({ url, attempt, retryAfterMs }, "Media proxy upstream 429, honoring Retry-After");
+        log.warn(
+          { url, attempt, retryAfterMs },
+          "Media proxy upstream 429, honoring Retry-After"
+        );
         await new Promise((resolve) => setTimeout(resolve, Math.max(0, delay)));
         continue;
       }
       if (response.status === 200 && response.headers.get("content-length") === "0") {
         if (attempt <= MAX_RETRIES) {
-          log.warn({ url, attempt }, "Media proxy upstream empty 200, retrying");
+          log.warn(
+            { url, attempt },
+            "Media proxy upstream empty 200, retrying"
+          );
           const delay = Math.min(
             BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200,
             remaining
@@ -42716,7 +42789,10 @@ async function fetchWithRetry(url, headers, log, timeoutMs = CONNECTION_TIMEOUT_
           BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200,
           remaining
         );
-        log.warn({ url, attempt, err: errorMessage }, "Media proxy fetch failed, retrying");
+        log.warn(
+          { url, attempt, err: errorMessage },
+          "Media proxy fetch failed, retrying"
+        );
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
       }
@@ -42798,7 +42874,9 @@ router.get("/media", async (req, res) => {
     "files.litterbox.catbox.moe"
   ];
   const upstreamHostname = parsedUrl.hostname;
-  if (!NO_REFERER_HOSTS.some((h) => upstreamHostname === h || upstreamHostname.endsWith(`.${h}`))) {
+  if (!NO_REFERER_HOSTS.some(
+    (h) => upstreamHostname === h || upstreamHostname.endsWith(`.${h}`)
+  )) {
     upstreamHeaders["Referer"] = "https://chuglii.in/";
   }
   const rangeHeader = req.headers["range"];
@@ -42828,7 +42906,13 @@ router.get("/media", async (req, res) => {
         return;
       }
       if (width !== null || fmt !== null) {
-        const variant = await getTransformedImage(urlStr, img, width ?? 2e3, fmt, req.log);
+        const variant = await getTransformedImage(
+          urlStr,
+          img,
+          width ?? 2e3,
+          fmt,
+          req.log
+        );
         response = new Response(variant.buffer, {
           status: img.status,
           headers: {
@@ -42872,7 +42956,10 @@ router.get("/media", async (req, res) => {
         return;
       }
       const body = await response.text().catch(() => "");
-      req.log.warn({ url: urlStr, status: response.status, body: body.slice(0, 200) }, "Media proxy upstream error");
+      req.log.warn(
+        { url: urlStr, status: response.status, body: body.slice(0, 200) },
+        "Media proxy upstream error"
+      );
       if (!isTransientStatus(response.status)) markCachedFailure(urlStr);
       res.status(404).end();
       return;
@@ -42880,6 +42967,18 @@ router.get("/media", async (req, res) => {
     streamResponse(response, res, req.log);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
+    const upstreamStatus = /^upstream (\d{3})$/.exec(errorMessage);
+    const statusCode = upstreamStatus ? Number(upstreamStatus[1]) : null;
+    const permanentImageFailure = !isVideoRequest && statusCode !== null && statusCode >= 400 && statusCode < 500 && !isTransientStatus(statusCode);
+    if (!res.headersSent && permanentImageFailure) {
+      markCachedFailure(urlStr);
+      req.log.warn(
+        { url: urlStr, status: statusCode },
+        "Media proxy upstream image unavailable; allowing mirror fallback"
+      );
+      res.status(404).end();
+      return;
+    }
     req.log.error({ err, url: urlStr }, "Media proxy fetch error");
     if (!res.headersSent) {
       markCachedFailure(urlStr);
