@@ -23,7 +23,7 @@ import { usePreloadRecordings } from "@/hooks/use-preload-recordings";
 import { useConnectionConstrained } from "@/hooks/use-connection-quality";
 import { buildThumbnailFallbacks } from "@/lib/mirrors";
 import { AdLeaderboard } from "@/components/ads/AdLeaderboard";
-import { Search, ArrowRight, TrendingUp, Clock, Users, Tags, Clapperboard, Star } from "lucide-react";
+import { Search, ArrowRight, TrendingUp, Clock, Users, Tags, Clapperboard, Star, AlertCircle, RefreshCw } from "lucide-react";
 
 type Tab = "recent" | "popular";
 
@@ -64,12 +64,12 @@ export default function Home() {
     staleTime: 60_000,
   });
   const recentParams = { limit: pageSize * 2, sort: "newest" as const };
-  const { data: recentData, isLoading: recentLoading } = useListRecordings(
+  const { data: recentData, isLoading: recentLoading, isError: recentError, refetch: retryRecent } = useListRecordings(
     recentParams,
     { query: { queryKey: getListRecordingsQueryKey(recentParams), staleTime: 30_000, placeholderData: keepPreviousData } },
   );
   const popularParams = { limit: pageSize * 2, sort: "popular" as const };
-  const { data: popularData, isLoading: popularLoading } = useListRecordings(
+  const { data: popularData, isLoading: popularLoading, isError: popularError, refetch: retryPopular } = useListRecordings(
     popularParams,
     { query: { queryKey: getListRecordingsQueryKey(popularParams), staleTime: 30_000, placeholderData: keepPreviousData } },
   );
@@ -88,6 +88,8 @@ export default function Home() {
   const recordings = (tab === "recent" ? recentData?.data : popularData?.data)?.filter(hasThumbnail).slice(0, pageSize);
   const continueWithThumbnails = continueWatching.filter((item) => hasThumbnail(cloudItemToRecording(parseCloudItem(item))));
   const loading = tab === "recent" ? recentLoading : popularLoading;
+  const feedError = tab === "recent" ? recentError : popularError;
+  const retryFeed = tab === "recent" ? retryRecent : retryPopular;
 
   usePreloadRecordings(recordings);
   usePreloadRecordings(recommendations);
@@ -223,6 +225,24 @@ export default function Home() {
               {Array.from({ length: pageSize }).map((_, i) => (
                 <VideoSkeleton key={i} />
               ))}
+            </div>
+          ) : feedError ? (
+            <div className="py-20 text-center border border-border/40 rounded-xl bg-secondary/10 animate-fade-in-up">
+              <div className="w-14 h-14 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-4">
+                <AlertCircle className="w-6 h-6 text-destructive/60" />
+              </div>
+              <p className="text-sm text-foreground mb-1">Couldn&apos;t load recordings.</p>
+              <p className="text-xs text-muted-foreground/60 mb-5 max-w-xs mx-auto">
+                There may be a temporary connection issue. Try loading this feed again.
+              </p>
+              <button
+                type="button"
+                onClick={() => void retryFeed()}
+                className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-semibold text-primary border border-primary/30 hover:border-primary/60 rounded-lg transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Try again
+              </button>
             </div>
           ) : recordings && recordings.length > 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-8 animate-fade-in-up">

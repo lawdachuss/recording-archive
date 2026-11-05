@@ -37,6 +37,9 @@ import {
   Plus,
   Trash2,
   Clapperboard,
+  Clock3,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import { AppPagination } from "@/components/ui/app-pagination";
 import {
@@ -46,6 +49,7 @@ import {
   type FilterPreset,
 } from "@/lib/filter-presets";
 import { GENDER_OPTIONS, genderLabel } from "@/lib/genders";
+import { useSearchSuggestions, useListPerformers } from "@/lib/api";
 
 const SORT_LABELS: Record<ListRecordingsSort, string> = {
   newest: "Newest",
@@ -55,6 +59,20 @@ const SORT_LABELS: Record<ListRecordingsSort, string> = {
 };
 
 const ITEMS_PER_PAGE = isConnectionConstrained() ? 12 : 24;
+
+function editDistance(a: string, b: string): number {
+  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i++) {
+    let diagonal = previous[0];
+    previous[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const above = previous[j];
+      previous[j] = Math.min(previous[j] + 1, previous[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diagonal = above;
+    }
+  }
+  return previous[b.length];
+}
 
 function parseTagList(raw: string): string[] {
   return raw
@@ -68,6 +86,27 @@ function parseTagList(raw: string): string[] {
 function parsePage(raw: string | null): number {
   const n = parseInt(raw || "1", 10);
   return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+function readRecentSearches(): string[] {
+  try {
+    const saved = JSON.parse(localStorage.getItem("vault_recent_searches") || "[]");
+    return Array.isArray(saved)
+      ? saved.filter((value): value is string => typeof value === "string").slice(0, 5)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberSearch(term: string): string[] {
+  const next = [term, ...readRecentSearches().filter((item) => item.toLowerCase() !== term.toLowerCase())].slice(0, 5);
+  try {
+    localStorage.setItem("vault_recent_searches", JSON.stringify(next));
+  } catch {
+    // Search still works when browser storage is unavailable.
+  }
+  return next;
 }
 
 function parseSort(raw: string | null): ListRecordingsSort {
@@ -90,12 +129,57 @@ export default function Browse() {
   const [gender, setGender] = useState(
     () => new URLSearchParams(searchString).get("gender") || "",
   );
+  const [resolution, setResolution] = useState(
+    () => new URLSearchParams(searchString).get("resolution") || "",
+  );
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sort, setSort] = useState<ListRecordingsSort>(() =>
     parseSort(new URLSearchParams(searchString).get("sort")),
   );
   const [showFilters, setShowFilters] = useState(false);
   const [tagSearch, setTagSearch] = useState("");
   const [pageLoading, setPageLoading] = useState(false);
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => readRecentSearches());
+  const [showRecentSearches, setShowRecentSearches] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const { data: tagsData } = useListTags({
+    query: { queryKey: getListTagsQueryKey(), staleTime: 60_000 },
+  });
+
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 220);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  const suggestionsEnabled = showRecentSearches && debouncedSearch.length >= 3;
+  const { data: searchSuggestionsData, isLoading: suggestionsLoading } =
+    useSearchSuggestions(debouncedSearch, { enabled: showRecentSearches && debouncedSearch.length >= 2 });
+  const { data: popularPerformers } = useListPerformers(
+    { limit: 100, sort: "count" },
+    { enabled: suggestionsEnabled, staleTime: 5 * 60_000 },
+  );
+  const searchSuggestions = useMemo(() => {
+    const exact = searchSuggestionsData?.suggestions ?? [];
+    if (!suggestionsEnabled) return exact;
+    const query = debouncedSearch.toLowerCase();
+    const maxDistance = query.length >= 8 ? 2 : 1;
+    const seen = new Set(exact.map((item) => `${item.type}:${item.label.toLowerCase()}`));
+    const fuzzy = [
+      ...(tagsData ?? []).map((tag) => ({
+        type: "tag" as const, label: tag.tag, href: `/browse?tags=${encodeURIComponent(tag.tag)}`, subtitle: "Tag",
+      })),
+      ...(popularPerformers?.performers ?? []).map((performer) => ({
+        type: "performer" as const, label: performer.username, href: `/performers/${encodeURIComponent(performer.username)}`, subtitle: "Performer",
+      })),
+    ].map((item) => ({ ...item, distance: editDistance(query, item.label.toLowerCase()) }))
+      .filter((item) => item.distance > 0 && item.distance <= maxDistance && !seen.has(`${item.type}:${item.label.toLowerCase()}`))
+      .sort((a, b) => a.distance - b.distance || a.label.localeCompare(b.label))
+      .slice(0, 4)
+      .map(({ distance: _distance, ...item }) => item);
+    return [...exact, ...fuzzy].slice(0, 10);
+  }, [searchSuggestionsData, suggestionsEnabled, debouncedSearch, tagsData, popularPerformers]);
 
   // ─── Filter presets ──────────────────────────────────
   const [presetMenuOpen, setPresetMenuOpen] = useState(false);
@@ -119,9 +203,23 @@ export default function Browse() {
     return () => document.removeEventListener("mousedown", handler);
   }, [presetMenuOpen]);
 
-  const { data: tagsData } = useListTags({
-    query: { queryKey: getListTagsQueryKey(), staleTime: 60_000 },
-  });
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isTyping = target?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName || "");
+      if (event.key === "/" && !isTyping && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+      if (event.key === "Escape" && document.activeElement === searchInputRef.current) {
+        setShowRecentSearches(false);
+        searchInputRef.current?.blur();
+      }
+    };
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  }, []);
+
   const popularTags = useMemo(() => tagsData ?? [], [tagsData]);
 
   const filteredPopularTags = useMemo(() => {
@@ -140,11 +238,12 @@ export default function Browse() {
       search: p.get("search") || undefined,
       tags: parseTagList(p.get("tags") || "").join(",") || undefined,
       gender: p.get("gender") || undefined,
+      resolution: p.get("resolution") || undefined,
       sort: parseSort(p.get("sort")),
     };
   }, [searchString]);
 
-  const { data, isLoading, isFetching } = useListRecordings(recordingsParams, {
+  const { data, isLoading, isFetching, isError, refetch: retryRecordings } = useListRecordings(recordingsParams, {
     query: {
       queryKey: getListRecordingsQueryKey(recordingsParams),
       staleTime: 30_000,
@@ -225,6 +324,7 @@ export default function Browse() {
     setSearch(p.get("search") || "");
     setSelectedTags(parseTagList(p.get("tags") || ""));
     setGender(p.get("gender") || "");
+    setResolution(p.get("resolution") || "");
     setSort(parseSort(p.get("sort")));
   }, [searchString]);
 
@@ -233,6 +333,7 @@ export default function Browse() {
       search?: string;
       tags?: string[];
       gender?: string;
+      resolution?: string;
       sort?: string;
     }) => {
       const committedSearch = new URLSearchParams(searchString).get("search") || "";
@@ -240,26 +341,47 @@ export default function Browse() {
         search: committedSearch,
         tags: selectedTags,
         gender,
+        resolution,
         sort: sort as string,
         ...overrides,
       };
       setSearch(next.search);
       setSelectedTags(next.tags);
       setGender(next.gender);
+      setResolution(next.resolution);
       setSort((next.sort as ListRecordingsSort) || "newest");
       const params = new URLSearchParams();
       if (next.search) params.set("search", next.search);
       if (next.tags.length) params.set("tags", next.tags.join(","));
       if (next.gender) params.set("gender", next.gender);
+      if (next.resolution) params.set("resolution", next.resolution);
       if (next.sort && next.sort !== "newest") params.set("sort", next.sort);
       setLocation(`/browse${params.toString() ? "?" + params.toString() : ""}`);
     },
-    [selectedTags, gender, sort, searchString, setLocation],
+    [selectedTags, gender, resolution, sort, searchString, setLocation],
   );
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    pushFilters({ search });
+    const term = search.trim().replace(/\s+/g, " ");
+    setSearch(term);
+    if (term) setRecentSearches(rememberSearch(term));
+    setShowRecentSearches(false);
+    pushFilters({ search: term });
+  };
+
+  const applyRecentSearch = (term: string) => {
+    setSearch(term);
+    setRecentSearches(rememberSearch(term));
+    setShowRecentSearches(false);
+    pushFilters({ search: term });
+  };
+
+  const clearSearch = () => {
+    setSearch("");
+    setShowRecentSearches(false);
+    pushFilters({ search: "" });
+    searchInputRef.current?.focus();
   };
 
   const toggleTag = (tag: string) => {
@@ -272,16 +394,19 @@ export default function Browse() {
   const toggleGender = (val: string) =>
     pushFilters({ gender: gender === val ? "" : val });
 
+  const selectResolution = (value: string) => pushFilters({ resolution: value });
+
   const clearAll = () => setLocation("/browse");
 
   const hasFilters = !!(
     search ||
     selectedTags.length ||
     gender ||
+    resolution ||
     sort !== "newest"
   );
   const activeFilterCount =
-    (selectedTags.length > 0 ? 1 : 0) + (gender ? 1 : 0);
+    (selectedTags.length > 0 ? 1 : 0) + (gender ? 1 : 0) + (resolution ? 1 : 0);
 
   // ─── Filter presets handlers ────────────────────────────
   const refreshPresets = () => setPresets(getFilterPresets());
@@ -293,7 +418,7 @@ export default function Browse() {
       search,
       tags: selectedTags,
       gender,
-      resolution: "",
+      resolution,
       sort: sort as string,
     });
     setSavedPresetId(saved.id);
@@ -308,6 +433,7 @@ export default function Browse() {
     if (preset.search) params.set("search", preset.search);
     if (preset.tags.length) params.set("tags", preset.tags.join(","));
     if (preset.gender) params.set("gender", preset.gender);
+    if (preset.resolution) params.set("resolution", preset.resolution);
     if (preset.sort && preset.sort !== "newest")
       params.set("sort", preset.sort);
     setPresetMenuOpen(false);
@@ -343,15 +469,72 @@ export default function Browse() {
               <div className="sm:ml-auto flex flex-wrap items-center gap-2">
                 {/* Search */}
                 <form onSubmit={handleSearch} className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/60" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/60 pointer-events-none" />
                   <input
-                    type="text"
+                    ref={searchInputRef}
+                    type="search"
                     placeholder="Search recordings…"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    className="h-8 w-44 sm:w-56 bg-secondary border border-border/60 hover:border-border focus:border-primary/60 rounded-lg pl-8 pr-3 text-xs outline-none transition-all duration-200 placeholder:text-muted-foreground/40 focus:ring-2 focus:ring-primary/5"
+                    onFocus={() => setShowRecentSearches(true)}
+                    onBlur={() => window.setTimeout(() => setShowRecentSearches(false), 180)}
+                    className="h-9 w-full sm:w-64 bg-secondary border border-border/60 hover:border-border focus:border-primary/60 rounded-lg pl-8 pr-16 text-xs outline-none transition-all duration-200 placeholder:text-muted-foreground/40 focus:ring-2 focus:ring-primary/5"
                     aria-label="Search recordings"
+                    aria-keyshortcuts="/"
+                    aria-expanded={showRecentSearches && !search.trim() && recentSearches.length > 0}
+                    aria-controls="recent-searches"
                   />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    {search ? (
+                      <button type="button" onClick={clearSearch} className="w-6 h-6 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-background/70" aria-label="Clear search">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    ) : (
+                      <kbd className="hidden sm:inline-flex h-5 items-center rounded border border-border/70 px-1.5 text-[9px] text-muted-foreground/60">/</kbd>
+                    )}
+                    <button type="submit" className="w-6 h-6 inline-flex items-center justify-center rounded text-primary hover:bg-primary/10" aria-label="Submit search">
+                      <Search className="w-3.5 h-3.5" />
+                    </button>
+                  </span>
+                  {showRecentSearches && search.trim().length >= 2 && (
+                    <div role="listbox" aria-label="Search suggestions" className="absolute left-0 right-0 top-full mt-1 z-50 rounded-lg border border-border/60 bg-card p-1.5 shadow-xl">
+                      {suggestionsLoading && searchSuggestions.length === 0 ? (
+                        <p className="px-2 py-2 text-xs text-muted-foreground">Searching…</p>
+                      ) : searchSuggestions.length > 0 ? (
+                        searchSuggestions.slice(0, 7).map((item) => (
+                          <button key={`${item.type}-${item.href}`} type="button" role="option" aria-selected="false"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => { setShowRecentSearches(false); setLocation(item.href); }}
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-muted-foreground hover:bg-secondary hover:text-foreground">
+                            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                            <span className="text-[9px] uppercase tracking-wide text-muted-foreground/50">{item.subtitle === "Tag" || item.subtitle === "Performer" ? "Suggested" : item.type}</span>
+                          </button>
+                        ))
+                      ) : (
+                        <p className="px-2 py-2 text-xs text-muted-foreground">No quick matches. Press Enter to search all recordings.</p>
+                      )}
+                    </div>
+                  )}
+                  {showRecentSearches && !search.trim() && recentSearches.length > 0 && (
+                    <div id="recent-searches" role="listbox" aria-label="Recent searches" className="absolute left-0 right-0 top-full mt-1 z-50 rounded-lg border border-border/60 bg-card p-1.5 shadow-xl">
+                      <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/60">Recent searches</div>
+                      {recentSearches.map((term) => (
+                        <button
+                          key={term}
+                          type="button"
+                          role="option"
+                          aria-selected="false"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => applyRecentSearch(term)}
+                          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-muted-foreground hover:bg-secondary hover:text-foreground"
+                        >
+                          <Clock3 className="h-3 w-3 shrink-0 opacity-60" />
+                          <span className="min-w-0 flex-1 truncate">{term}</span>
+                          <span className="text-[9px] text-muted-foreground/40">Search</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </form>
 
                 {/* Sort */}
@@ -498,12 +681,26 @@ export default function Browse() {
                     <X className="w-3 h-3" /> Clear all
                   </button>
                 )}
+                <p className="text-[10px] text-muted-foreground/40 sm:ml-1">Press <kbd className="rounded border border-border/60 px-1 py-0.5">/</kbd> to search</p>
               </div>
             </div>
 
             {/* ── Expanded filter panel ─────────────────────── */}
             {showFilters && (
               <div className="border border-border/50 rounded-xl bg-secondary p-4 sm:p-5 space-y-5 animate-fade-in-up">
+                {/* Resolution filter */}
+                <div className="max-w-xs">
+                  <label htmlFor="browse-resolution" className="block text-[10px] uppercase tracking-widest text-muted-foreground font-semibold mb-2.5">Resolution</label>
+                  <select id="browse-resolution" value={resolution} onChange={(event) => selectResolution(event.target.value)}
+                    className="h-8 w-full bg-background border border-border/60 rounded-lg px-3 text-xs text-foreground outline-none focus:border-primary/50">
+                    <option value="">All resolutions</option>
+                    <option value="4K">4K</option>
+                    <option value="1080p">1080p</option>
+                    <option value="720p">720p</option>
+                    <option value="480p">480p</option>
+                    <option value="360p">360p</option>
+                  </select>
+                </div>
                 {/* Gender chips */}
                 <div>
                   <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold mb-2.5">
@@ -602,11 +799,17 @@ export default function Browse() {
             )}
 
             {/* Active filter pills */}
-            {(selectedTags.length > 0 || gender) && (
+            {(selectedTags.length > 0 || gender || resolution) && (
               <div className="flex flex-wrap items-center gap-1.5 animate-fade-in-up">
                 <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wide shrink-0">
                   Filtering by:
                 </span>
+                {resolution && (
+                  <span className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-medium text-primary border border-primary/30 rounded-lg">
+                    {resolution}
+                    <button onClick={() => selectResolution("")} className="hover:text-primary/80 transition-colors" aria-label="Remove resolution filter"><X className="w-2.5 h-2.5" /></button>
+                  </span>
+                )}
                 {gender && (
                   <span className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-medium text-primary border border-primary/30 rounded-lg">
                     {genderLabel(gender)}
@@ -656,6 +859,24 @@ export default function Browse() {
                   <div className="h-3 w-1/2 rounded bg-secondary/30" />
                 </div>
               ))}
+            </div>
+          ) : isError ? (
+            <div className="py-24 sm:py-32 text-center border border-border/30 rounded-2xl bg-secondary/10">
+              <div className="w-14 h-14 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-4">
+                <AlertCircle className="w-6 h-6 text-destructive/60" />
+              </div>
+              <p className="text-sm text-foreground mb-1">Couldn&apos;t load recordings.</p>
+              <p className="text-xs text-muted-foreground/50 mb-5 max-w-xs mx-auto">
+                There may be a temporary connection issue. Your search and filters are unchanged.
+              </p>
+              <button
+                type="button"
+                onClick={() => void retryRecordings()}
+                className="inline-flex items-center gap-1.5 h-9 px-4 text-xs font-semibold text-primary border border-primary/30 hover:border-primary/60 rounded-lg transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Try again
+              </button>
             </div>
           ) : recordings.length > 0 ? (
             <>
