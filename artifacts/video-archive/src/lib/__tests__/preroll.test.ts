@@ -29,8 +29,25 @@ describe("pickPreroll", () => {
     expect(pickPreroll([row({ slot: "medium-rect-300x250" })])).toBeNull();
     expect(pickPreroll([row({ enabled: false })])).toBeNull();
     expect(pickPreroll([row({ kind: "url", content: "not a url" })])).toBeNull();
+    expect(pickPreroll([row({ kind: "url", content: "javascript:alert(1)" })])).toBeNull();
+    expect(pickPreroll([row({ kind: "url", content: "https://user:pass@cdn.x/ad.mp4" })])).toBeNull();
     expect(pickPreroll([row({ kind: "html", content: "" })])).toBeNull();
     expect(pickPreroll([])).toBeNull();
+  });
+
+  it("ignores malformed runtime rows without throwing", () => {
+    expect(pickPreroll([
+      row({ content: null as unknown as string }),
+      row({ content: 42 as unknown as string }),
+      row({ enabled: "true" as unknown as boolean }),
+      row({ content: "   " }),
+      row({ content: "https://cdn.x/valid.mp4" }),
+    ])).toEqual({ type: "video", url: "https://cdn.x/valid.mp4" });
+  });
+
+  it("normalizes safe video URLs before assigning them to the video source", () => {
+    const pick = pickPreroll([row({ content: "https://cdn.x/a file.mp4" })]);
+    expect(pick).toEqual({ type: "video", url: "https://cdn.x/a%20file.mp4" });
   });
 
   it("passes pasted iframe embeds through as html creatives", () => {
