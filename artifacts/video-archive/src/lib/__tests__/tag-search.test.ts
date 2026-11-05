@@ -93,7 +93,7 @@ describe("sortTagsByCount", () => {
     const malformedRows: unknown[] = [
       null,
       { tag: "missing count" },
-      { tag: "bad label", count: 4 },
+      { tag: "   ", count: 4 },
       { tag: "infinite", count: Infinity },
       { tag: "negative", count: -2 },
       { tag: "valid lower", count: 1 },
