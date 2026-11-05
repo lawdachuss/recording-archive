@@ -39,6 +39,28 @@ function isSensitiveKey(queryKey: readonly unknown[]): boolean {
   return typeof first === "string" && SENSITIVE_QUERY_PREFIXES.has(first);
 }
 
+/**
+ * Filter persisted snapshots during restore as well as during writes. Older
+ * app versions may have left authenticated query data in the shared snapshot.
+ * Drop malformed keys too; they cannot be safely classified.
+ */
+export function sanitizePersistedQueryData(
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  const safe: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(data)) {
+    try {
+      const queryKey: unknown = JSON.parse(key);
+      // React Query keys must be arrays. Valid JSON objects/scalars are still
+      // malformed persisted keys and must not be restored into the live cache.
+      if (Array.isArray(queryKey) && !isSensitiveKey(queryKey)) safe[key] = entry;
+    } catch {
+      // Ignore malformed persisted keys rather than restoring unknown data.
+    }
+  }
+  return safe;
+}
+
 // ─── Network detection ────────────────────────────────────────────
 
 type ConnectionSpeed = "slow" | "fast";
@@ -117,7 +139,13 @@ export function restoreQueryCache(queryClient: QueryClient) {
 
 function applyCache(queryClient: QueryClient, persisted: PersistedCache) {
   const cache = queryClient.getQueryCache();
-  for (const [keyStr, entry] of Object.entries(persisted.data)) {
+  const safeData = sanitizePersistedQueryData(persisted.data ?? {});
+  if (Object.keys(safeData).length !== Object.keys(persisted.data ?? {}).length) {
+    // Rewrite the snapshot so private legacy entries are removed from disk too.
+    cacheSetLocal(PERSIST_KEY, { ...persisted, data: safeData }, PERSIST_TTL);
+  }
+
+  for (const [keyStr, entry] of Object.entries(safeData)) {
     try {
       const queryKey = JSON.parse(keyStr) as unknown[];
       const existing = cache.find({ queryKey, exact: true });

@@ -47,7 +47,7 @@ export default function Collections() {
     try {
       await userApi.createCollection(newName.trim(), newDesc.trim() || undefined);
       // Analytics: collection created.
-      trackActivity("collection_create", { meta: { name: newName.trim().slice(0, 100) } });
+      trackActivity("collection_create");
       queryClient.invalidateQueries({ queryKey: ["user", "collections"] });
       setNewName("");
       setNewDesc("");
