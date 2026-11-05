@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import { useLocation, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
@@ -30,7 +30,7 @@ export default function RequestPage() {
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  // ── Fetch user's requests (for ?id= view) ────────────────────────────────
+  // â”€â”€ Fetch user's requests (for ?id= view) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const { data: myRequests = [], isLoading: loadingRequests } = useQuery<UserRequest[]>({
     queryKey: ["my-requests"],
     queryFn: async () => {
@@ -131,7 +131,7 @@ export default function RequestPage() {
     );
   }
 
-  // ── Request detail view (navigated from notification) ────────────────────
+  // â”€â”€ Request detail view (navigated from notification) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (viewId) {
     if (loadingRequests) {
       return (
@@ -328,7 +328,11 @@ export default function RequestPage() {
             onFinalStepCompleted={handleSubmit}
             backButtonText="Back"
             nextButtonText={step === 3 ? "Submit Request" : "Continue"}
-            canNext={step === 2 ? !(lookupData?.in_archive && lookupData?.archive_recording_count && lookupData.archive_recording_count > 0) : true}
+            canNext={step === 2 ? (
+              !(lookupData?.in_archive && lookupData?.archive_recording_count && lookupData.archive_recording_count > 0) &&
+              !(lookupData && !lookupData.exists && !lookupData.platform_check_failed) &&
+              !lookupLoading
+            ) : true}
           >
             <Step>
               <Step1PlatformSelect onSelect={handlePlatformSelect} />
@@ -359,7 +363,7 @@ export default function RequestPage() {
             </Step>
           </Stepper>
 
-          {/* Bottom ad — 300×100 rectangle under the form */}
+          {/* Bottom ad â€” 300Ã—100 rectangle under the form */}
           <AdBanner file="rect-300x100" className="mt-8" />
         </div>
       </div>
@@ -489,7 +493,7 @@ function Step2PerformerLookup({
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
                 <p className="text-xs font-medium text-amber-500">Could not verify performer on {platform}</p>
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  The platform check failed — you can still submit this request and it will be reviewed manually.
+                  The platform check failed â€” you can still submit this request and it will be reviewed manually.
                 </p>
               </div>
             ) : (

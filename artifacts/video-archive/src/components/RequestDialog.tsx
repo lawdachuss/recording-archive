@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+﻿import { useState, useRef, useCallback } from "react";
 import Stepper, { Step } from "@/components/Stepper";
 import { PerformerDetailsCard, PerformerLookupLoading, PerformerLookupNotFound, PerformerLookupError } from "@/components/PerformerDetailsCard";
 import { usePerformerLookup, useCreateRequest, type PerformerLookupResult } from "@/lib/api";
@@ -130,7 +130,7 @@ function RequestDialogInner({ open, onOpenChange }: RequestDialogProps) {
 
   const canNext =
     step === 2 ? usernameInput.trim().length >= 2 :
-    step === 3 ? (!!lookupData?.exists && confirmed && !lookupLoading) :
+    step === 3 ? ((!!lookupData?.exists || !!lookupData?.platform_check_failed) && confirmed && !lookupLoading) :
     step === 4 ? (!!platform && !!lookupUsername && !createRequest.isPending) :
     true;
 
@@ -403,14 +403,50 @@ function Step3Confirmation({
   if (!lookupData.exists) {
     return (
       <div className="space-y-3">
-        <PerformerLookupNotFound
-          platform={lookupData.platform}
-          username={lookupUsername}
-          onRetry={() => {}} // handled by Stepper back button
-        />
-        <p className="text-center text-[11px] text-muted-foreground">
-          Click <span className="text-primary">Back</span> to try a different username
-        </p>
+        {lookupData.platform_check_failed ? (
+          <>
+            <div className="flex flex-col items-center justify-center py-6 gap-2.5 bg-secondary/30 rounded-lg border border-amber-500/20">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7 text-amber-500/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              <div className="text-center px-2">
+                <p className="text-xs font-medium text-amber-500">Could not verify on {lookupData.platform}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  The platform check is unavailable — your request will be reviewed manually.
+                </p>
+              </div>
+            </div>
+            <label className="flex items-center gap-2.5 p-3 rounded-lg border border-border/30 bg-secondary/20 cursor-pointer hover:bg-secondary/30 transition-colors select-none">
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={confirmed}
+                onClick={() => onConfirmedChange(!confirmed)}
+                className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
+                  confirmed
+                    ? "bg-primary border-primary text-primary-foreground"
+                    : "border-border/60 bg-secondary"
+                }`}
+              >
+                {confirmed && <Check className="w-3 h-3" />}
+              </button>
+              <span className="text-[11px] text-foreground leading-tight">
+                I confirm this is the performer I want recorded
+              </span>
+            </label>
+          </>
+        ) : (
+          <>
+            <PerformerLookupNotFound
+              platform={lookupData.platform}
+              username={lookupUsername}
+              onRetry={() => {}} // handled by Stepper back button
+            />
+            <p className="text-center text-[11px] text-muted-foreground">
+              Click <span className="text-primary">Back</span> to try a different username
+            </p>
+          </>
+        )}
       </div>
     );
   }

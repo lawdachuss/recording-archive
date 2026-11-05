@@ -12,10 +12,12 @@ const UA =
 // Googlebot UA bypasses Cloudflare for Chaturbate (used only for API calls)
 const CB_UA = "Googlebot/2.1 (+http://www.google.com/bot.html)";
 
-// ─── Chaturbate API check ──────────────────────────────────────────────────
+// â”€â”€â”€ Chaturbate API check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Uses the internal /get_edge_hls_url_ajax/ endpoint (same as yt-dlp).
 // Returns { exists, is_live, room_status }.
 // No cookies needed -- works from serverless IPs.
+const KNOWN_CB_STATUSES = new Set(["public", "private", "group_show", "away", "offline", "password protected"]);
+
 async function checkChaturbateApi(
   username: string,
 ): Promise<{ exists: boolean; is_live: boolean; room_status: string } | null> {
@@ -35,17 +37,84 @@ async function checkChaturbateApi(
       success?: boolean;
       room_status?: string;
     };
+    const roomStatus = (data.room_status ?? "").toLowerCase().trim();
+    const exists = !!data.success || KNOWN_CB_STATUSES.has(roomStatus);
+    const is_live =
+      roomStatus === "public" || roomStatus === "group_show" || roomStatus === "private";
     return {
-      exists: !!data.success,
-      is_live: data.room_status === "public" || data.room_status === "group_show" || data.room_status === "private",
-      room_status: data.room_status ?? "unknown",
+      exists,
+      is_live,
+      room_status: roomStatus || "unknown",
     };
   } catch {
     return null;
   }
 }
 
-// ─── Stripchat HTML scraping ───────────────────────────────────────────────
+interface StripchatCheckResult {
+  exists: boolean;
+  is_online?: boolean;
+  display_name?: string;
+  avatar_url?: string;
+}
+
+async function checkStripchatApi(username: string): Promise<StripchatCheckResult | null> {
+  try {
+    const idRes = await fetch(
+      `https://hu.stripchat.com/api/front/users/user-ids/${encodeURIComponent(username)}`,
+      {
+        headers: {
+          "User-Agent": UA,
+          Accept: "application/json",
+        },
+      },
+    );
+    if (idRes.status === 404) return { exists: false };
+    if (!idRes.ok) return null;
+
+    const idData = (await idRes.json()) as { id?: number };
+    const modelId = idData?.id;
+    if (!modelId) return null;
+
+    try {
+      const uniq = Math.random().toString(36).slice(2, 18);
+      const camRes = await fetch(
+        `https://stripchat.com/api/front/v2/models/${modelId}/cam?uniq=${uniq}`,
+        {
+          headers: {
+            "User-Agent": UA,
+            Accept: "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "X-Requested-With": "XMLHttpRequest",
+            Origin: "https://stripchat.com",
+            Referer: "https://stripchat.com/",
+          },
+        },
+      );
+      if (camRes.ok) {
+        const camData = (await camRes.json()) as {
+          user?: { user?: { username?: string; isOnline?: boolean; isLive?: boolean; previewUrlThumbBig?: string } };
+          error?: { code?: string };
+        };
+        if (camData.error?.code === "NOT_FOUND") return { exists: false };
+
+        const model = camData.user?.user;
+        return {
+          exists: true,
+          is_online: !!(model?.isOnline || model?.isLive),
+          display_name: model?.username || username,
+          avatar_url: model?.previewUrlThumbBig || undefined,
+        };
+      }
+    } catch {}
+
+    return { exists: true };
+  } catch {
+    return null;
+  }
+}
+
+// â”€â”€â”€ Stripchat HTML scraping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Stripchat pages are massive React SPAs (2-5 MB inline JS/state).
 // Stream the response and stop after MAX_STRIPCHAT_BYTES.
 const MAX_STRIPCHAT_BYTES = 400_000; // ~400 KB -- isOnline JSON is at ~294 KB
@@ -185,7 +254,7 @@ function performerExistsOnStripchat(html: string, username: string): boolean {
 
 const router = Router();
 
-// ─── Mirror enrichment ─────────────────────────────────────────────────────
+// â”€â”€â”€ Mirror enrichment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const MIRROR_COLS = "id,thumbnail_mirrors,sprite_mirrors,preview_mirrors";
 
 async function fetchMirrors(ids: string[]): Promise<Map<string, any>> {
@@ -303,109 +372,52 @@ router.get(
         return;
       }
 
-      // Stripchat: scrape the HTML page
-      const html = await fetchStripchatPage(profileUrl);
-      if (!html) {
+      // Stripchat: use official JSON API (two-step via hu.stripchat.com)
+      const scApiResult = await checkStripchatApi(username);
+
+      if (scApiResult === null) {
+        result.platform_check_failed = true;
+        if (result.in_archive) {
+          result.exists = true;
+        }
+        res.json(result);
+        return;
+      }
+
+      if (!scApiResult.exists) {
         if (result.in_archive) {
           result.exists = true;
           result.platform_check_failed = true;
-        }
-        res.json(result);
-        return;
-      }
-
-      if (performerExistsOnStripchat(html, username)) {
-        result.exists = true;
-      } else {
-        // No positive signals -- check <title> for not-found patterns
-        const titleMatch = html.match(
-          /<title[^>]*>([^<]*)<\/title>/i,
-        );
-        const title = titleMatch ? titleMatch[1].toLowerCase() : "";
-        const notFoundTitles = [
-          "page not found",
-          "not found",
-          "404",
-          "error",
-        ];
-        const isNotFound = notFoundTitles.some((p) => title.includes(p));
-
-        if (isNotFound) {
-          if (result.in_archive) {
-            result.exists = true;
-            result.platform_check_failed = true;
-            res.json(result);
-            return;
-          }
-          result.exists = false;
-          res.json(result);
-          return;
-        }
-
-        result.exists = false;
-        res.json(result);
-        return;
-      }
-
-      // Parse Stripchat performer details from HTML
-      const bodyLower = html.toLowerCase();
-      result.display_name =
-        extractMetaContent(html, "og:title") || username;
-      result.avatar_url =
-        extractMetaContent(html, "og:image") ?? undefined;
-
-      // Parse online status from __PRELOADED_STATE__ JSON (byte ~294K)
-      const isOnlineMatch = html.match(/"isOnline":(true|false)/i);
-      if (isOnlineMatch) {
-        result.is_online = isOnlineMatch[1] === "true";
-      } else {
-        // Fallback: text-based detection
-        if (
-          bodyLower.includes("is online") ||
-          bodyLower.includes("online now") ||
-          bodyLower.includes("live now")
-        ) {
-          result.is_online = true;
         } else {
-          result.is_online = false;
-          const lastSeenMatch = html.match(
-            /(?:last\s+(?:online|seen|live)|offline)\s*[:]?\s*([^<]+)/i,
-          );
-          if (lastSeenMatch) {
-            result.last_seen = lastSeenMatch[1].trim();
-          }
+          result.exists = false;
         }
+        res.json(result);
+        return;
       }
 
-      // Parse isLive from JSON for live streaming status
-      const isLiveMatch = html.match(/"isLive":(true|false)/i);
-      if (isLiveMatch && isLiveMatch[1] === "true") {
-        result.is_online = true; // isLive overrides isOnline
-      }
+      result.exists = true;
+      if (scApiResult.is_online !== undefined) result.is_online = scApiResult.is_online;
+      if (scApiResult.display_name) result.display_name = scApiResult.display_name;
+      if (scApiResult.avatar_url) result.avatar_url = scApiResult.avatar_url;
 
-      // Parse viewer count from JSON state
-      if (result.is_online) {
-        const viewerMatch = html.match(
-          /(\d[\d,]*)\s*(?:viewers?|watching)/i,
-        );
-        if (viewerMatch) {
-          result.viewer_count = parseInt(
-            viewerMatch[1].replace(/,/g, ""),
-            10,
-          );
+      const html = await fetchStripchatPage(profileUrl);
+      if (html) {
+        if (!result.display_name) {
+          result.display_name = extractMetaContent(html, "og:title") || username;
         }
-      }
+        if (!result.avatar_url) {
+          result.avatar_url = extractMetaContent(html, "og:image") ?? undefined;
+        }
+        const ogDesc = extractMetaContent(html, "og:description");
+        if (ogDesc) result.room_title = ogDesc;
 
-      const ogDesc = extractMetaContent(html, "og:description");
-      if (ogDesc) {
-        result.room_title = ogDesc;
-      }
+        const followerMatch = html.match(/(\d[\d,.]*[kKmM]?)\s*(?:followers?|fans)/i);
+        if (followerMatch) result.follower_count = parseCount(followerMatch[1]);
 
-      const followerMatch = html.match(
-        /(\d[\d,.]*[kKmM]?)\s*(?:followers?|fans)/i,
-      );
-      if (followerMatch) {
-        result.follower_count = parseCount(followerMatch[1]);
+        if (result.is_online && !result.viewer_count) {
+          const viewerMatch = html.match(/(\d[\d,]*)\s*(?:viewers?|watching)/i);
+          if (viewerMatch) result.viewer_count = parseInt(viewerMatch[1].replace(/,/g, ""), 10);
+        }
       }
 
       res.json(result);
@@ -416,7 +428,7 @@ router.get(
   },
 );
 
-// ─── Performer list (archive stats per performer) ─────────────────────────
+// â”€â”€â”€ Performer list (archive stats per performer) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // PostgREST can't express COUNT(DISTINCT)/DISTINCT ON, so aggregate the view
 // rows in JS. Result is cached for 10 minutes.
 //
@@ -432,7 +444,7 @@ interface PerformerAgg {
   latest_timestamp: string | null;
   latest_thumbnail: string | null;
   sprite_url: string | null;
-  // id of the row chosen for the card image — used to fetch its thumbnail
+  // id of the row chosen for the card image â€” used to fetch its thumbnail
   // mirrors (same image on other hosts) for the fallback chain.
   pickId: string | null;
 }
@@ -476,7 +488,7 @@ async function fetchPerformersViaRpc(): Promise<PerformerAgg[] | null> {
       code === "42883" ||
       /function.*(?:not found|does not exist)|Could not find the function/i.test(message)
     ) {
-      logger.warn("get_performer_stats RPC unavailable — falling back to legacy aggregation");
+      logger.warn("get_performer_stats RPC unavailable â€” falling back to legacy aggregation");
       return null;
     }
     throw error;
@@ -559,7 +571,7 @@ async function fetchPerformers(): Promise<PerformerAgg[]> {
 
   const performers: PerformerAgg[] = [];
   for (const [username, agg] of byName) {
-    // Card image: newest proxied (pixhost) thumbnail when one exists — it is
+    // Card image: newest proxied (pixhost) thumbnail when one exists â€” it is
     // guaranteed to load through /api/media. Otherwise fall back to the most
     // recent thumbnail of any host, then to the newest row's sprite.
     const imgRow = agg.proxiedThumbRow ?? agg.thumbRow ?? agg.latestRow;
@@ -593,10 +605,10 @@ async function fetchPerformers(): Promise<PerformerAgg[]> {
   }
 }
 
-// ─── Mirror fallback chain for the card image ─────────────────────────────
+// â”€â”€â”€ Mirror fallback chain for the card image â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Mirrors store the SAME image on other hosts ({ Host: url }). Order mirrors
 // so a card image keeps showing even when the primary host fails to load:
-// pixhost mirrors first (served through our /api/media proxy — reachable
+// pixhost mirrors first (served through our /api/media proxy â€” reachable
 // everywhere the site is), then catbox (direct, unreliable on many networks),
 // then the rest.
 const MIRROR_HOST_PRIORITY = ["Pixhost", "Catbox", "ImgChest", "freeimage.host"];
@@ -615,7 +627,7 @@ function buildFallbackImages(
     for (const host of MIRROR_HOST_PRIORITY) push(mirrors[host]);
     for (const u of Object.values(mirrors)) push(u);
   }
-  // Sprite is a different image — last resort so the card still has an image.
+  // Sprite is a different image â€” last resort so the card still has an image.
   push(sprite);
   return out;
 }

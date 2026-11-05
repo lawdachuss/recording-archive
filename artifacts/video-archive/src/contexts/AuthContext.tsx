@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, useCallback, useMemo } from "react";
+﻿import { createContext, useContext, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { getSupabase } from "@/lib/supabase";
 import { resolveApiPath } from "@/lib/api-base";
@@ -30,7 +30,7 @@ function friendlyAuthError(raw: string): string {
   const lower = raw.toLowerCase();
 
   if (lower.includes("error sending confirmation email") || lower.includes("smtp") || lower.includes("email provider")) {
-    return "We couldn't send the verification email. The email service is not configured on the server — please contact support or try again later.";
+    return "We couldn't send the verification email. The email service is not configured on the server â€” please contact support or try again later.";
   }
   if (lower.includes("email address not confirmed")) {
     return "Your email hasn't been confirmed yet. Check your inbox for the verification link, or try resetting your password.";
@@ -48,7 +48,7 @@ function friendlyAuthError(raw: string): string {
     return "Please enter a valid email address.";
   }
   if (lower.includes("rate limit")) {
-    return "Too many attempts — please wait a moment and try again.";
+    return "Too many attempts â€” please wait a moment and try again.";
   }
   return raw;
 }
@@ -129,7 +129,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           data: { subscription },
         } = sb.auth.onAuthStateChange((_event, session) => {
           setSession(session);
-          setUser(session?.user ?? null);
+          setUser((prev) => {
+            if (!session?.user && !prev) return null;
+            if (
+              session?.user &&
+              prev &&
+              session.user.id === prev.id &&
+              session.user.updated_at === prev.updated_at
+            ) {
+              return prev; // Retain identity to prevent effect re-runs on tab switch
+            }
+            return session?.user ?? null;
+          });
           if (session?.access_token) {
             applyRole(session.access_token);
             applyPendingUsername(session.access_token);

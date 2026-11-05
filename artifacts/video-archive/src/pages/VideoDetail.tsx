@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect, useMemo } from "react";
+﻿import { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
@@ -111,7 +111,7 @@ function isEmbedUrl(url: string): boolean {
   try {
     const { pathname, hostname } = new URL(safeUrl);
     // AnonMP4 rejects cross-origin iframe playback with "Forbidden: Playback
-    // ticket already used or invalid session." — never iframe it, only link out.
+    // ticket already used or invalid session." â€” never iframe it, only link out.
     if (hostname.includes("anonmp4")) {
       return false;
     }
@@ -220,7 +220,7 @@ export default function VideoDetail() {
     if (typeof window === "undefined") return false;
     return sessionStorage.getItem("vplayed") === id;
   });
-  // Pre-roll ad (Admin → Ads → "Pre-roll video" slot): "idle" waits for the
+  // Pre-roll ad (Admin â†’ Ads â†’ "Pre-roll video" slot): "idle" waits for the
   // play gesture on the poster click, "playing" shows the overlay, "done"
   // never re-arms during this page visit (server switches included).
   const [prerollPhase, setPrerollPhase] = useState<"idle" | "playing" | "done">("idle");
@@ -245,7 +245,7 @@ export default function VideoDetail() {
     startPlayback();
   };
 
-  /** Preroll ended/errored/skipped → start the main video (never the other way around). */
+  /** Preroll ended/errored/skipped â†’ start the main video (never the other way around). */
   const finishPreroll = useCallback(() => {
     setPrerollPhase("done");
     setActivePreroll(null);
@@ -281,7 +281,7 @@ export default function VideoDetail() {
     query: { enabled: !!id, queryKey: getGetRecordingQueryKey(id || "") },
   });
 
-  // Playback queue (Playlists → Play all): position is derived from the route,
+  // Playback queue (Playlists â†’ Play all): position is derived from the route,
   // so deep links, back/forward and manual URL edits all stay in sync.
   // nextInQueue is loop-aware (wraps to the first item when loop is on).
   const queue = usePlayQueue();
@@ -330,7 +330,7 @@ export default function VideoDetail() {
   useEffect(() => {
     // Consume a pending queue-arrival flag (vauto, set by handleQueueAdvance /
     // QueueBar before navigation): start playback immediately instead of
-    // parking on the click-to-play poster — a queue means continuous
+    // parking on the click-to-play poster â€” a queue means continuous
     // playback. When a preroll is loaded it is armed for the auto-arrival
     // without a gesture (PrerollPlayer then autoplays it muted); otherwise
     // the video starts straight away. The flag is consumed unconditionally so
@@ -467,7 +467,7 @@ export default function VideoDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [video?.id, user]);
 
-  // ─── Track view on page load (once per video ID) ──────────
+  // â”€â”€â”€ Track view on page load (once per video ID) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const trackedRef = useRef(new Set<string>());
   useEffect(() => {
     if (!video?.id || trackedRef.current.has(video.id)) return;
@@ -518,7 +518,7 @@ export default function VideoDetail() {
     // Snapshot previous value for rollback
     const previousReactions = queryClient.getQueryData(queryKey);
 
-    // Optimistic update — UI responds instantly
+    // Optimistic update â€” UI responds instantly
     queryClient.setQueryData(queryKey, (old: unknown) => {
       const current = (old as { likes: number; dislikes: number; user_reaction?: string | null }) ?? { likes: 0, dislikes: 0, user_reaction: null };
       const prevReaction = current.user_reaction;
@@ -673,10 +673,10 @@ export default function VideoDetail() {
   };
 
   /**
-   * Queue auto-advance — fired by the iframe Up Next countdown (cross-origin
+   * Queue auto-advance â€” fired by the iframe Up Next countdown (cross-origin
    * `ended` is unobservable, so that path runs on the metadata-duration
    * estimate from lib/up-next.ts) and by its "Play now" button. The
-   * report → scroll → navigate sequence lives in lib/play-queue.ts
+   * report â†’ scroll â†’ navigate sequence lives in lib/play-queue.ts
    * (advanceQueue) so the ordering and no-op rules stay unit-testable.
    */
   const handleQueueAdvance = useCallback(() => {
@@ -685,7 +685,7 @@ export default function VideoDetail() {
     if (next.id === id) {
       // Loop replay of the current recording: cross-origin players can't be
       // restarted programmatically and navigating to the same URL remounts
-      // nothing, so drop back to the poster — the click is the gesture that
+      // nothing, so drop back to the poster â€” the click is the gesture that
       // loads a fresh iframe (and re-arms the preroll for the new playback).
       trackActivity("queue_advance", { meta: { recording_id: next.id } });
       sessionStorage.removeItem("vplayed");
@@ -710,7 +710,7 @@ export default function VideoDetail() {
 
   if (isError) {
     // A recording can vanish from the archive while it sits in a playback
-    // queue — offer the next queued item instead of dead-ending.
+    // queue â€” offer the next queued item instead of dead-ending.
     const deadNext = queue ? nextQueueItem(queue, id) : null;
     return (
       <Layout>
@@ -762,9 +762,9 @@ export default function VideoDetail() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-8">
-          {/* ─── Main column ──────────────────────────────────── */}
+          {/* â”€â”€â”€ Main column â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <div className="space-y-5 min-w-0">
-            {/* Ad above the player — 728×90 / 468×60 / 300×100 */}
+            {/* Ad above the player â€” 728Ã—90 / 468Ã—60 / 300Ã—100 */}
             <AdLeaderboard />
 
             {/* Server selector */}
@@ -789,7 +789,7 @@ export default function VideoDetail() {
               </div>
             )}
 
-            {/* Player — click-to-play */}
+            {/* Player â€” click-to-play */}
             {isLoading ? (
               <Skeleton className="w-full aspect-video" />
             ) : video ? (
@@ -882,7 +882,7 @@ export default function VideoDetail() {
                   </div>
                 )}
 
-                {/* Iframe Up Next countdown — cross-origin players can't report
+                {/* Iframe Up Next countdown â€” cross-origin players can't report
                     `ended`, so this runs on the metadata-duration estimate from
                     lib/up-next.ts. Keyed by video so cancel state resets per video. */}
                 {currentServer?.type === "iframe" && videoStarted && video && nextInQueue && (
@@ -907,7 +907,7 @@ export default function VideoDetail() {
               </div>
             ) : null}
 
-            {/* Queue — up-next strip (seeded from Playlists / Collections / Watch Later) */}
+            {/* Queue â€” up-next strip (seeded from Playlists / Collections / Watch Later) */}
             {queue && queueIndex >= 0 && (
               <QueueBar queue={queue} index={queueIndex} />
             )}
@@ -921,7 +921,7 @@ export default function VideoDetail() {
               </div>
             ) : video ? (
               <div className="space-y-5">
-                {/* Performer name — large heading */}
+                {/* Performer name â€” large heading */}
                 <div>
                   <Link
                     href={`/performers/${video.username}`}
@@ -931,7 +931,7 @@ export default function VideoDetail() {
                   </Link>
                 </div>
 
-                {/* Compact metadata — pipe-separated, no icons */}
+                {/* Compact metadata â€” pipe-separated, no icons */}
                 <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground/70">
                   {video.timestamp && (
                     <span>{new Date(video.timestamp).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
@@ -1068,7 +1068,7 @@ export default function VideoDetail() {
                               autoFocus
                               type="text"
                               aria-label="New collection name"
-                              placeholder="New collection…"
+                              placeholder="New collectionâ€¦"
                               value={newColName}
                               onChange={(e) => setNewColName(e.target.value)}
                               onKeyDown={(e) => { if (e.key === "Enter") handleCreateAndAdd(); }}
@@ -1172,12 +1172,12 @@ export default function VideoDetail() {
                       href={`/browse?gender=${encodeURIComponent(video.gender)}`}
                       className="hover:text-muted-foreground transition-colors capitalize"
                     >
-                      Browse {video.gender} recordings →
+                      Browse {video.gender} recordings â†’
                     </Link>
                   </div>
                 )}
 
-                {/* In-content ad above comments — full-width 300×100 row */}
+                {/* In-content ad above comments â€” full-width 300Ã—100 row */}
                 <AdBanner file="rect-300x100" fluid />
 
                 {/* Comments */}
@@ -1188,9 +1188,9 @@ export default function VideoDetail() {
             ) : null}
           </div>
 
-          {/* ─── Sidebar — Related ─────────────────────────── */}
+          {/* â”€â”€â”€ Sidebar â€” Related â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <div className="space-y-4">
-            {/* Sidebar ads — 300×250 medium rect + 300×600 half page (lg+) */}
+            {/* Sidebar ads â€” 300Ã—250 medium rect + 300Ã—600 half page (lg+) */}
             <AdBanner file="medium-rect-300x250" />
             <AdBanner file="half-page-300x600" breakpoint="lg" />
 
@@ -1267,7 +1267,7 @@ export default function VideoDetail() {
                     href={`/performers/${video.username}`}
                     className="block pt-2 text-[11px] text-primary/70 hover:text-primary transition-colors"
                   >
-                    All recordings by {video.username} →
+                    All recordings by {video.username} â†’
                   </Link>
                 )}
               </div>
@@ -1277,7 +1277,7 @@ export default function VideoDetail() {
           </div>
         </div>
 
-        {/* ─── Bottom Recommendations ──────────────────────────── */}
+        {/* â”€â”€â”€ Bottom Recommendations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {!isLoading ? (
           <div ref={recSectionRef} className="mt-10 space-y-5">
             <div className="flex flex-col gap-1">
@@ -1331,7 +1331,7 @@ export default function VideoDetail() {
                         if (p === recData.page - 2 || p === recData.page + 2) {
                           return (
                             <span key={p} className="px-1 text-[10px] text-muted-foreground/40">
-                              …
+                              â€¦
                             </span>
                           );
                         }
