@@ -103,7 +103,8 @@ function scheduleHostGate(gate: HostGate): void {
     gate.active++;
     const next = gate.waiters.shift();
     next?.();
-    if (gate.waiters.length) gate.timer = setTimeout(tryStart, HOST_START_INTERVAL_MS);
+    if (gate.waiters.length)
+      gate.timer = setTimeout(tryStart, HOST_START_INTERVAL_MS);
   };
   gate.timer = setTimeout(tryStart, 0);
 }
@@ -160,7 +161,10 @@ const imageMemCache = new Map<string, CachedImage & { expires: number }>();
 const imageInflight = new Map<string, Promise<CachedImage | null>>();
 
 function cacheImageInMemory(url: string, img: CachedImage): void {
-  imageMemCache.set(url, { ...img, expires: Date.now() + IMAGE_MEM_CACHE_TTL_MS });
+  imageMemCache.set(url, {
+    ...img,
+    expires: Date.now() + IMAGE_MEM_CACHE_TTL_MS,
+  });
   if (imageMemCache.size > IMAGE_MEM_CACHE_MAX) {
     // Evict the oldest entry (Map preserves insertion order).
     const oldest = imageMemCache.keys().next().value;
@@ -174,20 +178,31 @@ async function fetchImageOnce(
   log: any,
 ): Promise<CachedImage | null> {
   const deadline = Date.now() + IMAGE_BUDGET_MS;
-  const release = await acquireHostGate(new URL(urlStr).hostname, deadline - Date.now());
+  const release = await acquireHostGate(
+    new URL(urlStr).hostname,
+    deadline - Date.now(),
+  );
   if (!release) {
     log?.warn?.({ url: urlStr }, "Media proxy image host gate timeout");
     return null;
   }
   try {
-    const response = await fetchWithRetry(urlStr, upstreamHeaders, log, IMAGE_TIMEOUT_MS, deadline);
+    const response = await fetchWithRetry(
+      urlStr,
+      upstreamHeaders,
+      log,
+      IMAGE_TIMEOUT_MS,
+      deadline,
+    );
     if (!response || !response.ok) {
       // Transient upstream statuses (429 / 5xx that survived retries) are NOT
       // durable failures — don't mark them so the same URL can succeed shortly
       // after. Return null → the caller 404s and the frontend's mirror chain
       // tries another host. Genuine permanent 4xx still throw (durable cache).
       if (response && isTransientStatus(response.status)) return null;
-      throw new Error(response ? `upstream ${response.status}` : "upstream fetch failed");
+      throw new Error(
+        response ? `upstream ${response.status}` : "upstream fetch failed",
+      );
     }
     const contentType = response.headers.get("content-type") || "image/jpeg";
     // Refuse anything that could render as a document at our origin, and bound
@@ -263,15 +278,25 @@ interface TransformedImage {
   contentType: string;
 }
 
-const transformMemCache = new Map<string, TransformedImage & { expires: number }>();
+const transformMemCache = new Map<
+  string,
+  TransformedImage & { expires: number }
+>();
 const transformInflight = new Map<string, Promise<TransformedImage>>();
 
-function transformCacheKey(url: string, width: number, fmt: string | null): string {
+function transformCacheKey(
+  url: string,
+  width: number,
+  fmt: string | null,
+): string {
   return `${url}|${fmt ?? ""}|${width}`;
 }
 
 function cacheTransform(key: string, img: TransformedImage): void {
-  transformMemCache.set(key, { ...img, expires: Date.now() + TRANSFORM_CACHE_TTL_MS });
+  transformMemCache.set(key, {
+    ...img,
+    expires: Date.now() + TRANSFORM_CACHE_TTL_MS,
+  });
   if (transformMemCache.size > TRANSFORM_CACHE_MAX) {
     const oldest = transformMemCache.keys().next().value;
     if (oldest !== undefined) transformMemCache.delete(oldest);
@@ -292,7 +317,8 @@ async function transformImage(
   log: any,
 ): Promise<TransformedImage> {
   // Only static raster formats — never GIF (animated) or passthrough payloads.
-  const isRaster = contentType.startsWith("image/") && !contentType.includes("gif");
+  const isRaster =
+    contentType.startsWith("image/") && !contentType.includes("gif");
   if (!isRaster) return { buffer, contentType };
   try {
     // sharp is a native module kept OUTSIDE the esbuild bundle. If it ever
@@ -333,7 +359,10 @@ async function getTransformedImage(
   try {
     const shared = await getTransformFromRedis(key);
     if (shared) {
-      transformMemCache.set(key, { ...shared, expires: Date.now() + TRANSFORM_CACHE_TTL_MS });
+      transformMemCache.set(key, {
+        ...shared,
+        expires: Date.now() + TRANSFORM_CACHE_TTL_MS,
+      });
       return shared;
     }
   } catch (err) {
@@ -410,12 +439,17 @@ function markCachedFailure(url: string): void {
 // with an extension fallback for hosts that omit Content-Type.
 const SAFE_MEDIA_RE =
   /^(image\/(?!svg)[a-z0-9.+-]+|video\/[a-z0-9.+-]+|audio\/[a-z0-9.+-]+|application\/x-mpegurl|application\/vnd\.apple\.mpegurl|application\/mpegurl|application\/octet-stream|binary\/octet-stream)$/i;
-const MEDIA_EXT_RE = /\.(jpe?g|jxl|png|webp|gif|avif|apng|mp4|webm|mov|m4v|m3u8|ogg|ogv|oga|mp3|aac|wav|opus)$/i;
+const MEDIA_EXT_RE =
+  /\.(jpe?g|jxl|png|webp|gif|avif|apng|mp4|webm|mov|m4v|m3u8|ogg|ogv|oga|mp3|aac|wav|opus)$/i;
 
-function isSafeMediaType(contentType: string | null | undefined, url: URL): boolean {
+function isSafeMediaType(
+  contentType: string | null | undefined,
+  url: URL,
+): boolean {
   if (contentType && typeof contentType === "string") {
     const ct = contentType.split(";")[0]!.trim();
-    if (ct && ct !== "*/*" && ct !== "application/stream") return SAFE_MEDIA_RE.test(ct);
+    if (ct && ct !== "*/*" && ct !== "application/stream")
+      return SAFE_MEDIA_RE.test(ct);
   }
   return MEDIA_EXT_RE.test(url.pathname);
 }
@@ -423,7 +457,10 @@ function isSafeMediaType(contentType: string | null | undefined, url: URL): bool
 /** Whole-body (image) buffering cap — thumbnails are small; refuse huge bodies. */
 const MAX_IMAGE_BYTES = 40 * 1024 * 1024;
 
-async function readBodyBounded(response: Response, maxBytes: number): Promise<Buffer> {
+async function readBodyBounded(
+  response: Response,
+  maxBytes: number,
+): Promise<Buffer> {
   if (!response.body) return Buffer.alloc(0);
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -468,7 +505,10 @@ async function resolveHostname(hostname: string): Promise<string | null> {
   // reliable) resolver set.
   const shared = await getDnsFromRedis(hostname).catch(() => null);
   if (shared) {
-    dnsCache.set(hostname, { ip: shared, expires: Date.now() + DNS_CACHE_TTL_MS });
+    dnsCache.set(hostname, {
+      ip: shared,
+      expires: Date.now() + DNS_CACHE_TTL_MS,
+    });
     return shared;
   }
 
@@ -503,10 +543,12 @@ async function resolveHostname(hostname: string): Promise<string | null> {
 // deployed server from being used to reach internal network resources.
 
 function ipv4ToInt(ip: string): number {
-  return ip.split(".").reduce((acc, octet) => (acc << 8) + Number(octet), 0) >>> 0;
+  return (
+    ip.split(".").reduce((acc, octet) => (acc << 8) + Number(octet), 0) >>> 0
+  );
 }
 
-function isPrivateIpv4(ip: string): boolean {
+export function isPrivateIpv4(ip: string): boolean {
   const n = ipv4ToInt(ip);
   const inRange = (start: string, count: number): boolean => {
     const s = ipv4ToInt(start);
@@ -531,20 +573,27 @@ function isPrivateIpv4(ip: string): boolean {
   );
 }
 
-function ipv6ToBigInt(ip: string): bigint {
-  // Normalize IPv4-mapped addresses like ::ffff:192.168.0.1 to hex groups
+export function ipv6ToBigInt(ip: string): bigint {
+  // Normalize IPv4-mapped addresses like ::ffff:192.168.0.1 to two 16-bit hex groups
   if (ip.includes(".")) {
     const v4 = ip.split(":").pop() ?? "";
     const [a, b, c, d] = v4.split(".").map(Number);
-    const hex = (((a << 24) + (b << 16) + (c << 8) + d) >>> 0).toString(16).padStart(8, "0");
-    ip = ip.slice(0, ip.lastIndexOf(":") + 1) + hex;
+    const hex = (((a << 24) + (b << 16) + (c << 8) + d) >>> 0)
+      .toString(16)
+      .padStart(8, "0");
+    ip =
+      ip.slice(0, ip.lastIndexOf(":") + 1) +
+      `${hex.slice(0, 4)}:${hex.slice(4)}`;
   }
 
   let groups: string[];
   const doubleColon = ip.indexOf("::");
   if (doubleColon !== -1) {
     const left = ip.slice(0, doubleColon).split(":").filter(Boolean);
-    const right = ip.slice(doubleColon + 2).split(":").filter(Boolean);
+    const right = ip
+      .slice(doubleColon + 2)
+      .split(":")
+      .filter(Boolean);
     const missing = 8 - left.length - right.length;
     groups = [...left, ...Array(missing).fill("0"), ...right];
   } else {
@@ -558,22 +607,24 @@ function ipv6ToBigInt(ip: string): bigint {
   return result;
 }
 
-function isPrivateIpv6(ip: string): boolean {
+export function isPrivateIpv6(ip: string): boolean {
   const value = ipv6ToBigInt(ip);
   const inRange = (start: bigint, count: bigint): boolean =>
     value >= start && value < start + count;
   return (
     inRange(0n, 1n) || // ::/128 unspecified
     inRange(1n, 1n) || // ::1/128 loopback
-    inRange(BigInt(0xffff) << 32n, BigInt(0x100000000)) || // ::ffff:0:0/96 IPv4-mapped (block all)
-    inRange(BigInt(0xfc00) << 96n, BigInt(0x0200) << 96n) || // fc00::/7 ULA
-    inRange(BigInt(0xfe80) << 96n, BigInt(0x0400) << 96n) || // fe80::/10 link-local
-    inRange(BigInt(0xff00) << 96n, BigInt(0x0100) << 96n) || // ff00::/8 multicast
-    inRange(BigInt(0x2001) << 112n, BigInt(0x10000) << 96n) // 2001:db8::/32 documentation
+    inRange(0xffffn << 32n, 1n << 32n) || // ::ffff:0:0/96 IPv4-mapped (block all)
+    inRange(0x64ff9bn << 96n, 1n << 32n) || // 64:ff9b::/96 IPv4/IPv6 translation
+    inRange(0x0100n << 112n, 1n << 64n) || // 0100::/64 discard prefix
+    inRange(0x20010db8n << 96n, 1n << 96n) || // 2001:db8::/32 documentation
+    inRange(0xfc00n << 112n, 1n << 121n) || // fc00::/7 ULA
+    inRange(0xfe80n << 112n, 1n << 118n) || // fe80::/10 link-local
+    inRange(0xff00n << 112n, 1n << 120n) // ff00::/8 multicast
   );
 }
 
-function isPrivateIp(ip: string): boolean {
+export function isPrivateIp(ip: string): boolean {
   const kind = net.isIP(ip);
   if (kind === 4) return isPrivateIpv4(ip);
   if (kind === 6) return isPrivateIpv6(ip);
@@ -597,9 +648,10 @@ function incomingToResponse(msg: http.IncomingMessage): Response {
   }
 
   const status = msg.statusCode ?? 502;
-  const body = status === 204 || status === 304
-    ? null
-    : Readable.toWeb(msg) as ReadableStream<Uint8Array>;
+  const body =
+    status === 204 || status === 304
+      ? null
+      : (Readable.toWeb(msg) as ReadableStream<Uint8Array>);
 
   return new Response(body, {
     status,
@@ -638,14 +690,27 @@ async function fetchWithTimeout(
     }
 
     try {
-      return await directConnect(protocol, parsedUrl, headers, resolvedIp, family, timeoutMs);
+      return await directConnect(
+        protocol,
+        parsedUrl,
+        headers,
+        resolvedIp,
+        family,
+        timeoutMs,
+      );
     } catch (err) {
       // Network-level failure (timeout, connection refused, TLS error, etc.)
       // Fall through to Attempt 2. HTTP errors (4xx/5xx) are not thrown here
       // because directConnect resolves the promise with the Response.
       if (!(err instanceof Error)) throw err;
       const msg = err.message.toLowerCase();
-      const isNetworkErr = msg.includes("timeout") || msg.includes("econn") || msg.includes("enetunreach") || msg.includes("eai_again") || msg.includes("certificate") || msg.includes("tlsv1");
+      const isNetworkErr =
+        msg.includes("timeout") ||
+        msg.includes("econn") ||
+        msg.includes("enetunreach") ||
+        msg.includes("eai_again") ||
+        msg.includes("certificate") ||
+        msg.includes("tlsv1");
       if (!isNetworkErr) throw err;
       // fall through
     }
@@ -664,7 +729,14 @@ async function fetchWithTimeout(
     // Use fetch() with the system-resolved IP via a custom lookup.
     // We can't easily inject a custom lookup into fetch(), so we use
     // the directConnect method which gives us full control.
-    return await directConnect(protocol, parsedUrl, headers, systemIp, systemFamily, timeoutMs);
+    return await directConnect(
+      protocol,
+      parsedUrl,
+      headers,
+      systemIp,
+      systemFamily,
+      timeoutMs,
+    );
   } catch {
     throw new Error("DNS resolution failed or blocked");
   }
@@ -693,7 +765,11 @@ function directConnect(
       },
       servername: parsedUrl.hostname,
       agent: protocol === https ? UPSTREAM_AGENT_HTTPS : UPSTREAM_AGENT_HTTP,
-      lookup: (_host: string, _opts: any, cb: (err: Error | null, ip: string, fam: number) => void) => {
+      lookup: (
+        _host: string,
+        _opts: any,
+        cb: (err: Error | null, ip: string, fam: number) => void,
+      ) => {
         cb(null, resolvedIp, family);
       },
       timeout: timeoutMs,
@@ -720,7 +796,12 @@ function directConnect(
  * must never be persisted to the durable failure cache — a 10-minute block
  * would serve 404s long after the host clears a rate-limit window. */
 function isTransientStatus(status: number): boolean {
-  return status === 429 || status === 408 || status === 425 || (status >= 500 && status < 600);
+  return (
+    status === 429 ||
+    status === 408 ||
+    status === 425 ||
+    (status >= 500 && status < 600)
+  );
 }
 
 /**
@@ -760,7 +841,10 @@ async function fetchWithRetry(
 
   for (let attempt = 1; attempt <= 1 + MAX_RETRIES; attempt++) {
     const isFirst = attempt === 1;
-    const remaining = deadlineMs === undefined ? Number.POSITIVE_INFINITY : deadlineMs - Date.now();
+    const remaining =
+      deadlineMs === undefined
+        ? Number.POSITIVE_INFINITY
+        : deadlineMs - Date.now();
     if (remaining <= 0) break;
     const attemptTimeout = Math.min(timeoutMs * (isFirst ? 1 : 1.5), remaining);
 
@@ -769,7 +853,11 @@ async function fetchWithRetry(
 
       // Follow redirects (3xx with Location header)
       let redirectCount = 0;
-      while (redirectCount < MAX_REDIRECTS && response.status >= 300 && response.status < 400) {
+      while (
+        redirectCount < MAX_REDIRECTS &&
+        response.status >= 300 &&
+        response.status < 400
+      ) {
         const location = response.headers.get("location");
         if (!location) break;
         let redirectUrl: string;
@@ -781,17 +869,28 @@ async function fetchWithRetry(
         // Follow with no referer for the redirect target
         const redirectHeaders = { ...headers };
         delete redirectHeaders["Referer"];
-        response = await fetchWithTimeout(redirectUrl, redirectHeaders, attemptTimeout);
+        response = await fetchWithTimeout(
+          redirectUrl,
+          redirectHeaders,
+          attemptTimeout,
+        );
         redirectCount++;
       }
 
       // Retry on 5xx — they may be transient
-      if (response.status >= 500 && response.status < 600 && attempt <= MAX_RETRIES) {
+      if (
+        response.status >= 500 &&
+        response.status < 600 &&
+        attempt <= MAX_RETRIES
+      ) {
         const delay = Math.min(
           BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200,
           remaining,
         );
-        log.warn({ url, status: response.status, attempt }, "Media proxy upstream 5xx, retrying");
+        log.warn(
+          { url, status: response.status, attempt },
+          "Media proxy upstream 5xx, retrying",
+        );
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
       }
@@ -801,12 +900,19 @@ async function fetchWithRetry(
       // when present, bounded by our own deadline so a slow-cooldown host
       // never holds the invocation past the CDN response window.
       if (response.status === 429 && attempt <= MAX_RETRIES) {
-        const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
+        const retryAfterMs = parseRetryAfter(
+          response.headers.get("retry-after"),
+        );
         const delay = Math.min(
-          retryAfterMs ?? BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200,
+          retryAfterMs ??
+            BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) +
+              Math.random() * 200,
           remaining,
         );
-        log.warn({ url, attempt, retryAfterMs }, "Media proxy upstream 429, honoring Retry-After");
+        log.warn(
+          { url, attempt, retryAfterMs },
+          "Media proxy upstream 429, honoring Retry-After",
+        );
         await new Promise((resolve) => setTimeout(resolve, Math.max(0, delay)));
         continue;
       }
@@ -814,11 +920,18 @@ async function fetchWithRetry(
       // catbox throttles hotlinking clients by answering 200 with an empty
       // body (Content-Length: 0). Streaming that through would render a blank
       // image / silent video, so treat it as a retryable failure instead.
-      if (response.status === 200 && response.headers.get("content-length") === "0") {
+      if (
+        response.status === 200 &&
+        response.headers.get("content-length") === "0"
+      ) {
         if (attempt <= MAX_RETRIES) {
-          log.warn({ url, attempt }, "Media proxy upstream empty 200, retrying");
+          log.warn(
+            { url, attempt },
+            "Media proxy upstream empty 200, retrying",
+          );
           const delay = Math.min(
-            BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200,
+            BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) +
+              Math.random() * 200,
             remaining,
           );
           await new Promise((resolve) => setTimeout(resolve, delay));
@@ -838,7 +951,10 @@ async function fetchWithRetry(
           BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 200,
           remaining,
         );
-        log.warn({ url, attempt, err: errorMessage }, "Media proxy fetch failed, retrying");
+        log.warn(
+          { url, attempt, err: errorMessage },
+          "Media proxy fetch failed, retrying",
+        );
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
       }
@@ -963,7 +1079,11 @@ router.get("/media", async (req, res) => {
     "files.litterbox.catbox.moe",
   ];
   const upstreamHostname = parsedUrl.hostname;
-  if (!NO_REFERER_HOSTS.some((h) => upstreamHostname === h || upstreamHostname.endsWith(`.${h}`))) {
+  if (
+    !NO_REFERER_HOSTS.some(
+      (h) => upstreamHostname === h || upstreamHostname.endsWith(`.${h}`),
+    )
+  ) {
     upstreamHeaders["Referer"] = "https://chuglii.in/";
   }
 
@@ -981,7 +1101,9 @@ router.get("/media", async (req, res) => {
   // old/stale URL can never take thumbnails offline.
   const rawWidth = isVideoRequest ? undefined : req.query.w;
   const width =
-    typeof rawWidth === "string" && /^\d{2,4}$/.test(rawWidth) && !rawWidth.startsWith("0")
+    typeof rawWidth === "string" &&
+    /^\d{2,4}$/.test(rawWidth) &&
+    !rawWidth.startsWith("0")
       ? Math.min(2000, Math.max(200, parseInt(rawWidth, 10)))
       : null;
   const rawFmt = isVideoRequest ? undefined : req.query.fmt;
@@ -1012,7 +1134,13 @@ router.get("/media", async (req, res) => {
       if (width !== null || fmt !== null) {
         // Resized / converted variant — cached separately so every width and
         // format is single-flight and the edge caches each one independently.
-        const variant = await getTransformedImage(urlStr, img, width ?? 2000, fmt, req.log);
+        const variant = await getTransformedImage(
+          urlStr,
+          img,
+          width ?? 2000,
+          fmt,
+          req.log,
+        );
         response = new Response(variant.buffer, {
           status: img.status,
           headers: {
@@ -1071,7 +1199,10 @@ router.get("/media", async (req, res) => {
       }
       // Images: return 404 so the frontend can try the next mirror fallback.
       const body = await response.text().catch(() => "");
-      req.log.warn({ url: urlStr, status: response.status, body: body.slice(0, 200) }, "Media proxy upstream error");
+      req.log.warn(
+        { url: urlStr, status: response.status, body: body.slice(0, 200) },
+        "Media proxy upstream error",
+      );
       // Transient statuses (rate limits / server hiccups) must not poison the
       // durable failure cache — the upstream may recover within seconds.
       if (!isTransientStatus(response.status)) markCachedFailure(urlStr);
