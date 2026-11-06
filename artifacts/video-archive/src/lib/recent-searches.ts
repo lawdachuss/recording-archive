@@ -25,7 +25,7 @@ export function readRecentSearches(
     const unique: string[] = [];
     for (const value of saved) {
       if (typeof value !== "string") continue;
-      const term = value.trim().replace(/\\s+/g, " ");
+      const term = value.trim().replace(/\s+/g, " ");
       if (!term || unique.some((item) => item.toLowerCase() === term.toLowerCase())) continue;
       unique.push(term);
       if (unique.length >= MAX_RECENT_SEARCHES) break;
@@ -41,7 +41,7 @@ export function rememberRecentSearch(
   value: string,
   storage: RecentSearchStorage | null = getBrowserStorage(),
 ): string[] {
-  const term = value.trim().replace(/\\s+/g, " ");
+  const term = value.trim().replace(/\s+/g, " ");
   const current = readRecentSearches(storage);
   if (!term) return current;
 
