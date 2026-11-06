@@ -149,8 +149,8 @@ export function mergeAdSettings(raw: unknown): AdSettings {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const pages: Record<string, boolean> = {};
   const placements: Record<string, boolean> = {};
-  const allowedPages = new Set(AD_PAGES.map((page) => page.id));
-  const allowedPlacements = new Set(AD_PLACEMENTS.map((placement) => placement.id));
+  const allowedPages = new Set<string>(AD_PAGES.map((page) => page.id));
+  const allowedPlacements = new Set<string>(AD_PLACEMENTS.map((placement) => placement.id));
   if (r.pages && typeof r.pages === "object" && !Array.isArray(r.pages)) {
     for (const [k, v] of Object.entries(r.pages as Record<string, unknown>)) {
       if (allowedPages.has(k) && typeof v === "boolean") pages[k] = v;
