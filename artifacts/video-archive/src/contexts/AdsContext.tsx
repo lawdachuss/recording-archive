@@ -39,6 +39,7 @@ export type AdsStatus = "pending" | "database" | "file";
 export interface StripCashConfig {
   /** Server env has a usable key (or STRIPCASH_SMARTLINK override). */
   configured: boolean;
+  available: boolean;
   /** Last probe of the smartlink saw a live redirect (10-min server cache). */
   verified: boolean;
   /** Tracked smartlink, or null when nothing usable is configured. */
@@ -175,8 +176,9 @@ export function AdsProvider({ children }: { children: ReactNode }) {
       .then((d: { configured?: unknown; verified?: unknown; smartlink?: unknown } | null) => {
         if (!alive || !d) return;
         setStripCash({
-          configured: Boolean(d.configured),
-          verified: Boolean(d.verified),
+          configured: d.configured === true,
+          available: true,
+          verified: d.verified === true,
           smartlink: typeof d.smartlink === "string" ? safeExternalUrl(d.smartlink) : null,
         });
       })
