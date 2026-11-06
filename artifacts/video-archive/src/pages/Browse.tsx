@@ -352,7 +352,7 @@ export default function Browse() {
 
   const applyRecentSearch = (term: string) => {
     setSearch(term);
-    setRecentSearches(rememberSearch(term));
+    setRecentSearches(rememberRecentSearch(term));
     setShowRecentSearches(false);
     pushFilters({ search: term });
   };
