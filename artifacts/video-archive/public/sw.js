@@ -26,14 +26,6 @@ const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|webp|gif|avif|svg)(\?|$)/i;
 const MEDIA_EXTENSIONS = /\.(jpg|jpeg|png|webp|gif|avif|svg|mp4|webm|mov)(\?|$)/i;
 const CACHEABLE_TYPES = /^(image\/|video\/|application\/octet-stream)/i;
 
-// Theme-aware "Image unavailable" placeholder returned when a media request
-// fails at the network level (offline / CORS / unreachable host). A
-// `prefers-color-scheme` media query keeps it consistent with the app's
-// dark/light themes instead of being hardcoded light. Previously a 1×1
-// transparent GIF was returned, which read as a black card over the dark
-// background AND suppressed the <img> error event.
-const PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><style>.bg{fill:#f3f4f6}.frame{fill:#d1d5db;stroke:#9ca3af}.icon{fill:#9ca3af}.label{fill:#9ca3af}@media(prefers-color-scheme:dark){.bg{fill:#18181b}.frame{fill:#27272a;stroke:#52525b}.icon{fill:#52525b}.label{fill:#71717a}}</style><rect class="bg" width="640" height="360"/><rect class="frame" x="260" y="140" width="120" height="80" rx="8" stroke-width="2"/><path class="icon" d="M300 180L340 160v40z"/><circle class="icon" cx="285" cy="170" r="5"/><text class="label" x="320" y="260" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14">Image unavailable</text></svg>`;
-
 // ─── TTL detection ──────────────────────────────────────────────────────────
 
 function detectTier(url) {
@@ -133,8 +125,12 @@ async function mediaCacheFirst(request) {
     // stalled upstream (catbox can hold connections open) from hanging the tab.
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
-    const response = await fetch(request, { signal: controller.signal });
-    clearTimeout(timer);
+    let response;
+    try {
+      response = await fetch(request, { signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
     if (response.ok) {
       // Do NOT await the cache write. cache.put() consumes the whole body, so
       // awaiting it here would withhold the response until the entire file is
@@ -150,11 +146,14 @@ async function mediaCacheFirst(request) {
     // Timed out / offline / unreachable — fall back to a cached copy if we
     // have one (guaranteed to be a real image), else the placeholder.
     if (cached) return cached;
-    return new Response(PLACEHOLDER_SVG, {
-      status: 200,
+    // Preserve the failed-request signal so <img onError> can advance to
+    // a mirror / direct source instead of treating a placeholder as success.
+    return new Response("Media temporarily unavailable", {
+      status: 504,
       headers: {
-        "Content-Type": "image/svg+xml",
+        "Content-Type": "text/plain; charset=utf-8",
         "Cache-Control": "no-store",
+        "Retry-After": "5",
       },
     });
   }
@@ -166,11 +165,15 @@ async function revalidateInBackground(request, cache) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
-    const response = await fetch(request, {
-      cache: "no-cache",
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
+    let response;
+    try {
+      response = await fetch(request, {
+        cache: "no-cache",
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
     if (response.ok) {
       await cacheResponse(cache, request, response);
     }
@@ -191,7 +194,10 @@ async function cacheResponse(cache, request, response) {
     if (contentType.includes("image/svg+xml")) return;
     // Never cache empty/throttled responses (catbox can answer 200 + 0 bytes),
     // which would otherwise be served as a blank image.
-    if ((response.headers.get("content-length") || "0") === "0") return;
+    // A missing Content-Length is normal for chunked/streamed responses.
+    // Reject only an explicitly empty response; treating a missing header as
+    // zero silently disabled SW caching for otherwise valid images.
+    if (response.headers.get("content-length") === "0") return;
 
     const taggedResponse = new Response(response.clone().body, {
       status: response.status,
