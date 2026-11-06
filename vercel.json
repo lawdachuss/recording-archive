@@ -6,11 +6,9 @@
   "installCommand": "pnpm install --ignore-scripts",
   "functions": {
     "api/index.mjs": {
-      "memory": 1024,
       "maxDuration": 60
     },
     "api/media.mjs": {
-      "memory": 2048,
       "maxDuration": 60
     }
   },
