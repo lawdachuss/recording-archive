@@ -187,9 +187,6 @@ importers:
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
-      vercel:
-        specifier: ^54.12.2
-        version: 54.12.2(@emnapi/runtime@1.11.3)(rollup@4.60.3)
 
   artifacts/api-server:
     dependencies:
