@@ -403,7 +403,7 @@ export function preloadRecordingMedia(
   // Background: never pop thumbnails to the front of the queue. The visible
   // <img> tags already fetch first-screen thumbs at paint; forcing them ahead
   // here would double those requests and compete with grid paint.
-  preloadImages(thumbs, { ...opts, priority: 3, immediate: false });
+  preloadImages(thumbs, { ...opts, priority: 3, immediate: opts.immediate ?? false });
   preloadImages(sprites, { ...opts, priority: 2 });
   for (const p of previews) preloadPreviewMedia(p);
 }

@@ -18,7 +18,11 @@ const MAX_WARM_ITEMS = 10;
 
 export function usePreloadRecordings(recordings: RecordingLike[] | null | undefined): void {
   const warmable = (recordings ?? []).slice(0, MAX_WARM_ITEMS);
-  const ids = warmable.map((r) => String(r.id)).join(",");
+  // Include media URLs as well as IDs so changed thumbnails are re-warmed
+  // even when the recording identity itself remains the same.
+  const warmKey = warmable
+    .map((r) => [String(r.id), r.thumbnail_url ?? "", r.sprite_url ?? ""].join(":"))
+    .join(",");
   useEffect(() => {
     if (warmable.length === 0) return;
     const limited = isConnectionConstrained() ? warmable.slice(0, 3) : warmable;
@@ -31,5 +35,5 @@ export function usePreloadRecordings(recordings: RecordingLike[] | null | undefi
       skipThumbnails: false,
       skipPreviews: true,
     });
-  }, [ids]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [warmKey]); // eslint-disable-line react-hooks/exhaustive-deps
 }
