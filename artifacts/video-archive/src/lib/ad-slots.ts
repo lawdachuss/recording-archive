@@ -149,27 +149,56 @@ export function mergeAdSettings(raw: unknown): AdSettings {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const pages: Record<string, boolean> = {};
   const placements: Record<string, boolean> = {};
-  if (r.pages && typeof r.pages === "object") {
+  const allowedPages = new Set(AD_PAGES.map((page) => page.id));
+  const allowedPlacements = new Set(AD_PLACEMENTS.map((placement) => placement.id));
+  if (r.pages && typeof r.pages === "object" && !Array.isArray(r.pages)) {
     for (const [k, v] of Object.entries(r.pages as Record<string, unknown>)) {
-      if (typeof v === "boolean") pages[k] = v;
+      if (allowedPages.has(k) && typeof v === "boolean") pages[k] = v;
     }
   }
-  if (r.placements && typeof r.placements === "object") {
+  if (r.placements && typeof r.placements === "object" && !Array.isArray(r.placements)) {
     for (const [k, v] of Object.entries(r.placements as Record<string, unknown>)) {
-      if (typeof v === "boolean") placements[k] = v;
+      if (allowedPlacements.has(k) && typeof v === "boolean") placements[k] = v;
     }
   }
-  const inCardRaw = (r.inCard && typeof r.inCard === "object" ? r.inCard : {}) as Record<string, unknown>;
-  const max = Number(inCardRaw.maxPerPage);
-  const slot = typeof inCardRaw.slot === "string" && inCardRaw.slot.trim() ? inCardRaw.slot.trim() : DEFAULT_AD_SETTINGS.inCard.slot;
-  const rot = Number(r.rotationSeconds);
+
+  const inCardRaw =
+    r.inCard && typeof r.inCard === "object" && !Array.isArray(r.inCard)
+      ? (r.inCard as Record<string, unknown>)
+      : {};
+  const parseFiniteNumber = (value: unknown): number => {
+    if (typeof value === "number") return value;
+    if (typeof value === "string" && value.trim()) return Number(value);
+    return Number.NaN;
+  };
+  const max = parseFiniteNumber(inCardRaw.maxPerPage);
+  const requestedSlot =
+    typeof inCardRaw.slot === "string" ? inCardRaw.slot.trim() : "";
+  const allowedInCardSlots = new Set(
+    AD_SLOTS.filter(
+      (candidate) =>
+        !candidate.spare &&
+        candidate.file !== "popunder" &&
+        candidate.file !== "direct-link" &&
+        candidate.file !== "preroll",
+    ).map((candidate) => candidate.file),
+  );
+  const slot = allowedInCardSlots.has(requestedSlot)
+    ? requestedSlot
+    : DEFAULT_AD_SETTINGS.inCard.slot;
+  const rot = parseFiniteNumber(r.rotationSeconds);
+
   return {
     pages,
     placements,
     inCard: {
-      maxPerPage: Number.isFinite(max) ? Math.max(0, Math.min(6, Math.round(max))) : DEFAULT_AD_SETTINGS.inCard.maxPerPage,
+      maxPerPage: Number.isFinite(max)
+        ? Math.max(0, Math.min(6, Math.round(max)))
+        : DEFAULT_AD_SETTINGS.inCard.maxPerPage,
       slot,
     },
-    rotationSeconds: Number.isFinite(rot) ? Math.max(5, Math.min(120, Math.round(rot))) : DEFAULT_AD_SETTINGS.rotationSeconds,
+    rotationSeconds: Number.isFinite(rot)
+      ? Math.max(5, Math.min(120, Math.round(rot)))
+      : DEFAULT_AD_SETTINGS.rotationSeconds,
   };
 }

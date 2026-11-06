@@ -39,6 +39,7 @@ export type AdsStatus = "pending" | "database" | "file";
 export interface StripCashConfig {
   /** Server env has a usable key (or STRIPCASH_SMARTLINK override). */
   configured: boolean;
+  available: boolean;
   /** Last probe of the smartlink saw a live redirect (10-min server cache). */
   verified: boolean;
   /** Tracked smartlink, or null when nothing usable is configured. */
@@ -97,13 +98,17 @@ export function AdsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<AdSettings>(DEFAULT_AD_SETTINGS);
   const [stripcash, setStripCash] = useState<StripCashConfig | null>(null);
   const sbRef = useRef<SupabaseClient | null>(null);
+  const loadSequence = useRef(0);
+  const settingsLoadSequence = useRef(0);
   /** Per-slot memo so unchanged slots keep their array identity across fetches. */
   const slotCache = useRef(new Map<string, string[]>());
 
   const load = useCallback(async () => {
+    const requestId = ++loadSequence.current;
     const sb = sbRef.current ?? (await getSupabase());
     sbRef.current = sb;
     const { data, error } = await sb.from(TABLE).select("*");
+    if (requestId !== loadSequence.current) return;
     if (error) throw error;
     const next = filterAdRows(data);
     setRows((prev) => {
@@ -125,6 +130,7 @@ export function AdsProvider({ children }: { children: ReactNode }) {
   // keeps the defaults (ads on, 2 in-card cards, 20s rotation) — it must
   // never take the creatives down with it.
   const loadSettings = useCallback(async () => {
+    const requestId = ++settingsLoadSequence.current;
     const sb = sbRef.current ?? (await getSupabase());
     sbRef.current = sb;
     const { data, error } = await sb
@@ -132,6 +138,7 @@ export function AdsProvider({ children }: { children: ReactNode }) {
       .select("config")
       .eq("id", 1)
       .maybeSingle();
+    if (requestId !== settingsLoadSequence.current) return;
     if (error) throw error;
     setSettings(mergeAdSettings(data?.config ?? {}));
   }, []);
@@ -169,8 +176,9 @@ export function AdsProvider({ children }: { children: ReactNode }) {
       .then((d: { configured?: unknown; verified?: unknown; smartlink?: unknown } | null) => {
         if (!alive || !d) return;
         setStripCash({
-          configured: Boolean(d.configured),
-          verified: Boolean(d.verified),
+          configured: d.configured === true,
+          available: true,
+          verified: d.verified === true,
           smartlink: typeof d.smartlink === "string" ? safeExternalUrl(d.smartlink) : null,
         });
       })

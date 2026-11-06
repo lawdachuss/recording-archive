@@ -225,10 +225,17 @@ export default function VideoDetail() {
   // never re-arms during this page visit (server switches included).
   const [prerollPhase, setPrerollPhase] = useState<"idle" | "playing" | "done">("idle");
   const [activePreroll, setActivePreroll] = useState<PrerollCreative | null>(null);
+  const [prerollWithGesture, setPrerollWithGesture] = useState(false);
   const { showAds } = usePremium();
-  const { rows: adRows, settings: adSettings } = useAds();
+  const { rows: adRows, status: adsStatus, settings: adSettings } = useAds();
   const prerollOn = showAds && adSettings.placements.preroll !== false;
-  const preroll = useMemo(() => (prerollOn ? pickPreroll(adRows) : null), [prerollOn, adRows]);
+  // Do not let the build-time file fallback win while the authoritative
+  // database request is still pending. "file" means the provider settled
+  // on fallback; "database" means even an empty DB result is authoritative.
+  const preroll = useMemo(
+    () => (prerollOn && adsStatus !== "pending" ? pickPreroll(adRows) : null),
+    [prerollOn, adsStatus, adRows],
+  );
 
   const startPlayback = useCallback(() => {
     setVideoStarted(true);
@@ -238,6 +245,7 @@ export default function VideoDetail() {
   /** Poster click: gate through the preroll when one is armed, else start. */
   const handlePosterClick = () => {
     if (prerollOn && prerollPhase === "idle" && preroll) {
+      setPrerollWithGesture(true);
       setActivePreroll(preroll);
       setPrerollPhase("playing");
       return;
@@ -249,6 +257,7 @@ export default function VideoDetail() {
   const finishPreroll = useCallback(() => {
     setPrerollPhase("done");
     setActivePreroll(null);
+    setPrerollWithGesture(false);
     startPlayback();
   }, [startPlayback]);
   const [bookmarked, setBookmarked] = useState(false);
@@ -340,9 +349,11 @@ export default function VideoDetail() {
     const isAutoArrival = !!id && autoId === id;
     if (isAutoArrival && prerollOn && preroll) {
       setVideoStarted(false);
+      setPrerollWithGesture(false);
       setActivePreroll(preroll);
       setPrerollPhase("playing");
     } else {
+      setPrerollWithGesture(false);
       setPrerollPhase("idle");
       setActivePreroll(null);
       if (isAutoArrival) startPlayback();
@@ -800,7 +811,7 @@ export default function VideoDetail() {
                   {currentServer?.type === "iframe" && !videoStarted ? (
                     /* Pre-roll first (armed by this click), else poster / click-to-play */
                     prerollPhase === "playing" && prerollOn && activePreroll ? (
-                      <PrerollPlayer creative={activePreroll} onDone={finishPreroll} withGesture />
+                      <PrerollPlayer creative={activePreroll} onDone={finishPreroll} withGesture={prerollWithGesture} />
                     ) : (
                     <button
                       className="absolute inset-0 w-full h-full cursor-pointer focus:outline-none"

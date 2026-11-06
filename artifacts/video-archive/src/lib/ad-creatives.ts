@@ -62,6 +62,13 @@ export function filterAdRows(value: unknown): AdRow[] {
     }
     rows.push(valid);
   }
+  // The database query intentionally stays schema-light; apply the explicit
+  // admin order here because Postgres does not promise row order without ORDER BY.
+  rows.sort((left, right) => {
+    if (left.sort_order === undefined) return right.sort_order === undefined ? 0 : 1;
+    if (right.sort_order === undefined) return -1;
+    return left.sort_order - right.sort_order;
+  });
   return rows;
 }
 

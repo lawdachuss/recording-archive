@@ -30,6 +30,15 @@ describe("filterAdRows", () => {
     ]);
   });
 
+  it("sorts creatives by configured order and keeps unspecified rows last", () => {
+    const rows = filterAdRows([
+      { id: "late", slot: "banner", kind: "html", content: "late", enabled: true, sort_order: 20 },
+      { id: "unset", slot: "banner", kind: "html", content: "unset", enabled: true },
+      { id: "early", slot: "banner", kind: "html", content: "early", enabled: true, sort_order: 1 },
+    ]);
+    expect(rows.map((row) => row.id)).toEqual(["early", "late", "unset"]);
+  });
+
   it("returns an empty list for non-array payloads", () => {
     expect(filterAdRows({ id: "1" })).toEqual([]);
     expect(filterAdRows(null)).toEqual([]);
