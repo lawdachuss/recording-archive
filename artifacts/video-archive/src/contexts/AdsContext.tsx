@@ -97,13 +97,17 @@ export function AdsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<AdSettings>(DEFAULT_AD_SETTINGS);
   const [stripcash, setStripCash] = useState<StripCashConfig | null>(null);
   const sbRef = useRef<SupabaseClient | null>(null);
+  const loadSequence = useRef(0);
+  const settingsLoadSequence = useRef(0);
   /** Per-slot memo so unchanged slots keep their array identity across fetches. */
   const slotCache = useRef(new Map<string, string[]>());
 
   const load = useCallback(async () => {
+    const requestId = ++loadSequence.current;
     const sb = sbRef.current ?? (await getSupabase());
     sbRef.current = sb;
     const { data, error } = await sb.from(TABLE).select("*");
+    if (requestId !== loadSequence.current) return;
     if (error) throw error;
     const next = filterAdRows(data);
     setRows((prev) => {
@@ -125,6 +129,7 @@ export function AdsProvider({ children }: { children: ReactNode }) {
   // keeps the defaults (ads on, 2 in-card cards, 20s rotation) — it must
   // never take the creatives down with it.
   const loadSettings = useCallback(async () => {
+    const requestId = ++settingsLoadSequence.current;
     const sb = sbRef.current ?? (await getSupabase());
     sbRef.current = sb;
     const { data, error } = await sb
@@ -132,6 +137,7 @@ export function AdsProvider({ children }: { children: ReactNode }) {
       .select("config")
       .eq("id", 1)
       .maybeSingle();
+    if (requestId !== settingsLoadSequence.current) return;
     if (error) throw error;
     setSettings(mergeAdSettings(data?.config ?? {}));
   }, []);
