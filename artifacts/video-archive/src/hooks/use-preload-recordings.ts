@@ -12,12 +12,9 @@ type RecordingLike = {
   thumbnail_mirrors?: Record<string, string> | null;
 };
 
-// Only warm a tiny set of sprite sheets for immediate hover feedback. Native
-// <img loading="lazy"> owns thumbnail delivery, and animated previews are
-// requested on actual hover intent. Warming hundreds of all three media types
-// at route entry wastes bandwidth, crowds the connection pool, and makes cold
-// first paint slower for everyone else sharing the origin.
-const MAX_WARM_ITEMS = 6;
+// Warm a small first-screen window, not the entire catalogue. Thumbnails are
+// the critical path for grid paint; sprites remain a smaller secondary warm.
+const MAX_WARM_ITEMS = 10;
 
 export function usePreloadRecordings(recordings: RecordingLike[] | null | undefined): void {
   const warmable = (recordings ?? []).slice(0, MAX_WARM_ITEMS);
@@ -26,9 +23,12 @@ export function usePreloadRecordings(recordings: RecordingLike[] | null | undefi
     if (warmable.length === 0) return;
     const limited = isConnectionConstrained() ? warmable.slice(0, 3) : warmable;
     preloadRecordingMedia(limited, {
+      // Prioritize first-screen thumbnails so the first scroll doesn't wait
+      // for lazy <img> requests to begin. Sprite warming follows thumbnails.
       immediate: true,
-      spriteLimit: 4,
-      skipThumbnails: true,
+      priority: 3,
+      spriteLimit: 3,
+      skipThumbnails: false,
       skipPreviews: true,
     });
   }, [ids]); // eslint-disable-line react-hooks/exhaustive-deps

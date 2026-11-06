@@ -26,6 +26,7 @@ import {
   cacheImage,
   canReserveHost,
   isCacheableUrl,
+  isFresh,
   type CachePriority,
 } from "@/lib/image-cache";
 import { isConnectionConstrained } from "@/lib/connection";
@@ -103,6 +104,7 @@ const queue: Array<{
   url: string;
   priority: CachePriority;
   immediate: boolean;
+  attempts: number;
 }> = [];
 let activeCount = 0;
 let pumpTimer: number | null = null;
@@ -125,11 +127,52 @@ function isWsrvUrl(url: string): boolean {
   return url.includes("wsrv.nl") || url.includes("weserv.nl");
 }
 
-function warmHttpCache(url: string) {
-  const img = new Image();
-  img.referrerPolicy = "no-referrer";
-  img.src = url;
-  // Silent — no onerror handler; 404s don't produce console noise from Image()
+function warmHttpCache(url: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      img.onload = null;
+      img.onerror = null;
+      if (error) reject(error);
+      else resolve();
+    };
+    // A detached image used to be fire-and-forget: 404s and timeouts were
+    // invisible, while the URL stayed marked as warmed for the whole session.
+    const timer = window.setTimeout(
+      () => finish(new Error("image preload timed out")),
+      12_000,
+    );
+    img.referrerPolicy = "no-referrer";
+    img.decoding = "async";
+    img.onload = () => finish();
+    img.onerror = () => finish(new Error("image preload failed"));
+    img.src = url;
+    if (img.complete) {
+      if (img.naturalWidth > 0) finish();
+      else finish(new Error("image preload failed"));
+    }
+  });
+}
+
+function retryPreload(
+  url: string,
+  priority: CachePriority,
+  immediate: boolean,
+  attempts: number,
+): void {
+  failedAt.set(url, Date.now());
+  if (attempts >= 2) return;
+  // Small staggered backoff gives a CDN / HTTP2 connection time to recover
+  // without keeping the global queue slot occupied.
+  window.setTimeout(() => {
+    queue.push({ url, priority, immediate, attempts: attempts + 1 });
+    queueDirty = true;
+    pump();
+  }, 1_200 * (attempts + 1));
 }
 
 // All preloads go through cacheImage() — the same single-flight, per-host
@@ -139,46 +182,46 @@ function warmHttpCache(url: string) {
 // connections no matter how many cards/preloads reference it.
 // Exception: wsrv.nl URLs are warmed via new Image() (HTTP cache only) because
 // wsrv has its own edge CDN and fetch() produces noisy 404s for broken catbox files.
-function startRequest(url: string, priority: CachePriority = 3) {
-  if (isWsrvUrl(url)) {
-    // Warm browser HTTP cache only — no IDB fetch, no 404 console noise.
-    // Detached <img>: no lane accounting, no global slot — the scan loop
-    // keeps draining. (This branch used to call pump() recursively, growing
-    // the call stack once per wsrv item in a burst.)
-    try { warmHttpCache(url); } catch { /* non-fatal */ }
-    return;
-  }
-
+function startRequest(
+  url: string,
+  priority: CachePriority = 3,
+  immediate = false,
+  attempts = 0,
+) {
   activeCount++;
 
-  if (!isCacheableUrl(url)) {
-    // Cross-origin host without CORS (imgchest, iili.io, …): cacheImage
-    // skips these entirely (a fetch() would only raise console noise), which
-    // used to mean their sprites/thumbnails NEVER warmed — zero requests,
-    // hover cold. Warm the browser HTTP cache with a detached <img> instead:
-    // no CORS needed, and the hover later hits the HTTP cache for free.
-    try { warmHttpCache(url); } catch { /* non-fatal */ }
-    activeCount--;
+  const finish = (failed: boolean) => {
+    if (failed) retryPreload(url, priority, immediate, attempts);
+    else failedAt.delete(url);
+    activeCount = Math.max(0, activeCount - 1);
+    pump();
+  };
+
+  // wsrv and non-CORS hosts are browser-cache-only. They still need load/error
+  // accounting so failed requests are retried instead of being permanently
+  // hidden behind the warmed Set.
+  if (isWsrvUrl(url) || !isCacheableUrl(url)) {
+    void warmHttpCache(url).then(
+      () => finish(false),
+      () => finish(true),
+    );
     return;
   }
 
   cacheImage(url, priority)
-    .then(() => {
-      // Note: cacheImage resolving null is NOT a failure — null also means
-      // "skipped" (already fresh within the revalidate window, oversized/
-      // corrupt body, a deliberately non-cached cross-origin URL, or a full
-      // host lane — the scan loop re-checks canReserveHost each tick). Those
-      // must NOT be treated as failures or the URL is needlessly blacklisted
-      // from re-warming for the cooldown period. Only a rejected promise is a
-      // real failure worth a delayed retry.
+    .then(async (entry) => {
+      if (entry) {
+        finish(false);
+        return;
+      }
+      // null is intentionally overloaded by cacheImage (fresh hit, invalid
+      // response, or a host-lane race). Only a confirmed fresh entry is a
+      // success; otherwise retry a transient skip/failure a bounded number
+      // of times rather than declaring the URL warmed forever.
+      const fresh = await isFresh(url);
+      finish(!fresh);
     })
-    .catch(() => {
-      failedAt.set(url, Date.now());
-    })
-    .finally(() => {
-      activeCount--;
-      pump();
-    });
+    .catch(() => finish(true));
 }
 
 function pump() {
@@ -211,7 +254,7 @@ function pump() {
     const item = queue[i];
     if (canStartNow(item.url)) {
       queue.splice(i, 1);
-      startRequest(item.url, item.priority);
+      startRequest(item.url, item.priority, item.immediate, item.attempts);
       // leave i in place — the next item shifted into this slot
     } else {
       i++;
@@ -293,7 +336,7 @@ export function preloadImage(
     }
   }
   warmed.add(url);
-  queue.push({ url, priority, immediate });
+  queue.push({ url, priority, immediate, attempts: 0 });
   queueDirty = true;
   pump();
 }
