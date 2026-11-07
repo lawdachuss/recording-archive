@@ -269,7 +269,7 @@ router.put("/user/profile", async (req, res) => {
     if (avatar_url !== undefined && typeof avatar_url === "string") updates.avatar_url = avatar_url.trim() || undefined;
     if (bio !== undefined && typeof bio === "string") updates.bio = bio.trim().slice(0, 1000);
     if (username != null && typeof username === "string" && username.trim() !== "") updates.username = username.trim().toLowerCase();
-    // Always include email so resolve-username can look up users by username
+    // Keep the account email in the server-side profile for username sign-in lookup.
     if (req.user!.email) updates.email = req.user!.email;
 
     const { data, error } = await req.supabase!
