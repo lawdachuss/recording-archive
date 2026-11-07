@@ -99,6 +99,15 @@ vi.mock("../../lib/logger.js", () => ({
 let cacheModule: typeof import("../cache");
 
 beforeEach(async () => {
+  // These unit tests exercise the long-lived Redis-backed cache path. Vercel
+  // injects VERCEL/VERCEL_ENV into build jobs, which intentionally disables
+  // shared response caching in production serverless instances. Clear those
+  // host flags before importing the module so CI tests the intended branch.
+  vi.stubEnv("VERCEL", "");
+  vi.stubEnv("VERCEL_URL", "");
+  vi.stubEnv("VERCEL_ENV", "");
+  vi.stubEnv("VERCEL_CACHE_LOCAL_ONLY", "");
+
   // Reset all mock state
   mockRedisStore.clear();
   mockRedisSets.clear();
@@ -113,6 +122,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 // ─── Test Helpers ─────────────────────────────────────────────────

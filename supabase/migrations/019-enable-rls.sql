@@ -53,7 +53,7 @@ $$;
 -- Make sure the API roles can read the intended public catalogue; RLS still
 -- applies to these grants and writes remain service-role-only unless separately
 -- granted by a deliberate policy.
-DO $
+DO $$
 BEGIN
   IF to_regclass('public.recordings') IS NOT NULL THEN
     GRANT SELECT ON TABLE public.recordings TO anon, authenticated;
@@ -62,7 +62,7 @@ BEGIN
     GRANT SELECT ON TABLE public.upload_links TO anon, authenticated;
   END IF;
 END
-$;
+$$;
 
 COMMIT;
 
