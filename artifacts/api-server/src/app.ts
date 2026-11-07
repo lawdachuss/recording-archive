@@ -60,7 +60,13 @@ function isAllowedOrigin(origin: string | undefined): boolean {
   if (DEFAULT_ALLOWED_ORIGINS.has(origin) || CONFIGURED_ALLOWED_ORIGINS.has(origin)) return true;
   // Local development only. Preview origins must be explicitly configured
   // instead of trusting every arbitrary *.vercel.app deployment.
-  return /^http:\/\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/.test(origin);
+  try {
+    const parsed = new URL(origin);
+    return parsed.protocol === "http:" &&
+      (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1");
+  } catch {
+    return false;
+  }
 }
 app.use(
   cors({
