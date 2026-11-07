@@ -78,6 +78,7 @@ function detectHostLabel(url: string): string {
     if (hostname.includes("voe")) return "VOE";
     if (hostname.includes("mixdrop")) return "Mixdrop";
     if (hostname.includes("dood")) return "DoodStream";
+    if (hostname.includes("lulu")) return "LuluStream";
     if (hostname.includes("filemoon")) return "Filemoon";
     if (hostname.includes("upstream")) return "Upstream";
     if (hostname.includes("vidoza")) return "Vidoza";
