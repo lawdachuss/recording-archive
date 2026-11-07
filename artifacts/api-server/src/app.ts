@@ -55,6 +55,25 @@ const CONFIGURED_ALLOWED_ORIGINS = new Set(
     .filter(Boolean),
 );
 
+// Vercel exposes the current deployment hostname to each function. Allow only
+// this deployment's own origin so same-origin preview requests (including
+// JSON POSTs) work without opening CORS to every *.vercel.app hostname.
+const vercelDeploymentHost = process.env.VERCEL_URL?.trim();
+if (vercelDeploymentHost) {
+  try {
+    const deploymentUrl = new URL(
+      vercelDeploymentHost.startsWith("http")
+        ? vercelDeploymentHost
+        : `https://${vercelDeploymentHost}`,
+    );
+    if (deploymentUrl.protocol === "https:") {
+      CONFIGURED_ALLOWED_ORIGINS.add(deploymentUrl.origin);
+    }
+  } catch {
+    // Ignore malformed platform metadata; explicit origin configuration remains.
+  }
+}
+
 function isAllowedOrigin(origin: string | undefined): boolean {
   if (!origin) return true; // same-origin and non-browser requests
   if (DEFAULT_ALLOWED_ORIGINS.has(origin) || CONFIGURED_ALLOWED_ORIGINS.has(origin)) return true;
