@@ -1,59 +1,76 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
-import { supabase } from "../lib/supabase.js";
+import { createAuthClient, supabase } from "../lib/supabase.js";
+import { rateLimit } from "../middleware/rate-limit.js";
+import { normalizeLoginUsername } from "../lib/username-auth.js";
 import { NOTIFICATION_TYPES } from "../lib/notify.js";
 
 const router = Router();
 
-// ─── Public: Resolve username to email (used by login page) ───────────────────
+// ─── Public: username sign-in without exposing account email addresses ───────
 
-router.get("/user/resolve-username", async (req, res) => {
-  try {
-    const username = (req.query.username as string)?.trim().toLowerCase();
-    if (!username) {
-      res.status(400).json({ error: "username query param required" });
+router.post(
+  "/user/username-login",
+  rateLimit({ bucket: "search", limit: 8, burstLimit: 4 }),
+  async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const username = normalizeLoginUsername(req.body?.username);
+    const password = typeof req.body?.password === "string" ? req.body.password : "";
+
+    // Return the same public response for unknown usernames and wrong passwords.
+    // This prevents the login helper from becoming an account-enumeration API.
+    if (!username || password.length < 1 || password.length > 1024) {
+      res.status(401).json({ error: "Invalid username or password" });
       return;
     }
 
-    // 1. Check user_profiles table first — this is the primary username store.
-    //    Usernames are stored here when a user signs up or updates their profile.
     try {
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from("user_profiles")
-        .select("email")
-        .ilike("username", username)
-        .limit(1)
-        .single();
+        .select("user_id,email")
+        .eq("username", username)
+        .maybeSingle();
 
-      if (profile?.email) {
-        res.json({ email: profile.email });
+      if (profileError) {
+        req.log?.error?.({ err: profileError }, "Username sign-in profile lookup failed");
+        res.status(503).json({ error: "Sign-in service temporarily unavailable" });
         return;
       }
-    } catch {
-      // Fall through to fallback methods
-    }
+      if (!profile?.email || !profile.user_id) {
+        res.status(401).json({ error: "Invalid username or password" });
+        return;
+      }
 
-    // 2. Fallback: try the resolve_username RPC (checks auth.users raw_user_meta_data)
-    try {
-      const { data: email, error: rpcError } = await supabase.rpc("resolve_username", {
-        p_username: username,
+      const auth = createAuthClient();
+      const { data, error } = await auth.auth.signInWithPassword({
+        email: profile.email,
+        password,
       });
 
-      if (!rpcError && email) {
-        res.json({ email });
+      if (error || !data.session || data.user?.id !== profile.user_id) {
+        if (error && (error.status ?? 0) >= 500) {
+          req.log?.error?.({ status: error.status }, "Username sign-in provider unavailable");
+          res.status(503).json({ error: "Sign-in service temporarily unavailable" });
+          return;
+        }
+        res.status(401).json({ error: "Invalid username or password" });
         return;
       }
-    } catch {
-      // Fall through to not found
-    }
 
-    // 3. Not found via any method
-    res.status(404).json({ error: "Username not found" });
-  } catch (err) {
-    req.log?.error?.({ err }, "GET /user/resolve-username unexpected error");
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+      // The browser SDK stores and refreshes these tokens after setSession().
+      // Never send the resolved email address back to the browser.
+      res.json({
+        session: {
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        },
+      });
+    } catch (err) {
+      req.log?.error?.({ err }, "POST /user/username-login unexpected error");
+      res.status(503).json({ error: "Sign-in service temporarily unavailable" });
+    }
+  },
+);
 
 router.use("/user", requireAuth);
 
