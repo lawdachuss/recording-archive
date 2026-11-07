@@ -9,7 +9,8 @@
     "dev": "node ./render-start.mjs",
     "start": "node ./render-start.mjs",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "test": "pnpm --filter @workspace/api-server --filter @workspace/video-archive run test"
   },
   "private": true,
   "pnpm": {
