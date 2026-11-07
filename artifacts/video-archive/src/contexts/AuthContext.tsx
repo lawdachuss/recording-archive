@@ -17,7 +17,7 @@ interface AuthContextType {
   ) => Promise<{ error?: string; needsVerification?: boolean }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
-  resolveUsername: (username: string) => Promise<{ email?: string; error?: string }>;
+  signInWithUsername: (username: string, password: string) => Promise<{ error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -225,23 +225,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return {};
   }, []);
 
-  const resolveUsername = useCallback(async (username: string): Promise<{ email?: string; error?: string }> => {
+  const signInWithUsername = useCallback(async (
+    username: string,
+    password: string,
+  ): Promise<{ error?: string }> => {
     try {
-      const res = await fetch(resolveApiPath(`/api/user/resolve-username?username=${encodeURIComponent(username)}`));
-      if (!res.ok) {
-        if (res.status === 404) return { error: "Username not found" };
-        return { error: "Failed to resolve username" };
+      const response = await fetch(resolveApiPath("/api/user/username-login"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        session?: { access_token?: string; refresh_token?: string };
+      };
+      if (!response.ok) {
+        return { error: payload.error ?? "Invalid username or password" };
       }
-      const data = (await res.json()) as { email: string };
-      return { email: data.email };
+      if (!payload.session?.access_token || !payload.session.refresh_token) {
+        return { error: "Sign-in service returned an invalid session" };
+      }
+
+      const sb = await getSupabase();
+      const { data, error } = await sb.auth.setSession({
+        access_token: payload.session.access_token,
+        refresh_token: payload.session.refresh_token,
+      });
+      if (error || !data.session) {
+        return { error: friendlyAuthError(error?.message ?? "Invalid login credentials") };
+      }
+
+      setSession(data.session);
+      setUser(data.session.user);
+      applyRole(data.session.access_token);
+      applyPendingUsername(data.session.access_token);
+      return {};
     } catch {
-      return { error: "Network error" };
+      return { error: "Sign-in service temporarily unavailable" };
     }
-  }, []);
+  }, [applyRole]);
 
   const value = useMemo(
-    () => ({ user, session, loading, role, signIn, signUp, signOut, resetPassword, resolveUsername }),
-    [user, session, loading, role, signIn, signUp, signOut, resetPassword, resolveUsername]
+    () => ({ user, session, loading, role, signIn, signInWithUsername, signUp, signOut, resetPassword }),
+    [user, session, loading, role, signIn, signInWithUsername, signUp, signOut, resetPassword]
   );
 
   return (
