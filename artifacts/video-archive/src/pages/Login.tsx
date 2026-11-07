@@ -16,7 +16,7 @@ function emailErrorHint(msg: string): string | null {
 }
 
 export default function Login() {
-  const { signIn, resolveUsername } = useAuth();
+  const { signIn, signInWithUsername } = useAuth();
   const [location, setLocation] = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -46,18 +46,9 @@ export default function Login() {
     setError(null);
     setLoading(true);
 
-    let loginEmail = email;
-    if (!isEmail) {
-      const resolved = await resolveUsername(email);
-      if (resolved.error || !resolved.email) {
-        setError(resolved.error ?? "Username not found");
-        setLoading(false);
-        return;
-      }
-      loginEmail = resolved.email;
-    }
-
-    const result = await signIn(loginEmail, password);
+    const result = isEmail
+      ? await signIn(email.trim(), password)
+      : await signInWithUsername(email.trim(), password);
     setLoading(false);
     if (result.error) {
       setError(result.error);
