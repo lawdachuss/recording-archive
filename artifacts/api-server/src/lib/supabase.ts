@@ -87,6 +87,21 @@ export function refreshSupabaseSchema(): SupabaseClient {
  * the correct `auth.uid()` — without this, the global anon-key
  * client makes RLS treat every request as unauthenticated.
  */
+/**
+ * Creates an isolated Auth client for server-mediated sign-in flows.
+ * It uses the server-held project key and never persists tokens on the server.
+ */
+export function createAuthClient(): SupabaseClient {
+  return createClient(supabaseUrl, requireSupabaseKey(), {
+    global: { fetch: supabaseFetch },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+}
+
 export function createUserClient(token: string): SupabaseClient {
   return createClient(supabaseUrl, requireSupabaseKey(), {
     global: {
