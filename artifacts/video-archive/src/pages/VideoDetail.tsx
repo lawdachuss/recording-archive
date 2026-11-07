@@ -137,6 +137,24 @@ function isEmbedUrl(url: string): boolean {
   }
 }
 
+// LuluStream (now LuluVDO) frame-busts out of iframes on its "/e/" watch page:
+// the page detects window.top !== self and replaces the embedding site with its
+// own homepage. "/embed/{code}" is the real iframe player, so rewrite every
+// LuluStream link (old "/e/" rows, "<code>.html" view links, LuluVDO mirrors)
+// to it before deciding how to render the server.
+function normalizeLuluStreamUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (!/(^|\.)(lulustream|luluvdo)\.com$/i.test(parsed.hostname)) return url;
+    const segment = parsed.pathname.replace(/\/+$/, "").split("/").pop() ?? "";
+    const code = segment.replace(/\.html$/i, "");
+    if (!/^[A-Za-z0-9_-]{4,}$/.test(code)) return url;
+    return `https://lulustream.com/embed/${code}`;
+  } catch {
+    return url;
+  }
+}
+
 function deriveServers(
   embedUrl?: string | null,
   links?: Record<string, string> | null,
@@ -178,6 +196,7 @@ function deriveServers(
           if (parsed.hostname.includes("vidara") && parsed.pathname.startsWith("/v/")) {
             url = parsed.origin + "/e" + parsed.pathname.slice(2);
           }
+          url = normalizeLuluStreamUrl(url);
         } catch {}
         if (isEmbedUrl(url)) {
           servers.push({ label, src: url, type: "iframe" });
@@ -190,7 +209,8 @@ function deriveServers(
     }
   }
 
-  const safeEmbedUrl = safeExternalUrl(embedUrl);
+  const safeEmbedUrlRaw = safeExternalUrl(embedUrl);
+  const safeEmbedUrl = safeEmbedUrlRaw ? normalizeLuluStreamUrl(safeEmbedUrlRaw) : null;
   if (safeEmbedUrl && !seen.has(safeEmbedUrl)) {
     let hostDuplicate = false;
     try { hostDuplicate = seenHosts.has(new URL(safeEmbedUrl).hostname); } catch {}
