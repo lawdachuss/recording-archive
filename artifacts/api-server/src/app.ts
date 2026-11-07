@@ -7,6 +7,19 @@ import { logger } from "./lib/logger.js";
 
 const app: Express = express();
 
+// Defense-in-depth response headers for API routes (static assets also receive
+// headers from vercel.json). CSP remains report-only until legitimate external
+// media, payment and auth origins have been observed in production.
+app.disable("x-powered-by");
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("X-XSS-Protection", "0");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  next();
+});
+
 app.use(
   pinoHttp({
     logger,
@@ -31,18 +44,24 @@ app.use(
 // Allowlist only our own frontends instead of reflecting any origin.
 // Requests from unknown origins get no CORS headers (same-origin policy
 // still applies — their JS cannot read responses).
-const ALLOWED_ORIGIN_PATTERNS = [
-  /^https:\/\/([\w-]+\.)*chuglii\.in$/,
-  /^https:\/\/.+\.vercel\.app$/,
-  /^https?:\/\/localhost(:\d+)?$/,
-  /^http:\/\/127\.0\.0\.1(:\d+)?$/,
-];
+const DEFAULT_ALLOWED_ORIGINS = new Set([
+  "https://chuglii.in",
+  "https://www.chuglii.in",
+]);
+const CONFIGURED_ALLOWED_ORIGINS = new Set(
+  (process.env.CORS_ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
 
 function isAllowedOrigin(origin: string | undefined): boolean {
-  if (!origin) return true; // same-origin / non-browser requests
-  return ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
+  if (!origin) return true; // same-origin and non-browser requests
+  if (DEFAULT_ALLOWED_ORIGINS.has(origin) || CONFIGURED_ALLOWED_ORIGINS.has(origin)) return true;
+  // Local development only. Preview origins must be explicitly configured
+  // instead of trusting every arbitrary *.vercel.app deployment.
+  return /^http:\/\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/.test(origin);
 }
-
 app.use(
   cors({
     origin: (origin, callback) => callback(null, isAllowedOrigin(origin)),
